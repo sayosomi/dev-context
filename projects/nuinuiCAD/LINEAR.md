@@ -2,11 +2,11 @@
 
 ## 目的
 
-Linearは、nuinuiCADのWork管理と長期仕様管理の移行先として試験運用する。
+LinearをnuinuiCADの正式なWork管理・長期仕様管理の場所として使う。
 
 ユーザー自身が管理画面を細かく操作することより、ChatGPTが安定して検索・作成・更新できることを優先する。
 
-移行試験が完了するまでは、既存Notion Work / Specsを削除・アーカイブしない。
+Notionはlegacy archiveとして残し、新規Work / Specの管理先には使わない。
 
 ## 基本構造
 
@@ -26,7 +26,7 @@ Initiative / Project / Issue / Documentを新規作成する前に、必ず既�
 
 同じものがある場合は新規作成せず更新する。
 
-試験用Issueや過去の移行確認用データが存在する可能性があるため、タイトルだけで判断せず内容も確認する。
+Canceledになっている移行試験用Issueなどが残っている場合があるため、タイトルだけで判断せず内容とstatusも確認する。
 
 ## Project
 
@@ -37,6 +37,7 @@ Projectはまとまった開発トラックに使う。
 - Language / Editor Integration
 - Automation / MCP
 - DSL / Geometry
+- Print Layout
 
 個々の実装TaskをProjectにしない。
 
@@ -125,7 +126,7 @@ E2E結果は、可能なら複数testをまとめて1 Commentに記録する。
 
 ## Documents
 
-Linear Documentsは長期仕様・設計文書の保存先として試験する。
+Linear Documentsを長期仕様・設計文書の正式な保存先とする。
 
 Spec Document冒頭には、必要に応じてmetadataをテキストで持たせる。
 
@@ -143,19 +144,18 @@ Spec statusとして必要に応じて以下を使う。
 - Current
 - Superseded
 
-Linear DocumentsにはNotion DBのような構造化プロパティがないため、この点が実運用上問題になるかを試験する。
+一時的なimplementation contract、調査ログ、Manual E2E plan、完了済みTask planを長期SpecとしてDocument化しない。
 
-## Source of truth — 移行試験中
+## Source of truth
 
 - 実装済み事実 / actual code: latest repository
-- 既存長期仕様: Notion Specs
-- Linearへ移した新規Spec: Linear Document
-- 移行試験開始前から進行中の既存Work: Notion
-- 移行試験開始後に新規開始するWork: Linear
+- 作業予定・進捗・調査結果: Linear Issue / Project
+- 長期仕様・設計: Linear Document
+- 移行前の履歴: Notion legacy archive
 
 実装事実についてLinear / Notion / 過去チャットとrepositoryが矛盾する場合は、latest repositoryをauthoritativeとする。
 
-移行完了をユーザーが承認するまでは、Notionを削除・アーカイブしない。
+移行前から進行中のTaskが特定の未移行Notion Specを明示的なsource of truthとして開始済みの場合だけ、そのTaskの次の明確なcheckpointまではNotion参照を継続してよい。checkpoint後にSpecをLinear Documentへ移行し、Issue側の参照先を更新する。
 
 ## 新Task開始時
 
@@ -163,9 +163,12 @@ ChatGPTは新規開発Task開始前に:
 
 1. GitHub remote stateを確認する
 2. Linearで既存Issue / Projectを検索する
-3. 必要なSpecをLinear DocumentまたはNotion Specsから取得する
+3. Linear Documentsから必要なSpecを確認する
 4. 対象IssueをIn Progressへ更新する
 5. repository調査とimplementation contract策定を開始する
+
+新規TaskでNotionを通常のSpec検索先として使わない。
+必要なSpecがLinearに見つからず、legacy Notionにのみ存在する場合は、内容と現在性を確認したうえでLinear Documentへ移行してから正式な参照先にする。
 
 ただしLinear更新のために作業テンポを落とさない。
 開始時以外の進捗更新はcheckpoint-basedで行う。
@@ -180,7 +183,7 @@ Linear管理自体が開発作業の主目的にならないよう、必要な�
 
 ## Coding Agentとの役割分担
 
-Linear移行によってChatGPT / Coding Agentの役割分担は変更しない。
+Linear運用によってChatGPT / Coding Agentの役割分担は変更しない。
 
 ChatGPTがrepository調査・architecture把握・implementation contract・blocking review・Linear管理を担当する。
 
