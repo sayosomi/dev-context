@@ -29,12 +29,17 @@ Coding Agent prompt 作成・skill 選択時は必要に応じて次も読む。
 
 ## Work / specification management
 
-現在は Linear を移行先として試験運用する。
+現在のWork / specification管理は Linear を正式な管理先とする。
 
+- 作業予定・進捗・調査結果: Linear Issue / Project
+- 長期的に参照する仕様・設計: Linear Document
 - [Linear workflow](./LINEAR.md)
-- [Legacy Notion workflow](./NOTION-LEGACY.md) — 移行期間中だけ参照
+- [Legacy Notion archive](./NOTION-LEGACY.md) — 移行前の履歴参照専用
 
-新しい開発 Task の開始時は、GitHub remote state と既存 Linear Issue / Project、必要な Spec を確認してから implementation contract を策定する。
+Notion は新規Work / Specの管理先として使わない。
+ただし、移行前から進行中のTaskが特定の未移行Notion Specを明示的なsource of truthとして開始済みの場合、そのTaskの次の明確なcheckpointまでは参照を継続してよい。checkpoint後にLinear Documentへ移行し、Task側の参照先も更新する。
+
+新しい開発 Task の開始時は、GitHub remote state と既存 Linear Issue / Project / Document を確認してから implementation contract を策定する。
 
 ## Loading rule
 
@@ -43,5 +48,6 @@ Coding Agent prompt 作成・skill 選択時は必要に応じて次も読む。
 1. この README を読む。
 2. 開発 Task では `shared/DEVELOPMENT.md` と repository の current `AGENTS.md` を読む。
 3. Coding Agent / skill が関係する場合だけ Agent Skills を読む。
-4. Linear / Notion を操作・参照する場合だけ対応する管理ルールを読む。
-5. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
+4. Linear を操作・参照する場合だけ `LINEAR.md` を読む。
+5. legacy履歴または明示的な移行中例外でNotionを参照する場合だけ `NOTION-LEGACY.md` を読む。
+6. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
