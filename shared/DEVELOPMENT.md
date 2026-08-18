@@ -64,6 +64,20 @@ Expected base は必ずしも `origin/main` とは限らず、連続 Task では
 - Git 安全条件、blocking 条件、current Task 固有の acceptance は省略しない。
 - 敬語を使わず、短く直接的な命令文で書く。
 
+### prompt提示とwork-management Issue作成の順序
+
+新規開発Taskでwork-management Issueの新規作成が必要な場合も、Issue作成をCoding Agent開始の前提にしない。
+
+1. 必要なremote state確認、既存Issue / Spec検索、repository調査を行い、implementation contractを確定する。
+2. 新規Issueを作る前にbranch名を決め、Coding Agent向けpromptを完成させてユーザーへ提示する。
+3. branch名は、まだ存在しないIssue identifierやwork-management systemが自動生成するbranch名に依存させない。
+4. ユーザーが選んだCoding Agentで実装を開始できる状態を先に作る。特定のCoding Agent製品を前提にしない。
+5. Coding Agentが実装している間に、ChatGPTが必要なIssue作成、description記入、Project紐付け、status更新などの管理作業を行う。
+
+既存Issue / Specの読み取り自体がcontract確定に必要な場合は先に行う。後回しにするのは、contract確定後の新規Issue作成やstatus更新など、Coding Agent開始を待たせる必要のない管理操作である。
+
+既存Issueがすでに存在するTaskではそのIssueを再利用するが、管理更新だけを理由にprompt提示を遅らせない。
+
 ## Task execution
 
 - ChatGPT が repository を調査し、architecture 把握・actual owner 特定・変更箇所特定・implementation contract 確定を行う。
