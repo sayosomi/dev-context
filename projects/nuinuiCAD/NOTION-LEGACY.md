@@ -1,63 +1,76 @@
-# nuinuiCAD Notion運用ルール（移行期間用）
+# nuinuiCAD Notion legacy archive
 
-## Source of truth
+## 位置づけ
 
-Notionは原則として以下の2DBだけをsource of truthとして使う。
+NotionはLinear移行前のWork / Specs履歴を残すlegacy archiveとして扱う。
 
-- Work: 作業・進捗管理
-- Specs: 長期参照する仕様・設計
+現在のWork管理・進捗管理・長期仕様管理のsource of truthではない。
+新しいWork / SpecをNotionへ作成しない。
 
 実装済みの事実についてNotionとlatest repositoryが矛盾する場合は、repositoryをauthoritativeとする。
 
-## Work
+## 残すもの
 
-- アイデア、Feature、Task、Bug、Research、Verification、InitiativeをWorkで管理する。
-- 同じ機能・Taskについて別の進捗ページを作らない。原則として同じWork itemを着想から完了まで更新する。
-- implementation plan / implementation contract / 調査結果 / review結果 / verification結果のためだけに別ページを作らない。対応するWork item本文へ追記する。
-- Manual E2Eなど、独立して進捗管理する必要がある確認作業だけ、種類=VerificationのWorkとして作成してよい。
-- 複数Taskを束ねる計画は、種類=InitiativeのWorkと親/子relationで表す。
-- 完了したWorkは削除・移動せずDoneにする。
-- 不要・重複・不採用はDroppedにする。
+Notionには移行前の履歴として以下を残す。
 
-## Workの状態
+- 過去のWork item
+- 完了済みimplementation plan / Manual E2E plan
+- 移行前のBacklog / investigation記録
+- Linearへ移行済みSpecの旧版
+- Superseded Spec
+- migration以前の判断履歴
 
-- Inbox: とりあえず登録した未整理の項目。
-- Backlog: やる候補として整理済みだが、まだ着手順には入っていない。
-- Ready: 仕様・前提・依存関係が十分に固まり、次に着手できる。
-- In progress: 調査・設計・実装など実際の作業中。
-- Review: 実装後のblocking review / PR review / CI確認などの待ち。
-- Verify: 実装とreviewは通ったが、Manual E2Eなど人間による最終確認が残っている。
-- Done: そのWorkに必要な実装・review・verificationが完了した。
-- Dropped: 不採用、不要化、重複、別案への置き換えなどで進めない。
+履歴保存のため、通常は削除しない。
 
-すべてのWorkが全状態を通る必要はない。不要な段階は飛ばしてよい。
+## 通常の参照方法
 
-## Specs
+過去の判断や移行前の経緯を確認する必要がある場合だけNotionを検索・参照する。
 
-- Specsは長期的に参照する仕様・設計だけを管理する。
-- 一時的なimplementation contractや調査メモはSpecsにしない。
-- Draft: 仕様策定中。
-- Ready: 仕様確定済み・実装待ち。
-- Current: 現在有効な仕様。
-- Superseded: 旧仕様。
-- 実装済みかどうかはSpecsの状態に含めない。実装進捗はWorkで管理する。
+Notionの内容をそのままcurrent factとして採用しない。
+必要に応じてlatest repository、Linear Issue / Project / Documentと照合する。
 
-## Notion更新時のルール
+Notion内で今後も有効な未移行Workを見つけた場合は、Notion側を再開せずLinear Issueへ移行または既存Issueへ統合する。
 
-1. 新しいページを作る前に、必ずWork / Specsを検索して既存ページがないか確認する。
-2. 既存ページがある場合は新規作成より更新を優先する。
-3. WorkとSpecs以外の新しいDBを勝手に作らない。
-4. 新しい分類・状態・領域・観点を勝手に追加しない。既存値で表現できない場合は追加前にユーザーへ確認する。
-5. Work itemに長期仕様が必要な場合だけ、仕様relationでSpecsへ結ぶ。
-6. 旧資料や重複資料を整理する場合はArchiveへ退避し、履歴を勝手に削除しない。
-7. Notionの記録内容とrepositoryのactual implementationが矛盾する場合、実装事実についてはlatest repositoryをauthoritativeとし、必要ならNotionを更新する。
+Notion内で今後も有効な未移行Specを見つけた場合は、内容と現在性を確認し、Linear Documentへ移行してから正式な参照先にする。
 
-## 迷ったとき
+## 移行中の例外
 
-何か記録したい
-→ Work / Specsを検索
-→ 既存あり: 更新
-→ 既存なし:
-  - 作業・進捗: Work
-  - 長期仕様: Specs
-  - どちらでもない: 原則として新規ページを作らない
+移行前から進行中のTaskが、特定の未移行Notion Specを明示的なsource of truthとして開始済みの場合だけ、そのTaskの次の明確なcheckpointまではそのNotion Specを参照し続けてよい。
+
+checkpoint後は:
+
+1. current repository / Task contractと照合する
+2. 必要ならSpecを最新化する
+3. Linear Documentへ移行する
+4. Linear Issue側のsource of truth参照をLinear Documentへ切り替える
+5. Notion側はlegacy archiveとして残す
+
+この例外を新しいTaskへ引き継がない。
+
+## 更新しないもの
+
+原則としてNotionでは以下を行わない。
+
+- 新規Work作成
+- 新規Spec作成
+- Work status更新
+- current implementation contract追記
+- blocking review結果追記
+- Manual E2E進捗の逐次更新
+- Backlog追加
+- roadmap更新
+
+これらはLinearで管理する。
+
+ユーザーがlegacy archive自体の誤記修正や整理を明示的に依頼した場合だけ、Notionを直接更新してよい。
+
+## Source of truth
+
+現在の管理先は以下。
+
+- 実装済み事実 / actual code: latest repository
+- 作業予定・進捗・調査結果: Linear Issue / Project
+- 長期仕様・設計: Linear Document
+- 移行前の履歴: Notion legacy archive
+
+迷った場合はNotionへ新規記録せず、まずLinearを検索する。
