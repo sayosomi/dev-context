@@ -41,6 +41,13 @@ Notion は新規Work / Specの管理先として使わない。
 
 新しい開発 Task の開始時は、GitHub remote state と既存 Linear Issue / Project / Document を確認してから implementation contract を策定する。
 
+## 連続 Task の前 Task PR merge 確認
+
+連続 Task で前 Task に Pull Request がある場合、次 Task の Coding Agent へ実装指示を出す前に、その Pull Request が GitHub 上で merge 済みか必ず確認する。
+
+- 未 merge: repository 調査、Linear 確認、implementation contract 策定までは進めてよいが、Coding Agent に実装開始を指示しない。
+- merge 済み: merge 後の latest remote `main` を再確認し、それを次 Task の実装 base とする。
+
 ## Loading rule
 
 毎回すべての linked document を読む必要はない。
