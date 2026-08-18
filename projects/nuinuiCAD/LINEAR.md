@@ -157,6 +157,18 @@ Spec statusとして必要に応じて以下を使う。
 
 移行前から進行中のTaskが特定の未移行Notion Specを明示的なsource of truthとして開始済みの場合だけ、そのTaskの次の明確なcheckpointまではNotion参照を継続してよい。checkpoint後にSpecをLinear Documentへ移行し、Issue側の参照先を更新する。
 
+## Coding Agent promptとLinear Issue作成の順序
+
+新規開発Taskでは、必要なrepository調査・既存Linear検索・Spec確認を終えてimplementation contractが確定したら、**新規Linear Issueを作成する前にbranch名を決め、Coding Agent promptを完成させてユーザーへ提示する。**
+
+branch名はLinearが生成する`gitBranchName`や、まだ存在しないIssue identifierに依存させない。Issue作成前の時点でそのままCoding Agentが使用できるbranch名にする。
+
+ユーザーはpromptを受け取った時点でCodex / Coding Agentの実装を開始できる。ChatGPTはその実装が進んでいる間に、Linear Issueの作成・description記入・Project紐付け・status更新などの管理作業を行う。これを待ち時間削減のための標準的な並行workflowとする。
+
+既存Issueがすでに存在するTaskではそのIssueを再利用する。ただし、Linearの管理更新だけを理由にCoding Agent promptの提示を遅らせない。
+
+Linear上のSpecや既存Issueの確認自体がimplementation contract確定に必要な場合は、それらの読み取り・検索を先に行う。後回しにするのは、contract確定後のIssue作成・status更新などの管理操作である。
+
 ## 新Task開始時
 
 ChatGPTは新規開発Task開始前に:
@@ -164,8 +176,10 @@ ChatGPTは新規開発Task開始前に:
 1. GitHub remote stateを確認する
 2. Linearで既存Issue / Projectを検索する
 3. Linear Documentsから必要なSpecを確認する
-4. 対象IssueをIn Progressへ更新する
-5. repository調査とimplementation contract策定を開始する
+4. repository調査とimplementation contractを確定する
+5. branch名を決め、Coding Agent promptを完成させてユーザーへ提示する
+6. ユーザーがCoding Agentを開始できる状態にする
+7. 新規Issueが必要なら、Coding Agent実装中にLinear Issueを作成し、description / Project / statusを整える。既存Issueなら必要な更新を同じタイミングでまとめて行う
 
 新規TaskでNotionを通常のSpec検索先として使わない。
 必要なSpecがLinearに見つからず、legacy Notionにのみ存在する場合は、内容と現在性を確認したうえでLinear Documentへ移行してから正式な参照先にする。
