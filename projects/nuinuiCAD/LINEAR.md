@@ -59,6 +59,35 @@ Backlog → Todo → In Progress → In Review → Done
 Manual E2EなどのVerify相当statusは未確定。
 必要になっても勝手に新しいStatusを追加せず、ユーザーと決める。
 
+## GitHub Pull Request連携
+
+LinearのGitHub integrationを使い、Linear IssueとGitHub Pull Requestをリンクしてstatus更新を自動化する。
+
+PRとIssueの標準的な紐付けは、PR descriptionにclosing magic wordとIssue identifierを記載する方式とする。
+
+例:
+
+`Fixes SAY-38`
+
+`Linear: SAY-38`のような単なるラベルだけを標準の紐付け方法にはしない。
+branch名へLinear Issue identifierを入れることも必須にしない。
+
+Sayosomi TeamのPull request automationsは次を標準設定とする。
+
+- On draft PR open → `In Progress`
+- On PR open → `In Progress`
+- On PR review request or activity → `In Review`
+- On PR ready for merge → `In Review`
+- On PR merge → `Done`
+
+nuinuiCADは個人開発を前提とするため、別レビュアーによるreview requestを`In Review`への必須条件にしない。
+通常はPRがready for mergeになった時点で`In Review`へ進み、blocking review / Manual E2E / 最終確認を行った後にmergeする。
+review request or activityのautomationは、将来reviewerやreview automationを使う場合にも自然に`In Review`へ進める互換的なtriggerとして維持する。
+
+PRをmergeしたら、closing magic wordでリンクされたIssueはLinear automationにより`Done`へ進める。
+通常の開発Taskでは、GitHub側のPR状態から自動で反映できるstatusをChatGPTが重複して手動更新しない。
+ただしautomationが発火しなかった、PRとIssueが正しくリンクされていない、または実際のTask状態と自動statusが一致しない場合は、原因を確認して必要な修正を行う。
+
 ## Issue descriptionとComment
 
 Issue descriptionには、現在も有効な情報を置く。
