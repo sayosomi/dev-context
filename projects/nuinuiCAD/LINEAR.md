@@ -163,7 +163,9 @@ Spec statusとして必要に応じて以下を使う。
 
 branch名はLinearが生成する`gitBranchName`や、まだ存在しないIssue identifierに依存させない。Issue作成前の時点でそのままCoding Agentが使用できるbranch名にする。
 
-ユーザーはpromptを受け取った時点でCodex / Coding Agentの実装を開始できる。ChatGPTはその実装が進んでいる間に、Linear Issueの作成・description記入・Project紐付け・status更新などの管理作業を行う。これを待ち時間削減のための標準的な並行workflowとする。
+使用するCoding AgentはCodex等の特定製品・実装に固定しない。promptとworkflowは、ユーザーが選んだCoding Agentでそのまま利用できるagent-agnosticな内容にする。
+
+ユーザーはpromptを受け取った時点でCoding Agentの実装を開始できる。ChatGPTはその実装が進んでいる間に、Linear Issueの作成・description記入・Project紐付け・status更新などの管理作業を行う。これを待ち時間削減のための標準的な並行workflowとする。
 
 既存Issueがすでに存在するTaskではそのIssueを再利用する。ただし、Linearの管理更新だけを理由にCoding Agent promptの提示を遅らせない。
 
