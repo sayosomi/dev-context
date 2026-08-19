@@ -58,13 +58,14 @@ Expected base は必ずしも `origin/main` とは限らず、連続 Task では
 
 - current Task の実行に必要な情報だけを書く。
 - 原則として repository、expected remote state、branch/base、変更対象、具体的な変更内容、必要な test、commit/push、blocking 条件を渡す。
+- Coding Agent 向けの実装 prompt は英語で書く。
+- 英語は simple and direct にし、短い命令文を基本とする。不要な修辞、会話的な filler、装飾的な表現を避ける。
 - 装飾目的の区切り線を使わない。`====`、`----`、大量の罫線などを入れない。
 - 見出しは可読性に必要な最小限だけ使う。
 - 同じ制約を別表現で繰り返さない。
 - 実装に不要な背景説明や確定済みの設計経緯を長く再掲しない。
 - shared rule や skill にある一般論を、current Task で必要でない限り重複して説明しない。
 - Git 安全条件、blocking 条件、current Task 固有の acceptance は省略しない。
-- 敬語を使わず、短く直接的な命令文で書く。
 
 ### prompt提示とwork-management Issue作成の順序
 
