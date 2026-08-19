@@ -115,6 +115,49 @@ Issue statusは作業進行を表す。Manual E2Eの準備・実施状態はstat
 
 Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了した時点で`Done`へ進める。
 
+### Statusの意味
+
+- `Backlog`
+  - 将来Work、contract調査待ち、dependency待ちなど、今すぐ実装開始できないIssueを置く。
+  - `Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending` の実装Issueは原則ここに置く。
+- `Todo`
+  - **実際に開始可能なqueue**として使う。単なる「未着手」や「Issueを作った」ことを意味しない。
+  - 実装Issueを`Todo`へ置くには、原則 `Contract: Ready` かつ Manual E2Eが `Ready to Run` または `Not Required` であること。
+- `In Progress`
+  - ChatGPTによるcontract調査を含め、そのIssueの作業を実際に開始したときに使う。
+  - ただしimplementation-ready workだけを表示する `Now` viewの条件とは別概念である。
+- `In Review`
+  - 実装・blocking review・merge前確認の段階。
+- `Done`
+  - Work自体が完了した状態。Manual E2Eの最終状態とは独立する。
+
+### Issue作成時の必須metadata
+
+正式Issueを作成するときは、Linearのdefaultに任せず次を**明示的に指定**する。
+
+1. `state`
+2. `Contract` labelを1つ
+3. `Manual E2E` labelを1つ
+4. 必要なtype label
+5. 既に確定しているdependency relation
+
+`state`を省略してLinear teamのdefault statusへフォールバックさせない。
+
+実装Issueの標準的な作成状態:
+
+- contract / E2E planが未確定のdraft
+  - `Backlog + Contract: Pending + Manual E2E: Plan Pending`
+- prerequisite待ちで、現時点でactionableなcontract作業がない
+  - `Backlog + Contract: Blocked + Manual E2E: Plan Pending`
+- contractとE2E planが確定済みで、未着手
+  - `Todo + Contract: Ready + Manual E2E: Ready to Run`
+- Manual E2E不要のreadyな実装Work
+  - `Todo + Contract: Ready + Manual E2E: Not Required`
+
+Issue本文に `Draft` / `contract pending` / `blocked` などと書いた場合、その文言とmetadataを一致させる。本文の自由記述だけで状態を表し、status / labelを未設定のままにしない。
+
+Sayosomi Teamのdefault issue statusは防御策として`Backlog`を推奨する。ただしdefault設定に依存せず、ChatGPTは作成時に必ず`state`を明示する。
+
 ## Idea Inbox
 
 軽い思いつきだけでIssue数を増やさないため、常設Issue `SAY-55 — Idea Inbox — future work / 思いつきメモ` を使う。
@@ -137,7 +180,7 @@ Idea Inboxは**実装対象Issueではなく、独立Workへ昇格する前の�
 
 Issue一覧だけでimplementation contractとManual E2Eの現在状態を判断できるよう、type labelとは別に2つのLabel Groupを使う。
 
-原則として正式なnuinuiCAD Work Issueには、`Contract`から1つ、`Manual E2E`から1つを付ける。
+正式なnuinuiCAD Work Issueには、`Contract`から**必ず1つ**、`Manual E2E`から**必ず1つ**を付ける。
 
 既存の`Feature` / `Improvement` / `Bug`等はWorkの種類を表すlabelとして併用する。
 
@@ -146,6 +189,9 @@ Issue一覧だけでimplementation contractとManual E2Eの現在状態を判断
 - `Pending`
   - implementation contractに必要なrepository調査、architecture判断、product decision、scope確定などがまだ残っている。
   - Coding Agentへそのまま実装指示を渡せる状態ではない。
+- `Blocked`
+  - prerequisite、external capability、durable foundationなどが存在せず、現時点ではimplementation contractを完成できない。
+  - 条件が変わるまでactionableなcontract作業を期待しないIssueを、通常の`Pending`と分離する。
 - `Ready`
   - scope / product semantics / architecture / safety boundaryなど、implementation contractの本質的な内容が確定済み。
   - Task開始時のlatest remote確認、actual owner / symbol / file pathのrefreshは引き続き行う。それだけでは`Pending`へ戻さない。
@@ -188,6 +234,30 @@ FAIL時:
 修正後は状況に応じて`Ready to Run`または`Running`へ戻し、再検証完了後に`Passed`へ進める。
 
 Labelは**現在状態のindex**であり、過去のFAIL /修正 /再検証履歴はCommentに残す。
+
+## Saved views
+
+Saved viewはstatusだけをreadinessの代用にしない。
+
+### Now
+
+`Now`は「今すぐ実装開始できる、またはその実装作業が進行中のWork」を見るviewとする。
+
+実装Issueについては少なくとも次をAND条件にする。
+
+- Status: `Todo` または `In Progress`
+- Contract: `Ready`
+- Manual E2E: `Ready to Run` / `Running` / `Failed` / `Deferred` / `Passed` / `Not Required` のいずれか
+
+`Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending`、またはContract / Manual E2E labelが欠けているIssueを`Now`へ含めない。
+
+Statusだけで `Now` を作らない。`Todo`へ誤投入されたdraftがあっても、readiness label側で除外できる構造を維持する。
+
+### Contract Pending
+
+通常のcontract調査対象は `Contract: Pending` で見る。
+
+prerequisite待ちでactionableでないものは `Contract: Blocked` とし、`Pending` viewへ混ぜない。
 
 ## GitHub Pull Request連携
 
@@ -381,6 +451,16 @@ Issue作成、状態変更、Label更新、Project紐付け、Project label付�
 Linear APIで未対応の管理操作のみ、必要な最小限のUI操作をユーザーに依頼してよい。
 
 新しい分類・status・label groupを勝手に追加しない。必要な場合はユーザーと運用を決めてから追加する。
+
+Issueを作成または重要metadataを更新した直後は、そのIssueを再取得し、少なくとも次を確認する。
+
+- intended statusになっている
+- `Contract` labelが1つだけ付いている
+- `Manual E2E` labelが1つだけ付いている
+- 本文のDraft / Ready / Blocked等の記述とmetadataが矛盾していない
+- 指定したdependency relationが反映されている
+
+不一致があれば、その操作を完了扱いにする前に修正する。
 
 Linear管理自体が開発作業の主目的にならないよう、必要な記録だけをまとめて更新する。
 
