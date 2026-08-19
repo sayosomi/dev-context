@@ -29,6 +29,8 @@ Initiative / Project / Issue / Documentを新規作成する前に、必ず既�
 
 Canceledになっている移行試験用Issueや旧カテゴリProjectなどが残っている場合があるため、タイトルだけで判断せず内容とstatusも確認する。
 
+まだ独立Workとして扱うほど固まっていない軽い思いつきは、新規Issueを起票せず、後述の `Idea Inbox — future work / 思いつきメモ` へ追記する。
+
 ## Project
 
 Projectは**終わる単位**として使う。
@@ -112,6 +114,24 @@ Issue statusは作業進行を表す。Manual E2Eの準備・実施状態はstat
 実装Issueでは、PR mergeで`Done`になったこととManual E2Eが完了したことを同義にしない。`Done + Manual E2E: Deferred`や、後日問題が確認された`Done + Manual E2E: Failed`も正当な状態として扱う。
 
 Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了した時点で`Done`へ進める。
+
+## Idea Inbox
+
+軽い思いつきだけでIssue数を増やさないため、常設Issue `SAY-55 — Idea Inbox — future work / 思いつきメモ` を使う。
+
+Idea Inboxは**実装対象Issueではなく、独立Workへ昇格する前の一時保管場所**とする。
+
+運用:
+
+- まだ調査・仕様策定・実装へ進めると決めていない思いつきは、原則として新規Issueを作らずIdea Inboxの`Ideas`へ箇条書きで追記する。
+- ChatGPTはユーザーから軽い思いつきを受け取ったとき、既存Issue化が明らかに必要でなければまずIdea Inboxへの追記を優先する。
+- 独立した調査、仕様策定、実装、Bug修正、Verificationなどとして扱う段階になったら、既存Issueとの重複を検索したうえで正式Issueへ切り出す。
+- 切り出した元項目は削除せず、`→ SAY-xx` のように切り出し先を記録して履歴を残す。
+- 不要になった案は取り消し線または`Dropped`で残してよい。
+- Idea Inbox自体はProjectに所属させない。
+- Idea Inbox自体は`Contract: N/A` / `Manual E2E: Not Required`とする。
+- Idea Inboxへ入っているだけの項目は、実装予定・優先順位確定・implementation contract確定を意味しない。
+- Issue枠に余裕が出たことだけを理由に機械的に全項目をIssue化しない。実際に独立管理する価値が出た項目から切り出す。
 
 ## Issue state labels
 
