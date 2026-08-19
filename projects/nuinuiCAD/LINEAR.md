@@ -13,7 +13,8 @@ Notionはlegacy archiveとして残し、新規Work / Specの管理先には使�
 - Workspace: Sayosomi
 - Team: Sayosomi
 - Initiative: nuinuiCAD
-- Project: まとまった開発トラック
+- Project: 数日〜数週間で完了できるexecution phase
+- Project label: Projectの分野分類
 - Issue: 実際に着手・完了する作業
 - Document: 長期的に残す仕様・設計文書
 
@@ -26,22 +27,72 @@ Initiative / Project / Issue / Documentを新規作成する前に、必ず既�
 
 同じものがある場合は新規作成せず更新する。
 
-Canceledになっている移行試験用Issueなどが残っている場合があるため、タイトルだけで判断せず内容とstatusも確認する。
+Canceledになっている移行試験用Issueや旧カテゴリProjectなどが残っている場合があるため、タイトルだけで判断せず内容とstatusも確認する。
 
 ## Project
 
-Projectはまとまった開発トラックに使う。
+Projectは**終わる単位**として使う。
+
+複数Issueをまとめて進め、数日〜数週間程度でCompletedにできるexecution phaseを基本とする。
 
 例:
 
-- Language / Editor Integration
-- Automation / MCP
-- DSL / Geometry
-- Print Layout
+- Canvas Selection / Navigation v1
+- Geometry Editing / Bake v1
+- Modifier Editor Integration v1
+- Print Layout v1
 
-個々の実装TaskをProjectにしない。
+`Language / Editor Integration`、`Module`、`DSL / Geometry`、`Automation / MCP`のような長期カテゴリをProjectとして常設しない。
 
-長期間継続するProjectがDone Issueのarchiveを妨げる場合は、必要になった時点でProjectの区切り方を見直す。
+まだ着手時期が決まっていない将来Issueは、原則としてProjectなしのBacklogで保持する。
+一連の作業として着手する段階で、完了可能な短期Projectを作成し、対象Issueを移す。
+
+Project内の必要Issueが完了したら、ProjectもCompletedにする。
+Done Issueを未完了Projectへ長期間残してauto-archiveを妨げない。
+
+旧カテゴリProjectは履歴としてCanceledのまま残してよいが、新規Workの分類箱として再利用しない。
+
+個々の単発実装Taskを機械的に1 Issue = 1 Projectにはしない。複数Issueをまとめて完了条件を持てる開発phaseだけをProject化する。
+
+## Project labels
+
+Project labelは「何の分野のProjectか」を表す。
+statusや進捗段階をProject labelで重複表現しない。
+
+現在は2つのProject label groupを使う。
+
+### Surface
+
+1 Projectにつき必要なものを1つ選ぶ。
+
+- `VS Code / Editor`
+- `Canvas`
+- `Print Layout`
+
+### Domain
+
+必要なProjectだけ1つ選ぶ。
+
+- `DSL / Geometry`
+- `Module`
+- `Automation / MCP`
+
+SurfaceとDomainは異なる観点なので、1 Projectにそれぞれ1つずつ付けてよい。
+
+現在の代表例:
+
+- Canvas Selection / Navigation v1
+  - Surface: `Canvas`
+- Modifier Editor Integration v1
+  - Surface: `VS Code / Editor`
+- Geometry Editing / Bake v1
+  - Surface: `Canvas`
+  - Domain: `DSL / Geometry`
+- Print Layout v1
+  - Surface: `Print Layout`
+
+新しいProject label / label groupを勝手に増やさない。
+既存分類で表現できない場合はユーザーと決めてから追加する。
 
 ## Issue
 
@@ -187,6 +238,7 @@ Linearをリアルタイムの逐次ログとして使わない。
 4. blocking reviewが完了したとき
 5. Manual E2Eを開始・延期・FAIL確定・完了したとき
 6. Taskのstatusを変更すべき明確な節目
+7. ProjectへIssueをまとめる、ProjectをCompletedにするなどexecution phaseの境界が確定したとき
 
 このcheckpointで必要に応じて`Contract` / `Manual E2E` labelも現在状態へ更新する。
 
@@ -288,9 +340,11 @@ ChatGPTは新規開発Task開始前に:
 2. Linearで既存Issue / Projectを検索する
 3. Linear Documentsから必要なSpecを確認する
 4. 対象Issueの`Contract` / `Manual E2E` labelと本文・Commentを確認する
-5. 対象IssueをIn Progressへ更新する
-6. `Contract: Ready`でなければrepository調査とimplementation contract策定を進める
-7. `Contract: Ready`でもlatest remote / actual ownerを再確認してからCoding Agentへの実装指示を作る
+5. ProjectなしBacklog Issueを着手する場合、既存の短期execution Projectへ属するWorkか確認し、必要なら新しい短期Projectを作成する
+6. Projectへ所属させる場合、適切な`Surface` / `Domain` Project labelを付ける
+7. 対象IssueをIn Progressへ更新する
+8. `Contract: Ready`でなければrepository調査とimplementation contract策定を進める
+9. `Contract: Ready`でもlatest remote / actual ownerを再確認してからCoding Agentへの実装指示を作る
 
 新規TaskでNotionを通常のSpec検索先として使わない。
 必要なSpecがLinearに見つからず、legacy Notionにのみ存在する場合は、内容と現在性を確認したうえでLinear Documentへ移行してから正式な参照先にする。
@@ -302,7 +356,11 @@ ChatGPTは新規開発Task開始前に:
 
 ユーザーにLinearの手動更新を要求しない。
 
-Issue作成、状態変更、Label更新、Project紐付け、Comment追加、Document更新などは原則ChatGPTが行う。
+Issue作成、状態変更、Label更新、Project紐付け、Project label付与、Comment追加、Document更新などは原則ChatGPTが行う。
+
+Linear APIで未対応の管理操作のみ、必要な最小限のUI操作をユーザーに依頼してよい。
+
+新しい分類・status・label groupを勝手に追加しない。必要な場合はユーザーと運用を決めてから追加する。
 
 Linear管理自体が開発作業の主目的にならないよう、必要な記録だけをまとめて更新する。
 
