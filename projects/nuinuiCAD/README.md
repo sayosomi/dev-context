@@ -30,10 +30,12 @@ Coding Agent prompt 作成・skill 選択時は必要に応じて次も読む。
 ## Work / specification management
 
 現在のWork / specification管理は Linear を正式な管理先とする。
+LinearはFree plan前提で運用し、closed itemの早期archiveによるIssue枠管理を明示的な運用制約とする。
 
 - 作業予定・進捗・調査結果: Linear Issue / Project
 - 長期的に参照する仕様・設計: Linear Document
 - [Linear workflow](./LINEAR.md)
+- [Linear free-plan capacity policy](./LINEAR-CAPACITY.md)
 - [Legacy Notion archive](./NOTION-LEGACY.md) — 移行前の履歴参照専用
 
 Notion は新規Work / Specの管理先として使わない。
@@ -55,6 +57,6 @@ Notion は新規Work / Specの管理先として使わない。
 1. この README を読む。
 2. 開発 Task では `shared/DEVELOPMENT.md` と repository の current `AGENTS.md` を読む。
 3. Coding Agent / skill が関係する場合だけ Agent Skills を読む。
-4. Linear を操作・参照する場合だけ `LINEAR.md` を読む。
+4. Linear を操作・参照する場合は `LINEAR.md` と `LINEAR-CAPACITY.md` を読む。
 5. legacy履歴または明示的な移行中例外でNotionを参照する場合だけ `NOTION-LEGACY.md` を読む。
 6. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
