@@ -43,12 +43,14 @@ Expected base は必ずしも `origin/main` とは限らず、連続 Task では
 
 ## Git 作業環境
 
-- Task ごとに新しい worktree を作ることを既定動作にしない。
-- current Task に使える適切な既存 repository / worktree がある場合は継続利用する。
-- 連続 Task では、必要に応じて同じ作業環境を使う。
-- 新しい worktree は、並行作業との隔離、未完了変更の保護、異なる base を同時に保持する必要など、具体的な理由がある場合だけ作る。
-- 新 Task 開始のためだけに worktree を削除・再作成しない。
-- unrelated な user changes がある作業環境を無理に再利用しない。
+- 通常の開発では primary repository checkout を使う。Task ごとに worktree を作らない。
+- 新しい worktree を作ってよいのは、2本以上の実装を本当に同時並行で走らせる必要があり、同じ checkout では安全に進められない場合だけとする。
+- 単に別 branch / 別 base で作業したい、current Task を切り替えたい、既存 branch を保護したい、後で戻る可能性がある、という理由だけでは worktree を作らない。通常の branch switch / fetch / merge 等で対応する。
+- 連続 Task、blocking fix、Manual E2E、PR merge 後の追従作業は、原則として同じ primary repository checkout を継続利用する。
+- 一時的に作成した worktree は、その並行実装が終了・merge・中止して不要になった時点ですぐ片付ける。放置して次 Task へ持ち越さない。
+- worktree を削除する前に `git status --short` 等で未commit変更がないことを確認する。変更が残っている場合は勝手に削除せず、blocking point として報告する。
+- 不要な worktree が clean なら、次の通常作業へ進む前に `git worktree remove <path>` で削除する。
+- unrelated な user changes がある作業環境を無理に再利用しない。その場合も、並列実装が不要なら新しい worktree を既定解にせず、まず安全な branch / checkout の整理方法を選ぶ。
 - Task ごとに main への merge や PR 作成を機械的に要求しない。current track / current plan に従う。
 - unrelated な user changes、branch、worktree を勝手に削除・上書き・reset しない。
 
@@ -95,7 +97,7 @@ Expected base は必ずしも `origin/main` とは限らず、連続 Task では
 
 - ChatGPT / Coding Agent の役割分担
 - remote state 確認
-- worktree 再利用原則
+- worktree は真に同時並行の複数実装が必要な場合だけ使い、不要になったら即削除する原則
 - commit / push
 - prompt 簡潔化ルール
 - current project 固有の work-management / source-of-truth rule
