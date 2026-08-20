@@ -240,20 +240,21 @@ Labelは**現在状態のindex**であり、過去のFAIL /修正 /再検証履�
 
 ## Saved views
 
-Saved viewでは、**現在実行中のWork**と**次に開始できるWork**を分離する。
+Saved viewでは、**現在実行中のWork**と**次に開始できるWork**を区別しつつ、`Now`では両方をまとめて確認できるようにする。
 
 ### Now
 
-`Now`は「実際に現在作業中、またはreview中のWork」だけを見るviewとする。
+`Now`は「現在作業中 / review中のWork」と「Ready Queueへ明示的に上げた次の着手候補」をまとめて見るviewとする。
 
 条件:
 
-- Status: `In Progress` または `In Review`
+- Status: `Todo` / `In Progress` / `In Review`
 
-`Todo`は含めない。Contract / Manual E2Eのreadiness labelも`Now`のgateにはしない。
-contract調査中の`In Progress + Contract: Pending`なども、実際にそのWorkを進めているなら`Now`へ含める。
+`Todo`自体をReady Queueとして厳密に運用するため、`Now`では追加のContract / Manual E2E filterを重ねない。
+`In Progress + Contract: Pending`のようなcontract調査中Workも、実際に進行中なら`Now`へ含める。
+`Contract: Ready`かつManual E2E準備済みでも、Statusが`Backlog`なら`Now`へ含めない。
 
-primary worktreeとpersistent sub worktreeで並列作業している場合は、それぞれで実際に進行中のIssueが`Now`へ並ぶ。片方がidleならplaceholderを作らない。
+primary worktreeとpersistent sub worktreeで並列作業している場合は、それぞれで実際に進行中のIssueに加え、次の着手候補であるTodoが`Now`へ並ぶ。
 
 ### Ready Queue
 
