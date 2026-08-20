@@ -56,6 +56,7 @@ LinearはFree plan前提で運用し、closed itemの早期archiveによるIssue
 - 長期的に参照する仕様・設計: Linear Document
 - [Linear workflow](./LINEAR.md)
 - [Linear free-plan capacity policy](./LINEAR-CAPACITY.md)
+- [GitHub Issues public mirror / sync](./GITHUB-ISSUES-SYNC.md)
 - [Legacy Notion archive](./NOTION-LEGACY.md) — 移行前の履歴参照専用
 
 Notion は新規Work / Specの管理先には使わない。
@@ -70,7 +71,7 @@ Notion は新規Work / Specの管理先には使わない。
 最低限、次を必ず決める。
 
 - user-facing command name / title は英語に統一する。VS Code の `contributes.commands[].title`、Command Palette、context menu、Ribbon 等で表示される command 名を日本語にしない。internal command ID も英語を維持する。
-- VS Code command は既存 `AGENTS.md` rule どおり `Global | Source | Canvas | Source+Canvas` の Palette scope を明示する。
+- VS Code command は既存 `AGENTS.md` ruleどおり `Global | Source | Canvas | Source+Canvas` の Palette scope を明示する。
 - 右クリック context menu へ出すかどうかを必ず明示する。`Context menu: None` は正当な選択肢であり、右クリックへ出す必要がない command を無理に追加しない。
 - context menu へ出す場合は、どの context で表示するかと、その visibility 条件を contract に書く。Source Editor / blank Canvas / Canvas element / Canvas Ribbon 等、実際に存在する surface/context だけを使い、未確定 surface を先取りしない。
 - Command Palette visibility と context-menu visibility は別契約として扱う。Palette は surface relevance を表し、selection / caret / semantic target 等の transient state で細かく出し分けない。一方 context menu は現在の文脈に合う操作だけを出すため、必要な transient / semantic state で絞り込んでよい。
@@ -93,6 +94,6 @@ Notion は新規Work / Specの管理先には使わない。
 1. この README を読む。
 2. 開発 Task では `shared/DEVELOPMENT.md` と repository の current `AGENTS.md` を読む。
 3. Coding Agent / skill が関係する場合だけ Agent Skills を読む。
-4. Linear を操作・参照する場合は `LINEAR.md` と `LINEAR-CAPACITY.md` を読む。
+4. Linear を操作・参照する場合は `LINEAR.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。
 5. legacy履歴または明示的な移行中例外でNotionを参照する場合だけ `NOTION-LEGACY.md` を読む。
 6. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
