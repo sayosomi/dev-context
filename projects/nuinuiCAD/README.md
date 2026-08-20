@@ -17,6 +17,26 @@ Coding Agent prompt 作成・skill 選択時は必要に応じて次も読む。
 - [Shared Agent Skills](../../shared/AGENT-SKILLS.md)
 - [nuinuiCAD-specific Agent Skills](./AGENT-SKILLS.md)
 
+## Git worktree policy — nuinuiCAD exception
+
+nuinuiCAD では primary repository checkout に加えて、並列実装用の**常設汎用 sub worktree を1つ**維持してよい。
+
+現在の標準配置:
+
+- primary: `/Users/yosomi/Code/nuinuiCAD`
+- persistent sub: `/Users/yosomi/Code/nuinuiCAD-sub`
+
+運用ルール:
+
+- persistent sub は、primary で別Taskを進めている間に本当に並列実装する必要があるTaskへ使う。
+- idle時の persistent sub は clean な状態を保ち、`origin/main` の latest commit を detached HEAD で checkoutして待機させる。
+- subで新しいTaskを始める前に `git fetch origin --prune` を実行し、latest remote state と intended base を確認してから、そのTask専用branchを作る。
+- Task完了・merge・中止後は、未commit変更がないことを確認してから persistent sub を detached HEAD の latest `origin/main` へ戻し、安全なら完了Taskのlocal branchを削除する。
+- persistent sub 自体はTask完了後も削除しない。Shared Development Workflowの「一時worktreeは不要になったら削除する」ルールは、この常設sub以外の追加worktreeに適用する。
+- 同じbranchを primary と persistent sub の両方でcheckoutしない。
+- 常設subは1つだけとする。3本目以降のworktreeは真に追加の同時並列実装が必要な場合だけ作成し、不要になったらShared Development Workflowどおり削除する。
+- unrelatedなuser changesや進行中Taskをreset / overwriteしてsubを再利用しない。cleanでない場合はblocking pointとして扱う。
+
 ## Repository-owned sources of truth
 
 - 実装済みの事実・actual code: latest `sayosomi/nuinuiCAD` repository
