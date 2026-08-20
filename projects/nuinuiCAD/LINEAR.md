@@ -329,6 +329,18 @@ PRとIssueの標準的な紐付けは、PR descriptionにclosing magic wordとIs
 `Linear: SAY-38`のような単なるラベルだけを標準の紐付け方法にはしない。
 branch名へLinear Issue identifierを入れることも必須にしない。
 
+### Pull request automations
+
+Sayosomi TeamのLinear `Workflows & automations > Pull request automations` は、**5項目すべて `No action` を維持する**。
+
+- On draft PR open → `No action`
+- On PR open → `No action`
+- On PR review request or activity → `No action`
+- On PR ready for merge → `No action`
+- On PR merge → `No action`
+
+GitHub integrationはPRとIssueのリンクには使うが、Issue statusの決定には使わない。PRイベントだけでは`In Progress` / `In Review` / `Done`の意味を判定できないため、status automationを有効化しない。
+
 ### PRとstatusの関係
 
 PR lifecycleだけでIssue statusを決めない。
@@ -348,7 +360,7 @@ PR merge時:
 - Manual E2Eが必要だが後回し → `In Review + Deferred`
 - Manual E2Eがmerge前から`Failed`で未解決 → 原則mergeしない
 
-Linear側のPR automationがreview activityやmergeだけで`In Review` / `Done`へ自動遷移する設定になっている場合、この運用と競合する。status automationは無効化するか、発火後にChatGPTが上記ルールへ戻す。
+Pull request automationsはすべて`No action`なので、PRイベントによる自動status変更は前提にしない。merge後のstatus / Manual E2E labelはChatGPTが実態を確認して更新する。
 
 ## Issue descriptionとComment
 
