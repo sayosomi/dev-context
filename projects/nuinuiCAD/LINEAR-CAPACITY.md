@@ -8,13 +8,15 @@ Free planのIssue数制限を、Work管理上の明示的な制約として扱�
 - closed itemは早くarchiveへ退避し、activeなIssue枠を圧迫させない。
 - Sayosomi Teamの`Auto-archive closed items after`は原則`1 month`を維持する。
 - 後から参照・Manual E2Eする可能性だけを理由に、auto-archive期間を長くしない。
-- `Done + Manual E2E: Deferred`もarchive対象になってよい。後日E2Eするときはarchived Issueを検索し、更新が必要ならrestoreしてsame Issueを継続する。archiveを避けるために別Issueへ複製しない。
+- Manual E2Eを後回しにしている実装Issueは`In Review + Manual E2E: Deferred`で未完了として保持する。Deferredのまま`Done`へ進めないため、通常のclosed-item archive対象にもならない。
+- 必要なManual E2Eが`Passed`、または`Not Required`となって`Done`へ進んだ後は通常どおりarchive対象にしてよい。
 - Project内の必要Issueが完了したらProjectも速やかにCompletedへ進め、ProjectがIssueのauto-archiveを妨げないようにする。
 
 ## Stale issue policy
 
 - `Auto-close stale issues`は原則OFFとする。
 - `Contract: Pending` / `Contract: Blocked` / dependency待ちのIssueを、長期間更新されていないことだけを理由にCanceledへ移さない。
+- `In Review + Manual E2E: Deferred`も、E2E待ちであることだけを理由にstale closeしない。
 - 不要になったIssueを閉じる場合は、stalenessではなくWorkとして不要になったことを確認してからCanceledへ進める。
 
 ## Issue count policy
@@ -23,6 +25,7 @@ Free planのIssue数制限を、Work管理上の明示的な制約として扱�
 - まだ独立Workとして管理する必要がない軽い思いつきは、原則`SAY-55 — Idea Inbox — future work / 思いつきメモ`へ入れる。
 - Issue枠に余裕があることだけを理由にIdea Inboxの項目を機械的にIssue化しない。
 - 完了済みWorkをactive側へ長期間残さない。
+- `In Review + Deferred`は未完了Workなので、Issue枠節約だけを理由にDoneへ進めない。
 
 ## Change policy
 
