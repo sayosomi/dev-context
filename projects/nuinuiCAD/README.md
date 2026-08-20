@@ -38,10 +38,26 @@ LinearはFree plan前提で運用し、closed itemの早期archiveによるIssue
 - [Linear free-plan capacity policy](./LINEAR-CAPACITY.md)
 - [Legacy Notion archive](./NOTION-LEGACY.md) — 移行前の履歴参照専用
 
-Notion は新規Work / Specの管理先として使わない。
+Notion は新規Work / Specの管理先には使わない。
 ただし、移行前から進行中のTaskが特定の未移行Notion Specを明示的なsource of truthとして開始済みの場合、そのTaskの次の明確なcheckpointまでは参照を継続してよい。checkpoint後にLinear Documentへ移行し、Task側の参照先も更新する。
 
 新しい開発 Task の開始時は、GitHub remote state と既存 Linear Issue / Project / Document を確認してから implementation contract を策定する。
+
+## User-facing command design
+
+新しい user-facing command を追加・仕様策定するときは、実装前の command contract で command surface を明示する。
+
+最低限、次を必ず決める。
+
+- user-facing command name / title は英語に統一する。VS Code の `contributes.commands[].title`、Command Palette、context menu、Ribbon 等で表示される command 名を日本語にしない。internal command ID も英語を維持する。
+- VS Code command は既存 `AGENTS.md` rule どおり `Global | Source | Canvas | Source+Canvas` の Palette scope を明示する。
+- 右クリック context menu へ出すかどうかを必ず明示する。`Context menu: None` は正当な選択肢であり、右クリックへ出す必要がない command を無理に追加しない。
+- context menu へ出す場合は、どの context で表示するかと、その visibility 条件を contract に書く。Source Editor / blank Canvas / Canvas element / Canvas Ribbon 等、実際に存在する surface/context だけを使い、未確定 surface を先取りしない。
+- Command Palette visibility と context-menu visibility は別契約として扱う。Palette は surface relevance を表し、selection / caret / semantic target 等の transient state で細かく出し分けない。一方 context menu は現在の文脈に合う操作だけを出すため、必要な transient / semantic state で絞り込んでよい。
+- Source Editor の nuinuiCAD context command は、別途明示しない限り右クリックした座標ではなく current caret position (`activeTextEditor.selection.active`) を target / semantic context の基準にする。
+- menu / Ribbon / shortcut / button 用に command business logic を複製せず、同じ command implementation を再利用する。
+
+既存 command を改修する Task でも、その Task が command surface を変更する場合は同じ観点で再確認する。
 
 ## 連続 Task の前 Task PR merge 確認
 
