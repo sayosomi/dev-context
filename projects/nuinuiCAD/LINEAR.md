@@ -118,14 +118,15 @@ Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了�
 ### Statusの意味
 
 - `Backlog`
-  - 将来Work、contract調査待ち、dependency待ちなど、今すぐ実装開始できないIssueを置く。
+  - 将来Work、contract調査待ち、dependency待ち、またはreadyではあるが現在の着手queueへまだ入れないIssueを置く。
   - `Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending` の実装Issueは原則ここに置く。
+  - `Contract: Ready`かつManual E2E準備済みでも、ユーザーがまだ次の着手候補へ上げていないIssueはBacklogのままでよい。readiness labelは準備状態、statusは着手予定を表す。
 - `Todo`
-  - **実際に開始可能なqueue**として使う。単なる「未着手」や「Issueを作った」ことを意味しない。
+  - **実際に開始可能で、次の着手候補として明示的にqueueへ入れたWork**に使う。単なる「未着手」や「Issueを作った」ことを意味しない。
   - 実装Issueを`Todo`へ置くには、原則 `Contract: Ready` かつ Manual E2Eが `Ready to Run` または `Not Required` であること。
+  - readiness labelが揃ったことだけを理由にBacklogからTodoへ自動的に移さない。Todoへの移動はqueueへ入れるという独立した判断とする。
 - `In Progress`
   - ChatGPTによるcontract調査を含め、そのIssueの作業を実際に開始したときに使う。
-  - ただしimplementation-ready workだけを表示する `Now` viewの条件とは別概念である。
 - `In Review`
   - 実装・blocking review・merge前確認の段階。
 - `Done`
@@ -149,10 +150,12 @@ Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了�
   - `Backlog + Contract: Pending + Manual E2E: Plan Pending`
 - prerequisite待ちで、現時点でactionableなcontract作業がない
   - `Backlog + Contract: Blocked + Manual E2E: Plan Pending`
-- contractとE2E planが確定済みで、未着手
+- contractとE2E planが確定済みで、次の着手queueへ入れるWork
   - `Todo + Contract: Ready + Manual E2E: Ready to Run`
-- Manual E2E不要のreadyな実装Work
+- Manual E2E不要で、次の着手queueへ入れるWork
   - `Todo + Contract: Ready + Manual E2E: Not Required`
+- contractとE2E planが確定済みだが、まだqueueへ入れないWork
+  - `Backlog + Contract: Ready + Manual E2E: Ready to Run` または `Not Required`
 
 Issue本文に `Draft` / `contract pending` / `blocked` などと書いた場合、その文言とmetadataを一致させる。本文の自由記述だけで状態を表し、status / labelを未設定のままにしない。
 
@@ -237,21 +240,34 @@ Labelは**現在状態のindex**であり、過去のFAIL /修正 /再検証履�
 
 ## Saved views
 
-Saved viewはstatusだけをreadinessの代用にしない。
+Saved viewでは、**現在実行中のWork**と**次に開始できるWork**を分離する。
 
 ### Now
 
-`Now`は「今すぐ実装開始できる、またはその実装作業が進行中のWork」を見るviewとする。
+`Now`は「実際に現在作業中、またはreview中のWork」だけを見るviewとする。
 
-実装Issueについては少なくとも次をAND条件にする。
+条件:
 
-- Status: `Todo` または `In Progress`
+- Status: `In Progress` または `In Review`
+
+`Todo`は含めない。Contract / Manual E2Eのreadiness labelも`Now`のgateにはしない。
+contract調査中の`In Progress + Contract: Pending`なども、実際にそのWorkを進めているなら`Now`へ含める。
+
+primary worktreeとpersistent sub worktreeで並列作業している場合は、それぞれで実際に進行中のIssueが`Now`へ並ぶ。片方がidleならplaceholderを作らない。
+
+### Ready Queue
+
+`Ready Queue`は「実装準備が完了し、次の着手候補として明示的にqueueへ入っているWork」を見るviewとする。
+
+実装Issueについては次をAND条件にする。
+
+- Status: `Todo`
 - Contract: `Ready`
 - Manual E2E: `Ready to Run` / `Running` / `Failed` / `Deferred` / `Passed` / `Not Required` のいずれか
 
-`Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending`、またはContract / Manual E2E labelが欠けているIssueを`Now`へ含めない。
+`Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending`、またはContract / Manual E2E labelが欠けているIssueは含めない。
 
-Statusだけで `Now` を作らない。`Todo`へ誤投入されたdraftがあっても、readiness label側で除外できる構造を維持する。
+`Contract: Ready`かつManual E2E準備済みでも、Statusが`Backlog`なら`Ready Queue`へ含めない。ReadyなBacklog IssueをTodoへ移すことは、readiness更新ではなく「次の着手候補へ上げる」という明示的なqueue判断とする。
 
 ### Contract Pending
 
