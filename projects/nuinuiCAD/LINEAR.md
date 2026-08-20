@@ -103,36 +103,78 @@ Feature / Task / Bug / Research / Verificationなど、実際に開始して完�
 1つのWork itemは、開始から完了まで同じIssueを更新する。
 進捗段階ごとに別Issueを増やさない。
 
-基本status:
+通常の実装Issueは次のflowを使う。
 
-Backlog → Todo → In Progress → In Review → Done
+```text
+Backlog → Todo → In Progress → Done
+                         ↘ In Review → Done
+```
 
-すべてのIssueが全statusを通る必要はない。
+`In Review`は通常のPR review段階を表すstatusではない。実装をmergeしたが、必要なManual E2Eを後回しにしてまだ完了判定できない場合に使う。
 
-Issue statusは作業進行を表す。Manual E2Eの準備・実施状態はstatusへ混ぜず、後述のLabel Groupで独立管理する。
-
-実装Issueでは、PR mergeで`Done`になったこととManual E2Eが完了したことを同義にしない。`Done + Manual E2E: Deferred`や、後日問題が確認された`Done + Manual E2E: Failed`も正当な状態として扱う。
+Issue statusは現在のWork状態を表す。ContractとManual E2Eの準備・検証状態は後述のLabel Groupで独立管理する。
 
 Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了した時点で`Done`へ進める。
 
 ### Statusの意味
 
 - `Backlog`
-  - 将来Work、contract調査待ち、dependency待ち、またはreadyではあるが現在の着手queueへまだ入れないIssueを置く。
-  - `Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending` の実装Issueは原則ここに置く。
-  - `Contract: Ready`かつManual E2E準備済みでも、ユーザーがまだ次の着手候補へ上げていないIssueはBacklogのままでよい。readiness labelは準備状態、statusは着手予定を表す。
-- `Todo`
-  - **実際に開始可能で、次の着手候補として明示的にqueueへ入れたWork**に使う。単なる「未着手」や「Issueを作った」ことを意味しない。
-  - 実装Issueを`Todo`へ置くには、原則 `Contract: Ready` かつ Manual E2Eが `Ready to Run` または `Not Required` であること。
-  - readiness labelが揃ったことだけを理由にBacklogからTodoへ自動的に移さない。Todoへの移動はqueueへ入れるという独立した判断とする。
-- `In Progress`
-  - ChatGPTによるcontract調査を含め、そのIssueの作業を実際に開始したときに使う。
-- `In Review`
-  - 実装・blocking review・merge前確認の段階。
-- `Done`
-  - Work自体が完了した状態。Manual E2Eの最終状態とは独立する。
+  - **まだ実装開始可能ではないWork**を置く。
+  - 実装Issueでは、次のいずれかに該当する間は原則Backlogとする。
+    - `Contract: Pending` または `Contract: Blocked`
+    - Manual E2E planが必要なのに `Manual E2E: Plan Pending`
+    - 未完了の`blockedBy` relationが1つ以上ある
+  - Contract / E2E planが揃っていても、未完了blockerがある間はBacklog。
+  - blocker relationが存在しても、そのblockerが`Done`ならReady判定上はblockingではない。
 
-### Issue作成時の必須metadata
+- `Todo`
+  - **Ready Queueそのもの**。
+  - Todoへ入れるかどうかをreadinessとは別の人間判断にしない。
+  - 実装Issueで次をすべて満たしたら、ChatGPTは原則として機械的にTodoへ同期する。
+    - `Contract: Ready`
+    - Manual E2E手順が確定済み、またはManual E2E不要
+    - 未完了のblockerがない
+  - 通常の未着手IssueではManual E2Eは`Ready to Run`または`Not Required`になる。
+  - 既に検証履歴があるIssueでは`Failed` / `Deferred`等でも、実装再開可能で未blockedならTodoへ戻り得る。
+  - Contract/E2E planが揃った時、または最後のblockerがDoneになった時は、Todoへ上げ忘れない。
+  - Todoに新しい未完了blockerが追加された場合はBacklogへ戻す。
+
+- `In Progress`
+  - **ユーザーがチャットで明示的に「始める」としたIssueだけ**に使う。
+  - contract調査、候補比較、Issue本文更新、E2E plan策定だけではIn Progressにしない。
+  - nuinuiCADの通常運用では、primary worktreeとpersistent sub worktreeの実装Taskに対応するため、同時In Progressは原則最大2件。
+  - primary / subのどちらかでTaskを明示的に開始した時点で、対象TodoをIn Progressへ移す。
+  - Taskを中止・保留してworktreeを空ける場合、再開可能で未blockedならTodo、未readyまたはblockedならBacklogへ戻す。
+
+- `In Review`
+  - **実装はmerge済みだが、必要なManual E2Eが未完了のWork**に使う。
+  - 主な形は `In Review + Manual E2E: Deferred`。
+  - PRを開いた、review activityがあった、blocking review中、ready for mergeになった、という理由だけではIn Reviewへ移さない。
+  - merge後にManual E2Eをすぐ実施できず後回しにする場合、IssueをIn Reviewに残して未完了Workとして追跡する。
+  - 後回しにしたManual E2Eを開始したら`Running`、確定FAILなら`Failed`、全てPASSしたら`Passed`へ更新する。
+  - 必要なManual E2Eが最終的にPASSした時点でDoneへ進める。
+
+- `Done`
+  - **Workの最終完了**。
+  - 実装Issueでは原則、実装がmerge済みで、必要なManual E2Eが`Passed`または`Not Required`になった時点でDone。
+  - Manual E2Eが必要なのに`Deferred` / `Running` / `Failed`のままDoneにしない。
+  - Manual E2Eをmerge前に完了済みなら、merge時点でDoneへ進めてよい。
+
+### Ready Queue同期ルール
+
+Todoはreadinessとdependencyから導出されるmaterialized stateとして扱う。Linear自体にcomputed statusはないため、ChatGPTがcheckpointで同期する。
+
+次のcheckpointでは必ず対象Issueと直接dependentなIssueのReady判定を再確認する。
+
+1. Contractが`Ready`になった時
+2. Manual E2Eが`Ready to Run`または`Not Required`になった時
+3. blocker relationを追加・削除した時
+4. blocker IssueがDoneになった時
+5. In Progressを終了・中止してactive slotを空けた時
+
+Ready条件を満たす未着手IssueはTodo、満たさない未着手IssueはBacklogにする。
+
+## Issue作成時の必須metadata
 
 正式Issueを作成するときは、Linearのdefaultに任せず次を**明示的に指定**する。
 
@@ -146,18 +188,18 @@ Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了�
 
 実装Issueの標準的な作成状態:
 
-- contract / E2E planが未確定のdraft
+- contract / E2E planが未確定
   - `Backlog + Contract: Pending + Manual E2E: Plan Pending`
-- prerequisite待ちで、現時点でactionableなcontract作業がない
+- prerequisite待ちで現時点ではcontractを完成できない
   - `Backlog + Contract: Blocked + Manual E2E: Plan Pending`
-- contractとE2E planが確定済みで、次の着手queueへ入れるWork
+- contractとE2E planが確定済み、かつ未完了blockerなし
   - `Todo + Contract: Ready + Manual E2E: Ready to Run`
-- Manual E2E不要で、次の着手queueへ入れるWork
+- Manual E2E不要、かつ未完了blockerなし
   - `Todo + Contract: Ready + Manual E2E: Not Required`
-- contractとE2E planが確定済みだが、まだqueueへ入れないWork
+- contract / E2E planは確定済みだが未完了blockerあり
   - `Backlog + Contract: Ready + Manual E2E: Ready to Run` または `Not Required`
 
-Issue本文に `Draft` / `contract pending` / `blocked` などと書いた場合、その文言とmetadataを一致させる。本文の自由記述だけで状態を表し、status / labelを未設定のままにしない。
+Issue本文に`Draft` / `contract pending` / `blocked`などと書いた場合、その文言とmetadataを一致させる。本文の自由記述だけで状態を表し、status / labelを未設定のままにしない。
 
 Sayosomi Teamのdefault issue statusは防御策として`Backlog`を推奨する。ただしdefault設定に依存せず、ChatGPTは作成時に必ず`state`を明示する。
 
@@ -172,12 +214,12 @@ Idea Inboxは**実装対象Issueではなく、独立Workへ昇格する前の�
 - まだ調査・仕様策定・実装へ進めると決めていない思いつきは、原則として新規Issueを作らずIdea Inboxの`Ideas`へ箇条書きで追記する。
 - ChatGPTはユーザーから軽い思いつきを受け取ったとき、既存Issue化が明らかに必要でなければまずIdea Inboxへの追記を優先する。
 - 独立した調査、仕様策定、実装、Bug修正、Verificationなどとして扱う段階になったら、既存Issueとの重複を検索したうえで正式Issueへ切り出す。
-- 切り出した元項目は削除せず、`→ SAY-xx` のように切り出し先を記録して履歴を残す。
+- 切り出した元項目は削除せず、`→ SAY-xx`のように切り出し先を記録して履歴を残す。
 - 不要になった案は取り消し線または`Dropped`で残してよい。
 - Idea Inbox自体はProjectに所属させない。
 - Idea Inbox自体は`Contract: N/A` / `Manual E2E: Not Required`とする。
 - Idea Inboxへ入っているだけの項目は、実装予定・優先順位確定・implementation contract確定を意味しない。
-- Issue枠に余裕が出たことだけを理由に機械的に全項目をIssue化しない。実際に独立管理する価値が出た項目から切り出す。
+- Issue枠に余裕が出たことだけを理由に機械的に全項目をIssue化しない。
 
 ## Issue state labels
 
@@ -194,7 +236,7 @@ Issue一覧だけでimplementation contractとManual E2Eの現在状態を判断
   - Coding Agentへそのまま実装指示を渡せる状態ではない。
 - `Blocked`
   - prerequisite、external capability、durable foundationなどが存在せず、現時点ではimplementation contractを完成できない。
-  - 条件が変わるまでactionableなcontract作業を期待しないIssueを、通常の`Pending`と分離する。
+  - 条件が変わるまでactionableなcontract作業を期待しないIssueを通常の`Pending`と分離する。
 - `Ready`
   - scope / product semantics / architecture / safety boundaryなど、implementation contractの本質的な内容が確定済み。
   - Task開始時のlatest remote確認、actual owner / symbol / file pathのrefreshは引き続き行う。それだけでは`Pending`へ戻さない。
@@ -212,7 +254,7 @@ implementation contractがcheckpointで確定したら`Pending → Ready`へ更�
   - concreteなManual E2E planがあり、対象実装が利用可能になればそのplanで検証できる。
 - `Deferred`
   - Manual E2Eを意図的に後回しにしている。
-  - timing / environment /開発順の都合で先にmergeしてよい状態を明示するために使う。
+  - mergeを先に行った場合は通常`In Review + Deferred`で保持する。
 - `Running`
   - Manual E2Eを現在実施中。
 - `Failed`
@@ -240,35 +282,33 @@ Labelは**現在状態のindex**であり、過去のFAIL /修正 /再検証履�
 
 ## Saved views
 
-Saved viewでは、**現在実行中のWork**と**次に開始できるWork**を区別しつつ、`Now`では両方をまとめて確認できるようにする。
-
 ### Now
 
-`Now`は「現在作業中 / review中のWork」と「Ready Queueへ明示的に上げた次の着手候補」をまとめて見るviewとする。
+`Now`は、次に開始できるReady Queueと現在未完了の実作業をまとめて見るviewとする。
 
 条件:
 
 - Status: `Todo` / `In Progress` / `In Review`
 
-`Todo`自体をReady Queueとして厳密に運用するため、`Now`では追加のContract / Manual E2E filterを重ねない。
-`In Progress + Contract: Pending`のようなcontract調査中Workも、実際に進行中なら`Now`へ含める。
-`Contract: Ready`かつManual E2E準備済みでも、Statusが`Backlog`なら`Now`へ含めない。
+意味:
 
-primary worktreeとpersistent sub worktreeで並列作業している場合は、それぞれで実際に進行中のIssueに加え、次の着手候補であるTodoが`Now`へ並ぶ。
+- `Todo` = Ready Queue
+- `In Progress` = primary / persistent subで現在実装中
+- `In Review` = merge済み・Manual E2E待ち
+
+Todo自体をReady Queueとして同期するため、Nowでは追加のContract / Manual E2E filterを重ねない。
 
 ### Ready Queue
 
-`Ready Queue`は「実装準備が完了し、次の着手候補として明示的にqueueへ入っているWork」を見るviewとする。
+`Ready Queue`はStatus `Todo`を見るviewとする。
 
-実装Issueについては次をAND条件にする。
+Todoは次のreadiness条件から同期される。
 
-- Status: `Todo`
-- Contract: `Ready`
-- Manual E2E: `Ready to Run` / `Running` / `Failed` / `Deferred` / `Passed` / `Not Required` のいずれか
+- `Contract: Ready`
+- Manual E2E planが確定済み、または`Not Required`
+- 未完了blockerなし
 
-`Contract: Pending` / `Contract: Blocked` / `Manual E2E: Plan Pending`、またはContract / Manual E2E labelが欠けているIssueは含めない。
-
-`Contract: Ready`かつManual E2E準備済みでも、Statusが`Backlog`なら`Ready Queue`へ含めない。ReadyなBacklog IssueをTodoへ移すことは、readiness更新ではなく「次の着手候補へ上げる」という明示的なqueue判断とする。
+Saved view側で同じreadiness条件を重複実装せず、status同期をsource of truthにする。
 
 ### Contract Pending
 
@@ -278,7 +318,7 @@ prerequisite待ちでactionableでないものは `Contract: Blocked` とし、`
 
 ## GitHub Pull Request連携
 
-LinearのGitHub integrationを使い、Linear IssueとGitHub Pull Requestをリンクしてstatus更新を自動化する。
+LinearのGitHub integrationを使い、Linear IssueとGitHub Pull Requestをリンクする。
 
 PRとIssueの標準的な紐付けは、PR descriptionにclosing magic wordとIssue identifierを記載する方式とする。
 
@@ -289,24 +329,26 @@ PRとIssueの標準的な紐付けは、PR descriptionにclosing magic wordとIs
 `Linear: SAY-38`のような単なるラベルだけを標準の紐付け方法にはしない。
 branch名へLinear Issue identifierを入れることも必須にしない。
 
-Sayosomi TeamのPull request automationsは次を標準設定とする。
+### PRとstatusの関係
 
-- On draft PR open → `In Progress`
-- On PR open → `In Progress`
-- On PR review request or activity → `In Review`
-- On PR ready for merge → `In Review`
-- On PR merge → `Done`
+PR lifecycleだけでIssue statusを決めない。
 
-nuinuiCADは個人開発を前提とするため、別レビュアーによるreview requestを`In Review`への必須条件にしない。
-通常はPRがready for mergeになった時点で`In Review`へ進み、blocking review、required automated verification、実施可能なManual E2E、最終確認を行う。
+- draft PR open → status変更なし
+- PR open → status変更なし
+- PR review request / activity → status変更なし
+- PR ready for merge → status変更なし
+- PR merge → Manual E2E状態を確認してChatGPTが最終statusを同期する
 
-Manual E2Eをその時点で実施できない、または後回しにして次の開発を進める方が合理的な場合は、Manual E2Eを`Deferred`と明示したうえでmergeしてよい。Manual E2Eの`Passed`を一律のmerge条件にはしない。
+通常、実装開始済みTaskはPR作成・blocking review・merge直前まで`In Progress`のまま。
 
-review request or activityのautomationは、将来reviewerやreview automationを使う場合にも自然に`In Review`へ進める互換的なtriggerとして維持する。
+PR merge時:
 
-PRをmergeしたら、closing magic wordでリンクされたIssueはLinear automationにより`Done`へ進める。
-通常の開発Taskでは、GitHub側のPR状態から自動で反映できるstatusをChatGPTが重複して手動更新しない。
-ただしautomationが発火しなかった、PRとIssueが正しくリンクされていない、または実際のTask状態と自動statusが一致しない場合は、原因を確認して必要な修正を行う。
+- Manual E2Eが`Passed` → `Done`
+- Manual E2Eが`Not Required` → `Done`
+- Manual E2Eが必要だが後回し → `In Review + Deferred`
+- Manual E2Eがmerge前から`Failed`で未解決 → 原則mergeしない
+
+Linear側のPR automationがreview activityやmergeだけで`In Review` / `Done`へ自動遷移する設定になっている場合、この運用と競合する。status automationは無効化するか、発火後にChatGPTが上記ルールへ戻す。
 
 ## Issue descriptionとComment
 
@@ -341,13 +383,17 @@ Linearをリアルタイムの逐次ログとして使わない。
 
 1. repository調査とimplementation contractが確定したとき
 2. Manual E2E planが確定したとき
-3. Coding Agentの実装が完了したとき
-4. blocking reviewが完了したとき
-5. Manual E2Eを開始・延期・FAIL確定・完了したとき
-6. Taskのstatusを変更すべき明確な節目
-7. ProjectへIssueをまとめる、ProjectをCompletedにするなどexecution phaseの境界が確定したとき
+3. blocker relationまたはblocker完了でReady判定が変わったとき
+4. ユーザーが明示的にTask開始・中止を宣言したとき
+5. Coding Agentの実装が完了したとき
+6. blocking reviewが完了したとき
+7. PRをmergeしたとき
+8. Manual E2Eを開始・延期・FAIL確定・完了したとき
+9. ProjectへIssueをまとめる、ProjectをCompletedにするなどexecution phaseの境界が確定したとき
 
-このcheckpointで必要に応じて`Contract` / `Manual E2E` labelも現在状態へ更新する。
+各checkpointで、対象IssueだけでなくReady状態が変わり得る直接dependent Issueも確認する。
+
+In Progress / In ReviewのIssueについて、直接そのTaskを担当していない別チャットからIssue本文・status・進捗記録を不用意に変更しない。dependency解消など全体管理上必要なmetadata同期だけは、実態を確認したうえで行ってよい。
 
 必要がなければ各checkpointでも更新を増やさず、複数の確定事項を1回の更新にまとめる。
 
@@ -367,8 +413,6 @@ Manual E2E中のユーザー報告は、その場ではprovisionalな観測と�
 
 チャット上で確認・訂正を続け、結果が落ち着いたまとまりごとにLinearへ反映する。
 
-途中でユーザーが報告を訂正しても、Linearの記録を何度も書き換える必要がない運用を優先する。
-
 E2E結果は、可能なら複数testをまとめて1 Commentに記録する。
 
 例:
@@ -384,25 +428,31 @@ Manual E2E開始時は必要に応じて`Running`へ更新する。まとまっ�
 
 ## Manual E2Eをmerge後に実施する場合
 
-Manual E2Eをすぐ実施できない場合、blocking reviewとrequired automated verificationが十分なら`Deferred`を付けて先にmergeしてよい。
+Manual E2Eをすぐ実施できない場合、blocking reviewとrequired automated verificationが十分なら、Manual E2Eを`Deferred`として先にmergeしてよい。
 
-この場合、元IssueはPR mergeによって`Done`になってもよい。Manual E2Eは後日そのsame Issueに対して実施する。
+この場合:
+
+1. PRをmergeする。
+2. 元Issueを`In Review + Manual E2E: Deferred`にする。
+3. worktreeは次Taskへ使ってよい。
+4. 後日Manual E2Eを開始するとき`Running`へ更新する。
+5. 全必要checkがPASSしたら`Passed + Done`へ進める。
+
+`In Review`は未完了Workなので、Deferred E2Eが残っている間はDoneにしない。
 
 ### merge後E2Eで問題が見つかった場合
 
 merge後のManual E2Eで実装不備が確定した場合:
 
-1. 元Issueは`Done`のまま維持する。
+1. 元Issueは`In Review`のまま維持する。
 2. 元IssueのManual E2E labelを`Failed`へ変更する。
 3. 元Issueへ確定したE2E結果をCommentで記録する。
 4. 修正用の新しい`Bug` Issueを作成し、元Issueとrelated relationで紐付ける。
-5. Bug Issue側で修正・review・mergeを行う。
+5. Bug Issue側で修正・mergeを行う。
 6. 元Issueで該当Manual E2Eを再実施する。
-7. 問題解消を確認できたら元Issueを`Passed`へ更新する。
+7. 問題解消を確認できたら元Issueを`Passed + Done`へ更新する。
 
-元Issueの`Done`をreopenして履歴を揺らすことを標準運用にはしない。
-
-一方、**merge前**のManual E2Eで見つかったscope内の不具合は、原則として新Bugへ切り出さず、元Issueを`In Progress`へ戻して同じTask内で修正する。
+一方、**merge前**のManual E2Eで見つかったscope内の不具合は、原則として新Bugへ切り出さず、元Issueを`In Progress`のまま同じTask内で修正する。
 
 ただしE2E中に見つかった問題が明確に別scope /既存問題である場合は、merge前でも独立Bug Issueへ切り出してよい。
 
@@ -414,10 +464,12 @@ Spec Document冒頭には、必要に応じてmetadataをテキストで持た�
 
 例:
 
+```text
 Status: Ready
 Area: Typed Expression / Evaluation / Module
 Category: DSL
 Source: ...
+```
 
 Spec statusとして必要に応じて以下を使う。
 
@@ -446,17 +498,18 @@ ChatGPTは新規開発Task開始前に:
 1. GitHub remote stateを確認する
 2. Linearで既存Issue / Projectを検索する
 3. Linear Documentsから必要なSpecを確認する
-4. 対象Issueの`Contract` / `Manual E2E` labelと本文・Commentを確認する
-5. ProjectなしBacklog Issueを着手する場合、既存の短期execution Projectへ属するWorkか確認し、必要なら新しい短期Projectを作成する
-6. Projectへ所属させる場合、適切な`Surface` / `Domain` Project labelを付ける
-7. 対象IssueをIn Progressへ更新する
-8. `Contract: Ready`でなければrepository調査とimplementation contract策定を進める
+4. 対象Issueの`Contract` / `Manual E2E` label、dependency、本文・Commentを確認する
+5. 対象IssueがReady条件を満たすならTodoになっていることを確認する
+6. ProjectなしIssueを着手する場合、既存の短期execution Projectへ属するWorkか確認し、必要なら新しい短期Projectを作成する
+7. Projectへ所属させる場合、適切な`Surface` / `Domain` Project labelを付ける
+8. ユーザーがそのTaskを明示的に「始める」とした時点でIn Progressへ更新する
 9. `Contract: Ready`でもlatest remote / actual ownerを再確認してからCoding Agentへの実装指示を作る
+
+`Contract: Pending`の調査を進めること自体はIn Progressへの変更理由にしない。
 
 新規TaskでNotionを通常のSpec検索先として使わない。
 必要なSpecがLinearに見つからず、legacy Notionにのみ存在する場合は、内容と現在性を確認したうえでLinear Documentへ移行してから正式な参照先にする。
 
-ただしLinear更新のために作業テンポを落とさない。
 開始時以外の進捗更新はcheckpoint-basedで行う。
 
 ## ChatGPTが管理操作を担当する
@@ -472,6 +525,7 @@ Linear APIで未対応の管理操作のみ、必要な最小限のUI操作を�
 Issueを作成または重要metadataを更新した直後は、そのIssueを再取得し、少なくとも次を確認する。
 
 - intended statusになっている
+- Ready条件とBacklog / Todoが一致している
 - `Contract` labelが1つだけ付いている
 - `Manual E2E` labelが1つだけ付いている
 - 本文のDraft / Ready / Blocked等の記述とmetadataが矛盾していない
