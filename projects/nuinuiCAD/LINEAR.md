@@ -131,6 +131,19 @@ Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了�
 - `Done`
   - Work自体が完了した状態。Manual E2Eの最終状態とは独立する。
 
+### Active Issueのchat ownership
+
+`In Progress` / `In Review` のIssueは、そのIssueを現在進行させているchatが担当するactive Issueとして扱う。
+
+- 担当chat以外のchatはactive Issueを参照してよいが、新しい仕様、要件、scope、acceptance、implementation contract、Manual E2E項目、設計判断をそのIssueへ追加・変更しない。
+- 担当chatとは、そのIssueの作業を現在進行しているchat、または明示的な引き継ぎによって担当を受けたchatを指す。
+- 担当外chatでactive Issueに関連する新しい発見・要望・future workが出た場合は、原則としてactive Issueへ追記せず、Idea Inboxまたは独立Issueとして分離する。
+- 新事項をcurrent active Issueへ取り込む必要がある場合は、ユーザーが明示的に指示するか、担当chatへ引き継いで担当chat側で反映する。
+- typo修正、壊れたlinkの補正、確定済み作業結果の記録、status / labelの機械的な同期など、scopeや判断を変えない管理更新は担当外chatから行ってよい。
+- `Backlog` / `Todo` のIssueはこの排他ルールの対象外とし、既存ルールに従って別chatから調査、仕様整理、contract具体化を進めてよい。
+
+このルールの目的は、進行中のTask contractを別chatから横断的に変更し、担当chatが保持している実装・review文脈とLinear Issueの内容を不整合にしないことである。
+
 ### Issue作成時の必須metadata
 
 正式Issueを作成するときは、Linearのdefaultに任せず次を**明示的に指定**する。
