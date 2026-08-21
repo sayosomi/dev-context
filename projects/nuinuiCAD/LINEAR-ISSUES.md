@@ -13,7 +13,7 @@ Linear Issueのstatus、readiness、labels、metadata、recording、checkpoint s
 
 Feature / Task / Bug / Research / Verificationなど、実際に開始して完了する作業はIssueで管理する。
 
-1つのWork itemは開始から完了まで同じIssueを更新し、進捗段階ごとに別Issueを増やさない。
+1つのWork itemは開始から完了まで同じIssueを更新し、進捗段階ごとに別Issueを増やさない。途中で見つかった追加作業をsame Issueに残すかnew Issueへ分けるかは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) をauthorityとする。
 
 通常の実装Issue:
 
@@ -25,6 +25,16 @@ Backlog → Todo → In Progress → Done
 `In Review`は通常のPR review段階ではない。実装はmerge済みだが必要なManual E2Eが未完了のWorkを追跡するために使う。
 
 Research / ReviewなどPRを伴わないIssueは、そのWork自体が完了した時点で`Done`へ進める。
+
+### Decomposition and tracking parents
+
+Issueを複数の独立leaf Issueへ完全に分解し、original scope / acceptanceをすべてleafへ移した場合、元Issueをpure tracking parentとして維持しない。
+
+- original Work自体がresearch / decompositionで、そのacceptanceが完了したなら`Done`にしてよい。
+- feature delivery Issueを分解しただけなら、分解した事実だけでfeatureを`Done`にしない。元Issueがremaining acceptanceを一切ownerしなくなったなら、child identifiersを記録したうえでsuperseded / no-longer-active tracking workとして`Canceled`へ進める。
+- parentを残すのは、integrated Manual E2E、cross-child aggregate acceptance、final cutover / migration / cleanup等、leaf完了だけでは満たせないreal aggregate workを親自身がownerする場合だけ。
+
+retained parentのexecution-ownership label ruleは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) がauthority。
 
 ## Status
 
@@ -62,11 +72,11 @@ Contract / E2E planが揃ったとき、または最後のblockerがDoneにな�
 
 contract調査、候補比較、Issue本文更新、E2E plan策定だけではIn Progressにしない。
 
-local checkout / worktreeを占有する通常の実装Taskは、primary + persistent subに対応して同時In Progressを原則最大2件とする。
+local Coding Agent / local execution Taskの同時実行は固定numeric limitで管理しない。既存checkoutのreuseを優先し、安全に必要なlocal isolationだけを追加する。詳細は [`CHECKOUTS.md`](./CHECKOUTS.md) をauthorityとする。
 
-`only_chatgpt`はlocal worktree slotを消費しないため、この2件上限には数えない。並行開始可否は [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) のinterference gateをauthorityとする。
+`only_chatgpt`はlocal worktree capacityの対象外。local checkoutが埋まっていることを理由に独立した`only_chatgpt` workを止めない。並行開始可否は [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) のinterference gateをauthorityとする。
 
-Taskを中止・保留してlocal slotを空ける場合、再開可能で未blockedならTodo、未readyまたはblockedならBacklogへ戻す。
+Taskを中止・保留する場合、再開可能で未blockedならTodo、未readyまたはblockedならBacklogへ戻す。
 
 ### In Review
 
@@ -75,12 +85,13 @@ Taskを中止・保留してlocal slotを空ける場合、再開可能で未blo
 主な形:
 
 ```text
+In Review + Manual E2E: Ready to Run
 In Review + Manual E2E: Deferred
 ```
 
 PR open、review activity、blocking review、ready for mergeだけを理由にIn Reviewへ移さない。
 
-Manual E2Eを開始したら`Running`、確定FAILなら`Failed`、全required unit PASS後は`Passed`へ更新する。
+Required Manual E2Eはmerge後実行がdefault。Manual E2Eを開始したら`Running`、確定FAILなら`Failed`、全required unit PASS後は`Passed`へ更新する。pre-merge E2EはTask contractが明示した例外だけ。
 
 ### Done
 
@@ -116,7 +127,7 @@ latest remote `main`とactual implementationを基準に、Ready contract内の�
 
 今回の完了でReady contractが古くなった場合は、現在IssueをDoneにする前、または同じcompletion checkpoint内でactual stateへrefreshする。
 
-このrefreshで既に確定したproduct / UX decisionを勝手に変更しない。単なるfact更新ではなく新しいproduct decisionが必要なら、対象Issueを`Contract: Pending`等へ戻しReadyのまま放置しない。
+`Contract: Ready`を維持してrefreshできるか、`Pending` / `Blocked`へ戻す必要があるかの判定は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) がauthority。既決定のsemantics / scope / acceptanceを変えずlatest authorityから一意に追従できるfact driftだけならReadyを維持する。
 
 別チャットが担当中の`In Progress` / `In Review` Issue本文をfreshness checkだけを理由に直接書き換えない。必要ならそのTask側へdriftを引き継ぐ。
 
@@ -192,11 +203,12 @@ Sayosomi Teamのdefault statusは防御策としてBacklogを推奨するが、C
 - `Ready`
   - scope / product semantics / architecture / safety boundary等、implementation contractの本質的内容が確定済み。
   - Task開始時のlatest remote / actual owner refreshは引き続き行う。それだけでは`Pending`へ戻さない。
-  - latest repositoryで実質的contract contradictionが見つかった場合だけ再調査する。
+  - current fact / implementation pathを、既決定のsemantics / scope / acceptanceを変えず一意にrefreshできるdriftは`Ready`のまま追従する。
+  - product / UX / scope / compatibility / acceptanceの再選択が必要なら`Pending`へ戻す。prerequisite自体がなくcontractを成立させられない場合は`Blocked`。
 - `N/A`
   - Research / Review / specification discussion等、implementation contract自体を作るWorkではない。
 
-implementation contractがcheckpointで確定したら`Pending → Ready`へ更新する。
+implementation contractがcheckpointで確定したら`Pending → Ready`へ更新する。詳細判定は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) がauthority。
 
 ### Manual E2E
 
@@ -207,7 +219,7 @@ Aggregate Linear stateとして次を使う。
 - `Ready to Run`
   - concreteなManual E2E planがあり、対象implementationが利用可能になればそのplanで検証できる。
 - `Deferred`
-  - Manual E2Eを意図的に後回しにしている。mergeを先に行った場合は通常`In Review + Deferred`。
+  - Manual E2Eを意図的に後回しにしている。merge後に通常`In Review + Deferred`。
 - `Running`
   - Manual E2Eを現在実施中。
 - `Failed`
@@ -215,7 +227,7 @@ Aggregate Linear stateとして次を使う。
 - `Passed`
   - 必要なManual E2Eが完了し、current verification resultがPASS。
 - `Not Required`
-  - このIssueではManual E2Eを必要としない。
+  - automated testsだけで全acceptanceを十分に証明でき、actual production execution environmentでしか確認できないrequired acceptanceやHuman quality judgmentがない。判定は [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
 代表遷移:
 
@@ -276,7 +288,7 @@ Commentには確定した作業記録を置く。
 - Manual E2E result
 - important decision record
 
-長期仕様はIssue本文へ埋め込まずLinear Documentへ置く。
+Issueを閉じた後もcurrent authorityとして残し、複数future Taskで再利用する仕様・設計だけを [`LINEAR-DOCUMENTS.md`](./LINEAR-DOCUMENTS.md) のpromotion ruleに従って長期ownerへ移す。単に長いIssue本文を機械的にDocument化しない。
 
 ## Checkpoint-based updates
 
@@ -292,7 +304,8 @@ Linearをリアルタイム逐次ログとして使わない。チャット中�
 6. blocking review完了
 7. PR merge
 8. Manual E2E開始 / 延期 / FAIL確定 / 完了
-9. Project assignment / Project Completed等execution phase境界
+9. 例外的Project assignment / Project cleanup
+10. decompositionで元tracking Issueのownershipがなくなった
 
 各checkpointでReady状態が変わり得るdirect dependentも確認する。
 
@@ -315,7 +328,7 @@ Manual E2E中のユーザー / Luna報告は、確定するまではprovisional 
 
 aggregate stateは [`MANUAL-E2E.md`](./MANUAL-E2E.md) と [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) に従って同期する。
 
-Manual E2Eをmerge後へDeferredする場合は通常:
+Manual E2Eを意図的に後回しへDeferredする場合は通常:
 
 ```text
 In Review + Manual E2E: Deferred
@@ -329,7 +342,7 @@ Manual E2E: Passed
 → Done
 ```
 
-Manual E2E failure後のimplementation ownership / same-Issue fix / separate Issue判断は [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) とcurrent Issue scopeをauthorityとする。test-environment mistakeをimplementation failureとして記録しない。
+Manual E2E failure後のimplementation ownershipは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md)、same-Issue fix / separate Issue判断は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) をauthorityとする。test-environment mistakeやLuna capability limitationをimplementation failureとして記録しない。
 
 ## Post-write verification
 
