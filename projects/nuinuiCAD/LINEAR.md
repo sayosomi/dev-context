@@ -160,6 +160,32 @@ Research / ReviewなどPRを伴わないIssueでは、そのWork自体が完了�
   - Manual E2Eが必要なのに`Deferred` / `Running` / `Failed`のままDoneにしない。
   - Manual E2Eをmerge前に完了済みなら、merge時点でDoneへ進めてよい。
 
+### Done前のReady contract freshness check
+
+Issueを`Done`へ進める直前に、今回完了するWorkによって前提が変わり得る未完了Issueのうち、`Contract: Ready`のものを必ず確認する。
+
+特に直接dependentなIssue、同じsubsystem / surfaceを使うIssue、同じowner / API / command / DSL surfaceを前提にしているIssueを優先して確認する。
+
+latest remote `main`とactual implementationを基準に、Ready contract内の次のような事実が古くなっていないかを見る。
+
+- file / API / type / subsystem owner名
+- command ID、menu、surface、現在のUI behavior
+- source model / DSL syntax / semantics
+- dependency / blocker関係と、既にmerge・削除・分離された前提
+- runtime / data-flow ownership、freshness boundary
+- automated test fixture、Manual E2E手順、launch command
+- 「このcapabilityは存在する / 存在しない」というcurrent implementation前提
+
+今回の完了によってReady contractが古くなった場合は、**現在のIssueをDoneにする前、または同じcompletion checkpoint内で、影響を受けたReady contractを最新化する。**
+
+このrefreshでは、既に確定したproduct / UX decisionを勝手に変更しない。implementation fact、owner、dependency、verification前提をactual current stateへ合わせることを目的とする。
+
+確認の結果、単なる事実更新ではなく新しいproduct decisionが必要になった場合は、その判断を勝手に作らない。対象Issueを`Contract: Pending`等の適切な状態へ戻し、Readyのまま放置しない。
+
+別チャットが担当中の`In Progress` / `In Review` Issue本文へ、このfreshness checkを理由に新しい事項を直接書き込まない。既存の「担当外チャットから不用意に変更しない」ルールを維持し、必要ならそのTask側へdriftを引き継ぐ。
+
+影響を受けるReady contractがなければ、形式的な本文更新は不要。
+
 ### Ready Queue同期ルール
 
 Todoはreadinessとdependencyから導出されるmaterialized stateとして扱う。Linear自体にcomputed statusはないため、ChatGPTがcheckpointで同期する。
@@ -171,6 +197,7 @@ Todoはreadinessとdependencyから導出されるmaterialized stateとして扱
 3. blocker relationを追加・削除した時
 4. blocker IssueがDoneになった時
 5. In Progressを終了・中止してactive slotを空けた時
+6. IssueをDoneへ進める時（Ready contract freshness checkを含む）
 
 Ready条件を満たす未着手IssueはTodo、満たさない未着手IssueはBacklogにする。
 
