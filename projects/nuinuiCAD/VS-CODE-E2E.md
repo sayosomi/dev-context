@@ -6,7 +6,7 @@ VS Code extensionのuser-facing behaviorをManual E2Eで確認するときの**i
 
 - test unitの`Judgment` / `Executor`分類、PASS / FAIL / BLOCKED、Sol Highの結果判定は [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 - Lunaを安定して操作させるprompt構成、stable test ref、evidence、known pitfallsは [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) を使う。
-- この文書はhost/environment setupだけをownerとする。
+- この文書はVS Code production-hostのisolation / launch baselineをownerとする。
 
 ## Baseline
 
@@ -47,7 +47,6 @@ Manual E2Eでは、普段使いのVS Code profileをそのまま使わない。
 
 - Task-specific fixtureは`/tmp`等checkout/worktreeを汚さない場所へ生成する。
 - 起動command block内でfixtureを作り、そのfileを起動時に明示的にopenする。
-- multi-document testではA/BをUI上で客観的に区別できる名前やoutput identityをfixtureへ入れる。
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
 
 ## Canonical launch shape
@@ -63,9 +62,6 @@ cargo build --manifest-path src-tauri/Cargo.toml --bin evaluation_stdio
 RUST_BIN="$PWD/src-tauri/target/debug/evaluation_stdio"
 test -x "$RUST_BIN"
 test -f "$PWD/vscode-extension/dist/extension.js"
-test -f "$PWD/vscode-extension/package.json"
-test -f "$PWD/vscode-extension/language-configuration.json"
-test -f "$PWD/vscode-extension/syntaxes/nui.tmLanguage.json"
 
 E2E_ROOT="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)"
 mkdir -p "$E2E_ROOT/user-data/User" "$E2E_ROOT/extensions"
@@ -89,7 +85,6 @@ if [ ! -x "$CODE_BIN" ]; then
 fi
 test -n "$CODE_BIN"
 test -x "$CODE_BIN"
-"$CODE_BIN" --version
 
 NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
 "$CODE_BIN" --new-window \
