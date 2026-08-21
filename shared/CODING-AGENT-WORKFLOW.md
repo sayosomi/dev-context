@@ -15,6 +15,8 @@ ChatGPTが担当する。
 - blocking review
 - ChatGPTで実行できる調査・設計・管理作業
 
+ChatGPTで実行できる調査・設計・管理作業をCoding Agentへ回さない。
+
 Coding Agentにはarchitecture調査をさせない。ChatGPTが確定したcontractに従い、具体的なimplementation / test / git作業だけを依頼する。
 
 Coding Agent向けpromptに次のようなopen-ended design instructionを入れない。
@@ -50,7 +52,7 @@ promptは英語で書く。
 
 - unnecessary rhetoric / conversational filler
 - decorative separators such as `====` / `----`
-- excessive headings
+- headings beyond the minimum needed for readability
 - same constraint repeated in different wording
 - implementationに不要なlong background / settled design history
 - shared rule / skillの一般論をcurrent Taskで不要なのに再掲すること
@@ -91,8 +93,7 @@ Agent skillを使う場合は [`AGENT-SKILLS.md`](./AGENT-SKILLS.md) とproject�
 
 - ChatGPT / Coding Agent role boundary
 - remote state verification
-- projectのcheckout / worktree rule
-- commit / push rule
+- worktreeは真に同時並行の複数implementationが必要な場合だけ使い、不要になったら即削除する原則
+- commit / push
 - prompt concise rule
 - current project固有のwork-management / source-of-truth rule
-- current Taskのtested / reviewed stateとremaining work
