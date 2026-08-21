@@ -32,7 +32,7 @@ fetch後、promptで指定したexpected remote commit / branchとactual remote 
 - 一致: specified procedureで実装開始。
 - 不一致: stale local stateを前提に進めない。勝手にrebase / reset / merge / redesignせず、blocking pointとして報告して停止。
 
-Expected baseは必ずしも`origin/main`ではない。連続Taskではcurrent track / project ruleが許すreviewed pushed commitを使ってよい。
+Expected baseは必ずしも`origin/main`ではない。連続Taskでは前Taskのblocking-review-approved pushed commitを使ってよい。
 
 ## Checkout / worktree
 
@@ -51,7 +51,7 @@ Projectがpersistent sub worktree等の明示的例外を持つ場合はproject 
 
 ## Commit / push / review
 
-repository fileを変更したTaskは、current planが別途定めない限り、指定branchへintended changesだけをcommitし、`git push origin <branch>`を行う。local-only commitを完了扱いにしない。
+repository fileを変更したTaskは、指定branchへintended changesだけをcommitし、`git push origin <branch>`を行う。local-only commitを完了扱いにしない。
 
 reviewはpushed GitHub stateに対して行う。
 
