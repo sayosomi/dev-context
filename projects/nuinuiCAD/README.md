@@ -41,6 +41,8 @@ nuinuiCAD では primary repository checkout に加えて、並列実装用の**
 
 VS Code extension の user-facing behavior を Manual E2E で確認するときは、**fresh profile + VS Code標準補完OFF + task-specific fixture込み**の isolated Extension Development Host を標準環境とする。普段使いの VS Code profile をそのまま使わない。
 
+Manual E2E test unit の Human / Luna 分類、execution-time freshness check、Sol High が Luna 用promptを作成するルールは [Manual E2E execution rules](./MANUAL-E2E.md) に従う。
+
 通常の user settings、word-based suggestions、inline suggestions、keybindings、installed extensions 等が結果へ混入すると、nuinuiCAD extension 自体の PASS / FAIL を判定できない。Manual E2E の起動手順は、毎回この baseline を再現できる一つのコピペ可能な command block として提示する。
 
 運用ルール:
@@ -118,6 +120,7 @@ LinearはFree plan前提で運用し、closed itemの早期archiveによるIssue
 - 長期的に参照する仕様・設計: Linear Document
 - [Linear workflow](./LINEAR.md)
 - [Execution ownership labels](./ONLY-CHATGPT.md)
+- [Manual E2E execution rules](./MANUAL-E2E.md)
 - [Implementation contract decision rule](./CONTRACT-DECISIONS.md)
 - [Linear free-plan capacity policy](./LINEAR-CAPACITY.md)
 - [GitHub Issues public mirror / sync](./GITHUB-ISSUES-SYNC.md)
@@ -158,6 +161,6 @@ Notion は新規Work / Specの管理先には使わない。
 1. この README を読む。
 2. 開発 Task では `shared/DEVELOPMENT.md` と repository の current `AGENTS.md` を読む。
 3. Coding Agent / skill が関係する場合だけ Agent Skills を読む。
-4. Linear を操作・参照する場合、またはimplementation contractを策定する場合は `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。`only_chatgpt` または `manual_e2e_only` labelが付いたIssueを操作・判定する場合は、さらに `ONLY-CHATGPT.md` を読む。
+4. Linear を操作・参照する場合、またはimplementation contractを策定する場合は `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。`only_chatgpt` または `manual_e2e_only` labelが付いたIssueを操作・判定する場合は、さらに `ONLY-CHATGPT.md` を読む。Manual E2E planの策定・executor分類・実行・Luna prompt生成・結果判定を行う場合は `MANUAL-E2E.md` も読む。
 5. legacy履歴または明示的な移行中例外でNotionを参照する場合だけ `NOTION-LEGACY.md` を読む。
 6. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
