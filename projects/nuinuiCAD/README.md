@@ -44,6 +44,8 @@ VS Code extension の user-facing behavior を Manual E2E で確認するとき�
 運用ルール:
 
 - Manual E2E の判定に使う VS Code は、毎回新しい `--user-data-dir` と空の `--extensions-dir` で起動する。
+- fresh profile の VS Code built-in completion も結果へ混入し得るため、E2E user-data を作る時点で `editor.wordBasedSuggestions: "off"`、`editor.inlineSuggest.enabled: false`、`editor.quickSuggestions: false`、`editor.snippetSuggestions: "none"` を自動設定する。Manual E2E 中に普段の profile settings を手作業で切り替えない。
+- completion の Manual E2E は自動 popup の有無ではなく、必要に応じて `Trigger Suggest` を明示実行し、nuinuiCAD provider の候補を確認する。
 - project の開発中 extension は `--extensionDevelopmentPath="$PWD/vscode-extension"` で読み込む。
 - 起動前に current checkout で `npm run build:vscode` を実行する。
 - rebuild、branch / commit 切り替え、blocking fix 後の再試験では、古い Extension Development Host を閉じてから fresh isolated host を起動し直す。
@@ -56,7 +58,16 @@ cd <nuinuiCAD checkout>
 npm run build:vscode
 
 E2E_ROOT="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)"
-mkdir -p "$E2E_ROOT/user-data" "$E2E_ROOT/extensions"
+mkdir -p "$E2E_ROOT/user-data/User" "$E2E_ROOT/extensions"
+
+cat > "$E2E_ROOT/user-data/User/settings.json" <<'EOF'
+{
+  "editor.wordBasedSuggestions": "off",
+  "editor.inlineSuggest.enabled": false,
+  "editor.quickSuggestions": false,
+  "editor.snippetSuggestions": "none"
+}
+EOF
 
 code --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
@@ -65,7 +76,7 @@ code --new-window \
   "$PWD"
 ```
 
-macOS で `code` command が unavailable な場合も、同じ isolation flags を維持して VS Code executable を直接使う。
+macOS で `code` command が unavailable な場合も、同じ isolation flags と E2E settings を維持して VS Code executable を直接使う。
 
 ```bash
 /Applications/Visual\ Studio\ Code.app/Contents/Resources/app/bin/code --new-window \
