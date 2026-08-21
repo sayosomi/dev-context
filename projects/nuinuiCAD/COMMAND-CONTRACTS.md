@@ -21,7 +21,6 @@ Repositoryのdurable engineering ruleはcurrent [`AGENTS.md`](https://github.com
 - current repository `AGENTS.md` が許可するPalette scopeから1つを明示する。
 - allowed scope listをこのdev-context文書へ複製しない。repository側でsurface taxonomyが変わった場合はcurrent `AGENTS.md`を読む。
 - Palette visibilityはsurface relevanceを表す。selection、caret、semantic target、drawable availability等のtransient stateで細かく出し分ける設計にしない。
-- exact `when` conditionがTask contract上重要な場合は、そのconditionも明記する。
 
 ### Context menu
 
@@ -41,16 +40,12 @@ Source EditorのnuinuiCAD context commandは、別途明示しない限り、右
 
 menu / Ribbon / shortcut / button用にcommand business logicを複製しない。同じcommand implementationを再利用する。
 
-複数surfaceから同じcommandを呼ぶ場合、surfaceごとのdocument / selection / session authorityをcontractで明示し、last-used state等への暗黙fallbackを作らない。
-
 ## Existing command changes
 
-既存commandのID / title / Palette scope / context menu / shortcut / target semantics / active-surface behaviorのいずれかを変更するTaskでも、上記contract fieldsを再確認する。
-
-「既存commandだからcontract不要」としない。
+既存commandを改修するTaskでも、そのTaskがcommand surfaceを変更する場合は上記観点で再確認する。
 
 ## Freshness
 
-command contract策定時はlatest remote repositoryのcurrent manifest、registered command ID、menu contribution、session/surface実装を確認する。
+command contract策定時はlatest remote repositoryのcurrent manifest、registered command ID、menu contribution、current surface implementationを確認する。
 
 Ready contractのcurrent implementation前提が別Taskのmergeで変わった場合は、Done-before Ready contract freshness checkでactual repository stateへ追従させる。product / UX decisionの変更が必要なら単なるfreshness更新として処理しない。
