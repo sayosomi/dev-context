@@ -1,22 +1,19 @@
-# nuinuiCAD `only_chatgpt` workflow
+# nuinuiCAD execution ownership labels
 
 ## Purpose
 
-`only_chatgpt` is a Linear label for work where all non-human implementation, verification, GitHub, and work-management steps can be handled by ChatGPT.
+nuinuiCAD uses two execution-ownership labels for non-parent Issues:
 
-The label does **not** mean that the Issue always reaches `Done` without any human action. The only human action that may remain is the final Manual E2E explicitly owned by the Issue.
+- `only_chatgpt` — the remaining implementation / verification / GitHub / work-management work can be performed by ChatGPT without Coding Agent or local worktree use.
+- `manual_e2e_only` — all implementation / review / merge work is complete and the only remaining work is the user's required Manual E2E.
 
-This means all of the following may legitimately carry `only_chatgpt`:
+These labels describe **who owns the remaining executable work**. They do not replace Contract, Manual E2E, type, dependency, or status metadata.
 
-- an implementation/research/cleanup Issue that needs no Manual E2E;
-- an implementation Issue that ChatGPT can implement and merge completely, after which the user only runs final Manual E2E;
-- a decomposed user-facing parent whose implementation is fully delivered by `only_chatgpt` children and whose only remaining work is final Manual E2E.
+**Parent / tracking Issues never receive either label.** Parent state is tracked through ordinary status, Contract / Manual E2E labels, and child / blocker relations.
 
-This document is a narrow nuinuiCAD exception/extension to the normal status rules in `LINEAR.md`. Where this document defines a special status transition for an `only_chatgpt` Issue, this document takes precedence for that case only.
+## `only_chatgpt`
 
-## What qualifies for `only_chatgpt`
-
-Apply `only_chatgpt` when all non-human work for the Issue can be completed without Coding Agent or local worktree use.
+Apply `only_chatgpt` only to a leaf / non-parent Issue when ChatGPT can perform all remaining non-human work without Coding Agent or local worktree use.
 
 Typical ChatGPT-owned work includes:
 
@@ -30,142 +27,115 @@ Typical ChatGPT-owned work includes:
 - Linear metadata, dependency, and status updates;
 - Done-before Ready contract freshness checks.
 
-A final Manual E2E run by the user is compatible with `only_chatgpt`. Other required human implementation/debugging/management work is not.
+A future final Manual E2E requirement does not prevent an Issue from being `only_chatgpt` while implementation work remains. The execution label changes when all non-human work is finished.
 
-Do not apply or retain `only_chatgpt` if completion requires an unresolved product / UX decision, local-only environment work that ChatGPT cannot perform, an external manual operation other than the explicitly retained final Manual E2E, or destructive interaction with unrelated user work.
+Do not apply or retain `only_chatgpt` when:
 
-`only_chatgpt` does not replace Contract, Manual E2E, type, dependency, or status metadata.
+- the Issue is a parent / tracking Issue;
+- an unresolved product / UX decision blocks implementation;
+- required implementation depends on local-only work ChatGPT cannot perform;
+- a required external manual operation other than final Manual E2E remains;
+- safe completion would require destructive interaction with unrelated user work.
 
-## Valid `only_chatgpt` shapes
+If direct GitHub + CI is insufficient to complete the contract safely, split the Issue further when there is a real independently verifiable boundary, or remove `only_chatgpt` rather than pretending the Issue is autonomous.
 
-### A. Fully autonomous Issue — no Manual E2E
+### Starting and executing
 
-A leaf implementation/research/cleanup Issue may be fully completed by ChatGPT.
+`only_chatgpt` does not auto-start a Todo by itself. The normal explicit-start rule still applies unless the current conversation already authorizes continuing the same execution track.
 
-Typical metadata:
+Once started, ChatGPT should continue through implementation, automated verification, blocking review, PR, CI, merge, and Linear updates without asking the user to perform intermediate development work.
 
-```text
-only_chatgpt
-Contract: Ready
-Manual E2E: Not Required
-```
+For `only_chatgpt` work:
 
-Readiness and status otherwise follow `LINEAR.md`:
+- do not use Coding Agent;
+- do not require a local worktree by default;
+- use latest GitHub remote state as the implementation authority;
+- use direct GitHub operations and GitHub CI as the normal implementation/debug loop;
+- preserve unrelated branches/worktrees/user changes;
+- follow ordinary PR, blocking-review, merge, and freshness rules.
 
-```text
-Backlog -> Todo -> In Progress -> Done
-```
+## `manual_e2e_only`
 
-`only_chatgpt` alone does not auto-start a Todo. The user still explicitly starts the Issue unless the current conversation already authorizes continuing the same execution track.
+Apply `manual_e2e_only` only to a leaf / non-parent Issue when **all non-human work is complete** and the user's Manual E2E is literally the only remaining completion step.
 
-Once started, ChatGPT should continue through implementation, automated verification, review, PR, CI, merge, Linear updates, and final freshness checks without asking the user to perform intermediate development work.
+Required conditions:
 
-### B. ChatGPT implementation Issue — final human Manual E2E
+- implementation required by the Issue is merged to the intended base;
+- required automated verification / CI is complete;
+- blocking review is complete;
+- no implementation / review / merge / management work remains;
+- Contract remains `Ready` against latest remote `main`;
+- Manual E2E is required and its plan is ready to execute;
+- no unfinished blocker remains;
+- the Issue is not a parent / tracking Issue.
 
-An Issue may require Manual E2E while still qualifying for `only_chatgpt` when ChatGPT can perform every implementation step through merge and the user is only needed for the final Manual E2E.
-
-Typical execution:
-
-```text
-Todo
--> In Progress
--> implementation / CI / review / merge completed by ChatGPT
--> In Review + Manual E2E: Ready to Run
--> Done + Manual E2E: Passed
-```
-
-After the implementation is merged, do not ask the user to perform additional development setup that ChatGPT could have completed itself. Prepare the standard isolated E2E launch instructions/fixture and leave only the actual human observation/interaction to the user.
-
-If the user postpones the test, use `In Review + Manual E2E: Deferred`.
-
-### C. Decomposed parent — pure Manual E2E handoff
-
-A larger user-facing parent Issue must carry `only_chatgpt` once its implementation has been completely decomposed into `only_chatgpt` child Issues and the only intended human work on the parent is its integrated final Manual E2E.
-
-Typical shape:
+When these conditions first become true, ChatGPT must perform the transition immediately:
 
 ```text
-Parent: only_chatgpt + Contract: Ready + Manual E2E: Ready to Run
-  |- Child A: only_chatgpt + Manual E2E: Not Required
-  |- Child B: only_chatgpt + Manual E2E: Not Required
-  `- Child C: only_chatgpt + Manual E2E: Not Required
-```
-
-The parent may have no PR of its own. It represents the integrated user-facing contract whose implementation is delivered by the merged child PRs.
-
-While any required implementation child is unfinished, keep the parent in `Backlog` with explicit `blockedBy` relations to the unfinished children.
-
-When the final required implementation child reaches `Done`, ChatGPT must immediately re-evaluate the parent. If all of the following are true:
-
-- every required implementation child is `Done`;
-- the parent Contract remains `Ready` against latest remote `main`;
-- the parent Manual E2E plan is `Ready to Run`;
-- no other unfinished blocker exists;
-- no implementation, review, CI, merge, or management work remains;
-
-then the parent is now a pure human Manual E2E handoff.
-
-At that checkpoint, move the parent **directly from `Backlog` to `In Review`**.
-
-Do not route this parent through `Todo` or `In Progress` merely because its blockers disappeared. This is the `only_chatgpt` pure-E2E-handoff exception to the normal Ready Queue materialization rule.
-
-Expected state:
-
-```text
-In Review
-only_chatgpt
-Contract: Ready
+remove: only_chatgpt
+add:    manual_e2e_only
+state:  In Review
 Manual E2E: Ready to Run
 ```
 
-`In Review` in this case means: all implementation required by the parent is already merged through its children, and only required Manual E2E remains.
+Do not leave the Issue in `Todo` or `In Progress`, and do not wait for a separate user instruction to mark the handoff ready.
 
-The transition does not consume an `In Progress` implementation slot because no implementation work is starting on the parent.
+This transition means: **ChatGPT work is finished; the next executable action is the user's Manual E2E.**
 
-## Manual E2E handoff lifecycle
-
-For any `only_chatgpt` Issue whose implementation is complete and only Manual E2E remains:
-
-```text
-In Review + Ready to Run
--> In Review + Running
--> Done + Passed
-```
-
-If the user postpones the test:
+If the user postpones the test, keep `manual_e2e_only` and use:
 
 ```text
 In Review + Manual E2E: Deferred
 ```
 
-When the user starts testing, set `Manual E2E: Running`.
+When the user begins testing:
 
-When all required checks pass, set `Manual E2E: Passed`, perform the normal Done-before Ready contract freshness check, then move the Issue to `Done`.
+```text
+In Review + manual_e2e_only + Manual E2E: Running
+```
 
-For a decomposed parent, the entry into this lifecycle is automatic as soon as the last required implementation child is `Done` and the parent has no other blocker.
+When all required checks pass:
+
+1. set `Manual E2E: Passed`;
+2. perform the normal Done-before Ready contract freshness check;
+3. move the Issue to `Done`.
+
+The execution label may remain on the closed Issue as historical metadata; open-issue filtering should use status together with the label.
 
 ## Manual E2E failure
 
-If final Manual E2E fails because implementation work is required again, the Issue is no longer a pure E2E handoff.
+If Manual E2E fails because implementation work is required again, the Issue is no longer `manual_e2e_only`.
 
-For a decomposed parent, at the same checkpoint:
+If the fix remains the same Issue's scope and ChatGPT can perform it:
 
-1. set Manual E2E to `Failed`;
-2. create or reuse the smallest focused fix Issue that owns the failure;
-3. apply `only_chatgpt` to the fix Issue if it satisfies this workflow;
-4. add an explicit `blockedBy` relation from the parent to the fix Issue;
-5. move the parent from `In Review` back to `Backlog`;
-6. implement/verify/merge the fix Issue through the normal `only_chatgpt` flow.
+```text
+remove: manual_e2e_only
+add:    only_chatgpt
+state:  In Progress
+Manual E2E: Failed
+```
 
-When the fix Issue reaches `Done`, re-check the parent. If only Manual E2E remains again, set Manual E2E back to `Ready to Run` and move the parent directly to `In Review` again.
+Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
 
-For a non-parent `only_chatgpt` Issue, a focused fix may stay on the same Issue/branch when that remains the correct work item under the normal workflow. Do not create a child mechanically when the failure is still the same small implementation task.
+If the failure requires a genuinely separate implementation Issue, create/reuse the smallest correct leaf Issue, apply `only_chatgpt` there if it qualifies, and represent the dependency explicitly. Do not create a child mechanically for a small fix that still belongs to the same leaf Issue.
 
-Do not create a fix Issue for a mere test-environment mistake or unclear test instruction. Correct the E2E setup/plan in the owning Issue instead. If the failure exposes a new product decision, stop autonomous execution and return the affected Contract to the appropriate non-Ready state.
+Do not treat a test-environment mistake or unclear E2E instruction as an implementation failure. Correct the E2E setup/plan instead. If the failure exposes a new product decision, stop autonomous implementation and return the affected Contract to the appropriate non-Ready state.
+
+## Parent / child rule
+
+Execution-ownership labels are **leaf-only**.
+
+A parent / tracking Issue must not receive `only_chatgpt` or `manual_e2e_only`, even when:
+
+- every child is `only_chatgpt`;
+- every child is already Done;
+- the parent's only remaining completion step is an integrated Manual E2E.
+
+The parent continues to use ordinary Linear state + Contract / Manual E2E metadata + relations. If implementation represented by its children is fully merged and the parent's own remaining work is Manual E2E, `In Review` may be the correct ordinary status, but no execution-ownership label is added.
 
 ## Decomposition rules
 
-Do not split Issues only to maximize the number carrying `only_chatgpt`.
+Do not split Issues only to maximize `only_chatgpt` coverage.
 
 A child should be a real independently verifiable implementation boundary, typically one owner/subsystem/API/data-flow layer with automated acceptance.
 
@@ -179,42 +149,35 @@ host-neutral/core semantics
 
 or another sequence that follows actual repository ownership.
 
-Each implementation child should normally be `Manual E2E: Not Required` when automated verification is sufficient. The parent retains the integrated user-facing Manual E2E contract.
+Each implementation child should normally use `Manual E2E: Not Required` when automated verification is sufficient. If a leaf child itself owns a required Manual E2E, it may transition from `only_chatgpt` to `manual_e2e_only` after merge.
 
-Only the first unblocked child in a dependency chain should materialize into `Todo`; later Ready children remain `Backlog` while blocked. This avoids inflating the Ready Queue.
-
-When the decomposition is complete and every remaining implementation step is represented by `only_chatgpt` children, apply/retain `only_chatgpt` on the parent as well. The label on the parent means that the only human responsibility for the track is the eventual final Manual E2E.
-
-## Execution constraints
-
-For `only_chatgpt` implementation work:
-
-- do not use Coding Agent;
-- do not require a local worktree by default;
-- use the latest GitHub remote state as the implementation authority;
-- use direct GitHub operations and GitHub CI as the normal implementation/debug loop;
-- preserve unrelated branches/worktrees/user changes;
-- follow the ordinary PR, blocking-review, merge, and freshness rules;
-- if direct GitHub + CI is insufficient to complete the contract safely, stop, split the work further when there is a natural boundary, or remove `only_chatgpt` rather than pretending the Issue is autonomous.
+Only the first unblocked child in a dependency chain should materialize into `Todo`; later Ready children remain `Backlog` while blocked.
 
 ## Status synchronization checkpoints
 
-In addition to the normal `LINEAR.md` checkpoints, re-evaluate `only_chatgpt` parent/child state whenever:
+In addition to the normal `LINEAR.md` checkpoints, re-evaluate execution ownership whenever:
 
 1. an `only_chatgpt` implementation PR is merged;
-2. a child Issue reaches `Done`;
-3. the last unfinished child/blocker reaches `Done`;
-4. Manual E2E becomes `Ready to Run`;
+2. blocking review / CI becomes complete;
+3. a blocker is completed or added;
+4. Manual E2E becomes executable;
 5. Manual E2E passes or fails;
-6. a new implementation blocker/fix child is added;
-7. a Ready contract freshness check changes the Issue prerequisites.
+6. a Ready contract freshness check changes prerequisites.
 
-The critical automatic parent transition is:
+Critical automatic leaf transition:
 
 ```text
-last required implementation child Done
-+ parent only needs Manual E2E
-=> parent immediately In Review + Manual E2E: Ready to Run
+only_chatgpt leaf
++ implementation/review/CI/merge complete
++ required Manual E2E is the only remaining work
+=> replace only_chatgpt with manual_e2e_only
+=> immediately In Review + Manual E2E: Ready to Run
 ```
 
-Do not leave such a parent in `Backlog`, move it to `Todo`, or wait for a separate user instruction to mark the E2E handoff ready.
+Critical parent rule:
+
+```text
+parent / tracking Issue
+=> never only_chatgpt
+=> never manual_e2e_only
+```
