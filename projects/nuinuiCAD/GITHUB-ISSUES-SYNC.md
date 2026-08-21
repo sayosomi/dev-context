@@ -10,99 +10,102 @@ GitHub Issuesへ公開することを前提とするWork informationは、Linear
 
 - Work / specificationのauthorityはLinear。
 - GitHub Issuesはpublic mirror / public discussion surface。
-- legacy mirrorについてGitHub側の編集をLinearへ逆同期しない。
+- GitHub IssuesからLinearへfield / status / commentを逆同期しない。
 - repository implementation factsは従来どおりlatest repositoryがauthority。
+- Linear公式GitHub Issues repo↔team two-way sync mappingはOFFのまま維持する。
+- GitHub PR integration / PR workflow automationはGitHub Issues mirrorとは別物として維持してよい。
 
-## Issue classes
+## Automatic mirror owner
 
-### Official two-way synced issues
+通常の自動reconciliation ownerはCloudflare Worker `nuinuicad-linear-github-mirror` とする。
 
-Linear ↔ GitHub IssuesのTwo-way syncが有効な状態で作成され、Linear上に対応GitHub Issue attachmentとGitHub sync threadを持つIssue。
+```text
+Linear Issue change
+  → Linear webhook (Issue only)
+  → Cloudflare Worker
+  → HMAC / replay-window validation
+  → Cloudflare Queue
+  → canonical Linear Issue refetch
+  → GitHub REST API reconcile
+```
 
-通常のfield syncはLinear公式integrationへ任せる。
+Webhook gapやrelation-only changeを回収するため、同じWorkerがCloudflare Cron `0 */12 * * *` (UTC) で12時間ごとのsafety sweepを実行し、Sayosomi teamのIssueを同じQueue reconciliation pathへ流す。
+
+旧ChatGPT `Legacy Issue Mirror` scheduled automationはcutover完了後は無効のまま維持し、通常経路として再有効化しない。Cloudflare mirrorが障害で長時間利用できず、明示的なfallback運用を決めた場合だけ別途扱う。
+
+## Mapping contract
+
+GitHub Issueは次の順序でresolveする。
+
+1. Linear Issueに既に付いている `https://github.com/sayosomi/nuinuiCAD/issues/<n>` attachment。
+2. legacy mapping fallback。
+   - `SAY-9`〜`SAY-38` → GitHub `#186`〜`#215` (`GitHub issue = SAY number + 177`)
+   - `SAY-40`〜`SAY-74` → GitHub `#216`〜`#250` (`GitHub issue = SAY number + 176`)
+   - `SAY-39` は移行試験用としてmirror対象外
+3. GitHub bodyのunique hidden marker `<!-- linear-issue-id:<Linear UUID> -->`。
+4. どれも無ければ新しいGitHub Issueを作成する。
+
+GitHub Issueをresolve / createした後、そのURLをLinear Issueへattachmentとして保存する。
+
+GitHub create成功後にLinear attachment createだけ失敗しても、次回はhidden Linear UUID markerから既存GitHub Issueをrecoverし、重複createしない。
+
+### Explicit migration / shadow exclusions
+
+次はpublic Work itemではないmigration / shadow artifactなので、自動mirror対象外とする。
+
+- `SAY-39`
+- `SAY-75`
+- `SAY-84`
+- `SAY-85`
+
+これらから新しいGitHub Issueを作らない。
+
+## Mirrored fields
+
+自動mirrorするもの:
 
 - title
 - description
-- status / open-close state
-- supported labels / assignee
-
-#### Comments
-
-公開する進捗・結果・判断のcommentは、Linear issue上の **GitHub sync threadへのreply** として投稿する。
-
-GitHub sync threadは、Linearが生成する「This comment thread is synced to a corresponding GitHub issue ...」というthread。
-
-- public commentを通常のLinear top-level discussionとして新規作成しない。
-- top-level Linear-only discussionは、明示的にinternal / non-publicとして残す場合だけ使う。
-- public commentを投稿する前にGitHub sync threadを確認する。
-- official synced issueのはずなのにsync threadが無い場合はintegration faultとして扱い、private-only commentを代替として黙って作らない。
-
-### Legacy manual mirrors
-
-Two-way syncを有効化する前に存在していたIssueはmanual backfillでGitHubへ公開したため、公式sync pairではない。
-
-Current mapping:
-
-- `SAY-9`〜`SAY-38` → GitHub `#186`〜`#215` (`GitHub issue = SAY number + 177`)
-- `SAY-40`〜`SAY-74` → GitHub `#216`〜`#250` (`GitHub issue = SAY number + 176`)
-- `SAY-39` は移行試験用として削除済みでmirror対象外
-
-Legacy mirrorは **Linear → GitHub one-way** とする。
-
-#### Fields
-
-Linear側でlegacy Issueを変更したcheckpointでは、対応GitHub Issueを同じcheckpointで更新する。
-
-最低限mirrorする:
-
-- title
-- current description
-- current status
+- Linear status → GitHub state / close reason
+  - `Done` → `closed / completed`
+  - `Canceled` / `Duplicate` → `closed / not planned`
+  - `Backlog` / `Todo` / `In Progress` / `In Review` → `open`
+- Linear labels
 - priority
-- Contract / Manual E2E / type labels
-- project / dependency / related metadataのうちpublic issue理解に必要なもの
+- project
+- parent
+- blocks / blocked-by / related metadata
 
-State mapping:
+GitHub bodyにはoriginal Linear issue URL、`linear-issue-id` marker、`linear-mirror-updated-at` markerを付加する。
 
-- Linear `Done` → GitHub `closed / completed`
-- Linear `Canceled` / `Duplicate` → GitHub `closed / not planned`
-- Linear `Backlog` / `Todo` / `In Progress` / `In Review` → GitHub `open`
+Linearに存在するlabelがGitHub側に無い場合はneutral default colorで作成してから適用してよい。
 
-GitHub body末尾に現在のLinear metadataと元Issue URLを持たせる。
+## Comments / privacy boundary
 
-自動reconciliation用にGitHub bodyへ次のhidden markerを持たせてよい。
+Linear commentsはv1では自動mirrorしない。
 
-```html
-<!-- linear-mirror-updated-at:2026-08-21T00:00:00+09:00 -->
-```
+既存Linear top-level discussionにはinternal / non-public内容が入り得るため、comment全自動公開は禁止する。将来comment bridgeを追加する場合は、explicit public marker等のprivacy-safe contractを別途決める。
 
-#### Comments
+GitHub repository / Issuesはpublicである。Issue descriptionへ公開してよいWork informationだけを置く。明示的にinternal / non-publicと指定された内容はGitHubへmirrorしない。
 
-Legacy Issueには公式GitHub sync threadが無い。
+## GitHub-side edits
 
-公開するLinear commentを作成する場合は、同じ内容を対応GitHub Issueにも投稿する。
+GitHub Issuesはpublic mirrorでありauthorityではない。
 
-GitHub側のmirror commentにはdeduplication用に次のhidden markerを付けてよい。
+- GitHub側の独自field / status編集をLinearへ取り込まない。
+- 次回Linear webhookまたは12-hour safety sweepで、managed fieldはLinear current stateへ戻ってよい。
+- GitHub側の独自commentはLinearへ逆同期しない。
 
-```html
-<!-- linear-comment-id:<Linear comment UUID> -->
-```
+## Shadow cleanup rule
 
-既存commentを再確認するときは、このmarkerで二重投稿を防ぐ。
+過去にLinear公式two-way syncが有効だった際、legacy GitHub mirrorの更新を新しいLinear Issueとして再取り込み、canonical Issueとは別のsync shadowを作ったことがある。
 
-### Accidental official-sync shadow for a legacy mirror
-
-Two-way syncが有効な状態でlegacy GitHub mirrorを更新した結果、公式integrationがそのGitHub Issueを新しいLinear Issueとして取り込み、元のcanonical Linear Issueとは別の**sync shadow Issue**を作ることがある。
-
-この状態を検出した場合:
+同様の状態を検出した場合:
 
 - 元のcanonical Linear Issueをauthorityとして維持する。
 - shadow Issueを新しいWork itemとして扱わない。
-- shadow Issueからcanonical Issueへcontract / dependency / progressを移し替えない。
 - legacy GitHub Issueを新しく作り直さない。
-- **GitHub attachment / sync relationが残っているshadow Issueを先にCanceled / Duplicate / Doneへ変更しない。** status変更がGitHub mirrorへ逆伝播する可能性があるため。
-
-他のIssueのmigration / sync / reconciliationを進行中の場合は、shadow cleanupをその場で実行しない。検出だけ記録し、同期作業が落ち着いた明示的なcleanup checkpointまで保留する。
+- GitHub attachment / sync relationが残っているshadow Issueを先にCanceled / Duplicate / Doneへ変更しない。
 
 cleanup checkpointでは次の順序を守る。
 
@@ -112,29 +115,12 @@ cleanup checkpointでは次の順序を守る。
 4. sync解除を確認できた場合だけ、shadow Issueをcanonical Linear IssueのDuplicateとして整理する。
 5. sync解除を確認できない場合はstatusを変更せず、その場で停止する。
 
-このcleanupは通常のlegacy mirror reconciliationとは別の保守作業として扱う。canonical Linear Issueとlegacy GitHub Issueのone-way mirror運用は維持する。
-
 ## ChatGPT operation rule
 
-Linear Issueを参照・更新するときは、そのIssueがofficial syncedかlegacy manual mirrorかを確認する。
+Linear Issueを参照・更新するときはLinearを先に更新し、自動mirrorが通常経路であることを前提にする。
 
-### Official synced issue
-
-- field mutationはLinearへ行い、official syncへ任せる。
-- public commentはGitHub sync threadへreplyする。
-- sync thread / attachmentが欠落している場合はfaultとして報告する。
-
-### Legacy manual mirror
-
-- Linearを先に更新する。
-- 同じcheckpointで対応GitHub IssueをLinear current stateへreconcileする。
-- public commentはLinear + GitHubへmirrorする。
-- GitHub側の独自編集をLinearへ取り込まない。
-
-ChatGPTが直接変更していないLinear UI上の更新も取りこぼさないため、legacy Issueは定期reconciliation対象とする。
-
-## Privacy boundary
-
-GitHub repository / Issuesはpublicである。
-
-Issue description / commentへ公開してよいWork informationだけをmirrorする。明示的にinternal / non-publicと指定された内容はGitHubへmirrorしない。
+- 通常のfield更新について、ChatGPTが同じcheckpointでGitHub Issueを手動二重更新しない。
+- mirror attachmentがまだ無い新規Issueでも、Workerがcreate / attachするため通常は手動GitHub Issueを作らない。
+- mirror driftを検出した場合は、まずLinear current stateとCloudflare Worker / Queueの状態を確認する。
+- manual reconciliationは自動経路の障害調査または明示的なrepair時だけ行う。
+- Linear公式GitHub Issues two-way sync mappingを再度有効化しない。
