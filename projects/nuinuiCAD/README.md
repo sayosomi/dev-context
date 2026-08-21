@@ -49,6 +49,7 @@ VS Code extension の user-facing behavior を Manual E2E で確認するとき�
 - E2E user-data を作る時点で VS Code built-in completion を無効化する。最低限 `editor.wordBasedSuggestions: "off"`、`editor.inlineSuggest.enabled: false`、`editor.quickSuggestions: false`、`editor.snippetSuggestions: "none"` を設定する。
 - Task の Manual E2E fixture は同じ command block 内で `$E2E_ROOT` 配下へ生成し、その fixture file を起動時に明示的に開く。fixture は checkout/worktree を汚さない場所へ置く。
 - Manual E2E の起動コマンドを提示するときは、`npm run build:vscode`、fresh user-data/extensions 作成、標準補完OFF settings 作成、task-specific fixture 作成、Extension Development Host 起動までを一つのコピペ可能な block に含める。ユーザーへ途中の手作業設定を要求しない。
+- Manual E2E の確認手順は、同じ fixture・同じ editor state・同じ種類の操作で確認できる項目を、まとまった test unit として一度に提示する。似た操作を1項目ずつ細切れにしない。結果によって次の fixture/state が変わる場合、途中で source mutation / revert が必要な場合、または failure が後続判定を無効にする場合だけ test unit を分ける。
 - completion の Manual E2E は自動 popup の有無ではなく、必要に応じて `Trigger Suggest` を明示実行し、nuinuiCAD provider の候補を確認する。
 - project の開発中 extension は `--extensionDevelopmentPath="$PWD/vscode-extension"` で読み込む。
 - 起動前に current checkout で `npm run build:vscode` を実行する。
