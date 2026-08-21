@@ -2,54 +2,65 @@
 
 ## Purpose
 
-This document collects reusable operational techniques for running nuinuiCAD Manual E2E with Codex Luna xhigh reliably.
+Codex Luna xhighでnuinuiCAD Manual E2Eを安定して実行するための**operational playbook**。
 
-It is a **playbook**, not the acceptance-contract authority.
+Authorityを分ける。
 
-- Test classification, `Judgment`, `Executor`, PASS / FAIL / BLOCKED semantics, and Sol High result ownership are defined by [Manual E2E execution rules](./MANUAL-E2E.md).
-- The standard VS Code isolated-host baseline is defined by [Project Context](./README.md).
-- This playbook explains how to apply those rules in practice, especially around local VS Code operation, prompt construction, evidence capture, freshness, and common failure modes.
+- test classification、`Judgment`、`Executor`、PASS / FAIL / BLOCKED、Sol High result ownership: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
+- VS Code isolated Extension Development Host baseline: [`VS-CODE-E2E.md`](./VS-CODE-E2E.md)
+- current Issueのfixture / action / oracle / acceptance: current Linear Issue contract / Manual E2E plan
+- この文書: Luna prompt、stable tested state、evidence、retry、common pitfalls
 
-If this playbook conflicts with `MANUAL-E2E.md`, the current Issue contract, or the Project Context baseline, follow those authorities and refresh this playbook afterward.
+このplaybookがauthority文書と矛盾したらauthority側を優先し、その後playbookをrefreshする。
 
-## Core operating model
+## Operating model
 
-Luna is the operator, not the test designer.
-
-For an assigned objective unit, keep the loop narrow:
+Lunaはtest operatorでありtest designerではない。
 
 ```text
 prepare exact state
 -> operate
 -> observe
--> compare with the predeclared oracle
+-> compare with predeclared oracle
 -> capture evidence
 -> report PASS / FAIL / BLOCKED
 ```
 
-Do not ask Luna to decide product semantics, redesign a test, investigate architecture, repair implementation, or convert a Human judgment into an objective substitute.
+Lunaへ次をさせない。
 
-## 1. Pin a stable tested state without fighting a moving `main`
+- architecture調査
+- product / UX / aesthetic judgment
+- test plan redesign
+- missing oracleの発明
+- implementation fix
+- unrelated cleanup
+- Human-assigned unitの実行
 
-Always fetch before execution and verify the intended remote state.
+## 1. Freeze the tested state when `main` is moving
 
-For a quiet repository, testing an exact current `origin/main` commit is sufficient.
+Manual E2E実行前に必ず:
 
-For nuinuiCAD, unrelated work may merge while a Manual E2E prompt is being prepared or executed. Requiring:
+```bash
+git fetch origin --prune
+```
+
+quietなrepositoryならcurrent `origin/main` exact commitをtested stateにしてよい。
+
+nuinuiCADでは並行mergeが多いため、prompt生成からLuna実行までの間に`origin/main`が進むことがある。単純に:
 
 ```text
 origin/main == <prompt SHA>
 ```
 
-can then cause repeated false `BLOCKED` results even when the tested implementation has not changed.
+を要求すると、tested behaviorが変わっていなくてもfalse `BLOCKED`になり得る。
 
-When this is likely, create a dedicated stable remote E2E ref pointing at the reviewed commit, for example:
+必要ならreview済みcommitへstable remote E2E refを作る。
 
 ```text
 origin/sayosomi/<issue>-manual-e2e-freeze
 ```
 
-Luna should verify both:
+Luna側で最低限:
 
 ```bash
 EXPECTED="<tested commit>"
@@ -59,26 +70,23 @@ test "$(git rev-parse "$E2E_REF")" = "$EXPECTED"
 git merge-base --is-ancestor "$EXPECTED" origin/main
 ```
 
-Normal advancement of `origin/main` is allowed. Record the current `origin/main` SHA in the result.
+`origin/main`のnormal advancementだけではblockしない。実行時の`origin/main` SHAをresultへ記録する。
 
-After Luna returns, Sol High must fresh-check latest `main` again and review drift from the frozen tested commit.
+Luna結果受領後、Sol Highがlatest `main`をfresh-checkしてtested commitとの差分をreviewする。
 
-- unrelated drift that cannot affect the tested oracle does not invalidate the E2E result;
-- drift that materially touches the tested behavior requires a new reviewed test state and rerun of affected units;
-- if the tested commit is no longer an ancestor of `main`, treat that as remote-state staleness / rewrite, not a product failure.
+- unrelated drift: E2Eをaccept可能
+- tested semanticsへmaterial drift: affected unitをnew reviewed stateでrerun
+- tested commitが`main`のancestorでなくなった: remote-state staleness / rewriteとして扱う
 
-Do not silently move a frozen ref after completed evidence has been recorded. Prefer preserving the evidence anchor and creating a new versioned ref when a new tested state is required.
+completed evidenceを持つfreeze refを黙って別commitへ動かさない。新しいtested stateが必要ならnew/versioned refを使う。
 
-## 2. Protect both standard checkouts
+## 2. Protect local checkouts
 
-Before using a checkout, inspect both standard locations:
+checkout運用は [`CHECKOUTS.md`](./CHECKOUTS.md) に従う。
 
-```text
-/Users/yosomi/Code/nuinuiCAD
-/Users/yosomi/Code/nuinuiCAD-sub
-```
+Luna promptでは実行前にstandard checkoutsのstateを確認させる。
 
-At minimum record:
+最低限:
 
 ```bash
 git status --short
@@ -86,9 +94,9 @@ git branch --show-current
 git rev-parse HEAD
 ```
 
-Use only a clean checkout that is not occupied by unrelated active work.
+cleanでidleなcheckoutだけを使う。
 
-If a clean idle checkout must test a historical/frozen commit, a detached checkout is acceptable:
+frozen commit検証でdetached HEADを使う場合:
 
 ```bash
 git switch --detach "$EXPECTED"
@@ -96,142 +104,129 @@ test "$(git rev-parse HEAD)" = "$EXPECTED"
 test -z "$(git status --porcelain)"
 ```
 
-Never reset, stash, discard, overwrite, or force-switch unrelated user work to make room for Manual E2E.
+Manual E2Eのためにunrelated user workをreset / stash / discard / overwrite / force-switchしない。
 
-If Luna detached a checkout only for the test, restore its original ref afterward with a normal non-destructive switch when safe.
+## 3. Run environment preflight before product tests
 
-## 3. Treat extension registration as an environment preflight
+VS Code host setupは [`VS-CODE-E2E.md`](./VS-CODE-E2E.md) のcanonical baselineを使う。
 
-A VS Code UI test is meaningless if the development extension was never registered in the isolated host.
+product oracle実行前にextension-registration preflightを行う。
 
-Before executing product oracles, verify the environment itself.
+`.nui` fixtureで:
 
-For a `.nui` fixture:
+1. fixtureをactiveにする。
+2. language modeが`nui` / nuinuiCADでありPlain Textでないことを確認する。
+3. current testに必要なnuinuiCAD contributed commandがCommand Paletteに存在することを確認する。
+4. 必要ならRunning Extensions / fresh profile logsも確認する。
 
-1. activate the fixture;
-2. confirm the language mode is `nui` / nuinuiCAD, not Plain Text;
-3. confirm the required contributed nuinuiCAD command(s) exist in Command Palette;
-4. when useful, confirm the development extension appears in Running Extensions.
-
-If this preflight fails:
+preflight失敗は:
 
 ```text
-result = BLOCKED
-reason = development extension registration / test environment unavailable
+BLOCKED — development extension registration / test environment unavailable
 ```
 
-Do **not** mark the product unit FAIL.
+でありproduct `FAIL`ではない。
 
-Collect environment evidence instead, especially the newest relevant files under the fresh profile's `logs` directory. Useful evidence includes extension-host, window, or main logs mentioning:
+必要ならfresh profileのlogsからextension host / window / main logを確認し、`nuinuiCAD`、`extensionDevelopmentPath`、scanning / activation、error / warningをevidenceとして返す。
 
-- `nuinuiCAD`;
-- `extensionDevelopmentPath`;
-- extension scanning / activation;
-- load errors or warnings.
+Lunaはその場でimplementation codeを修正しない。
 
-Do not change implementation code to make the environment pass during a Manual E2E run.
+## 4. Design fixtures for objective identity
 
-## 4. Use the repository-compatible isolated VS Code launch shape
+Luna向けfixtureは、UI上で機械的に識別できるidentity markerを持たせる。
 
-Use the current canonical launch baseline in `README.md`.
-
-Important practical points:
-
-- build the VS Code bundle before launch;
-- build and explicitly provide the Rust `evaluation_stdio` binary;
-- use a fresh `--user-data-dir` every run;
-- use an empty `--extensions-dir`;
-- disable VS Code built-in completion in the fresh profile;
-- use `--disable-workspace-trust` so first-run trust state cannot block the dev host;
-- suppress welcome / session welcome / release notes;
-- open the task fixture directly rather than depending on opening the repository workspace folder;
-- after rebuild, branch/commit switch, or blocking fix, close the old host and launch a fresh one.
-
-Do not improvise with the normal user profile unless the test explicitly targets profile / extension interoperability.
-
-## 5. Make fixtures easy to identify objectively
-
-A good Luna fixture contains machine-visible identity markers that make the oracle unambiguous.
-
-For multi-document tests, do not rely only on similar geometry. Give A and B distinct names such as:
+multi-document test例:
 
 ```text
 PrintA / SvgA / PieceA
 PrintB / SvgB / PieceB
 ```
 
-Then require evidence that reports those exact identities through selectors, tab titles, source text, Inspector text, accessible labels, or other stable UI text.
+oracleにも識別方法を書く。
 
-For state-preservation tests, establish the state before leaving the surface and record before/after evidence.
+悪い例:
 
-Examples:
+```text
+the right document opened
+```
 
-- selected geometry identity before and after reveal;
-- Preview selector text before and after cross-surface navigation;
-- exact source span before and after an edit;
-- A/B tabs present before source close and only A-owned sessions absent afterward.
+良い例:
 
-Avoid oracles such as `the right document opened` when the prompt does not define how A and B are distinguished.
+```text
+Preview selector shows PrintA and active Canvas tab identifies say89-A.nui
+```
 
-## 6. Prefer objective evidence over narration
+state-preservation testはbefore / afterで同じidentityを記録する。
 
-A Luna result should make it possible for Sol High to validate the oracle without trusting phrases like `looks correct`.
+例:
 
-Prefer combinations of:
+- selected geometry identity
+- Preview selector value
+- active tab title
+- exact source span
+- session count / duplicate absence
+- A/B tabs before and after source close
 
-- screenshots;
-- accessibility state / accessible names;
-- exact visible strings;
-- active tab title;
-- selector value;
-- exact source text;
-- before/after state;
-- count evidence when duplicate prevention is part of the oracle.
+## 5. Prefer objective evidence over narration
 
-Screenshots are useful but not sufficient when the relevant identity can also be captured as text.
+Lunaの`PASS`は「looks correct」だけではacceptしない。
 
-For visual-but-objective tests, state exactly what visual fact is being checked. For example:
+優先するevidence:
+
+- exact visible strings
+- accessibility state / accessible name
+- active tab title
+- selector value
+- exact source text
+- before / after state
+- count evidence
+- screenshot
+
+visual checkでもoracleをbinary factへ固定する。
+
+例:
 
 ```text
 PASS if the same selection marker remains on the same identified geometry.
 ```
 
-Do not let Luna infer aesthetic quality from the screenshot.
+スクリーンショットがあること自体はaesthetic judgmentの許可ではない。
 
-## 7. Order tests to preserve useful evidence
+## 6. Order units to preserve evidence
 
-Place destructive or lifecycle-ending operations last when possible.
+破壊的操作は可能なら最後へ置く。
 
-Examples:
+例:
 
-- close-source lifecycle tests after navigation / selection tests;
-- delete/dispose tests after state-preservation checks;
-- irreversible or state-resetting operations after independent read-only checks.
+- source close / session disposal
+- delete
+- state reset
+- irreversible mutation
 
-The prompt should say whether a failure invalidates later units.
+promptにはfailureが後続unitを無効化するかを書く。
 
-If a failed unit does not make later state ambiguous, continue independent units so one failure does not hide unrelated evidence.
+独立unitなら、1 unitのFAILで残りのevidenceを隠さずcontinueさせる。
 
-## 8. Keep the Luna prompt self-contained and narrow
+## 7. Build a self-contained Luna prompt
 
-For a fresh Luna session, include all execution-critical information directly in the prompt:
+fresh Luna sessionでは、execution-critical informationをprompt内へ完結させる。
 
-- repository and checkout identity;
-- expected tested commit / stable ref;
-- remote verification commands;
-- checkout safety rules;
-- exact build and launch block;
-- exact fixture contents;
-- selected test units only;
-- initial state, action, oracle, evidence for each unit;
-- stop / continue conditions;
-- exact result format.
+必須要素:
 
-Do not make Luna rediscover the test plan from Linear, GitHub, previous chat history, or repository architecture.
+- repository / checkout identity
+- expected tested commit / stable ref
+- remote verification commands
+- checkout safety conditions
+- exact build / launch baseline or task-specific additions
+- exact fixture contents
+- selected Luna units only
+- per unit: initial state / action / oracle / evidence
+- stop / continue conditions
+- result format
 
-For an already-running Luna session, a delta prompt may be smaller only when the retained context is explicit and still fresh. When in doubt, use a self-contained prompt.
+LunaへLinear、GitHub、過去chat、repository architectureからtest planを再発見させない。
 
-Useful prompt language is direct:
+promptへ明示するboundary例:
 
 ```text
 Do not modify implementation code.
@@ -241,17 +236,20 @@ Do not perform Human-assigned units.
 Return BLOCKED if the required state cannot be established objectively.
 ```
 
-## 9. Do not weaken an oracle to fit Luna capability
+same Luna sessionへretryする場合はdelta promptでもよいが、retained contextが曖昧ならself-contained promptへ戻す。
 
-If Luna can perform the operation but cannot reliably establish or observe the required state, the correct result may be `BLOCKED`.
+## 8. Do not weaken the oracle for Luna
 
-Examples:
+Lunaがrequired stateを確実に作れない、または観測できない場合は`BLOCKED`でよい。
 
-- a selection must be preserved but Luna cannot establish an objectively identifiable selection;
-- a transient popup exists but accessibility / screenshot evidence cannot distinguish the required candidate;
-- an interaction requires a physical device or judgment Luna cannot reproduce.
+例:
 
-After a capability `BLOCKED`, Sol High may reclassify:
+- required selectionを客観的identity付きで確立できない
+- popup/candidateをevidence上区別できない
+- physical-device操作が必要
+- judgmentがHuman quality gateを含む
+
+Sol Highは必要に応じて:
 
 ```text
 Judgment: Objective
@@ -259,81 +257,39 @@ Executor: Human
 Reason: Luna capability
 ```
 
-when appropriate.
+へreclassifyしてよい。
 
-Do not replace the original oracle with an easier one simply to keep `Executor: Luna`.
+Lunaを維持するためにoracleを簡単な別物へ置換しない。
 
-## 10. Separate environment failure from product failure
+## 9. Distinguish BLOCKED from FAIL
 
-Common `BLOCKED` patterns:
+典型的`BLOCKED`:
 
-- prompt SHA became stale because unrelated `main` work merged;
-- stable ref does not resolve to the expected commit;
-- no clean safe checkout is available;
-- development extension is not registered;
-- fixture opens as Plain Text;
-- required command is absent because the extension did not load;
-- VS Code executable or Rust evaluation binary is unavailable;
-- required initial UI state cannot be established or observed reliably;
-- instructions or oracle are ambiguous.
+- tested remote stateがstale / rewritten
+- stable refがexpected commitを指さない
+- safe clean checkoutがない
+- VS Code executable / Rust binaryがない
+- development extensionがregisteredされない
+- `.nui`がPlain Text
+- extension未loadのためrequired commandがない
+- required initial UI stateを確実に作れない
+- required resultを確実にobserveできない
+- prompt / oracleがambiguous
 
-Typical true `FAIL` pattern:
-
-```text
-The environment preflight passed.
-The specified operation was executed.
-The required state was objectively observable.
-The observation contradicted the predeclared oracle.
-```
-
-Only that latter class should enter the implementation-failure loop.
-
-## 11. Known pitfall: moving-main false blockers
-
-Symptom:
+典型的true `FAIL`:
 
 ```text
-Luna fetches and immediately reports BLOCKED because origin/main is newer than the prompt SHA.
+Environment preflight passed.
+Specified action was executed.
+Required state was objectively observable.
+Observed result contradicted the predeclared oracle.
 ```
 
-If the new commits are unrelated, repeatedly regenerating a prompt against the newest `main` can race forever.
+environment / instruction problemをimplementation failure loopへ入れない。
 
-Preferred response:
+## 10. Result format
 
-1. Sol High reviews the new drift;
-2. choose a reviewed tested commit;
-3. create a stable E2E ref;
-4. test that exact ref;
-5. after the run, review latest-main drift once more before accepting the result.
-
-The goal is stable evidence plus a separate freshness judgment, not pretending the repository stops moving while the UI test runs.
-
-## 12. Known pitfall: isolated host opens but extension is absent
-
-Symptom:
-
-- VS Code launches successfully;
-- `.nui` remains Plain Text;
-- nuinuiCAD commands are absent;
-- Running Extensions does not show the development extension.
-
-Treat this as environment `BLOCKED`.
-
-For nuinuiCAD, use the current README canonical launch shape, especially:
-
-- explicit Rust binary;
-- fresh profile;
-- empty extension directory;
-- `--disable-workspace-trust`;
-- first-run UI suppression;
-- fixture-only open;
-- exact `--extensionDevelopmentPath`.
-
-Then run the extension-registration preflight before product units.
-
-## 13. Result format should expose enough state for Sol High review
-
-A useful result header records:
+headerでtested environmentを記録する。
 
 ```text
 Tested commit:
@@ -348,7 +304,7 @@ Extension registration preflight:
 Repository implementation files modified: YES | NO
 ```
 
-For each unit record:
+per unit:
 
 ```text
 Unit <id>: PASS | FAIL | BLOCKED
@@ -359,31 +315,51 @@ Reproduction steps if FAIL:
 Blocker if BLOCKED:
 ```
 
-For grouped identity tests, record every subcase explicitly instead of summarizing the group as `works`.
+grouped identity testは各subcaseを明示する。`works`だけでまとめない。
 
-## 14. Sol High acceptance checklist after Luna returns
+## 11. Sol High acceptance checklist
 
-Before accepting a Luna `PASS`, Sol High should confirm:
+Luna結果をacceptする前に確認する。
 
-1. the tested commit / stable ref is the intended state;
-2. the environment preflight passed;
-3. repository implementation files were not modified during E2E;
-4. every required Luna unit has concrete evidence matching its oracle;
-5. Human-assigned units, if any, remain outstanding until the user passes them;
-6. latest `origin/main` drift from the tested state has been reviewed;
-7. any drift touching the tested semantics has been handled before marking aggregate Manual E2E `Passed`;
-8. Done-before Ready contract freshness check is still performed separately.
+1. tested commit / stable refがintended stateか。
+2. environment preflightがPASSか。
+3. Manual E2E中にrepository implementation filesを変更していないか。
+4. 各required Luna unitにoracleを直接支えるevidenceがあるか。
+5. Human-assigned unitが残っていないか。
+6. latest `origin/main` driftをreviewしたか。
+7. tested semanticsへmaterial driftがある場合、affected unitをrerunしたか。
+8. aggregate `Manual E2E: Passed`の前提を満たすか。
+9. Done-before Ready contract freshness checkは別checkpointとして実施したか。
+
+## Common pitfalls
+
+### Moving-main false blocker
+
+症状: fetch直後、`origin/main`がprompt SHAより新しいだけでLunaがBLOCKED。
+
+対策: Sol Highがdriftをreviewし、stable E2E refでtested stateを固定し、実行後にlatest-main freshness reviewを分離する。
+
+### VS Code opens but nuinuiCAD is absent
+
+症状:
+
+- VS Code自体は起動
+- `.nui`がPlain Text
+- required nuinuiCAD commandがない
+- Running Extensionsにdev extensionがない
+
+対策: product FAILにせずenvironment BLOCKED。`VS-CODE-E2E.md`のcanonical isolated launchを使い、extension-registration preflightを先に通す。
 
 ## Maintenance rule
 
-Add to this playbook when a Manual E2E run exposes a reusable operating lesson.
+Manual E2Eから再利用可能なoperational lessonが得られたらこのplaybookへ追加する。
 
-Good additions are durable patterns such as:
+追加対象:
 
-- a launch condition needed for reliable extension registration;
-- a better evidence technique;
-- a repeated Luna capability boundary;
-- a freshness strategy that avoids false blockers;
-- a prompt structure that materially improves repeatability.
+- stable ref / freshness strategy
+- evidence technique
+- repeated Luna capability boundary
+- prompt pattern
+- environment pitfall
 
-Do not turn this file into a history of individual Issues or paste completed task prompts verbatim. Preserve the reusable rule and let Git / Linear history retain the incident details.
+個別Issueの完了履歴や巨大なcompleted promptを保存しない。incident detailはGit / Linear historyへ残し、ここには再利用可能なruleだけを残す。
