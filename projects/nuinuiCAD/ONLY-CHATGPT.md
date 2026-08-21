@@ -4,16 +4,20 @@
 
 nuinuiCAD uses two execution-ownership labels for non-parent Issues:
 
-- `only_chatgpt` — the remaining implementation / verification / GitHub / work-management work can be performed by ChatGPT without Coding Agent or local worktree use.
-- `manual_e2e_only` — all implementation / review / merge work is complete and the only remaining work is the user's required Manual E2E.
+- `only_chatgpt` — the remaining implementation / verification / GitHub / work-management work can be performed by web ChatGPT without Coding Agent or a local nuinuiCAD execution environment.
+- `manual_e2e_only` — all implementation / review / merge / management work available to web ChatGPT is complete and the only remaining completion work is required Manual E2E in an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
 
-These labels describe **who owns the remaining executable work**. They do not replace Contract, Manual E2E, type, dependency, or status metadata.
+These labels describe whether the remaining executable work is **web-ChatGPT-executable or execution-environment-bound**. They do not mean `ChatGPT vs human`.
+
+A `manual_e2e_only` Issue may have Manual E2E units executed by Codex Luna xhigh or by the user according to [Manual E2E execution rules](./MANUAL-E2E.md). Human judgment is required only for the units classified as Human there.
+
+These labels do not replace Contract, Manual E2E, type, dependency, or status metadata.
 
 **Parent / tracking Issues never receive either label.** Parent state is tracked through ordinary status, Contract / Manual E2E labels, and child / blocker relations.
 
 ## `only_chatgpt`
 
-Apply `only_chatgpt` only to a leaf / non-parent Issue when ChatGPT can perform all remaining non-human work without Coding Agent or local worktree use.
+Apply `only_chatgpt` only to a leaf / non-parent Issue when ChatGPT can perform all remaining pre-E2E implementation / verification / GitHub / work-management work without Coding Agent or local worktree use.
 
 Typical ChatGPT-owned work includes:
 
@@ -27,7 +31,7 @@ Typical ChatGPT-owned work includes:
 - Linear metadata, dependency, and status updates;
 - Done-before Ready contract freshness checks.
 
-A future final Manual E2E requirement does not prevent an Issue from being `only_chatgpt` while implementation work remains. The execution label changes when all non-human work is finished.
+A future final Manual E2E requirement does not prevent an Issue from being `only_chatgpt` while implementation work remains. The execution label changes when all web-ChatGPT-executable implementation / verification / management work is finished.
 
 Do not apply or retain `only_chatgpt` when:
 
@@ -56,7 +60,7 @@ For `only_chatgpt` work:
 
 ## `manual_e2e_only`
 
-Apply `manual_e2e_only` only to a leaf / non-parent Issue when **all non-human work is complete** and the user's Manual E2E is literally the only remaining completion step.
+Apply `manual_e2e_only` only to a leaf / non-parent Issue when **all web-ChatGPT-executable implementation / review / merge / management work is complete** and required Manual E2E in the actual nuinuiCAD execution environment is literally the only remaining completion step.
 
 Required conditions:
 
@@ -78,23 +82,29 @@ state:  In Review
 Manual E2E: Ready to Run
 ```
 
-Do not leave the Issue in `Todo` or `In Progress`, and do not wait for a separate user instruction to mark the handoff ready.
+Do not leave the Issue in `Todo` or `In Progress`, and do not wait for a separate user instruction to mark the E2E handoff ready.
 
-This transition means: **ChatGPT work is finished; the next executable action is the user's Manual E2E.**
+This transition means: **web ChatGPT's implementation / remote-management work is finished; the next executable action requires the actual nuinuiCAD execution environment.**
 
-If the user postpones the test, keep `manual_e2e_only` and use:
+Who performs each Manual E2E test unit is determined by `MANUAL-E2E.md`:
+
+- objective units that Luna can reliably operate / observe / evidence may use `Executor: Luna`;
+- visual / UX / design / experiential judgment units use `Executor: Human`;
+- objective units that Luna cannot reliably execute also use `Executor: Human` for capability reasons.
+
+If testing is postponed, keep `manual_e2e_only` and use:
 
 ```text
 In Review + Manual E2E: Deferred
 ```
 
-When the user begins testing:
+When Luna or the user begins testing:
 
 ```text
 In Review + manual_e2e_only + Manual E2E: Running
 ```
 
-When all required checks pass:
+When all required Manual E2E units, across both Luna and Human executors, pass:
 
 1. set `Manual E2E: Passed`;
 2. perform the normal Done-before Ready contract freshness check;
@@ -115,11 +125,11 @@ state:  In Progress
 Manual E2E: Failed
 ```
 
-Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
+Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only execution-environment-bound Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
 
 If the failure requires a genuinely separate implementation Issue, create/reuse the smallest correct leaf Issue, apply `only_chatgpt` there if it qualifies, and represent the dependency explicitly. Do not create a child mechanically for a small fix that still belongs to the same leaf Issue.
 
-Do not treat a test-environment mistake or unclear E2E instruction as an implementation failure. Correct the E2E setup/plan instead. If the failure exposes a new product decision, stop autonomous implementation and return the affected Contract to the appropriate non-Ready state.
+Do not treat a test-environment mistake, unsupported Luna operation, or unclear E2E instruction as an implementation failure. Correct the E2E setup / plan instead. If the failure exposes a new product decision, stop autonomous implementation and return the affected Contract to the appropriate non-Ready state.
 
 ## Parent / child rule
 
