@@ -41,7 +41,7 @@ nuinuiCAD では primary repository checkout に加えて、並列実装用の**
 
 VS Code extension の user-facing behavior を Manual E2E で確認するときは、**fresh profile + VS Code標準補完OFF + task-specific fixture込み**の isolated Extension Development Host を標準環境とする。普段使いの VS Code profile をそのまま使わない。
 
-Manual E2E test unit の Human / Luna 分類、execution-time freshness check、Sol High が Luna 用promptを作成するルールは [Manual E2E execution rules](./MANUAL-E2E.md) に従う。
+Manual E2E test unit の Human / Luna 分類、execution-time freshness check、Sol High が Luna 用promptを作成するルールは [Manual E2E execution rules](./MANUAL-E2E.md) に従う。Lunaを実際に安定して操作させるためのprompt構成、stable test ref、environment preflight、evidence、known pitfallsは [Luna Manual E2E playbook](./LUNA-E2E-PLAYBOOK.md) に従う。
 
 通常の user settings、word-based suggestions、inline suggestions、keybindings、installed extensions 等が結果へ混入すると、nuinuiCAD extension 自体の PASS / FAIL を判定できない。Manual E2E の起動手順は、毎回この baseline を再現できる一つのコピペ可能な command block として提示する。
 
@@ -50,7 +50,10 @@ Manual E2E test unit の Human / Luna 分類、execution-time freshness check、
 - Manual E2E の判定に使う VS Code は、毎回新しい `--user-data-dir` と空の `--extensions-dir` で起動する。
 - E2E user-data を作る時点で VS Code built-in completion を無効化する。最低限 `editor.wordBasedSuggestions: "off"`、`editor.inlineSuggest.enabled: false`、`editor.quickSuggestions: false`、`editor.snippetSuggestions: "none"` を設定する。
 - Task の Manual E2E fixture は同じ command block 内で `$E2E_ROOT` 配下へ生成し、その fixture file を起動時に明示的に開く。fixture は checkout/worktree を汚さない場所へ置く。
-- Manual E2E の起動コマンドを提示するときは、`npm run build:vscode`、fresh user-data/extensions 作成、標準補完OFF settings 作成、task-specific fixture 作成、Extension Development Host 起動までを一つのコピペ可能な block に含める。ユーザーへ途中の手作業設定を要求しない。
+- Manual E2E の起動コマンドを提示するときは、`npm run build:vscode`、必要なRust evaluation binary build、fresh user-data/extensions 作成、標準補完OFF settings 作成、task-specific fixture 作成、Extension Development Host 起動までを一つのコピペ可能な block に含める。ユーザーへ途中の手作業設定を要求しない。
+- VS Code host が Rust evaluation を必要とするManual E2Eでは、current checkoutから `evaluation_stdio` をbuildし、`NUINUICAD_RUST_EVALUATION_BINARY`でそのexact binaryを明示する。
+- isolated hostでは `--disable-workspace-trust` とfirst-run UI抑止を使い、fixture fileを直接openする。repository workspace folderを同時に開くことをcanonical baselineにしない。
+- Luna実行ではproduct unitへ入る前にextension-registration preflightを行い、`.nui` が `nui` / nuinuiCADとして認識され、必要なcontributed commandが登録されていることを確認する。ここで失敗した場合はproduct FAILではなくenvironment `BLOCKED` とする。
 - Manual E2E の確認手順は、同じ fixture・同じ editor state・同じ種類の操作で確認できる項目を、まとまった test unit として一度に提示する。似た操作を1項目ずつ細切れにしない。結果によって次の fixture/state が変わる場合、途中で source mutation / revert が必要な場合、または failure が後続判定を無効にする場合だけ test unit を分ける。
 - completion の Manual E2E は自動 popup の有無ではなく、必要に応じて `Trigger Suggest` を明示実行し、nuinuiCAD provider の候補を確認する。
 - project の開発中 extension は `--extensionDevelopmentPath="$PWD/vscode-extension"` で読み込む。
@@ -64,7 +67,13 @@ Canonical launch shape:
 
 ```bash
 cd <nuinuiCAD checkout>
+
 npm run build:vscode
+cargo build --manifest-path src-tauri/Cargo.toml --bin evaluation_stdio
+
+RUST_BIN="$PWD/src-tauri/target/debug/evaluation_stdio"
+test -x "$RUST_BIN"
+test -f "$PWD/vscode-extension/dist/extension.js"
 
 E2E_ROOT="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)"
 mkdir -p "$E2E_ROOT/user-data/User" "$E2E_ROOT/extensions"
@@ -82,24 +91,26 @@ cat > "$E2E_ROOT/<task-fixture>.nui" <<'EOF'
 <task-specific fixture source>
 EOF
 
-code --new-window \
+CODE_BIN="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+if [ ! -x "$CODE_BIN" ]; then
+  CODE_BIN="$(command -v code || true)"
+fi
+test -n "$CODE_BIN"
+test -x "$CODE_BIN"
+
+NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
+"$CODE_BIN" --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$PWD/vscode-extension" \
-  "$PWD" \
+  --skip-welcome \
+  --skip-sessions-welcome \
+  --skip-release-notes \
+  --disable-workspace-trust \
   "$E2E_ROOT/<task-fixture>.nui"
 ```
 
-macOS で `code` command が unavailable な場合も、fresh profile、標準補完OFF settings、fixture生成、同じ isolation flags を維持して VS Code executable を直接使う。
-
-```bash
-/Applications/Visual\ Studio\ Code.app/Contents/Resources/app/bin/code --new-window \
-  --user-data-dir="$E2E_ROOT/user-data" \
-  --extensions-dir="$E2E_ROOT/extensions" \
-  --extensionDevelopmentPath="$PWD/vscode-extension" \
-  "$PWD" \
-  "$E2E_ROOT/<task-fixture>.nui"
-```
+macOS で shell の `code` command が unavailable な場合も、このblockは Visual Studio Code app bundle内の executable を直接解決する。task-specific launch requirementが追加される場合も、fresh profile、empty extensions、built-in completion OFF、explicit dev extension path、workspace trust無効化、fixture-only openをbaselineとして維持する。
 
 ## Repository-owned sources of truth
 
@@ -121,6 +132,7 @@ LinearはFree plan前提で運用し、closed itemの早期archiveによるIssue
 - [Linear workflow](./LINEAR.md)
 - [Execution ownership labels](./ONLY-CHATGPT.md)
 - [Manual E2E execution rules](./MANUAL-E2E.md)
+- [Luna Manual E2E playbook](./LUNA-E2E-PLAYBOOK.md)
 - [Implementation contract decision rule](./CONTRACT-DECISIONS.md)
 - [Linear free-plan capacity policy](./LINEAR-CAPACITY.md)
 - [GitHub Issues public mirror / sync](./GITHUB-ISSUES-SYNC.md)
@@ -138,7 +150,7 @@ Notion は新規Work / Specの管理先には使わない。
 最低限、次を必ず決める。
 
 - user-facing command name / title は英語に統一する。VS Code の `contributes.commands[].title`、Command Palette、context menu、Ribbon 等で表示される command 名を日本語にしない。internal command ID も英語を維持する。
-- VS Code command は既存 `AGENTS.md` ruleどおり `Global | Source | Canvas | Source+Canvas` の Palette scope を明示する。
+- VS Code command は既存 `AGENTS.md` ruleどおり `Global | Source | Canvas | Output Preview | Source+Canvas | Source+Output Preview` の Palette scope を明示する。
 - 右クリック context menu へ出すかどうかを必ず明示する。`Context menu: None` は正当な選択肢であり、右クリックへ出す必要がない command を無理に追加しない。
 - context menu へ出す場合は、どの context で表示するかと、その visibility 条件を contract に書く。Source Editor / blank Canvas / Canvas element / Canvas Ribbon 等、実際に存在する surface/context だけを使い、未確定 surface を先取りしない。
 - Command Palette visibility と context-menu visibility は別契約として扱う。Palette は surface relevance を表し、selection / caret / semantic target 等の transient state で細かく出し分けない。一方 context menu は現在の文脈に合う操作だけを出すため、必要な transient / semantic state で絞り込んでよい。
@@ -161,6 +173,6 @@ Notion は新規Work / Specの管理先には使わない。
 1. この README を読む。
 2. 開発 Task では `shared/DEVELOPMENT.md` と repository の current `AGENTS.md` を読む。
 3. Coding Agent / skill が関係する場合だけ Agent Skills を読む。
-4. Linear を操作・参照する場合、またはimplementation contractを策定する場合は `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。`only_chatgpt` または `manual_e2e_only` labelが付いたIssueを操作・判定する場合は、さらに `ONLY-CHATGPT.md` を読む。Manual E2E planの策定・executor分類・実行・Luna prompt生成・結果判定を行う場合は `MANUAL-E2E.md` も読む。
+4. Linear を操作・参照する場合、またはimplementation contractを策定する場合は `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。`only_chatgpt` または `manual_e2e_only` labelが付いたIssueを操作・判定する場合は、さらに `ONLY-CHATGPT.md` を読む。Manual E2E planの策定・executor分類・実行・Luna prompt生成・結果判定を行う場合は `MANUAL-E2E.md` も読む。`Executor: Luna` のprompt生成、実行retry、environment / evidence問題の切り分けを行う場合は `LUNA-E2E-PLAYBOOK.md` も読む。
 5. legacy履歴または明示的な移行中例外でNotionを参照する場合だけ `NOTION-LEGACY.md` を読む。
 6. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
