@@ -23,7 +23,11 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | --- | --- |
 | checkout / persistent sub worktree | [Checkout / worktree policy](./CHECKOUTS.md) |
 | Coding Agent skill選択 | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
-| Linear workflow / Ready Queue / Done freshness | [Linear workflow](./LINEAR.md) |
+| Linear overview / routing | [Linear policy router](./LINEAR.md) |
+| Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
+| Linear Issue status / Ready Queue / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
+| Linear ↔ GitHub PR integration | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
+| Linear Documents / long-term Spec | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
 | `only_chatgpt` / `manual_e2e_only` ownership | [Execution ownership labels](./ONLY-CHATGPT.md) |
 | Manual E2EのJudgment / Executor / PASS-FAIL-BLOCKED | [Manual E2E execution rules](./MANUAL-E2E.md) |
 | VS Code isolated Manual E2E host | [VS Code Manual E2E environment](./VS-CODE-E2E.md) |
@@ -79,7 +83,7 @@ Notionは新規Work / Specの管理先には使わない。
 2. **Development work:** `shared/DEVELOPMENT.md` とrepositoryのcurrent `AGENTS.md`を読む。
 3. **Checkout / branch / worktree / local execution:** `CHECKOUTS.md`を読む。
 4. **Coding Agent / skill:** 必要なときだけShared / nuinuiCAD Agent Skillsを読む。
-5. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。
+5. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
 6. **`only_chatgpt` / `manual_e2e_only`:** 5に加えて`ONLY-CHATGPT.md`を読む。
 7. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`LUNA-E2E-PLAYBOOK.md`も読む。
 8. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
