@@ -45,6 +45,26 @@ If direct GitHub + CI is insufficient to complete the contract safely, split the
 
 Once started, ChatGPT should continue through implementation, automated verification, blocking review, PR, CI, merge, and Linear updates without asking the user to perform intermediate development work.
 
+### Parallel execution capacity and interference gate
+
+The `LINEAR.md` rule that normally limits simultaneous `In Progress` work to the primary worktree plus the persistent sub worktree applies **only to implementation Tasks that occupy those local worktree slots**.
+
+`only_chatgpt` work does not consume a local worktree slot and therefore does not count toward that two-Task limit. An independent `only_chatgpt` Issue may be moved to `In Progress` even when both local worktree slots are already occupied. There is no separate fixed numeric concurrency cap for `only_chatgpt`; safe parallelism is governed by the interference check below.
+
+Before starting an `only_chatgpt` Issue in parallel with other active implementation work, inspect the latest remote repository, relevant open branches / PRs, and active `In Progress` Issues enough to determine whether the work can proceed independently.
+
+Do **not** start the candidate in parallel when there is a meaningful risk that the Tasks will interfere, including when:
+
+- they use the same GitHub branch / ref, or the candidate expects an unmerged branch / PR from another active Task as its implementation base;
+- expected writes overlap the same files / symbols, or the Tasks modify the same tightly coupled subsystem, API, data-flow owner, parser/compiler boundary, or other shared implementation contract in a way likely to race;
+- one Task is likely to invalidate the other's `Contract: Ready` implementation facts, automated-test fixture, verification assumptions, or owner/API names before that Task reaches its next safe checkpoint;
+- an actual unfinished prerequisite or dependency exists, whether or not the Linear relation has already been recorded;
+- safe completion would require rewriting, resetting, force-updating, or otherwise taking ownership of another active Task's branch or user work.
+
+If the conflict is only a temporary parallel-execution hazard and the Issue is otherwise Ready, leave it in `Todo` and choose another independent candidate rather than inventing a dependency. If inspection reveals a real prerequisite, record the dependency and synchronize status according to `LINEAR.md`.
+
+When no meaningful interference is expected, the existence of one or two local-worktree `In Progress` Tasks is **not** a reason to defer the `only_chatgpt` Issue.
+
 For `only_chatgpt` work:
 
 - do not use Coding Agent;
