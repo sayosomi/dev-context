@@ -90,6 +90,30 @@ GitHub側のmirror commentにはdeduplication用に次のhidden markerを付け�
 
 既存commentを再確認するときは、このmarkerで二重投稿を防ぐ。
 
+### Accidental official-sync shadow for a legacy mirror
+
+Two-way syncが有効な状態でlegacy GitHub mirrorを更新した結果、公式integrationがそのGitHub Issueを新しいLinear Issueとして取り込み、元のcanonical Linear Issueとは別の**sync shadow Issue**を作ることがある。
+
+この状態を検出した場合:
+
+- 元のcanonical Linear Issueをauthorityとして維持する。
+- shadow Issueを新しいWork itemとして扱わない。
+- shadow Issueからcanonical Issueへcontract / dependency / progressを移し替えない。
+- legacy GitHub Issueを新しく作り直さない。
+- **GitHub attachment / sync relationが残っているshadow Issueを先にCanceled / Duplicate / Doneへ変更しない。** status変更がGitHub mirrorへ逆伝播する可能性があるため。
+
+他のIssueのmigration / sync / reconciliationを進行中の場合は、shadow cleanupをその場で実行しない。検出だけ記録し、同期作業が落ち着いた明示的なcleanup checkpointまで保留する。
+
+cleanup checkpointでは次の順序を守る。
+
+1. canonical Linear Issueとlegacy GitHub Issueの既存mappingを再確認する。
+2. shadow IssueのGitHub attachment / official sync relationを先に解除する。
+3. legacy GitHub Issueが削除・close・意図しないfield変更を受けていないことを確認する。
+4. sync解除を確認できた場合だけ、shadow Issueをcanonical Linear IssueのDuplicateとして整理する。
+5. sync解除を確認できない場合はstatusを変更せず、その場で停止する。
+
+このcleanupは通常のlegacy mirror reconciliationとは別の保守作業として扱う。canonical Linear Issueとlegacy GitHub Issueのone-way mirror運用は維持する。
+
 ## ChatGPT operation rule
 
 Linear Issueを参照・更新するときは、そのIssueがofficial syncedかlegacy manual mirrorかを確認する。
