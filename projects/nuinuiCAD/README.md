@@ -39,19 +39,25 @@ nuinuiCAD では primary repository checkout に加えて、並列実装用の**
 
 ## VS Code Manual E2E environment
 
-VS Code extension の user-facing behavior を Manual E2E で確認するときは、普段使いの VS Code profile をそのまま使わない。通常の user settings、word-based suggestions、inline suggestions、keybindings、installed extensions 等が結果へ混入すると、nuinuiCAD extension 自体の PASS / FAIL を判定できないため、**毎回 fresh な isolated Extension Development Host を標準環境とする**。
+VS Code extension の user-facing behavior を Manual E2E で確認するときは、**fresh profile + VS Code標準補完OFF + task-specific fixture込み**の isolated Extension Development Host を標準環境とする。普段使いの VS Code profile をそのまま使わない。
+
+通常の user settings、word-based suggestions、inline suggestions、keybindings、installed extensions 等が結果へ混入すると、nuinuiCAD extension 自体の PASS / FAIL を判定できない。Manual E2E の起動手順は、毎回この baseline を再現できる一つのコピペ可能な command block として提示する。
 
 運用ルール:
 
 - Manual E2E の判定に使う VS Code は、毎回新しい `--user-data-dir` と空の `--extensions-dir` で起動する。
-- fresh profile の VS Code built-in completion も結果へ混入し得るため、E2E user-data を作る時点で `editor.wordBasedSuggestions: "off"`、`editor.inlineSuggest.enabled: false`、`editor.quickSuggestions: false`、`editor.snippetSuggestions: "none"` を自動設定する。Manual E2E 中に普段の profile settings を手作業で切り替えない。
+- E2E user-data を作る時点で VS Code built-in completion を無効化する。最低限 `editor.wordBasedSuggestions: "off"`、`editor.inlineSuggest.enabled: false`、`editor.quickSuggestions: false`、`editor.snippetSuggestions: "none"` を設定する。
+- Task の Manual E2E fixture は同じ command block 内で `$E2E_ROOT` 配下へ生成し、その fixture file を起動時に明示的に開く。fixture は checkout/worktree を汚さない場所へ置く。
+- Manual E2E の起動コマンドを提示するときは、`npm run build:vscode`、fresh user-data/extensions 作成、標準補完OFF settings 作成、task-specific fixture 作成、Extension Development Host 起動までを一つのコピペ可能な block に含める。ユーザーへ途中の手作業設定を要求しない。
 - completion の Manual E2E は自動 popup の有無ではなく、必要に応じて `Trigger Suggest` を明示実行し、nuinuiCAD provider の候補を確認する。
 - project の開発中 extension は `--extensionDevelopmentPath="$PWD/vscode-extension"` で読み込む。
 - 起動前に current checkout で `npm run build:vscode` を実行する。
 - rebuild、branch / commit 切り替え、blocking fix 後の再試験では、古い Extension Development Host を閉じてから fresh isolated host を起動し直す。
 - 普段の VS Code 側で settings や extension を手動で無効化する方法を標準手順にしない。
 - 通常 user profile でのみ再現する問題は、isolated environment の Manual E2E failure と混同せず、profile / interoperability 固有の別問題として扱う。
-- VS Code Manual E2E の起動コマンドを提示するときは、特別な理由がない限り次の canonical command を使う。
+- Task-specific Manual E2E が意図的に既存 user settings / installed extensions との interoperability を検証する場合だけ、この isolated baseline に加えて別途 profile-dependent test を行う。
+
+Canonical launch shape:
 
 ```bash
 cd <nuinuiCAD checkout>
@@ -69,24 +75,28 @@ cat > "$E2E_ROOT/user-data/User/settings.json" <<'EOF'
 }
 EOF
 
+cat > "$E2E_ROOT/<task-fixture>.nui" <<'EOF'
+<task-specific fixture source>
+EOF
+
 code --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$PWD/vscode-extension" \
-  "$PWD"
+  "$PWD" \
+  "$E2E_ROOT/<task-fixture>.nui"
 ```
 
-macOS で `code` command が unavailable な場合も、同じ isolation flags と E2E settings を維持して VS Code executable を直接使う。
+macOS で `code` command が unavailable な場合も、fresh profile、標準補完OFF settings、fixture生成、同じ isolation flags を維持して VS Code executable を直接使う。
 
 ```bash
 /Applications/Visual\ Studio\ Code.app/Contents/Resources/app/bin/code --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$PWD/vscode-extension" \
-  "$PWD"
+  "$PWD" \
+  "$E2E_ROOT/<task-fixture>.nui"
 ```
-
-Task-specific Manual E2E が意図的に既存 user settings / installed extensions との interoperability を検証する場合だけ、この isolated baseline に加えて別途 profile-dependent test を行う。
 
 ## Repository-owned sources of truth
 
