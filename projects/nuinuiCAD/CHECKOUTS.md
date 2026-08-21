@@ -31,3 +31,5 @@ nuinuiCADではprimary repository checkoutに加えて、並列実装用の**常
 Manual E2E、blocking fix、PR merge後の追従作業は、Shared Development Workflowどおり原則として既存の安全なstandard checkoutを継続利用する。
 
 Frozen commitを一時的に検証する必要がある場合、cleanでidleなcheckoutならdetached HEADを使ってよい。テストのためにuser workをstash / reset / discard / force-switchしない。
+
+Manual E2Eのためだけにdetachedへ移動した場合は、終了後にoriginal refへnon-destructiveなnormal switchで戻す。安全に戻せない状態なら勝手に整理せずblocking pointとして扱う。
