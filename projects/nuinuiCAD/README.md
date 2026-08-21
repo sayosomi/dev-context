@@ -37,6 +37,46 @@ nuinuiCAD では primary repository checkout に加えて、並列実装用の**
 - 常設subは1つだけとする。3本目以降のworktreeは真に追加の同時並列実装が必要な場合だけ作成し、不要になったらShared Development Workflowどおり削除する。
 - unrelatedなuser changesや進行中Taskをreset / overwriteしてsubを再利用しない。cleanでない場合はblocking pointとして扱う。
 
+## VS Code Manual E2E environment
+
+VS Code extension の user-facing behavior を Manual E2E で確認するときは、普段使いの VS Code profile をそのまま使わない。通常の user settings、word-based suggestions、inline suggestions、keybindings、installed extensions 等が結果へ混入すると、nuinuiCAD extension 自体の PASS / FAIL を判定できないため、**毎回 fresh な isolated Extension Development Host を標準環境とする**。
+
+運用ルール:
+
+- Manual E2E の判定に使う VS Code は、毎回新しい `--user-data-dir` と空の `--extensions-dir` で起動する。
+- project の開発中 extension は `--extensionDevelopmentPath="$PWD/vscode-extension"` で読み込む。
+- 起動前に current checkout で `npm run build:vscode` を実行する。
+- rebuild、branch / commit 切り替え、blocking fix 後の再試験では、古い Extension Development Host を閉じてから fresh isolated host を起動し直す。
+- 普段の VS Code 側で settings や extension を手動で無効化する方法を標準手順にしない。
+- 通常 user profile でのみ再現する問題は、isolated environment の Manual E2E failure と混同せず、profile / interoperability 固有の別問題として扱う。
+- VS Code Manual E2E の起動コマンドを提示するときは、特別な理由がない限り次の canonical command を使う。
+
+```bash
+cd <nuinuiCAD checkout>
+npm run build:vscode
+
+E2E_ROOT="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)"
+mkdir -p "$E2E_ROOT/user-data" "$E2E_ROOT/extensions"
+
+code --new-window \
+  --user-data-dir="$E2E_ROOT/user-data" \
+  --extensions-dir="$E2E_ROOT/extensions" \
+  --extensionDevelopmentPath="$PWD/vscode-extension" \
+  "$PWD"
+```
+
+macOS で `code` command が unavailable な場合も、同じ isolation flags を維持して VS Code executable を直接使う。
+
+```bash
+/Applications/Visual\ Studio\ Code.app/Contents/Resources/app/bin/code --new-window \
+  --user-data-dir="$E2E_ROOT/user-data" \
+  --extensions-dir="$E2E_ROOT/extensions" \
+  --extensionDevelopmentPath="$PWD/vscode-extension" \
+  "$PWD"
+```
+
+Task-specific Manual E2E が意図的に既存 user settings / installed extensions との interoperability を検証する場合だけ、この isolated baseline に加えて別途 profile-dependent test を行う。
+
 ## Repository-owned sources of truth
 
 - 実装済みの事実・actual code: latest `sayosomi/nuinuiCAD` repository
