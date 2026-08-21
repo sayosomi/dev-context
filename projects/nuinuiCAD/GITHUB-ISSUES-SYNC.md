@@ -14,26 +14,29 @@ GitHub Issuesへ公開することを前提とするWork informationは、Linear
 - repository implementation factsは従来どおりlatest repositoryがauthority。
 - Linear公式GitHub Issues repo↔team two-way sync mappingはOFFのまま維持する。
 - GitHub PR integration / PR workflow automationはGitHub Issues mirrorとは別物として維持してよい。
+- ChatGPTとの通常会話はmirror sourceではない。Linear Issue / Documentへ保存された内容だけが自動mirror対象になる。
 
 ## Automatic mirror owner
 
 通常の自動reconciliation ownerはCloudflare Worker `nuinuicad-linear-github-mirror` とする。
 
 ```text
-Linear Issue change
-  → Linear webhook (Issue only)
+Linear Issue / Comment / Document change
+  → Linear webhook
   → Cloudflare Worker
   → HMAC / replay-window validation
   → Cloudflare Queue
-  → canonical Linear Issue refetch
+  → canonical Linear data refetch
   → GitHub REST API reconcile
 ```
 
-Webhook gapやrelation-only changeを回収するため、同じWorkerがCloudflare Cron `0 */12 * * *` (UTC) で12時間ごとのsafety sweepを実行し、Sayosomi teamのIssueを同じQueue reconciliation pathへ流す。
+Webhook対象は`Issue`、`Comment`、`Document`とする。
+
+Webhook gapやrelation-only change、Document / comment driftを回収するため、同じWorkerがCloudflare Cron `0 */12 * * *` (UTC) で12時間ごとのsafety sweepを実行し、同じQueue reconciliation pathへ流す。
 
 旧ChatGPT `Legacy Issue Mirror` scheduled automationはcutover完了後は無効のまま維持し、通常経路として再有効化しない。Cloudflare mirrorが障害で長時間利用できず、明示的なfallback運用を決めた場合だけ別途扱う。
 
-## Mapping contract
+## Issue mapping contract
 
 GitHub Issueは次の順序でresolveする。
 
@@ -60,7 +63,7 @@ GitHub create成功後にLinear attachment createだけ失敗しても、次回�
 
 これらから新しいGitHub Issueを作らない。
 
-## Mirrored fields
+## Mirrored Issue fields
 
 自動mirrorするもの:
 
@@ -80,13 +83,36 @@ GitHub bodyにはoriginal Linear issue URL、`linear-issue-id` marker、`linear-
 
 Linearに存在するlabelがGitHub側に無い場合はneutral default colorで作成してから適用してよい。
 
-## Comments / privacy boundary
+## Comments
 
-Linear commentsはv1では自動mirrorしない。
+Linearで書かれたコメントは公開情報として扱い、すべてGitHubへone-way mirrorする。public marker、privacy marker、opt-in markerは使わない。
 
-既存Linear top-level discussionにはinternal / non-public内容が入り得るため、comment全自動公開は禁止する。将来comment bridgeを追加する場合は、explicit public marker等のprivacy-safe contractを別途決める。
+- Linear Issue comment → 対応するGitHub Issue comment
+- Linear Document comment → そのDocumentを表すGitHub Issue comment
+- comment create / update / removeをreconcileする
+- managed GitHub commentには `<!-- linear-comment-id:<Linear comment UUID> -->` を付ける
+- Linear側で編集されたmanaged commentはGitHub側を更新してよい
+- Linear側で削除されたmanaged commentはGitHub側から削除してよい
+- GitHub-only commentはLinearへ逆同期しない
+- GitHub-only commentはsweep / reconcileで上書き・削除しない
 
-GitHub repository / Issuesはpublicである。Issue descriptionへ公開してよいWork informationだけを置く。明示的にinternal / non-publicと指定された内容はGitHubへmirrorしない。
+Linearへ保存する前にpublicにしてよい内容かを判断する。internal / non-public情報をLinear commentへ書いた後にmirror側で非公開扱いにする仕組みは設けない。
+
+## Linear Document mirror
+
+nuinuiCAD Initiative subtree内のLinear DocumentをGitHub Issueとして公開mirrorする。
+
+- 1 Linear Document = 1 GitHub Issue
+- GitHub Issueへ `Linear Document` labelを付ける
+- bodyへ `<!-- linear-document-id:<Linear Document UUID> -->` markerを付ける
+- title / body / commentsをLinear current stateからreconcileする
+- Document archive / trash / removeはGitHub Issueを`closed / not planned`へreconcileする
+- GitHub側のtitle / body / state / comment editをLinearへ逆同期しない
+- authenticated mediaはmirrorのために再hostしない
+
+対象scopeはnuinuiCAD Initiativeそのもの、およびそのProject / child Initiative等から辿れるsubtreeに限定する。workspace内の無関係なDocumentをmirrorしない。
+
+Document create時はGitHub側のread-after-write delayを考慮し、hidden `linear-document-id` markerがrepository issue listingから観測可能になるまでserialized Queueを解放しない。同じLinear Documentについてqueued create eventが重なっても、canonical GitHub Issueを1件だけ維持する。
 
 ## GitHub-side edits
 
@@ -95,6 +121,7 @@ GitHub Issuesはpublic mirrorでありauthorityではない。
 - GitHub側の独自field / status編集をLinearへ取り込まない。
 - 次回Linear webhookまたは12-hour safety sweepで、managed fieldはLinear current stateへ戻ってよい。
 - GitHub側の独自commentはLinearへ逆同期しない。
+- GitHub-only commentはmanaged Linear commentと区別し、reconciliationで保持する。
 
 ## Shadow cleanup rule
 
@@ -117,10 +144,11 @@ cleanup checkpointでは次の順序を守る。
 
 ## ChatGPT operation rule
 
-Linear Issueを参照・更新するときはLinearを先に更新し、自動mirrorが通常経路であることを前提にする。
+Linear Issue / Documentを参照・更新するときはLinearを先に更新し、自動mirrorが通常経路であることを前提にする。
 
-- 通常のfield更新について、ChatGPTが同じcheckpointでGitHub Issueを手動二重更新しない。
+- 通常のfield / comment更新について、ChatGPTが同じcheckpointでGitHub Issueを手動二重更新しない。
 - mirror attachmentがまだ無い新規Issueでも、Workerがcreate / attachするため通常は手動GitHub Issueを作らない。
+- Linear DocumentもWorkerがGitHub Issueをcreate / reconcileするため通常は手動mirrorしない。
 - mirror driftを検出した場合は、まずLinear current stateとCloudflare Worker / Queueの状態を確認する。
 - manual reconciliationは自動経路の障害調査または明示的なrepair時だけ行う。
 - Linear公式GitHub Issues two-way sync mappingを再度有効化しない。
