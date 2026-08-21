@@ -71,8 +71,6 @@ Notionは新規Work / Specの管理先には使わない。
 - 未merge: repository調査、Linear確認、implementation contract策定までは進めてよいが、Coding Agentへ実装開始を指示しない。
 - merge済み: merge後のlatest remote `main`を再確認し、それを次Taskのimplementation baseとする。
 
-前Taskのreviewed commitを意図的にbaseにする別trackがcurrent planで明示されている場合は、そのplanを優先する。
-
 ## Loading rule
 
 毎回すべてのlinked documentを読む必要はない。
