@@ -1,7 +1,7 @@
 # nuinuiCAD Linear capacity policy
 
 LinearはFree plan前提で運用する。
-Free planのIssue数制限を、Work管理上の明示的な制約として扱う。
+Free planのIssue / Project capacityを、Work管理上の明示的な制約として扱う。
 
 ## Archive policy
 
@@ -10,7 +10,17 @@ Free planのIssue数制限を、Work管理上の明示的な制約として扱�
 - 後から参照・Manual E2Eする可能性だけを理由に、auto-archive期間を長くしない。
 - Manual E2Eを後回しにしている実装Issueは`In Review + Manual E2E: Deferred`で未完了として保持する。Deferredのまま`Done`へ進めないため、通常のclosed-item archive対象にもならない。
 - 必要なManual E2Eが`Passed`、または`Not Required`となって`Done`へ進んだ後は通常どおりarchive対象にしてよい。
-- Project内の必要Issueが完了したらProjectも速やかにCompletedへ進め、ProjectがIssueのauto-archiveを妨げないようにする。
+- pure tracking parentを長期間維持しない。scope / acceptanceをleaf Issueへ完全に移したtracking shellは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) と [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) に従って整理する。
+
+## Project capacity
+
+ProjectはFree plan capacity上の通常管理単位にしない。作成・assignment・cleanupのauthorityは [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md)。
+
+- Projectは原則作らない。
+- Issue relationで十分ならProjectなしで管理する。
+- 例外的に使うProjectは極短期aggregate trackingに限る。
+- aggregate trackingの役目が終わったら速やかにCompletedへ進め、不要なProjectを長期間保持しない。
+- category / roadmap / historyのためにProjectを常設しない。
 
 ## Stale issue policy
 
@@ -26,6 +36,7 @@ Free planのIssue数制限を、Work管理上の明示的な制約として扱�
 - Issue枠に余裕があることだけを理由にIdea Inboxの項目を機械的にIssue化しない。
 - 完了済みWorkをactive側へ長期間残さない。
 - `In Review + Deferred`は未完了Workなので、Issue枠節約だけを理由にDoneへ進めない。
+- feature scopeをleaf Issueへ完全移管しただけの元Issueを、aggregate progress表示のためだけにtracking parentとして保持しない。
 
 ## Change policy
 

@@ -13,12 +13,14 @@ LinearをnuinuiCADの正式なWork管理・長期仕様管理の場所として�
 - Workspace: Sayosomi
 - Team: Sayosomi
 - Initiative: nuinuiCAD
-- Project: 数日〜数週間で完了できるexecution phase
-- Project label: Projectの分野分類
+- Project: exception-onlyの極短期aggregate tracking
+- Project label: 例外的にProjectを使う場合の分野分類
 - Issue: 実際に着手・完了するWork
-- Document: 長期的に残す仕様・設計
+- Document: repositoryに既存ownerがない長期的な仕様・設計
 
 Taskや個別開発テーマをInitiativeにしない。製品ごとにTeamを増やさず、当面はSayosomi Team 1つで運用する。
+
+Projectは通常の分類・roadmap単位にしない。通常のWork管理はIssue + relationを基本とし、Project利用条件は [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) をauthorityとする。
 
 ## Policy map
 
@@ -48,22 +50,23 @@ Canceledの移行試験Issueや旧カテゴリProject等が残っている場合
 ## Source of truth
 
 - actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
+- repository-owned normative contract: repositoryの該当spec / policy owner
 - work plan / progress / research result: Linear Issue / Project
-- long-term specification / design: Linear Document
+- repositoryにownerがない長期仕様・設計: Linear Document
 - pre-migration history: Notion legacy archive
 
-実装事実についてLinear / Notion / 過去チャットとrepositoryが矛盾する場合はlatest repositoryをauthoritativeとする。
+実装事実についてLinear / Notion / 過去チャットとrepositoryが矛盾する場合はlatest repositoryをauthoritativeとする。actual behaviorとnormative contractの衝突判断は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従う。
 
 ## New Task startup
 
 新規開発Task開始前に:
 
 1. latest GitHub remote stateを確認する。
-2. Linearで既存Issue / Projectを検索する。
-3. 必要なlong-term SpecをLinear Documentsから確認する。
+2. Linearで既存Issueを検索する。Projectは現在のTaskに関係する例外的な短期Projectが存在する場合だけ確認する。
+3. 必要なlong-term Specをrepository ownerまたはLinear Documentsから確認する。
 4. 対象IssueのContract / Manual E2E label、dependency、description、current Commentを確認する。
 5. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) に従いReady条件とBacklog / Todoが一致していることを確認する。
-6. Project assignmentが必要なら [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) に従う。
+6. Project assignmentを例外的に行う必要がある場合だけ [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) に従う。
 7. `Contract: Ready`でもlatest repositoryのactual owner / symbol / file pathを再確認する。
 8. ユーザーがTaskを明示的に開始した時点で、Issue workflowとexecution ownership ruleに従ってactive statusへ同期する。
 
@@ -89,6 +92,8 @@ Linear運用によってChatGPT / Coding Agentの役割分担を変更しない�
 
 - ChatGPT: repository調査、architecture把握、implementation contract、blocking review、Manual E2E plan、Linear管理
 - Coding Agent: 確定済みcontractに従うimplementation / test / commit / push
+
+local worktree運用は [`CHECKOUTS.md`](./CHECKOUTS.md)、direct GitHub execution ownershipは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) をauthorityとする。
 
 remote-state verification、prompt順序、Git safetyは [`shared/DEVELOPMENT.md`](../../shared/DEVELOPMENT.md) をauthorityとする。
 

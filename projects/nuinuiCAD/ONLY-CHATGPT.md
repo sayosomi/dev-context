@@ -2,7 +2,7 @@
 
 ## Purpose
 
-nuinuiCAD uses two execution-ownership labels for non-parent Issues:
+nuinuiCAD uses two execution-ownership labels for leaf / non-parent Issues:
 
 - `only_chatgpt` — the remaining implementation / verification / GitHub / work-management work can be performed by web ChatGPT without Coding Agent or a local nuinuiCAD execution environment.
 - `manual_e2e_only` — all implementation / review / merge / management work available to web ChatGPT is complete and the only remaining completion work is required Manual E2E in an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
@@ -13,7 +13,7 @@ A `manual_e2e_only` Issue may have Manual E2E units executed by Codex Luna xhigh
 
 These labels do not replace Contract, Manual E2E, type, dependency, or status metadata.
 
-**Parent / tracking Issues never receive either label.** Parent state is tracked through ordinary status, Contract / Manual E2E labels, and child / blocker relations.
+Execution-ownership labels are leaf-only. A retained parent with its own aggregate acceptance / integrated Manual E2E / final execution work does not receive either label.
 
 ## `only_chatgpt`
 
@@ -23,11 +23,11 @@ Typical ChatGPT-owned work includes:
 
 - latest Project Context / remote repository inspection;
 - implementation-contract freshness checks;
-- direct GitHub branch/file/commit/PR operations;
+- direct GitHub branch/file/commit operations and PR operations when explicitly authorized;
 - automated test authoring;
 - GitHub Actions / CI inspection and fix loops;
 - blocking review;
-- merge;
+- merge when explicitly authorized;
 - Linear metadata, dependency, and status updates;
 - Done-before Ready contract freshness checks.
 
@@ -47,27 +47,33 @@ If direct GitHub + CI is insufficient to complete the contract safely, split the
 
 `only_chatgpt` does not auto-start a Todo by itself. The normal explicit-start rule still applies unless the current conversation already authorizes continuing the same execution track.
 
-Once started, ChatGPT should continue through implementation, automated verification, blocking review, PR, CI, merge, and Linear updates without asking the user to perform intermediate development work.
+Once started, ChatGPT should continue through all work that it can safely perform without asking the user to do intermediate development work. Do not stop merely because local Coding Agent worktrees are occupied.
 
-### Parallel execution capacity and interference gate
+### Parallel execution capacity
 
-The `LINEAR.md` rule that normally limits simultaneous `In Progress` work to the primary worktree plus the persistent sub worktree applies **only to implementation Tasks that occupy those local worktree slots**.
+Local worktree capacity is a constraint for local Coding Agent / local execution Tasks, not for `only_chatgpt`.
 
-`only_chatgpt` work does not consume a local worktree slot and therefore does not count toward that two-Task limit. An independent `only_chatgpt` Issue may be moved to `In Progress` even when both local worktree slots are already occupied. There is no separate fixed numeric concurrency cap for `only_chatgpt`; safe parallelism is governed by the interference check below.
+`only_chatgpt` does not consume a local worktree slot. There is no fixed numeric concurrency cap for `only_chatgpt`; safe parallelism is governed by the interference gate below.
+
+Do not defer an otherwise independent `only_chatgpt` Issue merely to preserve local checkout capacity. When multiple `only_chatgpt` Issues can proceed safely, continue the work that web ChatGPT can perform.
+
+### Interference gate
 
 Before starting an `only_chatgpt` Issue in parallel with other active implementation work, inspect the latest remote repository, relevant open branches / PRs, and active `In Progress` Issues enough to determine whether the work can proceed independently.
 
-Do **not** start the candidate in parallel when there is a meaningful risk that the Tasks will interfere, including when:
+Parallel work is allowed unless there is a **concrete interference path**. Block parallel start when any of the following is true:
 
-- they use the same GitHub branch / ref, or the candidate expects an unmerged branch / PR from another active Task as its implementation base;
-- expected writes overlap the same files / symbols, or the Tasks modify the same tightly coupled subsystem, API, data-flow owner, parser/compiler boundary, or other shared implementation contract in a way likely to race;
-- one Task is likely to invalidate the other's `Contract: Ready` implementation facts, automated-test fixture, verification assumptions, or owner/API names before that Task reaches its next safe checkpoint;
-- an actual unfinished prerequisite or dependency exists, whether or not the Linear relation has already been recorded;
-- safe completion would require rewriting, resetting, force-updating, or otherwise taking ownership of another active Task's branch or user work.
+1. **unfinished implementation dependency / base** — the candidate actually depends on another active Task's unmerged result or unfinished prerequisite;
+2. **same branch / ref ownership** — both Tasks would write or move the same GitHub branch / ref;
+3. **conflicting shared write target** — both Tasks need incompatible changes to the same symbol, API, shared contract, data-flow owner, parser/compiler boundary, or other coupled owner;
+4. **Ready-contract invalidation before a safe checkpoint** — one Task is likely to invalidate the other's `Contract: Ready` facts, fixtures, verification assumptions, or ownership names before the other Task can safely refresh;
+5. **unsafe ownership rewrite** — safe completion would require resetting, force-updating, rewriting, or otherwise taking ownership of another active Task's branch or user work.
 
-If the conflict is only a temporary parallel-execution hazard and the Issue is otherwise Ready, leave it in `Todo` and choose another independent candidate rather than inventing a dependency. If inspection reveals a real prerequisite, record the dependency and synchronize status according to `LINEAR.md`.
+Same file, directory, subsystem, or nearby code is a **warning signal**, not an automatic block. It becomes a block only when the actual write targets / contracts / data flow can conflict or one Task can invalidate the other's premises.
 
-When no meaningful interference is expected, the existence of one or two local-worktree `In Progress` Tasks is **not** a reason to defer the `only_chatgpt` Issue.
+Likewise, different files do not guarantee independence if both changes meet at the same API / semantics / data-flow contract.
+
+If the conflict is only a temporary parallel-execution hazard and the Issue is otherwise Ready, leave it in `Todo` and choose another independent candidate rather than inventing a dependency. If inspection reveals a real prerequisite, record the dependency and synchronize status according to `LINEAR-ISSUES.md`.
 
 For `only_chatgpt` work:
 
@@ -76,7 +82,7 @@ For `only_chatgpt` work:
 - use latest GitHub remote state as the implementation authority;
 - use direct GitHub operations and GitHub CI as the normal implementation/debug loop;
 - preserve unrelated branches/worktrees/user changes;
-- follow ordinary PR, blocking-review, merge, and freshness rules.
+- follow ordinary authorization, blocking-review, merge, and freshness rules.
 
 ## `manual_e2e_only`
 
@@ -108,9 +114,9 @@ This transition means: **web ChatGPT's implementation / remote-management work i
 
 Who performs each Manual E2E test unit is determined by `MANUAL-E2E.md`:
 
-- objective units that Luna can reliably operate / observe / evidence may use `Executor: Luna`;
+- objective units use Luna by default when no known capability / evidence blocker exists;
 - visual / UX / design / experiential judgment units use `Executor: Human`;
-- objective units that Luna cannot reliably execute also use `Executor: Human` for capability reasons.
+- objective units with an established Luna capability limitation use `Executor: Human / Reason: Luna capability`.
 
 If testing is postponed, keep `manual_e2e_only` and use:
 
@@ -136,7 +142,7 @@ The execution label may remain on the closed Issue as historical metadata; open-
 
 If Manual E2E fails because implementation work is required again, the Issue is no longer `manual_e2e_only`.
 
-If the fix remains the same Issue's scope and ChatGPT can perform it:
+If the fix remains the same Issue's acceptance / scope and ChatGPT can perform it:
 
 ```text
 remove: manual_e2e_only
@@ -147,21 +153,27 @@ Manual E2E: Failed
 
 Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only execution-environment-bound Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
 
-If the failure requires a genuinely separate implementation Issue, create/reuse the smallest correct leaf Issue, apply `only_chatgpt` there if it qualifies, and represent the dependency explicitly. Do not create a child mechanically for a small fix that still belongs to the same leaf Issue.
+Whether a discovered fix stays in the same Issue or becomes a new Issue is determined by [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md). Do not create a child mechanically for a small fix that remains necessary for the original acceptance.
 
 Do not treat a test-environment mistake, unsupported Luna operation, or unclear E2E instruction as an implementation failure. Correct the E2E setup / plan instead. If the failure exposes a new product decision, stop autonomous implementation and return the affected Contract to the appropriate non-Ready state.
 
-## Parent / child rule
+## Parent / decomposition rule
 
-Execution-ownership labels are **leaf-only**.
+Do not keep a pure tracking parent by default.
 
-A parent / tracking Issue must not receive `only_chatgpt` or `manual_e2e_only`, even when:
+When an original Issue is fully decomposed into independently verifiable leaf Issues **and all original scope / acceptance has been transferred to those children**, the original Issue should stop acting as an aggregate tracking shell. Use child relations / dependency relations for execution tracking.
 
-- every child is `only_chatgpt`;
-- every child is already Done;
-- the parent's only remaining completion step is an integrated Manual E2E.
+- If the original Issue's actual Work was research / decomposition and that acceptance is complete, it may be `Done`.
+- If the original Issue represented feature delivery but no longer owns any remaining acceptance because that scope has been superseded by the child Issues, close it as no-longer-active tracking work according to the normal Issue / capacity policy; do **not** mark the feature delivered merely because decomposition happened.
+- Record the child Issue identifiers so the decomposition remains discoverable.
 
-The parent continues to use ordinary Linear state + Contract / Manual E2E metadata + relations. If implementation represented by its children is fully merged and the parent's own remaining work is Manual E2E, `In Review` may be the correct ordinary status, but no execution-ownership label is added.
+Retain a parent Issue only when the parent itself owns real aggregate work that cannot be attributed to individual children, for example:
+
+- integrated Manual E2E that is meaningful only after multiple children merge;
+- cross-child aggregate acceptance;
+- final cutover / migration / cleanup / integration execution owned by the parent.
+
+A retained parent uses ordinary Linear status + Contract / Manual E2E metadata + relations. It never receives `only_chatgpt` or `manual_e2e_only`.
 
 ## Decomposition rules
 
@@ -185,14 +197,15 @@ Only the first unblocked child in a dependency chain should materialize into `To
 
 ## Status synchronization checkpoints
 
-In addition to the normal `LINEAR.md` checkpoints, re-evaluate execution ownership whenever:
+In addition to the normal `LINEAR-ISSUES.md` checkpoints, re-evaluate execution ownership whenever:
 
-1. an `only_chatgpt` implementation PR is merged;
+1. an `only_chatgpt` implementation branch / PR is merged;
 2. blocking review / CI becomes complete;
 3. a blocker is completed or added;
 4. Manual E2E becomes executable;
 5. Manual E2E passes or fails;
-6. a Ready contract freshness check changes prerequisites.
+6. a Ready contract freshness check changes prerequisites;
+7. decomposition transfers all remaining acceptance out of a former tracking parent.
 
 Critical automatic leaf transition:
 
@@ -207,7 +220,10 @@ only_chatgpt leaf
 Critical parent rule:
 
 ```text
-parent / tracking Issue
+pure tracking parent after complete scope transfer
+=> do not keep as active aggregate tracker
+
+retained parent with own aggregate work
 => never only_chatgpt
 => never manual_e2e_only
 ```

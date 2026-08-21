@@ -15,6 +15,43 @@ Manual E2E test units are classified by both judgment type and executor:
 
 The Linear `Manual E2E` label remains the aggregate state for the whole Issue. Do not create separate Linear labels for Luna / Human execution.
 
+## When Manual E2E is required
+
+Manual E2E is `Required` only when at least one acceptance condition cannot be sufficiently verified by automated tests without operating an actual production execution environment.
+
+Use this decision order:
+
+1. Does acceptance intentionally require human visual / UX / design / experiential judgment?
+   - YES → Manual E2E Required.
+2. Does acceptance depend on behavior that can only be verified reliably in an actual production host / execution environment, such as host wiring, lifecycle, focus, selection, window/session behavior, or another host-only boundary?
+   - YES → Manual E2E Required.
+3. Otherwise, can automated tests sufficiently prove all required acceptance against the authoritative production semantics / boundaries?
+   - YES → `Manual E2E: Not Required`.
+
+A Task is not Manual-E2E-required merely because it is user-facing, visual, UI-related, or implemented in a production host. If automated verification sufficiently proves the acceptance, do not add a manual check that only duplicates the same oracle.
+
+Luna / Human executor capability does **not** decide whether Manual E2E is required. First decide whether an actual execution-environment check is needed; only then classify its units and executors.
+
+## Timing relative to merge
+
+Required Manual E2E is performed **after merge by default**.
+
+Normal order:
+
+```text
+implementation
+-> automated verification
+-> blocking review
+-> merge
+-> required Manual E2E
+-> PASS
+-> Done
+```
+
+Pre-merge Manual E2E is an exception and must be stated explicitly in the Task contract. Use it only when merging the unverified behavior creates unusual risk, or when the acceptance contract itself requires the production-host observation before merge.
+
+A post-merge Manual E2E `FAIL` returns the same Issue to its normal fix / review / merge / rerun loop. Do not redefine the default flow as pre-merge simply to avoid post-merge fixes.
+
 ## Plan-time classification
 
 When a Manual E2E plan is created, classify each test unit before the Issue is considered `Manual E2E: Ready to Run`.
@@ -66,7 +103,9 @@ This includes checks such as:
 
 Human judgment is an intentional quality gate, not an automation gap.
 
-If classification is genuinely ambiguous, use `Judgment: Human` / `Executor: Human`.
+**Human judgment is not a fallback for an incomplete oracle.**
+
+If multiple reasonable expected outcomes remain because product semantics / acceptance are not settled, the unit is not Ready. Resolve the implementation contract or test plan first. Do not hand an underspecified question to the user as `Judgment: Human` merely because the oracle is ambiguous.
 
 ## Executor selection
 
@@ -77,16 +116,17 @@ Judgment: Human
 => Executor: Human
 
 Judgment: Objective
-+ Luna can reliably operate the environment
-+ Luna can observe the required result
-+ Luna can capture sufficient evidence
++ no known Luna capability / evidence blocker
++ reliable execution is reasonably expected
 => Executor: Luna
 
 Judgment: Objective
-+ any required Luna capability is missing or unreliable
++ known required Luna capability is missing or unreliable
 => Executor: Human
    Reason: Luna capability
 ```
+
+For Objective units, prefer Luna unless a known operation / observation / evidence limitation already makes reliable execution unlikely. Do not route objective work to the user merely because Luna success is not guaranteed in advance.
 
 Do not weaken or rewrite a Human judgment oracle merely to make a unit Luna-executable.
 
@@ -111,9 +151,13 @@ This is a freshness check, not a new product-design phase.
 
 Safe reclassification rules:
 
-- `Luna -> Human` is allowed when ambiguity, environment limitations, evidence limitations, or newly discovered human judgment make Luna execution unsafe.
+- `Luna -> Human` is allowed when an actual Luna operation / observation / evidence capability limitation is established.
+- bounded environment or prompt/instruction problems should be corrected and retried when clearly fixable; they are not automatically a reason to assign Human execution.
 - `Human -> Luna` is allowed automatically only when `Judgment: Objective` and the previous Human assignment existed solely because of Luna capability.
 - `Judgment: Human` must not be converted to Luna execution merely for efficiency. Changing that judgment contract requires an explicit product / test-plan decision, not a prompt-generation shortcut.
+- newly discovered ambiguity in the product oracle is not a Luna-capability reclassification; return the contract / test plan to a non-Ready state and resolve the missing semantics.
+
+Repeated Luna capability boundaries should be recorded in [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) and reused in future plan-time classification rather than rediscovered every Issue.
 
 ## Sol High -> Luna prompt generation
 
@@ -167,6 +211,12 @@ For `FAIL`, record the expected result, observed result, reproduction steps, and
 
 For `BLOCKED`, report the blocking condition and do not guess.
 
+A Luna `BLOCKED` result does not imply product failure.
+
+- environment / launch / instruction problem that is clearly bounded and fixable → correct it and rerun the affected unit;
+- actual Luna operation / observation / evidence capability boundary → reclassify to `Judgment: Objective / Executor: Human`;
+- missing or ambiguous product oracle → do not reclassify as Human judgment; resolve the contract / test plan first.
+
 Screenshots may be evidence for objective UI state, but a screenshot is not permission to make an aesthetic or experiential judgment.
 
 If a failed unit invalidates later units, stop as specified by the plan. Otherwise continue independent units so one failure does not hide unrelated evidence.
@@ -196,9 +246,9 @@ While only some units have passed, keep the aggregate Linear state consistent wi
 ## Standard flow
 
 ```text
-Manual E2E plan created
+Manual E2E requirement / plan decided
         ↓
-classify each test unit
+classify each required test unit
   Judgment: Objective / Human
   Executor: Luna / Human
         ↓
@@ -215,7 +265,7 @@ Luna units ──→ Sol High generates Luna prompt
                  ↓
                Sol High validates result
 
-Human units ─→ user performs human judgment checks
+Human units ─→ user performs assigned checks
                  ↓
                result returned to Sol High
         ↓

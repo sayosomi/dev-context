@@ -6,36 +6,48 @@ Linear Projectの粒度、lifecycle、Project label運用を定義する。
 
 Workspace / Team / Initiative全体の入口は [`LINEAR.md`](./LINEAR.md) を参照する。
 
-## Project is an execution phase
+## Projects are exception-only
 
-Projectは**終わる単位**として使う。
+nuinuiCADではLinear Free planのcapacityを明示的な制約として扱うため、**Projectは原則作らない**。
 
-複数Issueをまとめて進め、数日〜数週間程度でCompletedにできるexecution phaseを基本とする。
+通常のWork管理はleaf Issue + dependency / relationで行う。複数Issueが同じfeature goalを持つことだけではProject作成理由にならない。
 
-例:
+Projectを例外的に使ってよいのは、現在進行中の複数Issueを極短期だけaggregate trackingする実益が明確で、Issue relationだけではその短期executionを追う負担が大きい場合に限る。
 
-- Canvas Selection / Navigation v1
-- Geometry Editing / Bake v1
-- Modifier Editor Integration v1
-- Print Layout v1
+Projectを作らない代表例:
 
-`Language / Editor Integration`、`Module`、`DSL / Geometry`、`Automation / MCP`のような長期カテゴリをProjectとして常設しない。
+- 単に同じsurface / subsystem / categoryのIssueが複数ある
+- 同じ週に着手するだけで共通completion gateがない
+- future workの分類箱が欲しい
+- parent / tracking Issueの代替として常設したい
+- 共通goalはあるがIssue relationだけで十分追える
 
-まだ着手時期が決まっていない将来Issueは、原則ProjectなしのBacklogで保持する。一連の作業として着手する段階で、完了可能な短期Projectを作成し、対象Issueを移す。
+Projectを作る場合も、長期roadmapや履歴保存の器ではなく、一時的なexecution aidとして扱う。
 
-個々の単発実装Taskを機械的に1 Issue = 1 Projectにはしない。複数Issueをまとめて完了条件を持てる開発phaseだけをProject化する。
+## Assignment at Task start
 
-## Completion
+ProjectなしIssueへ着手するとき、Project assignmentを既定作業にしない。
 
-Project内の必要Issueが完了したらProjectもCompletedにする。
+- 既存Projectが現在も有効な極短期aggregate trackingを行っており、そのscopeへ明確に入るなら所属させてよい。
+- 新しいProjectは、複数Issueを今まさに並行・連続して進めるうえで一時的aggregate trackingの実益が明確な場合だけ作る。
+- Issue relationで十分ならProjectを作らない。
+- 単発Work、future work、カテゴリ分類、履歴保存のためにはProjectを使わない。
+
+Projectを作るか迷う場合は「Projectなし」を既定とする。
+
+## Completion and cleanup
+
+Projectを使った場合は、aggregate trackingの役目が終わり次第すみやかにCompletedへ進める。
 
 Done Issueを未完了Projectへ長期間残してauto-archiveを妨げない。
 
-旧カテゴリProjectは履歴としてCanceledのまま残してよいが、新規Workの分類箱として再利用しない。
+Completed Projectを履歴保存だけのために長期間保持することを目的にしない。Linear Free plan capacityと利用可能な管理操作を確認し、不要なProjectは早期に整理する。
+
+旧カテゴリProjectは新規Workの分類箱として再利用しない。既存Projectについても、現在のaggregate trackingに不要なら解体・整理候補として扱う。
 
 ## Project labels
 
-Project labelは「何の分野のProjectか」を表す。statusや進捗段階をProject labelで重複表現しない。
+Project labelは、例外的にProjectを使う場合だけ「何の分野のProjectか」を表す。statusや進捗段階をProject labelで重複表現しない。
 
 現在は2つのProject label groupを使う。
 
@@ -57,26 +69,4 @@ Project labelは「何の分野のProjectか」を表す。statusや進捗段階
 
 SurfaceとDomainは異なる観点なので、1 Projectにそれぞれ1つずつ付けてよい。
 
-現在の代表例:
-
-- Canvas Selection / Navigation v1
-  - Surface: `Canvas`
-- Modifier Editor Integration v1
-  - Surface: `VS Code / Editor`
-- Geometry Editing / Bake v1
-  - Surface: `Canvas`
-  - Domain: `DSL / Geometry`
-- Print Layout v1
-  - Surface: `Print Layout`
-
 新しいProject label / label groupを勝手に増やさない。既存分類で表現できない場合はユーザーと決めてから追加する。
-
-## Assignment at Task start
-
-ProjectなしIssueへ着手するときは、既存の短期execution Projectへ属するWorkか確認する。
-
-- 既存Projectの明確なscopeならそこへ所属させる。
-- 新しいまとまりとして複数Issueを進めるexecution phaseなら、必要に応じて短期Projectを作成する。
-- 単発Workや着手時期未定のfuture workを、分類目的だけでProjectへ押し込まない。
-
-Projectへ所属させる場合、適切な`Surface` / `Domain` Project labelを付ける。
