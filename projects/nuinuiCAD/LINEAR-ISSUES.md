@@ -54,11 +54,11 @@ Contract / E2E planが揃っていても未完了blockerがある間はBacklog�
 
 既に検証履歴があるIssueでは`Failed` / `Deferred`等でも、実装再開可能で未blockedならTodoへ戻り得る。
 
-Todoに新しい未完了blockerが追加された場合はBacklogへ戻す。
+Contract / E2E planが揃ったとき、または最後のblockerがDoneになったときはTodoへの同期を忘れない。Todoに新しい未完了blockerが追加された場合はBacklogへ戻す。
 
 ### In Progress
 
-**明示的に開始された実作業**。
+**ユーザーがチャットで明示的に開始した実作業**に使う。既に開始済みのexecution trackを継続する例外は、専用execution-ownership ruleが明示する場合だけ従う。
 
 contract調査、候補比較、Issue本文更新、E2E plan策定だけではIn Progressにしない。
 
@@ -169,6 +169,7 @@ Sayosomi Teamのdefault statusは防御策としてBacklogを推奨するが、C
 軽い思いつきだけでIssue数を増やさないため、常設Issue `SAY-55 — Idea Inbox — future work / 思いつきメモ` を使う。
 
 - まだ調査・仕様策定・実装へ進めると決めていない案は原則新規Issueにせず`Ideas`へ追記する。
+- ChatGPTは軽い思いつきを受け取ったとき、既存Issue化が明らかに必要でなければまずIdea Inboxへの追記を優先する。
 - 独立したResearch / spec / implementation / Bug / Verificationとして扱う段階で既存Issue重複を検索し、正式Issueへ切り出す。
 - 切り出した元項目は削除せず`→ SAY-xx`等で履歴を残す。
 - 不要案は取り消し線または`Dropped`で残してよい。
@@ -182,24 +183,39 @@ Sayosomi Teamのdefault statusは防御策としてBacklogを推奨するが、C
 
 ### Contract
 
-- `Pending` — implementation contract確定に必要な調査 / decision / scope確定が残る
-- `Blocked` — prerequisite等がなく現時点でactionable contractを完成できない
-- `Ready` — implementation contractの本質的内容が確定済み
-- `N/A` — Research / Review / specification discussion等でimplementation contract自体が不要
+- `Pending`
+  - implementation contractに必要なrepository調査、architecture判断、product decision、scope確定等が残る。
+  - Coding Agentへそのままimplementation指示を渡せる状態ではない。
+- `Blocked`
+  - prerequisite、external capability、durable foundation等がなく、現時点ではimplementation contractを完成できない。
+  - 条件が変わるまでactionableなcontract作業を期待しないIssueを通常の`Pending`と分離する。
+- `Ready`
+  - scope / product semantics / architecture / safety boundary等、implementation contractの本質的内容が確定済み。
+  - Task開始時のlatest remote / actual owner refreshは引き続き行う。それだけでは`Pending`へ戻さない。
+  - latest repositoryで実質的contract contradictionが見つかった場合だけ再調査する。
+- `N/A`
+  - Research / Review / specification discussion等、implementation contract自体を作るWorkではない。
 
-`Ready`でもTask開始時にはlatest remote / actual ownerをrefreshする。それだけでは`Pending`へ戻さない。実質的contract contradictionが見つかった場合だけ再調査する。
+implementation contractがcheckpointで確定したら`Pending → Ready`へ更新する。
 
 ### Manual E2E
 
 Aggregate Linear stateとして次を使う。
 
 - `Plan Pending`
+  - Manual E2Eが必要だが、concreteなtest plan / fixture / expected resultがまだ確定していない。
 - `Ready to Run`
+  - concreteなManual E2E planがあり、対象implementationが利用可能になればそのplanで検証できる。
 - `Deferred`
+  - Manual E2Eを意図的に後回しにしている。mergeを先に行った場合は通常`In Review + Deferred`。
 - `Running`
+  - Manual E2Eを現在実施中。
 - `Failed`
+  - provisionalな違和感ではなく、Manual E2Eでconfirmed FAILが現在存在する。
 - `Passed`
+  - 必要なManual E2Eが完了し、current verification resultがPASS。
 - `Not Required`
+  - このIssueではManual E2Eを必要としない。
 
 代表遷移:
 
@@ -208,6 +224,8 @@ Plan Pending → Ready to Run → Running → Passed
 Ready to Run → Deferred → Running → Passed
 Running → Failed
 ```
+
+fix後は状況に応じて`Ready to Run`または`Running`へ戻し、rerun完了後に`Passed`へ進める。
 
 unitごとのJudgment / Executor / PASS / FAIL / BLOCKED semanticsは [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
