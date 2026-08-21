@@ -72,11 +72,23 @@ git merge-base --is-ancestor "$EXPECTED" origin/main
 
 `origin/main`のnormal advancementだけではblockしない。実行時の`origin/main` SHAをresultへ記録する。
 
-Luna結果受領後、Sol Highがlatest `main`をfresh-checkしてtested commitとの差分をreviewする。
+### Post-result main-drift review
 
-- unrelated drift: E2Eをaccept可能
-- tested semanticsへmaterial drift: affected unitをnew reviewed stateでrerun
-- tested commitが`main`のancestorでなくなった: remote-state staleness / rewriteとして扱う
+Luna結果受領後、Sol Highがlatest `main`をfresh-checkし、tested commitからlatest `main`までのintervening changesを**test unitごと**にreviewする。
+
+mainが進んだだけではcompleted E2Eをinvalidateしない。affected unitをrerunするのは、その変更が次のいずれかへ到達し得る場合だけ:
+
+1. unitが必要とするinitial state / fixtureの成立
+2. unitで実行するactionのsemantics
+3. expected observationを生成するimplementation / data flow
+4. unitが必要とするproduction-host wiring / observation surface
+
+同じfile / directory / subsystemを触ったという事実だけではrerun理由として十分ではない。逆に、別fileでも上記data flowへ到達するならmaterial driftになり得る。
+
+- 上記への影響を合理的に除外できる → completed PASSを維持する。
+- 影響し得る → **affected unitだけ**new reviewed stateでrerunする。
+- change review後も影響を合理的に除外できない → safety側に倒してaffected unitだけrerunする。
+- tested commitがlatest `main`のancestorでなくなった → rewrite / stale tested stateとして扱い、valid current baseから必要unitをrerunする。
 
 completed evidenceを持つfreeze refを黙って別commitへ動かさない。新しいtested stateが必要ならnew/versioned refを使う。
 
@@ -238,7 +250,11 @@ Return BLOCKED if the required state cannot be established objectively.
 
 same Luna sessionへretryする場合はdelta promptでもよいが、retained contextが曖昧ならself-contained promptへ戻す。
 
-## 8. Do not weaken the oracle for Luna
+## 8. Prefer Luna for objective units, without weakening the oracle
+
+`Judgment: Objective`で、既知のLuna capability / evidence blockerがなく、required stateを作成・操作・観測できると合理的に見込めるunitは、原則`Executor: Luna`で試す。
+
+「できるか少し不安」というだけで最初からHumanへ回さない。
 
 Lunaがrequired stateを確実に作れない、または観測できない場合は`BLOCKED`でよい。
 
@@ -247,19 +263,17 @@ Lunaがrequired stateを確実に作れない、または観測できない場�
 - required selectionを客観的identity付きで確立できない
 - popup/candidateをevidence上区別できない
 - physical-device操作が必要
-- judgmentがHuman quality gateを含む
+- required observation surfaceをLunaから取得できない
 
-Sol Highは必要に応じて:
+`BLOCKED`後は原因を分ける。
 
-```text
-Judgment: Objective
-Executor: Human
-Reason: Luna capability
-```
-
-へreclassifyしてよい。
+- bounded environment / launch / prompt問題で明確に修正可能 → setup / promptを直してaffected unitをrerun
+- actual Luna operation / observation / evidence capability boundary → `Judgment: Objective / Executor: Human / Reason: Luna capability`へreclassify
+- missing / ambiguous product oracle → Humanへ逃がさずcontract / test planを非Readyへ戻す
 
 Lunaを維持するためにoracleを簡単な別物へ置換しない。
+
+同じcapability limitationをIssueごとに繰り返し試さない。再利用可能なboundaryが判明したらこのplaybookへ記録し、future classificationで最初から使う。
 
 ## 9. Distinguish BLOCKED from FAIL
 
@@ -285,7 +299,7 @@ Required state was objectively observable.
 Observed result contradicted the predeclared oracle.
 ```
 
-environment / instruction problemをimplementation failure loopへ入れない。
+environment / instruction / Luna capability problemをimplementation failure loopへ入れない。
 
 ## 10. Result format
 
@@ -326,8 +340,8 @@ Luna結果をacceptする前に確認する。
 3. Manual E2E中にrepository implementation filesを変更していないか。
 4. 各required Luna unitにoracleを直接支えるevidenceがあるか。
 5. Human-assigned unitが残っていないか。
-6. latest `origin/main` driftをreviewしたか。
-7. tested semanticsへmaterial driftがある場合、affected unitをrerunしたか。
+6. latest `origin/main` driftをunitごとにreviewしたか。
+7. tested resultへ到達し得るmaterial driftがある場合、affected unitだけrerunしたか。
 8. aggregate `Manual E2E: Passed`の前提を満たすか。
 9. Done-before Ready contract freshness checkは別checkpointとして実施したか。
 
@@ -337,7 +351,7 @@ Luna結果をacceptする前に確認する。
 
 症状: fetch直後、`origin/main`がprompt SHAより新しいだけでLunaがBLOCKED。
 
-対策: Sol Highがdriftをreviewし、stable E2E refでtested stateを固定し、実行後にlatest-main freshness reviewを分離する。
+対策: Sol Highがdriftをreviewし、stable E2E refでtested stateを固定し、実行後にlatest-main freshness reviewを分離する。same file / subsystemという理由だけでrerunせず、各unitのinitial state / action / observation data flowへの到達可能性で判断する。
 
 ### VS Code opens but nuinuiCAD is absent
 
