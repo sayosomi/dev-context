@@ -117,7 +117,7 @@ LinearはFree plan前提で運用し、closed itemの早期archiveによるIssue
 - 作業予定・進捗・調査結果: Linear Issue / Project
 - 長期的に参照する仕様・設計: Linear Document
 - [Linear workflow](./LINEAR.md)
-- [`only_chatgpt` workflow](./ONLY-CHATGPT.md)
+- [Execution ownership labels](./ONLY-CHATGPT.md)
 - [Implementation contract decision rule](./CONTRACT-DECISIONS.md)
 - [Linear free-plan capacity policy](./LINEAR-CAPACITY.md)
 - [GitHub Issues public mirror / sync](./GITHUB-ISSUES-SYNC.md)
@@ -158,6 +158,6 @@ Notion は新規Work / Specの管理先には使わない。
 1. この README を読む。
 2. 開発 Task では `shared/DEVELOPMENT.md` と repository の current `AGENTS.md` を読む。
 3. Coding Agent / skill が関係する場合だけ Agent Skills を読む。
-4. Linear を操作・参照する場合、またはimplementation contractを策定する場合は `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。`only_chatgpt` labelが付いたIssueを操作・判定する場合は、さらに `ONLY-CHATGPT.md` を読む。
+4. Linear を操作・参照する場合、またはimplementation contractを策定する場合は `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md` を読む。`only_chatgpt` または `manual_e2e_only` labelが付いたIssueを操作・判定する場合は、さらに `ONLY-CHATGPT.md` を読む。
 5. legacy履歴または明示的な移行中例外でNotionを参照する場合だけ `NOTION-LEGACY.md` を読む。
 6. current implementation / architecture / DSL を確認する場合は、必ず latest repository から取得する。
