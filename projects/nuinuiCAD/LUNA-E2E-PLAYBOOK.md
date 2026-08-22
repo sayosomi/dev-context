@@ -33,8 +33,11 @@ Lunaへ次をさせない。
 - test plan redesign
 - missing oracleの発明
 - implementation fix
+- implementation root-cause investigation
 - unrelated cleanup
 - Human-assigned unitの実行
+
+`FAIL` / `BLOCKED`後はevidenceを残してtest-operator resultを返す。implementation codeを読んで原因調査やrepairへ移行しない。
 
 ## 1. Freeze the tested state when `main` is moving
 
@@ -71,6 +74,20 @@ git merge-base --is-ancestor "$EXPECTED" origin/main
 ```
 
 `origin/main`のnormal advancementだけではblockしない。実行時の`origin/main` SHAをresultへ記録する。
+
+### Tested-commit observation surface
+
+Promptで使うimplementation-specific factは、実際にtestするcommitに対して確認する。
+
+例:
+
+- contributed command名
+- DOM / accessibility selector
+- webview structure
+- label / exact visible string
+- fixture syntax
+
+latest `main`だけを見てtested frozen commitにも同じsurfaceがあると推測しない。latest `main`はdrift reviewのauthority、実行時のselector / command / observable surfaceはtested commitのimplementationをauthorityとする。
 
 ### Post-result main-drift review
 
@@ -122,14 +139,17 @@ Manual E2Eのためにunrelated user workをreset / stash / discard / overwrite 
 
 VS Code host setupは [`VS-CODE-E2E.md`](./VS-CODE-E2E.md) のcanonical baselineを使う。
 
+Luna dedicated-machine runでは、開始前に全VS Code processをcleanupし、古いExtension Development Host / fixtureが残らない状態からfresh hostを1つ起動する。
+
 product oracle実行前にextension-registration preflightを行う。
 
 `.nui` fixtureで:
 
-1. fixtureをactiveにする。
+1. current runのunique fixtureをactiveにする。
 2. language modeが`nui` / nuinuiCADでありPlain Textでないことを確認する。
 3. current testに必要なnuinuiCAD contributed commandがCommand Paletteに存在することを確認する。
-4. 必要ならRunning Extensions / fresh profile logsも確認する。
+4. Playwright/CDP runでは接続先workbenchがcurrent unique fixtureを含むことを確認する。
+5. 必要ならRunning Extensions / fresh profile logsも確認する。
 
 preflight失敗は:
 
@@ -143,6 +163,42 @@ BLOCKED — development extension registration / test environment unavailable
 
 Lunaはその場でimplementation codeを修正しない。
 
+### VS Code objective test: prefer Playwright / CDP
+
+VS Code production-hostのobjective Luna testでは、Playwright/CDPから操作・観測できるsurfaceはPlaywright/CDPを優先する。
+
+優先対象:
+
+- workbench / active tab identity
+- Command Palette / command registration
+- Monaco editor keyboard input
+- Problems等のvisible text
+- webview / frame discovery
+- DOM / accessibility state
+- DOM element count / identity / bounding box
+- DOM-derived coordinate click / drag
+- screenshot
+
+Computer Use / raw GUI coordinate automationは、required oracleをCDP / accessibility / DOMから取得できず、かつそのpixel-level操作 / 観測がtest contract上必要な場合にだけ使う。CDPでobjectiveに取れる事実をComputer Useの目視解釈へ戻さない。
+
+### CDP startup retry
+
+`VS-CODE-E2E.md`のCDP readiness ruleを使う。
+
+- endpoint readyは最大約60秒pollする。
+- 1回目のfresh launchが失敗したらdiagnosticsを保存する。
+- VS Codeを全cleanupする。
+- new fresh profileで1回だけretryしてよい。
+- 2回目もendpointを確立できなければenvironment `BLOCKED`。
+
+診断evidenceには少なくとも次を含める。
+
+- `code` CLI exit
+- launch stdout / stderr
+- VS Code process一覧
+- CDP port listener
+- fresh profile logs / file listing when useful
+
 ## 4. Design fixtures for objective identity
 
 Luna向けfixtureは、UI上で機械的に識別できるidentity markerを持たせる。
@@ -153,6 +209,8 @@ multi-document test例:
 PrintA / SvgA / PieceA
 PrintB / SvgB / PieceB
 ```
+
+VS Code runではcurrent `E2E_ROOT`を含むunique fixture basenameを使い、古いrunのfixtureと区別できるようにする。
 
 oracleにも識別方法を書く。
 
@@ -185,14 +243,17 @@ Lunaの`PASS`は「looks correct」だけではacceptしない。
 
 優先するevidence:
 
+- DOM / accessibility state when available
 - exact visible strings
-- accessibility state / accessible name
+- accessible name
 - active tab title
 - selector value
 - exact source text
 - before / after state
 - count evidence
 - screenshot
+
+VS Code Canvas等でmain geometryが`<canvas>`でも、SVG / HTML overlayやwebview DOMにoracleを直接表すidentity / selection / handleがあるならそれをprimary evidenceとして使う。screenshotはsupporting evidenceにする。
 
 visual checkでもoracleをbinary factへ固定する。
 
@@ -204,7 +265,7 @@ PASS if the same selection marker remains on the same identified geometry.
 
 スクリーンショットがあること自体はaesthetic judgmentの許可ではない。
 
-## 6. Order units to preserve evidence
+## 6. Order units and re-establish independent initial state
 
 破壊的操作は可能なら最後へ置く。
 
@@ -219,7 +280,14 @@ promptにはfailureが後続unitを無効化するかを書く。
 
 独立unitなら、1 unitのFAILで残りのevidenceを隠さずcontinueさせる。
 
-## 7. Build a self-contained Luna prompt
+前unitのFAILによりselection、source、session、focus等が汚染され、次の**独立unit**のinitial stateを通常restoreだけで作れない場合、promptで許可されたfresh fixture / fresh host resetを使って次unitのexact initial stateを再確立する。
+
+- predeclared independent unit → previous FAIL由来のcontaminated stateだけを理由に即`BLOCKED`にしない。
+- state continuation自体がoracleの一部であるdependent unit → fresh resetして別testへ変えない。planどおりstop / BLOCKED / FAILを判断する。
+
+fresh reset後もrequired initial stateを客観的に作れない場合は`BLOCKED`。
+
+## 7. Build a self-contained but non-duplicative Luna prompt
 
 fresh Luna sessionでは、execution-critical informationをprompt内へ完結させる。
 
@@ -229,20 +297,23 @@ fresh Luna sessionでは、execution-critical informationをprompt内へ完結�
 - expected tested commit / stable ref
 - remote verification commands
 - checkout safety conditions
-- exact build / launch baseline or task-specific additions
+- exact build / launch baseline or canonical runner invocation
 - exact fixture contents
 - selected Luna units only
 - per unit: initial state / action / oracle / evidence
-- stop / continue conditions
+- independent unitのreset / stop条件
 - result format
 
 LunaへLinear、GitHub、過去chat、repository architectureからtest planを再発見させない。
+
+一方、durable environment operationをpromptごとに独自再実装しない。`VS-CODE-E2E.md`にcanonical ruleがある場合はそれに従い、将来repository-owned canonical E2E runnerが導入されたら、promptはrunner invocation + task-specific fixture / action / oracleへ寄せる。runnerが存在する場合、巨大なlaunch / cleanup logicを毎回別実装しない。
 
 promptへ明示するboundary例:
 
 ```text
 Do not modify implementation code.
 Do not fix a failure.
+Do not inspect implementation code for root-cause investigation.
 Do not redesign or expand the test plan.
 Do not perform Human-assigned units.
 Return BLOCKED if the required state cannot be established objectively.
@@ -275,6 +346,25 @@ Lunaを維持するためにoracleを簡単な別物へ置換しない。
 
 同じcapability limitationをIssueごとに繰り返し試さない。再利用可能なboundaryが判明したらこのplaybookへ記録し、future classificationで最初から使う。
 
+同様に、**実証済みpositive capability**も再利用する。成功済みoperation / observationをIssueごとに毎回capability probeし直さない。VS Code version、Playwright/CDP behavior、対象surface、host wiring等にmaterial driftがある場合だけ再probeする。
+
+### Proven VS Code CDP capability baseline
+
+2026-08-22時点で、isolated VS Code Extension Development Host + Playwright CLI/CDPについて次を実機で確認済み。
+
+- VS Code `1.134.0`
+- Playwright CLI `0.1.18`
+- CDP attach
+- tab-list / snapshot / screenshot
+- current unique fixtureをworkbenchから識別
+- Command Paletteで`nuinuiCAD: Open Canvas` / `nuinuiCAD: Fit Drawing`を発見・実行
+- `vscode-webview://...` frame内のnuinuiCAD Canvas DOMへ到達
+- `.canvas-viewport` / `.drawing-overlay` / `.overlay-draggable-point`を観測
+- DOM bounding box由来のcoordinate click
+- selected point / glow / selected identityのDOM観測
+
+このbaselineに該当するobjective VS Code Canvas operationは、未知のLuna capabilityとして毎Issue probeし直さない。tested commitのsurface freshnessとcurrent environment driftだけ確認する。
+
 ## 9. Distinguish BLOCKED from FAIL
 
 典型的`BLOCKED`:
@@ -283,6 +373,7 @@ Lunaを維持するためにoracleを簡単な別物へ置換しない。
 - stable refがexpected commitを指さない
 - safe clean checkoutがない
 - VS Code executable / Rust binaryがない
+- 2回のbounded launch後もCDP endpointを確立できない
 - development extensionがregisteredされない
 - `.nui`がPlain Text
 - extension未loadのためrequired commandがない
@@ -313,8 +404,9 @@ origin/main at execution:
 Repository status before test:
 VS Code executable:
 VS Code version:
+Playwright CLI version: <when used>
 E2E_ROOT:
-Extension registration preflight:
+Extension registration / environment preflight:
 Repository implementation files modified: YES | NO
 ```
 
@@ -331,6 +423,8 @@ Blocker if BLOCKED:
 
 grouped identity testは各subcaseを明示する。`works`だけでまとめない。
 
+CDP launch retryを使った場合はattemptごとのCDP reached / CLI exit / diagnostic evidenceもresultへ記録する。
+
 ## 11. Sol High acceptance checklist
 
 Luna結果をacceptする前に確認する。
@@ -339,11 +433,12 @@ Luna結果をacceptする前に確認する。
 2. environment preflightがPASSか。
 3. Manual E2E中にrepository implementation filesを変更していないか。
 4. 各required Luna unitにoracleを直接支えるevidenceがあるか。
-5. Human-assigned unitが残っていないか。
-6. latest `origin/main` driftをunitごとにreviewしたか。
-7. tested resultへ到達し得るmaterial driftがある場合、affected unitだけrerunしたか。
-8. aggregate `Manual E2E: Passed`の前提を満たすか。
-9. Done-before Ready contract freshness checkは別checkpointとして実施したか。
+5. implementation-specific selector / command / observable surfaceがtested commitに存在するものか。
+6. Human-assigned unitが残っていないか。
+7. latest `origin/main` driftをunitごとにreviewしたか。
+8. tested resultへ到達し得るmaterial driftがある場合、affected unitだけrerunしたか。
+9. aggregate `Manual E2E: Passed`の前提を満たすか。
+10. Done-before Ready contract freshness checkは別checkpointとして実施したか。
 
 ## Common pitfalls
 
@@ -352,6 +447,22 @@ Luna結果をacceptする前に確認する。
 症状: fetch直後、`origin/main`がprompt SHAより新しいだけでLunaがBLOCKED。
 
 対策: Sol Highがdriftをreviewし、stable E2E refでtested stateを固定し、実行後にlatest-main freshness reviewを分離する。same file / subsystemという理由だけでrerunせず、各unitのinitial state / action / observation data flowへの到達可能性で判断する。
+
+### Stale Extension Development Host steals the run
+
+症状:
+
+- old E2E fixtureがactiveになる
+- old `[Extension Development Host]` window / Search windowをLunaが操作する
+- current unique fixtureをpreflightで確認できない
+
+対策: Luna dedicated-machine runでは開始前にVS Codeを全process cleanupし、0 process確認後にfresh isolated hostを1つだけ起動する。古いhostをGUI上で見分けてreuseしない。
+
+### CDP endpoint is slow or intermittently absent
+
+症状: VS Code launch直後の短いpollで`/json/version`が取れずenvironment BLOCKEDになる。
+
+対策: 最大約60秒pollする。失敗時はlaunch diagnosticsを保存し、VS Codeを全cleanupしてnew fresh profileで1回だけretryする。2回とも失敗した場合だけenvironment BLOCKED。
 
 ### VS Code opens but nuinuiCAD is absent
 
@@ -364,6 +475,12 @@ Luna結果をacceptする前に確認する。
 
 対策: product FAILにせずenvironment BLOCKED。`VS-CODE-E2E.md`のcanonical isolated launchを使い、extension-registration preflightを先に通す。
 
+### Independent unit is hidden by previous unit contamination
+
+症状: Unit AのFAILでselection / source / sessionが壊れ、独立なUnit Bがその汚染stateだけを理由にBLOCKEDになる。
+
+対策: Unit Bがplan上independentなら、fresh fixture / fresh hostを含む指定resetでexact initial stateを再確立してUnit Bを続行する。Unit Bがstate continuationを検証するdependent unitならresetしない。
+
 ## Maintenance rule
 
 Manual E2Eから再利用可能なoperational lessonが得られたらこのplaybookへ追加する。
@@ -372,6 +489,7 @@ Manual E2Eから再利用可能なoperational lessonが得られたらこのplay
 
 - stable ref / freshness strategy
 - evidence technique
+- proven positive Luna capability
 - repeated Luna capability boundary
 - prompt pattern
 - environment pitfall
