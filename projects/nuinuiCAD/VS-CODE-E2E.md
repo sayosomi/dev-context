@@ -47,7 +47,33 @@ Manual E2Eでは、普段使いのVS Code profileをそのまま使わない。
 
 - Task-specific fixtureは`/tmp`等checkout/worktreeを汚さない場所へ生成する。
 - 起動command block内でfixtureを作り、そのfileを起動時に明示的にopenする。
+- Luna向けfixtureはcurrent runだけに対応するunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
+
+## Luna dedicated-machine process isolation
+
+Luna Manual E2Eを実行するmacOS machineでは、実行中に他用途でVS Codeを使用しないことを前提とする。
+
+Luna run開始前に既存のVisual Studio Code processをすべて終了し、0 processであることを確認してからfresh isolated hostを起動する。通常終了後も残るstale Extension Development Host / helper processがある場合はforce terminationしてよい。
+
+標準形:
+
+```bash
+VSCODE_PATTERN='/Applications/Visual Studio Code.app/Contents/'
+
+pkill -TERM -f "$VSCODE_PATTERN" 2>/dev/null || true
+sleep 1
+pkill -KILL -f "$VSCODE_PATTERN" 2>/dev/null || true
+sleep 1
+
+if pgrep -f "$VSCODE_PATTERN" >/dev/null; then
+  echo "BLOCKED — Visual Studio Code processes remain after cleanup"
+  pgrep -fal "$VSCODE_PATTERN" || true
+  exit 1
+fi
+```
+
+Luna run終了時も同じprocess cleanupを行う。Human Manual E2Eや、他用途のVS Code sessionを意図的に共存させるtestにはこの全process kill ruleを機械的に適用しない。
 
 ## Canonical launch shape
 
@@ -100,16 +126,72 @@ NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
 
 macOSでshellの`code` commandがunavailableでも、app bundle内のexecutableを直接使う。task-specific requirementが追加される場合も、fresh profile、empty extensions、built-in completion OFF、explicit dev extension path、workspace trust無効化、fixture-only openをbaselineとして維持する。
 
+## Luna Playwright / CDP launch additions
+
+VS Code production-hostの`Executor: Luna` objective testでは、Playwrightから操作 / 観測できるsurfaceはComputer UseよりPlaywright/CDPを優先する。
+
+canonical launchへdedicated CDP portを追加する。
+
+```bash
+CDP_PORT=9223
+
+if lsof -nP -iTCP:"$CDP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "BLOCKED — CDP port already in use"
+  exit 1
+fi
+
+NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
+"$CODE_BIN" --new-window \
+  --user-data-dir="$E2E_ROOT/user-data" \
+  --extensions-dir="$E2E_ROOT/extensions" \
+  --extensionDevelopmentPath="$PWD/vscode-extension" \
+  --remote-debugging-port="$CDP_PORT" \
+  --skip-welcome \
+  --skip-sessions-welcome \
+  --skip-release-notes \
+  --disable-workspace-trust \
+  "$E2E_ROOT/<task-fixture>.nui"
+```
+
+`--enable-smoke-test-driver`等、通常のVS Code Extension Development Host pathを別test harnessへ変えるflagはTask contractが明示しない限り追加しない。
+
+### CDP readiness / bounded retry
+
+CDP endpointは起動直後に即readyとは限らない。Luna runではproduct testへ入る前に最大約60秒までreadyをpollしてよい。
+
+標準目安:
+
+```bash
+for _ in $(seq 1 120); do
+  if curl --max-time 1 -fsS \
+    "http://127.0.0.1:${CDP_PORT}/json/version" \
+    > "$E2E_ROOT/evidence/cdp-version.json"; then
+    break
+  fi
+  sleep 0.5
+done
+```
+
+最初のfresh launchが60秒以内にCDPを公開しなかった場合はproduct `FAIL`にしない。
+
+1. launch stdout / stderr、CLI exit、VS Code process一覧、port listener、fresh profile logsをevidenceへ保存する。
+2. VS Code processをすべてcleanupする。
+3. 同じprofileをreuseせず、新しいfresh `--user-data-dir` / empty `--extensions-dir`で**1回だけ**launch retryしてよい。
+4. 2回目もCDP endpointを確立できなければenvironment `BLOCKED`。
+
+bounded retryをproduct behaviorのretryやfailure repairへ拡張しない。
+
 ## Extension-registration preflight
 
 Luna実行ではproduct unitへ入る前にenvironment preflightを行う。
 
 最低限:
 
-1. `.nui` fixtureをactiveにする。
+1. current runのunique `.nui` fixtureをactiveにする。
 2. language modeが`nui` / nuinuiCADでありPlain Textでないことを確認する。
 3. current testに必要なcontributed nuinuiCAD commandがCommand Paletteへ登録されていることを確認する。
-4. 必要ならRunning Extensions / fresh profile logsも確認する。
+4. Playwright/CDP runでは、接続先workbenchがcurrent runのunique fixtureを含むことを客観的に確認する。
+5. 必要ならRunning Extensions / fresh profile logsも確認する。
 
 preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 
@@ -121,6 +203,8 @@ preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 - branch / commitを切り替えた後
 - blocking fix後の再試験
 - fresh profile stateが壊れた、またはinitial stateが不明になった場合
+
+Luna dedicated-machine runでは「古いhostを見分けてreuseする」のではなく、開始前にVS Codeを0 processへ戻してからfresh hostを1つだけ起動する。
 
 古いhostをreuseして新しいbundleやcommitを検証したことにしない。
 
