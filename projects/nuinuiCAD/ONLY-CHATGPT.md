@@ -136,6 +136,26 @@ For `only_chatgpt` work:
 - preserve unrelated branches/worktrees/user changes;
 - follow ordinary authorization, blocking-review, merge, and freshness rules.
 
+### CI failure fallback when job logs are unavailable
+
+An `only_chatgpt` execution must not treat inability to download a completed GitHub Actions job log as an automatic blocker. An empty, unavailable, permission-denied, or otherwise inaccessible job-log response is a tooling / evidence limitation; by itself it does not establish that the Issue cannot continue.
+
+When required CI fails, use this fallback sequence:
+
+1. establish the exact workflow run, head SHA, failing job, failing step, and available conclusions / step summaries from GitHub metadata;
+2. attempt the normal job-log retrieval path;
+3. if log text is unavailable, continue diagnosis from the available evidence, including the workflow YAML and exact command executed by the failing step, the PR / commit diff, relevant tests / fixtures / configuration / source owners, and workflow artifacts when they are material and accessible;
+4. if repository evidence identifies a concrete plausible cause, make the narrow fix allowed by the Issue contract and use the subsequent CI run as verification / additional evidence;
+5. continue any other safe, deterministic Issue work that does not depend on the missing log while diagnosis remains incomplete.
+
+Do not make arbitrary speculative patches merely to probe CI when repository evidence does not connect the change to the failure. Conversely, do not stop at "job logs unavailable" when the failing command, changed code, test definitions, step metadata, artifacts, or a subsequent run can still narrow or verify the problem.
+
+Do not ask the user to manually retrieve or paste CI logs as the first fallback. Exhaust the web-ChatGPT-accessible evidence paths first.
+
+The Issue may be treated as blocked, or `only_chatgpt` removed, only when the unavailable log contains materially necessary evidence and no supported fallback can safely determine the failure cause or verify a fix. Record the exact missing evidence and why it is indispensable rather than reporting only that the log API failed.
+
+A required failing CI check remains unresolved until it passes or is otherwise resolved by the authoritative workflow / Task contract. Missing log text never converts a failing or unknown required check into PASS and never authorizes merge / completion by itself.
+
 ### Main-advance interference checkpoint
 
 Parallel safety must be refreshed when `main` advances while an `only_chatgpt` Issue is still active.
