@@ -19,7 +19,7 @@ Manual E2Eでは、普段使いのVS Code profileをそのまま使わない。
 - VS Code built-in completion OFF
 - task-specific fixtureをcheckout外へ生成
 - current checkoutで`npm run build:vscode`
-- 必要なRust `evaluation_stdio` binaryをcurrent checkoutからbuild
+- 必要なhost-neutral Rust `evaluation_stdio` binaryをcurrent checkoutの`rust-evaluator` crateからbuild
 - `NUINUICAD_RUST_EVALUATION_BINARY`でexact binaryを明示
 - `--extensionDevelopmentPath="$PWD/vscode-extension"`
 - `--disable-workspace-trust`
@@ -83,9 +83,9 @@ Taskごとのfixture sourceを差し替えて使う。
 cd <nuinuiCAD checkout>
 
 npm run build:vscode
-cargo build --manifest-path src-tauri/Cargo.toml --bin evaluation_stdio
+cargo build --manifest-path rust-evaluator/Cargo.toml --bin evaluation_stdio
 
-RUST_BIN="$PWD/src-tauri/target/debug/evaluation_stdio"
+RUST_BIN="$PWD/rust-evaluator/target/debug/evaluation_stdio"
 test -x "$RUST_BIN"
 test -f "$PWD/vscode-extension/dist/extension.js"
 
@@ -126,11 +126,13 @@ NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
 
 macOSでshellの`code` commandがunavailableでも、app bundle内のexecutableを直接使う。task-specific requirementが追加される場合も、fresh profile、empty extensions、built-in completion OFF、explicit dev extension path、workspace trust無効化、fixture-only openをbaselineとして維持する。
 
+`evaluation_stdio`のowner/pathはlatest repositoryをauthorityとする。上の`rust-evaluator` pathはcurrent canonical ownerであり、過去の`src-tauri/Cargo.toml` / `src-tauri/target/debug/evaluation_stdio`を古いpromptから流用しない。
+
 ## Luna Playwright / CDP launch additions
 
 VS Code production-hostの`Executor: Luna` objective testでは、Playwrightから操作 / 観測できるsurfaceはComputer UseよりPlaywright/CDPを優先する。
 
-canonical launchへdedicated CDP portを追加する。
+canonical launchへdedicated CDP portを追加する。current VS Code 1.134系で実走確認済みのlocal CDP pathでは`--remote-allow-origins=*`も付ける。
 
 ```bash
 CDP_PORT=9223
@@ -146,6 +148,7 @@ NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$PWD/vscode-extension" \
   --remote-debugging-port="$CDP_PORT" \
+  --remote-allow-origins=* \
   --skip-welcome \
   --skip-sessions-welcome \
   --skip-release-notes \
@@ -181,6 +184,18 @@ done
 
 bounded retryをproduct behaviorのretryやfailure repairへ拡張しない。
 
+### macOS permission prompt / unattended launch pitfall
+
+Codex Desktop / ChatGPT.appからmacOS上のVS Code launchを行うと、OSのApp Data / privacy permission promptがlaunchを止める場合がある。SAY-158実走では、`code` invocation後にVS Code processもCDP listenerも残らずlaunch logも空、という形で現れ、permissionを許可してCodex Desktopをrestartした後は同じisolated launchがunattendedで成功した。
+
+この症状ではproduct FAILや「VS Codeは起動不能」と即断しない。
+
+1. macOS側にpending permission promptがないか確認する。
+2. current machine policyで許可されるexpected promptなら、そのenvironment permissionを解消してhost appをrestartする。
+3. その後、通常のbounded fresh-profile retryを行う。
+
+Full Disk AccessをすべてのLuna E2Eのbaseline requirementとして先回りで要求しない。permission stateはmachine/environment固有であり、必要性が実際に確認された場合だけenvironment setupとして扱う。
+
 ## Extension-registration preflight
 
 Luna実行ではproduct unitへ入る前にenvironment preflightを行う。
@@ -189,9 +204,11 @@ Luna実行ではproduct unitへ入る前にenvironment preflightを行う。
 
 1. current runのunique `.nui` fixtureをactiveにする。
 2. language modeが`nui` / nuinuiCADでありPlain Textでないことを確認する。
-3. current testに必要なcontributed nuinuiCAD commandがCommand Paletteへ登録されていることを確認する。
+3. current testに必要なcontributed nuinuiCAD commandを、**そのcommandのdeclared Palette scopeに含まれるsurfaceをactiveにして**Command Paletteで確認する。
 4. Playwright/CDP runでは、接続先workbenchがcurrent runのunique fixtureを含むことを客観的に確認する。
 5. 必要ならRunning Extensions / fresh profile logsも確認する。
+
+command registration確認はsurface-awareに行う。Sourceから使う`Open Canvas` / `Open Output Preview`等はSource active時に確認できる。一方、Canvas-only commandをSource active時に要求しない。SAY-158実走では`Fit Drawing`をSource preflightで必須にしたことがfalse blockerになり、Canvasを開いた後の確認が正しかった。
 
 preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 
