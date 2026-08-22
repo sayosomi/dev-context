@@ -148,7 +148,7 @@ NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$PWD/vscode-extension" \
   --remote-debugging-port="$CDP_PORT" \
-  --remote-allow-origins=* \
+  '--remote-allow-origins=*' \
   --skip-welcome \
   --skip-sessions-welcome \
   --skip-release-notes \
