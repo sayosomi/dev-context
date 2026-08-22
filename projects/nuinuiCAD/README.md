@@ -22,6 +22,8 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | Topic | Owner |
 | --- | --- |
 | checkout / persistent sub worktree | [Checkout / worktree policy](./CHECKOUTS.md) |
+| execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
+| implementation Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) |
 | Coding Agent skill選択 | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Linear overview / routing | [Linear policy router](./LINEAR.md) |
 | Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
@@ -82,13 +84,14 @@ Notionは新規Work / Specの管理先には使わない。
 1. **Always:** このREADMEを読む。
 2. **Development work:** `shared/DEVELOPMENT.md` とrepositoryのcurrent `AGENTS.md`を読む。
 3. **Checkout / branch / worktree / local execution:** `CHECKOUTS.md`を読む。
-4. **Coding Agent / skill:** 必要なときだけShared / nuinuiCAD Agent Skillsを読む。
-5. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
-6. **`only_chatgpt` / `manual_e2e_only`:** 5に加えて`ONLY-CHATGPT.md`を読む。
-7. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`LUNA-E2E-PLAYBOOK.md`も読む。
-8. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
-9. **Legacy履歴または明示的な移行中例外:** 必要なときだけ`NOTION-LEGACY.md`を読む。
-10. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
+4. **Execution-agent prompt generation:** roleにかかわらず`shared/AGENT-PROMPT-STYLE.md`を読む。
+5. **Implementation / blocking-fix Coding Agent:** `shared/CODING-AGENT-WORKFLOW.md`を読む。skill選択が必要なときだけShared / nuinuiCAD Agent Skillsを追加で読む。
+6. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
+7. **`only_chatgpt` / `manual_e2e_only`:** 6に加えて`ONLY-CHATGPT.md`を読む。
+8. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`shared/AGENT-PROMPT-STYLE.md`と`LUNA-E2E-PLAYBOOK.md`を読む。Manual E2E test-operator promptであるという理由だけで`shared/CODING-AGENT-WORKFLOW.md`を読まない。別途implementation / blocking-fixを依頼するときだけ5を適用する。
+9. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
+10. **Legacy履歴または明示的な移行中例外:** 必要なときだけ`NOTION-LEGACY.md`を読む。
+11. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
 
 ## Maintenance rule
 
