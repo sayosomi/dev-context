@@ -48,6 +48,13 @@ promptは英語で書く。
 
 英語はsimple and directにし、短い命令文を基本とする。
 
+Coding Agent promptのstyleはhard contractとして扱う。
+
+- plain textと必要最小限のstructural formattingだけを使う。presentation目的のdecorative Markdown、emoji、ornamental heading、decorative separator、blockquote、emphasisを使わない。
+- direct imperative languageを使う。`please`、`could you`、`would you`などのpolite / request phrasingを使わない。
+- 日本語を含める場合も「お願いします」「〜してください」などの敬語・依頼表現を使わず、「〜する」「〜を実行する」のようなplain / direct phrasingを使う。
+- readabilityやconversational toneを理由にこのstyle ruleを弱めない。
+
 避けるもの:
 
 - unnecessary rhetoric / conversational filler
@@ -62,6 +69,8 @@ promptは英語で書く。
 - Git safety condition
 - blocking condition
 - current Task固有のacceptance
+
+Coding Agent promptをユーザーへ提示する前に、decorative formattingとpolite / request phrasingが残っていないことを確認する。
 
 ## Prompt and work-management ordering
 
