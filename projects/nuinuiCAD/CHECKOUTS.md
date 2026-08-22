@@ -19,6 +19,12 @@ nuinuiCADではprimary repository checkoutに加えて、並列local implementat
 
 標準checkoutはこの2つだが、worktree総数に固定numeric limitは設けない。
 
+## Shared CI incident reproduction checkout
+
+shared CI incidentでhuman-terminal reproductionが必要な場合は、通常のimplementation checkoutとは分離した専用clone `/Users/yosomi/Code/nuinuiCAD-ci-repro` を使う。
+
+このcheckoutはimplementation / Manual E2E / Coding Agent用slotではない。通常のlocal execution capacityやreuse-first判断には含めない。詳細なtrigger、環境合わせ、allowed operations、handoffは [`CI-INCIDENTS.md`](./CI-INCIDENTS.md) がauthorityであり、shared CI incidentが実際に疑われる場合だけ読む。
+
 ## Reuse-first rule
 
 新しいlocal Coding Agent Taskを開始するときは、まず既存checkout / worktreeを安全に再利用できるか確認する。
