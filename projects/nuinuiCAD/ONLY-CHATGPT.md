@@ -49,31 +49,83 @@ If direct GitHub + CI is insufficient to complete the contract safely, split the
 
 Once started, ChatGPT should continue through all work that it can safely perform without asking the user to do intermediate development work. Do not stop merely because local Coding Agent worktrees are occupied.
 
+When the user asks ChatGPT to choose an `only_chatgpt` Issue rather than naming one, prefer a Ready candidate whose planned semantic footprint has the least interference with currently active reservations. Do not choose solely by issue number, age, or apparent diff size when another independent candidate is available.
+
 ### Parallel execution capacity
 
 Local worktree capacity is a constraint for local Coding Agent / local execution Tasks, not for `only_chatgpt`.
 
-`only_chatgpt` does not consume a local worktree slot. There is no fixed numeric concurrency cap for `only_chatgpt`; safe parallelism is governed by the interference gate below.
+`only_chatgpt` does not consume a local worktree slot. There is no fixed numeric concurrency cap for `only_chatgpt`; safe parallelism is governed by semantic interference, not by a global worker count.
 
 Do not defer an otherwise independent `only_chatgpt` Issue merely to preserve local checkout capacity. When multiple `only_chatgpt` Issues can proceed safely, continue the work that web ChatGPT can perform.
 
+### Parallel footprint
+
+Every active `only_chatgpt` implementation Issue must publish a current **Parallel footprint** in its Linear Issue before the first repository write for that execution track. This is a soft reservation used by other ChatGPT sessions to coordinate parallel work.
+
+Derive the footprint from the latest remote repository and the current implementation contract. Prefer semantic ownership and contract boundaries from current repository architecture over file or directory names.
+
+Use this shape:
+
+```text
+Parallel footprint
+- Base main: <current remote main SHA>
+- Writes: <semantic owner / symbol / API / data-flow boundary>
+- Shared contracts: <contract or assumption that another Task could invalidate, or none>
+- Depends on: <Issue / PR / unfinished base, or none>
+- Exclusive: <precise owner / contract that requires a single active writer, or none>
+```
+
+Rules:
+
+- `Writes` names what the Task intends to change semantically. A file list may be added as supporting detail, but paths alone are not a sufficient footprint.
+- `Shared contracts` names current API, semantics, fixtures, ownership, or data-flow assumptions whose change could invalidate this Task even when files do not overlap.
+- `Depends on` records a real implementation dependency. Do not use it for a temporary parallel-execution hazard.
+- `Exclusive` is a narrow semantic soft lock. Use it only when concurrent writers to the same shared owner / contract cannot be safely separated or refreshed at a checkpoint. Do not lock an entire broad subsystem when the actual shared target is narrower.
+- High-coupling shared changes such as parser/compiler semantics, canonical document mutation boundaries, evaluator transport/semantic contracts, shared command infrastructure, or a normative DSL contract are common signals that an `Exclusive` reservation may be appropriate, but the current repository ownership is authoritative.
+- Two Tasks may touch the same file or subsystem without conflicting if their semantic write targets are independent. Conversely, different files may conflict through a shared API, semantic contract, or data-flow owner.
+
+The footprint is current execution state, not a permanent specification. Update it when actual implementation scope or ownership changes.
+
+### Reservation protocol
+
+For a newly started `only_chatgpt` Issue, use this order:
+
+1. inspect latest remote `main`, relevant open branches / PRs, and active `In Progress` implementation Issues;
+2. inspect the active Issues' published Parallel footprints;
+3. determine the candidate's footprint from the latest repository and implementation contract;
+4. in the same startup checkpoint, move the explicitly started Issue to `In Progress` and publish its Parallel footprint in Linear;
+5. re-read active reservations / relevant PR state after publishing;
+6. only after that second check passes, perform the first repository write.
+
+The second read is required because two ChatGPT sessions may have inspected the same pre-reservation state concurrently.
+
+If the second check discovers a concrete conflict with a reservation that was already active, the new candidate yields. If the hazard is temporary and there is no real prerequisite, return the candidate to `Todo`; do not invent a dependency.
+
+If two new conflicting reservations appear concurrently and reliable temporal precedence is not available, use the lower numeric Linear Issue identifier as the deterministic winner. The losing Issue returns to `Todo` before any repository write. This tie-break is only a race-resolution rule; it is not a priority policy for normal Issue selection.
+
+Before expanding implementation into a semantic owner, API, contract, or data-flow boundary not covered by the published footprint, update the footprint and rerun the interference gate **before writing that new target**.
+
+The implementation reservation ends when implementation ownership ends: after the Issue is merged and no implementation/fix work remains, or when it is otherwise returned to a non-active state. `manual_e2e_only` does not retain an implementation-owner reservation.
+
 ### Interference gate
 
-Before starting an `only_chatgpt` Issue in parallel with other active implementation work, inspect the latest remote repository, relevant open branches / PRs, and active `In Progress` Issues enough to determine whether the work can proceed independently.
+Before starting or materially expanding an `only_chatgpt` Issue in parallel with other active implementation work, inspect the latest remote repository, relevant open branches / PRs, and active reservations enough to determine whether the work can proceed independently.
 
-Parallel work is allowed unless there is a **concrete interference path**. Block parallel start when any of the following is true:
+Parallel work is allowed unless there is a **concrete interference path**. Block parallel execution when any of the following is true:
 
 1. **unfinished implementation dependency / base** — the candidate actually depends on another active Task's unmerged result or unfinished prerequisite;
 2. **same branch / ref ownership** — both Tasks would write or move the same GitHub branch / ref;
 3. **conflicting shared write target** — both Tasks need incompatible changes to the same symbol, API, shared contract, data-flow owner, parser/compiler boundary, or other coupled owner;
-4. **Ready-contract invalidation before a safe checkpoint** — one Task is likely to invalidate the other's `Contract: Ready` facts, fixtures, verification assumptions, or ownership names before the other Task can safely refresh;
-5. **unsafe ownership rewrite** — safe completion would require resetting, force-updating, rewriting, or otherwise taking ownership of another active Task's branch or user work.
+4. **exclusive reservation overlap** — a Task would write an owner / contract currently reserved as `Exclusive` by another active Task;
+5. **Ready-contract invalidation before a safe checkpoint** — one Task is likely to invalidate the other's `Contract: Ready` facts, fixtures, verification assumptions, ownership names, or published footprint before the other Task can safely refresh;
+6. **unsafe ownership rewrite** — safe completion would require resetting, force-updating, rewriting, or otherwise taking ownership of another active Task's branch or user work.
 
 Same file, directory, subsystem, or nearby code is a **warning signal**, not an automatic block. It becomes a block only when the actual write targets / contracts / data flow can conflict or one Task can invalidate the other's premises.
 
 Likewise, different files do not guarantee independence if both changes meet at the same API / semantics / data-flow contract.
 
-If the conflict is only a temporary parallel-execution hazard and the Issue is otherwise Ready, leave it in `Todo` and choose another independent candidate rather than inventing a dependency. If inspection reveals a real prerequisite, record the dependency and synchronize status according to `LINEAR-ISSUES.md`.
+If the conflict is only a temporary parallel-execution hazard and the Issue is otherwise Ready, leave or return it to `Todo` and choose another independent candidate rather than inventing a dependency. If inspection reveals a real prerequisite, record the dependency and synchronize status according to `LINEAR-ISSUES.md`.
 
 For `only_chatgpt` work:
 
@@ -83,6 +135,22 @@ For `only_chatgpt` work:
 - use direct GitHub operations and GitHub CI as the normal implementation/debug loop;
 - preserve unrelated branches/worktrees/user changes;
 - follow ordinary authorization, blocking-review, merge, and freshness rules.
+
+### Main-advance interference checkpoint
+
+Parallel safety must be refreshed when `main` advances while an `only_chatgpt` Issue is still active.
+
+Before a further repository write, blocking review completion, or merge, compare the latest remote `main` with the Issue's published `Base main` when they differ.
+
+Inspect intervening merged changes by semantic owner / API / contract / data flow, not only by path overlap:
+
+- no relevant overlap or invalidation → update `Base main` in the footprint and continue;
+- current facts drifted but the established semantics / scope / acceptance still determine one implementation path → refresh the contract / footprint while keeping `Contract: Ready` according to `CONTRACT-DECISIONS.md`;
+- a concrete parallel conflict now exists → stop writes at the safe checkpoint until the conflicting Task merges / releases the owner or another non-conflicting path is established;
+- a real prerequisite is revealed → record the dependency and synchronize status;
+- a new product / UX / scope decision is required → return the contract to the appropriate non-Ready state.
+
+When an `only_chatgpt` PR is merged, the completing ChatGPT should also inspect other active `only_chatgpt` footprints that could plausibly be invalidated by the merged semantic changes and leave the affected Task to perform this freshness check before further writes. Do not rewrite another active Task's contract merely because it may have drifted.
 
 ## `manual_e2e_only`
 
@@ -151,7 +219,7 @@ state:  In Progress
 Manual E2E: Failed
 ```
 
-Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only execution-environment-bound Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
+Before the first fix write, publish / refresh the Parallel footprint and run the normal reservation protocol. Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only execution-environment-bound Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
 
 Whether a discovered fix stays in the same Issue or becomes a new Issue is determined by [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md). Do not create a child mechanically for a small fix that remains necessary for the original acceptance.
 
@@ -177,9 +245,11 @@ A retained parent uses ordinary Linear status + Contract / Manual E2E metadata +
 
 ## Decomposition rules
 
-Do not split Issues only to maximize `only_chatgpt` coverage.
+Do not split Issues only to maximize `only_chatgpt` coverage or parallel worker count.
 
 A child should be a real independently verifiable implementation boundary, typically one owner/subsystem/API/data-flow layer with automated acceptance.
+
+When multiple independently verifiable boundaries genuinely exist, prefer a leaf scope that stays within one semantic owner / contract / data-flow layer where practical. This reduces the number of active reservations held by one Issue without inventing artificial decomposition.
 
 Prefer decomposition such as:
 
@@ -197,15 +267,18 @@ Only the first unblocked child in a dependency chain should materialize into `To
 
 ## Status synchronization checkpoints
 
-In addition to the normal `LINEAR-ISSUES.md` checkpoints, re-evaluate execution ownership whenever:
+In addition to the normal `LINEAR-ISSUES.md` checkpoints, re-evaluate execution ownership and parallel reservations whenever:
 
-1. an `only_chatgpt` implementation branch / PR is merged;
-2. blocking review / CI becomes complete;
-3. a blocker is completed or added;
-4. Manual E2E becomes executable;
-5. Manual E2E passes or fails;
-6. a Ready contract freshness check changes prerequisites;
-7. decomposition transfers all remaining acceptance out of a former tracking parent.
+1. an `only_chatgpt` Issue starts implementation or resumes implementation after a fix handoff;
+2. an active Issue's implementation expands beyond its published Parallel footprint;
+3. remote `main` advances beyond the Issue's published `Base main` before another write / review-completion / merge checkpoint;
+4. an `only_chatgpt` implementation branch / PR is merged;
+5. blocking review / CI becomes complete;
+6. a blocker is completed or added;
+7. Manual E2E becomes executable;
+8. Manual E2E passes or fails;
+9. a Ready contract freshness check changes prerequisites;
+10. decomposition transfers all remaining acceptance out of a former tracking parent.
 
 Critical automatic leaf transition:
 
@@ -213,6 +286,7 @@ Critical automatic leaf transition:
 only_chatgpt leaf
 + implementation/review/CI/merge complete
 + required Manual E2E is the only remaining work
+=> release implementation reservation
 => replace only_chatgpt with manual_e2e_only
 => immediately In Review + Manual E2E: Ready to Run
 ```
