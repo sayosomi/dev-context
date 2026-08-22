@@ -156,6 +156,14 @@ The Issue may be treated as blocked, or `only_chatgpt` removed, only when the un
 
 A required failing CI check remains unresolved until it passes or is otherwise resolved by the authoritative workflow / Task contract. Missing log text never converts a failing or unknown required check into PASS and never authorizes merge / completion by itself.
 
+### Shared CI incident escalation route
+
+If required CI shows evidence that the failure may come from shared `main` state or common CI infrastructure rather than the current Issue, stop treating it as an ordinary isolated Issue failure and load [`CI-INCIDENTS.md`](./CI-INCIDENTS.md).
+
+Typical routing signals are the same required job / step failing across semantically unrelated PRs, a failing test / owner outside the current Parallel footprint after `main` advances, or the same failure signature appearing on latest `main` / another unrelated branch.
+
+Do **not** load `CI-INCIDENTS.md` during normal `only_chatgpt` startup or for an ordinary issue-local CI failure. The detailed Mac reproduction / human-terminal escalation procedure is conditional on this shared-incident suspicion.
+
 ### Main-advance interference checkpoint
 
 Parallel safety must be refreshed when `main` advances while an `only_chatgpt` Issue is still active.
