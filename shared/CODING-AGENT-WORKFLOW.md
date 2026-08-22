@@ -1,8 +1,10 @@
-# Shared Coding Agent Workflow
+# Shared Implementation Coding Agent Workflow
 
-複数projectで共通利用するChatGPT / Coding Agentの役割分担、implementation prompt、handoff rule。
+複数projectで共通利用する、implementation / blocking-fixを担当するCoding Agentの役割分担、implementation prompt、handoff rule。
 
-Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先する。
+この文書は**implementation agent専用**。Manual E2E test operatorなど、repository implementationを変更しないexecution roleには適用しない。
+
+Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先する。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従う。
 
 ## Role boundary
 
@@ -15,11 +17,11 @@ ChatGPTが担当する。
 - blocking review
 - ChatGPTで実行できる調査・設計・管理作業
 
-ChatGPTで実行できる調査・設計・管理作業をCoding Agentへ回さない。
+ChatGPTで実行できる調査・設計・管理作業をimplementation Coding Agentへ回さない。
 
-Coding Agentにはarchitecture調査をさせない。ChatGPTが確定したcontractに従い、具体的なimplementation / test / git作業だけを依頼する。
+Implementation Coding Agentにはarchitecture調査をさせない。ChatGPTが確定したcontractに従い、具体的なimplementation / test / git作業だけを依頼する。
 
-Coding Agent向けpromptに次のようなopen-ended design instructionを入れない。
+Implementation promptに次のようなopen-ended design instructionを入れない。
 
 - architectureを調査する
 - existing implementationを探してdesignを決める
@@ -31,7 +33,7 @@ Git safety / remote-state preflightは [`GIT-WORKFLOW.md`](./GIT-WORKFLOW.md) �
 
 ## Implementation prompt
 
-current Taskの実行に必要な情報だけを書く。
+current implementation Taskの実行に必要な情報だけを書く。
 
 原則として次を渡す。
 
@@ -44,39 +46,36 @@ current Taskの実行に必要な情報だけを書く。
 - commit / push requirement
 - blocking conditions
 
-英語はsimple and directにし、短い命令文を基本とする。
+Promptのlanguage / formatting / directnessは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) をauthorityとする。
 
-Coding Agent promptのstyleはhard contractとして扱う。
-
-- promptは英語で書く。
-- plain textと必要最小限のstructural formattingだけを使う。presentation目的のdecorative Markdown、emoji、ornamental heading、decorative separator、blockquote、emphasisを使わない。
-- direct imperative languageを使う。`please`、`could you`、`would you`などのpolite / request phrasingを使わない。
-- 日本語を含める場合も「お願いします」「〜してください」などの敬語・依頼表現を使わず、「〜する」「〜を実行する」のようなplain / direct phrasingを使う。
-- readabilityやconversational toneを理由にこのstyle ruleを弱めない。
-
-避けるもの:
-
-- unnecessary rhetoric / conversational filler
-- decorative separators such as `====` / `----`
-- headings beyond the minimum needed for readability
-- same constraint repeated in different wording
-- implementationに不要なlong background / settled design history
-- shared rule / skillの一般論をcurrent Taskで不要なのに再掲すること
-
-省略しないもの:
+Implementation promptでは次を省略しない。
 
 - Git safety condition
 - blocking condition
 - current Task固有のacceptance
 
-Coding Agent promptをユーザーへ提示する前に、英語で書かれていること、decorative formattingがないこと、polite / request phrasingがないことを確認する。
+## Excluded execution roles
+
+Manual E2E test-operator promptはこのworkflowの対象外。
+
+Manual E2E operatorへ、この文書を根拠として次を追加しない。
+
+- change target
+- concrete required changes
+- implementation fix
+- commit / push requirement
+- blocking failureのrepair
+
+Manual E2Eではproject-specific Manual E2E authority / playbookをrole authorityとし、shared prompt styleだけ [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) から適用する。
+
+同じCoding Agent productをimplementationとManual E2Eの両方に使う場合も、roleを混同しない。
 
 ## Prompt and work-management ordering
 
-新規開発Taskでwork-management Issueの新規作成が必要でも、Issue作成をCoding Agent開始の前提にしない。
+新規開発Taskでwork-management Issueの新規作成が必要でも、Issue作成をimplementation Coding Agent開始の前提にしない。
 
 1. remote state確認、existing Issue / Spec検索、repository調査を行い、implementation contractを確定する。
-2. 新規Issueを作る前にbranch名を決め、Coding Agent promptを完成させてユーザーへ提示する。
+2. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
 3. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
 4. ユーザーが選んだCoding Agentでimplementation開始できる状態を先に作る。特定Coding Agent productを前提にしない。
 5. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
@@ -87,7 +86,7 @@ existing IssueがあるTaskはそのIssueを再利用するが、management upda
 
 ## Execution boundary
 
-- Coding Agentは確定済みcontractに従いimplementation / test / git作業を行う。
+- Implementation Coding Agentは確定済みcontractに従いimplementation / test / git作業を行う。
 - current Task scope外のcleanup / future workを先取りしない。
 - implementation後はChatGPTがrequired blocking review / verificationを行う。
 - blocking issueのfixはcurrent planに従う。Coding Agentへproduct redesignを委ねない。
@@ -97,11 +96,11 @@ Agent skillを使う場合は [`AGENT-SKILLS.md`](./AGENT-SKILLS.md) とproject�
 
 ## Handoff
 
-ユーザーが「引き継ぎを書いて」と依頼した場合、少なくとも次を含める。
+ユーザーがimplementation workについて「引き継ぎを書いて」と依頼した場合、少なくとも次を含める。
 
-- ChatGPT / Coding Agent role boundary
+- ChatGPT / implementation Coding Agent role boundary
 - remote state verification
 - worktreeは真に同時並行の複数implementationが必要な場合だけ使い、不要になったら即削除する原則
 - commit / push
-- prompt concise rule
+- shared prompt style
 - current project固有のwork-management / source-of-truth rule
