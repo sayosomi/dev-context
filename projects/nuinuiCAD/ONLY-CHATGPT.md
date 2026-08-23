@@ -4,10 +4,12 @@
 
 nuinuiCAD uses two execution-ownership labels for leaf / non-parent Issues:
 
-- `only_chatgpt` — the current implementation slice and all remaining pre-E2E work owned by that leaf are suitable for direct GitHub + GitHub CI execution by web ChatGPT without Coding Agent or a local nuinuiCAD execution environment.
+- `only_chatgpt` — the **current executable implementation slice through its next safe checkpoint** is suitable for direct GitHub + GitHub CI execution by web ChatGPT without Coding Agent or a local nuinuiCAD execution environment.
 - `manual_e2e_only` — all implementation / review / merge / management work is complete and the only remaining completion work is required Manual E2E in an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
 
 These labels describe the **current execution route**, not product scope, priority, or worker identity. They do not replace Contract, Manual E2E, type, dependency, or status metadata.
+
+`only_chatgpt` does not promise that every future slice of the same Issue will use ChatGPT. Reclassify the next slice at each safe checkpoint. `manual_e2e_only` is different: it is used only when no implementation slice remains at all.
 
 Execution-ownership labels are leaf-only. A retained parent with aggregate acceptance / integrated Manual E2E / final integration work does not receive either label.
 
@@ -64,7 +66,7 @@ Likewise, one Issue may use different execution routes across sequential slices 
 
 ## `only_chatgpt` eligibility
 
-Apply `only_chatgpt` only to a leaf / non-parent Issue when all of the following are true for the current remaining pre-E2E implementation shape:
+Apply `only_chatgpt` only to a leaf / non-parent Issue when all of the following are true for the **current executable slice through the next safe checkpoint**:
 
 1. ChatGPT can perform the required repository / verification / GitHub / work-management work with available connected capabilities and without local-only implementation work.
 2. The implementation contract is sufficiently settled that direct execution does not require open-ended product / architecture design during coding.
@@ -93,14 +95,16 @@ Typical signals to prefer the standard Coding Agent route for the current slice 
 
 These are semantic signals, not hard thresholds. File count, diff lines, commit count, and elapsed time are warnings only.
 
-Do not apply or retain `only_chatgpt` when:
+Do not apply or retain `only_chatgpt` for the current slice when:
 
 - the Issue is a parent / tracking Issue;
 - an unresolved product / UX / scope decision blocks implementation;
-- required implementation depends on local-only work ChatGPT cannot perform;
-- a required external manual operation other than final Manual E2E remains;
+- the slice depends on local-only work ChatGPT cannot perform;
+- a required external manual operation other than final Manual E2E remains before the next safe checkpoint;
 - safe completion would require destructive interaction with unrelated user work;
 - direct GitHub + CI remains technically possible but the current slice has expanded into a shape better executed by the standard Coding Agent route.
+
+A later slice may still be unsuitable without invalidating the current `only_chatgpt` slice. Record the next route at the checkpoint instead of over-constraining the whole Issue up front.
 
 ## Starting and executing
 
