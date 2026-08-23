@@ -15,6 +15,8 @@ These labels do not replace Contract, Manual E2E, type, dependency, or status me
 
 Execution-ownership labels are leaf-only. A retained parent with its own aggregate acceptance / integrated Manual E2E / final execution work does not receive either label.
 
+Implementation slice / sequential PR / execution checkpoint判断は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) をauthorityとする。
+
 ## `only_chatgpt`
 
 Apply `only_chatgpt` only to a leaf / non-parent Issue when ChatGPT can perform all remaining pre-E2E implementation / verification / GitHub / work-management work without Coding Agent or local worktree use.
@@ -41,7 +43,7 @@ Do not apply or retain `only_chatgpt` when:
 - a required external manual operation other than final Manual E2E remains;
 - safe completion would require destructive interaction with unrelated user work.
 
-If direct GitHub + CI is insufficient to complete the contract safely, split the Issue further when there is a real independently verifiable boundary, or remove `only_chatgpt` rather than pretending the Issue is autonomous.
+If direct GitHub + CI is insufficient to complete the current implementation shape safely, first apply [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md): use a safe Same Issue + next PR checkpoint when one exists, split the Issue only when there is a real independent Work boundary, or remove `only_chatgpt` when the remaining work is not web-ChatGPT-executable. Do not pretend a single autonomous execution track is required merely because the Issue remains the same.
 
 ### Starting and executing
 
@@ -50,6 +52,24 @@ If direct GitHub + CI is insufficient to complete the contract safely, split the
 Once started, ChatGPT should continue through all work that it can safely perform without asking the user to do intermediate development work. Do not stop merely because local Coding Agent worktrees are occupied.
 
 When the user asks ChatGPT to choose an `only_chatgpt` Issue rather than naming one, prefer a Ready candidate whose planned semantic footprint has the least interference with currently active reservations. Do not choose solely by issue number, age, or apparent diff size when another independent candidate is available.
+
+### Implementation slicing re-evaluation
+
+`only_chatgpt` suitabilityと「このIssueを1つのPR / execution trackで完走できるか」は同じ判定ではない。`only_chatgpt`を維持したままsame Issueを複数のsequential PR / execution trackへ分けてよい。
+
+開始時の`No split` / autonomous eligibility判定をTask完了まで固定しない。少なくとも次のときは [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従ってsafe checkpointを再評価する。
+
+- 最初のbroad integration test / full suite後;
+- pause / resume checkpoint;
+- Parallel footprintを新しいsemantic owner / API / contract / data-flow boundaryへ拡張する前;
+- 複数の独立したfailure classが残ったとき;
+- 一部のsemantic sliceは完成・検証可能だが別ownerのremaining acceptanceが大きく残るとき;
+- PR / fix loopが複数の独立semantic changeへ広がり、review / diagnosis境界が不明瞭になったとき;
+- remote `main` advanceでremaining implementation shapeが変わったとき。
+
+safe merge checkpointが成立するなら、Issueを機械的にsplitせず`Same Issue + next PR`を候補にする。逆に、remaining workがoriginal completion後でも独立延期可能なら`CONTRACT-DECISIONS.md`に従いnew Issueを検討する。
+
+file数、diff行数、commit数、経過時間はwarning signalでありhard limitではない。semantic ownership、independent verification、safe mergeabilityを優先する。
 
 ### Parallel execution capacity
 
@@ -104,9 +124,9 @@ If the second check discovers a concrete conflict with a reservation that was al
 
 If two new conflicting reservations appear concurrently and reliable temporal precedence is not available, use the lower numeric Linear Issue identifier as the deterministic winner. The losing Issue returns to `Todo` before any repository write. This tie-break is only a race-resolution rule; it is not a priority policy for normal Issue selection.
 
-Before expanding implementation into a semantic owner, API, contract, or data-flow boundary not covered by the published footprint, update the footprint and rerun the interference gate **before writing that new target**.
+Before expanding implementation into a semantic owner, API, contract, or data-flow boundary not covered by the published footprint, first rerun the implementation-slicing re-evaluation, then update the footprint and rerun the interference gate **before writing that new target**.
 
-The implementation reservation ends when implementation ownership ends: after the Issue is merged and no implementation/fix work remains, or when it is otherwise returned to a non-active state. `manual_e2e_only` does not retain an implementation-owner reservation.
+The implementation reservation ends when implementation ownership ends: after the Issue is merged and no implementation/fix work remains, or when it is otherwise returned to a non-active state. An intermediate PR merge with same-Issue remaining acceptance may release the current slice reservation at its implementation checkpoint and establish a fresh reservation for the next slice. `manual_e2e_only` does not retain an implementation-owner reservation.
 
 ### Interference gate
 
@@ -295,18 +315,19 @@ Only the first unblocked child in a dependency chain should materialize into `To
 
 ## Status synchronization checkpoints
 
-In addition to the normal `LINEAR-ISSUES.md` checkpoints, re-evaluate execution ownership and parallel reservations whenever:
+In addition to the normal `LINEAR-ISSUES.md` checkpoints, re-evaluate execution ownership, implementation slicing, and parallel reservations whenever:
 
 1. an `only_chatgpt` Issue starts implementation or resumes implementation after a fix handoff;
-2. an active Issue's implementation expands beyond its published Parallel footprint;
-3. remote `main` advances beyond the Issue's published `Base main` before another write / review-completion / merge checkpoint;
-4. an `only_chatgpt` implementation branch / PR is merged;
-5. blocking review / CI becomes complete;
-6. a blocker is completed or added;
-7. Manual E2E becomes executable;
-8. Manual E2E passes or fails;
-9. a Ready contract freshness check changes prerequisites;
-10. decomposition transfers all remaining acceptance out of a former tracking parent.
+2. the first broad/full integration test exposes multiple independent failure classes or substantial remaining acceptance;
+3. an active Issue's implementation expands beyond its published Parallel footprint;
+4. remote `main` advances beyond the Issue's published `Base main` before another write / review-completion / merge checkpoint;
+5. an `only_chatgpt` implementation branch / PR reaches a safe merge / handoff checkpoint or is merged;
+6. blocking review / CI becomes complete;
+7. a blocker is completed or added;
+8. Manual E2E becomes executable;
+9. Manual E2E passes or fails;
+10. a Ready contract freshness check changes prerequisites;
+11. decomposition transfers all remaining acceptance out of a former tracking parent.
 
 Critical automatic leaf transition:
 
