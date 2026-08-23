@@ -107,6 +107,8 @@ After selecting or recovering an autonomous execution track, use [`WATCHDOG.md`]
 
 When an hourly invocation ends but the same autonomous Issue is intentionally still unfinished and has executable web-ChatGPT work for the next run, leave the track `active` and write a fresh heartbeat near the safe invocation boundary. Do not mark it `done` merely because one Scheduled Task invocation ended.
 
+The Scheduled Task invocation boundary is never, by itself, a work-management stop boundary. In particular, do not return an unfinished selected/recovered Issue from `In Progress` to `Todo` merely because the current invocation is ending, running out of time, or reaching a safe checkpoint. If executable web-ChatGPT work remains, persist the remote checkpoint, keep the Issue `In Progress`, keep the watchdog `active`, and require the next invocation to recover that same track before selecting any new Issue. A `Todo + watchdog done + unfinished Draft PR/branch` state is invalid unless an independent current policy reason explicitly ended the autonomous execution track.
+
 Set the watchdog record to `done` when the ChatGPT execution track is intentionally complete, is handed off at a known checkpoint with no autonomous work remaining, or is stopped by a synchronized policy boundary where continued autonomous execution is no longer authorized.
 
 ## Completion, handoff, and stop boundaries
