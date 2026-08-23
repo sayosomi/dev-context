@@ -94,6 +94,18 @@ Do not classify at whole-Issue granularity when the Issue contains mixed checks.
 
 Before assigning an Objective unit to Luna, first apply the MCP-only rule above. A deterministic MCP/script-only check is normally verification outside Manual E2E, not `Executor: Luna` and not `Executor: Human` merely because a person launches the script.
 
+### Test-unit boundaries and materially distinct initial states
+
+A test unit's declared initial state is part of its oracle, not incidental setup.
+
+When the same user action can follow materially different production-host or lifecycle paths depending on starting state, plan separate units for the distinct paths that can affect acceptance. Typical distinctions include a surface/session that does not yet exist versus one that is already open, or another host lifecycle boundary where initialization, reuse, focus, or readiness changes the implementation path.
+
+Do not create a mechanical Cartesian product of every possible state. Split only states that route through meaningfully different host/lifecycle behavior or are independently required by the product contract.
+
+If one scenario contains independently judgeable Objective observations and Human visual/UX judgment, split them into separate test units by default. This keeps binary product failures from being hidden inside a broad Human quality check and allows the correct executor to be chosen for each unit. Keep them together only when separating them would change the acceptance meaning or create artificial duplication of one inseparable judgment.
+
+Units may share the same fixture or setup when convenient; shared setup does not require combining their result/oracle classification.
+
 ### Objective judgment
 
 A test unit is `Judgment: Objective` only when all of the following are true:
@@ -160,7 +172,7 @@ Do not weaken or rewrite a Human judgment oracle merely to make a unit Luna-exec
 
 For example, do not replace "the popup has no visual discomfort" with "the popup stays inside the viewport" unless the contract itself defines viewport containment as the required behavior. Those are different checks.
 
-A mixed unit may be split into objective and Human parts only when doing so preserves the original acceptance meaning. The Human part must remain Human.
+A mixed unit should be split into objective and Human parts by default when the observations are independently judgeable. Keep them together only when splitting would change the original acceptance meaning; the Human part must remain Human.
 
 ## First-use paired capability calibration
 
@@ -306,6 +318,16 @@ For first-use paired capability calibration, the Human ground-truth pass is inte
 `Manual E2E: Passed` is set only after **all required test units**, both Luna-executed and Human-executed, have passed. A first-use Human calibration pass is supporting executor evidence; it does not silently add a new permanent acceptance unit unless the Issue contract explicitly says so.
 
 While only some units have passed, keep the aggregate Linear state consistent with the existing workflow (`Running` while actively testing, `Deferred` when intentionally paused, `Failed` when a confirmed failure remains).
+
+### Rerun after an implementation fix
+
+After a confirmed Manual E2E failure is fixed, formally rerun each affected unit from the **declared initial state** for that unit.
+
+Reconstruct lifecycle-sensitive state rather than continuing from an incidental state left by the failed run. If the unit starts from a cold surface/session, recreate that cold state; if it requires a fresh process/profile or another production-host reset, use the host-specific environment rule for that reset.
+
+A quick spot check from a mutated continuation state may be useful during diagnosis, but it does not become the unit's formal PASS unless that state exactly matches the declared initial state and the full affected oracle is re-observed.
+
+Previously passed unaffected units do not need to be repeated mechanically. Rerun them only when the fix changed a shared owner, contract, lifecycle path, or other premise that can make their earlier evidence stale.
 
 ## Standard flow
 
