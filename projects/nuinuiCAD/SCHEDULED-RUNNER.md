@@ -70,6 +70,8 @@ For a `timed_out` record, resume only from state actually persisted remotely. Ne
 
 If a watchdog record is stale relative to authoritative remote state, follow the authoritative state and repair/finish the execution track only as permitted by current policy; do not manufacture work merely to match the watchdog record.
 
+Before concluding that recovery is exhausted, also detect inconsistent interrupted carry-over. If a runner-selected `only_chatgpt` Issue still has unfinished persisted branch/PR work and no genuine completion, handoff, or stop reason, treat it as a recoverable unfinished autonomous track even when an earlier erroneous checkpoint returned Linear to `Todo` or marked the watchdog `done`. Reconcile current authority, repair the Issue to the appropriate active state and the watchdog to `active`, then continue that track before selecting any new Issue. A stale `done` watchdog must not suppress recovery of unfinished persisted runner work.
+
 ## New candidate selection
 
 When recovery/continuation does not take precedence, choose from current Todo Issues that satisfy the normal `only_chatgpt` eligibility rules.
