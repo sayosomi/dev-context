@@ -40,6 +40,19 @@ Linear Issue label `contract_reaudit` を一時的なcampaign markerとして使
 
 既に個別re-auditを開始して`Contract: Pending`へ戻っているIssueは、current stateを巻き戻さず`contract_reaudit`だけ追加してcampaign集合へ含めてよい。
 
+## Concurrent update guard
+
+一斉markingは、別チャット / runner / active Taskが同じIssueを同時にrefreshし得る前提で行う。
+
+- campaign対象を列挙した時点のbaseline / cutoffを保持する。
+- 各Issueを機械的にresetする直前にcurrent Linear state / labels / `updatedAt`相当のfreshnessを再確認する。
+- baseline選定後に別作業でIssueが更新されていた場合、古いsnapshotから`Pending` / `Backlog` / markerを上書きしない。
+- concurrentな個別re-auditが完了してcurrent `Ready`へ戻っているなら、そのfresh resultを維持しcampaign markerを付けない。
+- concurrentな個別re-auditが進行中なら、current stateを読んでreconcileする。必要ならmarkerだけを追加してよいが、既に確定したfresh contract / route / statusを機械的に巻き戻さない。
+- 誤ってstale bulk writeを行ったことに気づいた場合は、fresh concurrent recordをauthorityとして即座に復元し、そのIssueを以後のbulk対象から外す。
+
+campaign markerを完全に揃えることより、freshな個別re-audit結果を壊さないことを優先する。
+
 ## Individual re-audit
 
 個別re-auditは旧contractの単なる文面校正やfile-path refreshではない。
