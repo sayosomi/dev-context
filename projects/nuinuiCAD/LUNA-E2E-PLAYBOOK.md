@@ -9,7 +9,7 @@ Authorityを分ける。
 - test classification、`Judgment`、`Executor`、PASS / FAIL / BLOCKED、Sol High result ownership: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
 - VS Code isolated Extension Development Host baseline: [`VS-CODE-E2E.md`](./VS-CODE-E2E.md)
 - current Issueのfixture / action / oracle / acceptance: current Linear Issue contract / Manual E2E plan
-- この文書: Luna prompt、stable tested state、evidence、retry、common pitfalls
+- この文書: Luna prompt、stable tested state、evidence、retry、capability calibration、common pitfalls
 
 このplaybookがauthority文書と矛盾したらauthority側を優先し、その後playbookをrefreshする。
 
@@ -181,6 +181,31 @@ VS Code production-hostのobjective Luna testでは、Playwright/CDPから操作
 
 Computer Use / raw GUI coordinate automationは、required oracleをCDP / accessibility / DOMから取得できず、かつそのpixel-level操作 / 観測がtest contract上必要な場合にだけ使う。CDPでobjectiveに取れる事実をComputer Useの目視解釈へ戻さない。
 
+### Command Palette operation
+
+SAY-188 calibrationで、CDPからCommand Paletteを安定して扱うため次を実証した。
+
+- command searchは先頭`>`でcommand modeを明示する。
+- commandの存在/選択判定はstable command text / accessible identityを使う。
+- VS Codeがrowへ`recently used`等のmetadataを付加し得るため、rendered row全体のexact string matchを要求しない。
+- metadataを無視することと曖昧なsubstring選択は別。predeclared command identityが一意に確定しない場合はguessしない。
+
+### Deterministic Source edit
+
+Sourceの特定token/spanを書き換えるunitでは、typing前に対象rangeを客観的に確認する。
+
+```text
+resolve exact document
+-> select exact intended range
+-> verify selected range/text
+-> type once
+-> fresh live Source evidence
+-> wait for stable dependent state
+-> fresh dependent evidence
+```
+
+誤rangeへ入力した後に「修正のための2回目の編集」を行う方式を標準にしない。one-edit oracleを守るため、編集前verificationを使う。
+
 ### CDP startup retry
 
 `VS-CODE-E2E.md`のCDP readiness ruleを使う。
@@ -199,7 +224,31 @@ Computer Use / raw GUI coordinate automationは、required oracleをCDP / access
 - CDP port listener
 - fresh profile logs / file listing when useful
 
-## 4. Design fixtures for objective identity
+## 4. Keep counted Luna runs unattended
+
+User copy/paste before/after a Luna run is transportでありHuman executionではない。一方、**run開始後のHuman rescueはtest executionへの介入**になる。
+
+counted Luna run中はHumanに次をさせない。
+
+- click / typing
+- modal/dialog dismissal
+- focus restoration
+- VS Code window manipulation
+- host relaunch / process cleanup
+- fixture repair
+
+unexpected dialogやhost stateが出ても、Luna自身がpredeclared/bounded procedureで処理できなければ`BLOCKED`を返す。
+
+Humanが反射的に操作する等、unplanned Human interactionがrunへ入った場合:
+
+1. そのrunはproduct FAILにしない。
+2. evidenceはincident recordとして保存する。
+3. counted resultから除外する。
+4. environmentをcleanupし、新しいrun root / fixture / fresh hostからrerunする。
+
+Human judgment unitや明示的Human calibration passはこのruleの対象外だが、それらとLuna unattended runを混在させない。
+
+## 5. Design fixtures for objective identity
 
 Luna向けfixtureは、UI上で機械的に識別できるidentity markerを持たせる。
 
@@ -237,21 +286,22 @@ state-preservation testはbefore / afterで同じidentityを記録する。
 - session count / duplicate absence
 - A/B tabs before and after source close
 
-## 5. Prefer objective evidence over narration
+## 6. Prefer objective evidence over narration
 
 Lunaの`PASS`は「looks correct」だけではacceptしない。
 
 優先するevidence:
 
+- structured MCP state when published
 - DOM / accessibility state when available
 - exact visible strings
 - accessible name
 - active tab title
 - selector value
-- exact source text
-- before / after state
-- count evidence
-- screenshot
+- exact live source text
+- before / after version/state
+- count / stable identity evidence
+- screenshot as supporting evidence
 
 VS Code Canvas等でmain geometryが`<canvas>`でも、SVG / HTML overlayやwebview DOMにoracleを直接表すidentity / selection / handleがあるならそれをprimary evidenceとして使う。screenshotはsupporting evidenceにする。
 
@@ -265,7 +315,11 @@ PASS if the same selection marker remains on the same identified geometry.
 
 スクリーンショットがあること自体はaesthetic judgmentの許可ではない。
 
-## 6. Order units and re-establish independent initial state
+`vscode_observe`がpublishするstable `canvas.selectedElementIds`とraw `runtimeSelectedElementIds`は別namespaceとして扱う。headless stable IDとの比較にruntime IDを使わない。
+
+Source edit後はpre-action snapshotをpost-action evidenceとして再利用しない。documentVersionの増分数そのものをuser edit回数と同一視せず、predeclared stable current stateへ収束した後のfresh evidenceを比較する。
+
+## 7. Order units and re-establish independent initial state
 
 破壊的操作は可能なら最後へ置く。
 
@@ -287,7 +341,67 @@ promptにはfailureが後続unitを無効化するかを書く。
 
 fresh reset後もrequired initial stateを客観的に作れない場合は`BLOCKED`。
 
-## 7. Build a self-contained but non-duplicative Luna prompt
+## 8. First-use paired capability calibration
+
+未知のLuna操作を増やすときは、Humanを毎Issueの恒常executorにせず**one-time ground truth**として使う。
+
+`MANUAL-E2E.md`のfirst-use paired calibration ruleに従い、current proven baselineにないmaterially new operation/evidence familyだけを対象にする。
+
+典型例:
+
+- first Hover interaction / hover evidence
+- first native Quick Fix open/select/apply flow
+- first drag or resize operation
+- first new webview surface interaction type
+- first multi-document retarget/lifecycle operation
+- first new structured observation field/path
+
+手順:
+
+1. Sol Highがsame tested state / same objective oracleを固定する。
+2. Humanが**new primitiveに必要な最小範囲だけ1回**ground truthを実行する。
+3. 値・identity・expected visible stateを記録する。
+4. fresh host/stateからLunaがindependently同じobjective unitを実行する。
+5. Sol HighがHuman/Luna evidenceを比較する。
+6. operation/evidence technique、pitfall、capability boundaryを抽出する。
+7. 成功したcapabilityをこのplaybookまたはrepository Skillへ追加する。
+8. 以後の同familyはLuna only。material drift時だけ再calibrateする。
+
+Humanへfull scenarioを何回も再実行させない。既にprovenなSource activation、Canvas open、CDP attach等まで毎回Human側で繰り返す必要はなく、新しいprimitiveのground truthに必要なsetup/action/evidenceだけ行う。
+
+HumanとLunaが一致しない場合、Human repeatを最初の解決策にしない。fixture/oracle/environment/operation/evidence/capability/productのどこで差が生まれたかを分類する。
+
+### Proven capability reuse
+
+同じcapability limitationをIssueごとに繰り返し試さない。再利用可能なboundaryが判明したらこのplaybookへ記録し、future classificationで最初から使う。
+
+同様に、**実証済みpositive capability**も再利用する。成功済みoperation / observationをIssueごとに毎回capability probeし直さない。VS Code version、Playwright/CDP behavior、対象surface、host wiring、observation API等にmaterial driftがある場合だけ再probeする。
+
+### Proven VS Code CDP capability baseline
+
+2026-08-23時点で、isolated VS Code Extension Development Host + Playwright CLI/CDP + nuinuiCAD MCP observationについて次を実機で確認済み。
+
+- VS Code `1.134.0`
+- Playwright CLI `0.1.18`
+- CDP attach
+- tab-list / snapshot / screenshot
+- current unique fixtureをworkbenchから識別
+- Command Palette command mode (`>`)からnuinuiCAD commandを発見・実行
+- Command Palette row metadata (`recently used`等)が付いてもstable command textで識別
+- `nuinuiCAD: Open Canvas` / `nuinuiCAD: Fit Drawing` / `nuinuiCAD: Open Output Preview` / `nuinuiCAD: Reveal in Canvas`の実行
+- `vscode-webview://...` frame内のnuinuiCAD Canvas DOMへ到達
+- `.canvas-viewport` / `.drawing-overlay` / `.overlay-draggable-point`を観測
+- DOM bounding box由来のcoordinate click
+- selected point / glow / selected identityのDOM観測
+- Source / Canvas / Output Previewのactive surface/session identityを`vscode_observe`で区別
+- headless stable identityとCanvas stable selected identityの一致確認
+- runtime selected ID namespaceをstable IDと分離
+- deterministic Source range verification -> one edit -> fresh live Source/Canvas evidence
+- ambiguous targetでguessせず`BLOCKED`
+
+このbaselineに該当するoperationは、未知のLuna capabilityとして毎Issue Human pair/probeし直さない。tested commitのsurface freshnessとcurrent environment driftだけ確認する。
+
+## 9. Build a self-contained but non-duplicative Luna prompt
 
 fresh Luna sessionでは、execution-critical informationをprompt内へ完結させる。
 
@@ -316,56 +430,13 @@ Do not fix a failure.
 Do not inspect implementation code for root-cause investigation.
 Do not redesign or expand the test plan.
 Do not perform Human-assigned units.
+Do not ask the Human to rescue the run.
 Return BLOCKED if the required state cannot be established objectively.
 ```
 
 same Luna sessionへretryする場合はdelta promptでもよいが、retained contextが曖昧ならself-contained promptへ戻す。
 
-## 8. Prefer Luna for objective units, without weakening the oracle
-
-`Judgment: Objective`で、既知のLuna capability / evidence blockerがなく、required stateを作成・操作・観測できると合理的に見込めるunitは、原則`Executor: Luna`で試す。
-
-「できるか少し不安」というだけで最初からHumanへ回さない。
-
-Lunaがrequired stateを確実に作れない、または観測できない場合は`BLOCKED`でよい。
-
-例:
-
-- required selectionを客観的identity付きで確立できない
-- popup/candidateをevidence上区別できない
-- physical-device操作が必要
-- required observation surfaceをLunaから取得できない
-
-`BLOCKED`後は原因を分ける。
-
-- bounded environment / launch / prompt問題で明確に修正可能 → setup / promptを直してaffected unitをrerun
-- actual Luna operation / observation / evidence capability boundary → `Judgment: Objective / Executor: Human / Reason: Luna capability`へreclassify
-- missing / ambiguous product oracle → Humanへ逃がさずcontract / test planを非Readyへ戻す
-
-Lunaを維持するためにoracleを簡単な別物へ置換しない。
-
-同じcapability limitationをIssueごとに繰り返し試さない。再利用可能なboundaryが判明したらこのplaybookへ記録し、future classificationで最初から使う。
-
-同様に、**実証済みpositive capability**も再利用する。成功済みoperation / observationをIssueごとに毎回capability probeし直さない。VS Code version、Playwright/CDP behavior、対象surface、host wiring等にmaterial driftがある場合だけ再probeする。
-
-### Proven VS Code CDP capability baseline
-
-2026-08-22時点で、isolated VS Code Extension Development Host + Playwright CLI/CDPについて次を実機で確認済み。
-
-- VS Code `1.134.0`
-- Playwright CLI `0.1.18`
-- CDP attach
-- tab-list / snapshot / screenshot
-- current unique fixtureをworkbenchから識別
-- Command Paletteで`nuinuiCAD: Open Canvas` / `nuinuiCAD: Fit Drawing`を発見・実行
-- `vscode-webview://...` frame内のnuinuiCAD Canvas DOMへ到達
-- `.canvas-viewport` / `.drawing-overlay` / `.overlay-draggable-point`を観測
-- DOM bounding box由来のcoordinate click
-- selected point / glow / selected identityのDOM観測
-
-このbaselineに該当するobjective VS Code Canvas operationは、未知のLuna capabilityとして毎Issue probeし直さない。tested commitのsurface freshnessとcurrent environment driftだけ確認する。
-
-## 9. Distinguish BLOCKED from FAIL
+## 10. Distinguish BLOCKED from FAIL
 
 典型的`BLOCKED`:
 
@@ -373,7 +444,7 @@ Lunaを維持するためにoracleを簡単な別物へ置換しない。
 - stable refがexpected commitを指さない
 - safe clean checkoutがない
 - VS Code executable / Rust binaryがない
-- 2回のbounded launch後もCDP endpointを確立できない
+- bounded launch後もCDP endpointを確立できない
 - development extensionがregisteredされない
 - `.nui`がPlain Text
 - extension未loadのためrequired commandがない
@@ -392,7 +463,7 @@ Observed result contradicted the predeclared oracle.
 
 environment / instruction / Luna capability problemをimplementation failure loopへ入れない。
 
-## 10. Result format
+## 11. Result format
 
 headerでtested environmentを記録する。
 
@@ -423,9 +494,17 @@ Blocker if BLOCKED:
 
 grouped identity testは各subcaseを明示する。`works`だけでまとめない。
 
-CDP launch retryを使った場合はattemptごとのCDP reached / CLI exit / diagnostic evidenceもresultへ記録する。
+CDP launch retryやPTY fallbackを使った場合はattempt/fallbackごとのCDP reached / CLI exit / diagnostic evidenceもresultへ記録する。
 
-## 11. Sol High acceptance checklist
+最後に必ず:
+
+```text
+Reusable-operation observation: none | <concise factual observation>
+```
+
+を返す。new capability、runner/host pitfall、evidence technique、capability boundaryを積極的に拾う。
+
+## 12. Sol High acceptance checklist
 
 Luna結果をacceptする前に確認する。
 
@@ -435,10 +514,13 @@ Luna結果をacceptする前に確認する。
 4. 各required Luna unitにoracleを直接支えるevidenceがあるか。
 5. implementation-specific selector / command / observable surfaceがtested commitに存在するものか。
 6. Human-assigned unitが残っていないか。
-7. latest `origin/main` driftをunitごとにreviewしたか。
-8. tested resultへ到達し得るmaterial driftがある場合、affected unitだけrerunしたか。
-9. aggregate `Manual E2E: Passed`の前提を満たすか。
-10. Done-before Ready contract freshness checkは別checkpointとして実施したか。
+7. counted Luna runへunplanned Human rescueが入っていないか。
+8. first-use paired calibration対象ならHuman/Luna evidenceを比較したか。
+9. reusable-operation observationをownerへ反映する必要があるか判定したか。
+10. latest `origin/main` driftをunitごとにreviewしたか。
+11. tested resultへ到達し得るmaterial driftがある場合、affected unitだけrerunしたか。
+12. aggregate `Manual E2E: Passed`の前提を満たすか。
+13. Done-before Ready contract freshness checkは別checkpointとして実施したか。
 
 ## Common pitfalls
 
@@ -464,6 +546,12 @@ Luna結果をacceptする前に確認する。
 
 対策: 最大約60秒pollする。失敗時はlaunch diagnosticsを保存し、VS Codeを全cleanupしてnew fresh profileで1回だけretryする。2回とも失敗した場合だけenvironment BLOCKED。
 
+### Runner shell exits before GUI host is durable
+
+症状: 正しいlaunch argsでもone-shot runner shell終了とともにVS Code GUI/CDP listenerが消える、またはlifetimeが不安定になる。
+
+対策: `VS-CODE-E2E.md`のbounded persistent-PTY fallbackを使う。PTYを全runの必須baselineにはしない。
+
 ### VS Code opens but nuinuiCAD is absent
 
 症状:
@@ -474,6 +562,12 @@ Luna結果をacceptする前に確認する。
 - Running Extensionsにdev extensionがない
 
 対策: product FAILにせずenvironment BLOCKED。`VS-CODE-E2E.md`のcanonical isolated launchを使い、extension-registration preflightを先に通す。
+
+### Human accidentally rescues a Luna run
+
+症状: process cleanupやunexpected host stateによりdialogが出て、Humanが閉じる/クリックする等の操作をしてしまう。
+
+対策: そのrunをFAILにもPASSにも数えない。evidenceを残してfresh independent runをやり直す。Luna run中はPCをHumanが操作しない運用をdefaultにする。
 
 ### Independent unit is hidden by previous unit contamination
 
@@ -493,5 +587,6 @@ Manual E2Eから再利用可能なoperational lessonが得られたらこのplay
 - repeated Luna capability boundary
 - prompt pattern
 - environment pitfall
+- Human/Luna first-use calibrationから得たoperation primitive
 
 個別Issueの完了履歴や巨大なcompleted promptを保存しない。incident detailはGit / Linear historyへ残し、ここには再利用可能なruleだけを残す。
