@@ -21,7 +21,7 @@ Lunaは貴重なimplementation resourceとして扱う。目的はLunaの使用�
 
 xhighを既定にする理由はimplementation reliabilityを優先するため。コスト削減の第一手段はreasoning effortを下げることではなく、ChatGPT側でworkをimplementation-readyにしてLunaへ渡すcontextと判断負荷を減らすこと。
 
-## Before handoff — ChatGPT owns preparation
+## Before Luna run — ChatGPT owns preparation
 
 Lunaへ渡す前に、ChatGPTがcurrent Project Contextとlatest remote repositoryを使って次を完了する。
 
@@ -92,6 +92,24 @@ Lunaへroot-cause investigationとproduct redesignをまとめて委ねない。
 - settled design history
 - current sliceに無関係なfuture work
 - ChatGPTが既に解決済みの調査過程
+
+## Cross-chat continuity
+
+nuinuiCADのimplementation Taskを別ChatGPT conversationへ継続する場合、別途長いhandoff文を作ることをdefaultにしない。
+
+current Task固有で次のconversationにも必要な確定事項は、通常はcurrent Linear Issueへcheckpointとして記録する。既存のrule / source-of-truth / repositoryから再取得できる情報はLinearへ重複保存しない。
+
+Linearへ残す対象は、たとえば次のようなcurrent-state差分。
+
+- completed acceptance / remaining acceptance
+- current branch / PR / tested headなど、継続に必要なexecution state
+- current blocker / verification result
+- next safe slice / next execution route / intended base
+- chat内で確定し、まだ他のdurable ownerに存在しないTask固有decision
+
+新しいconversationはhandoff proseや過去チャットをsource of truthにせず、latest Project Context、latest remote repository、current Linear Issue / Commentを再取得して再開する。
+
+ユーザーが明示的に「引き継ぎを書いて」と求めた場合でも、rule repoにある一般ruleを再掲せず、Linearやrepositoryから一意に復元できないcurrent Task固有事項だけを短くまとめる。
 
 ## Re-evaluation boundary
 
