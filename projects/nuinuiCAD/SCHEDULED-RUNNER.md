@@ -4,7 +4,7 @@
 
 A single user-created ChatGPT Scheduled Task may autonomously continue or start eligible nuinuiCAD `only_chatgpt` work while the user is away.
 
-This document owns periodic runner selection, standing start authorization, recovery priority, and scheduled-run continuation. It does not replace the normal execution-ownership rules in [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md), the watchdog state/heartbeat semantics in [`WATCHDOG.md`](./WATCHDOG.md), or Linear readiness/status rules in [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md).
+This document owns periodic runner selection, standing start / merge authorization, recovery priority, and scheduled-run continuation. It does not replace the normal execution-ownership rules in [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md), the watchdog state/heartbeat semantics in [`WATCHDOG.md`](./WATCHDOG.md), or Linear readiness/status rules in [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md).
 
 The runner is an ordinary ChatGPT Scheduled Task. Do not add another daemon, browser automation, Tampermonkey script, or external scheduler for this behavior.
 
@@ -21,11 +21,15 @@ Maintain exactly one Scheduled Task for autonomous nuinuiCAD `only_chatgpt` exec
 
 A suitable task prompt stays intentionally small: identify the run as the user-created nuinuiCAD autonomous `only_chatgpt` runner, require loading the fixed README entrypoint first, then require following the current Project Context rules to recover/continue/select work. Do not embed a stale copy of this document or other Project Context policy in the Scheduled Task prompt.
 
-## Standing explicit-start authorization
+## Standing start and merge authorization
 
-The user explicitly creating the Scheduled Task described by this document is standing explicit-start authorization for that task to select and start an eligible `only_chatgpt` Issue.
+The user explicitly creating the Scheduled Task described by this document is standing explicit authorization for that task to:
 
-This is a narrow exception to the ordinary [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) rule that a Todo does not auto-start merely because it has `only_chatgpt`.
+- select and start an eligible `only_chatgpt` Issue;
+- create and manage Pull Requests that belong to the selected / recovered autonomous execution track; and
+- merge those Pull Requests when the current Project Context rules say the PR is ready to merge.
+
+This is a narrow exception to the ordinary [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) rules that a Todo does not auto-start merely because it has `only_chatgpt` and that merge requires explicit authorization. The Scheduled Task does not need to ask the user for another merge confirmation for a PR covered by this standing authorization.
 
 The Scheduled Task may newly start a candidate only when all of the following are currently true:
 
@@ -36,9 +40,19 @@ The Scheduled Task may newly start a candidate only when all of the following ar
 - it has no unfinished blocker;
 - the normal `only_chatgpt` reservation / interference gate passes.
 
-This standing authorization does not apply to arbitrary scheduled prompts, ordinary chat turns, or non-`only_chatgpt` Todo Issues. It does not authorize guessing through a new product / UX / scope decision, bypassing a required local/manual operation, or taking destructive ownership of unrelated work.
+A merge is covered by the standing authorization only when all of the following are currently true:
 
-Resuming an unfinished autonomous track selected by this runner remains within the same standing authorization, but the runner must still refresh remote state before acting.
+- the PR belongs to the currently selected / recovered eligible `only_chatgpt` execution track;
+- required implementation, automated verification / CI, blocking review, main-advance interference checks, and any other current pre-merge gates are complete and permit merge;
+- the current PR head / base and mergeability have been refreshed from GitHub immediately before merge;
+- no unresolved blocker, required review, branch protection, or current policy rule forbids the merge;
+- the merge does not require force-updating refs, bypassing required checks or protections, destructive interference with unrelated work, or an administrative override outside ordinary connected-app permissions.
+
+When those conditions pass, merge as part of the autonomous execution track instead of stopping only to request a second user confirmation.
+
+This standing authorization does not apply to arbitrary scheduled prompts, ordinary chat turns, unrelated Pull Requests, or non-`only_chatgpt` Issues. It does not authorize guessing through a new product / UX / scope decision, bypassing a required local/manual operation, bypassing repository protections, or taking destructive ownership of unrelated work.
+
+Resuming an unfinished autonomous track selected by this runner remains within the same standing start / merge authorization, but the runner must still refresh remote state before acting.
 
 ## Per-run priority: recovery before new work
 
