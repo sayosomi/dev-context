@@ -32,6 +32,30 @@ A Task is not Manual-E2E-required merely because it is user-facing, visual, UI-r
 
 Luna / Human executor capability does **not** decide whether Manual E2E is required. First decide whether an actual execution-environment check is needed; only then classify its units and executors.
 
+### MCP-only objective verification is not Luna work
+
+Do not spend Luna on a check that can be fully executed and judged by deterministic calls to repository-owned read-only MCP tools or an equivalent local script, without operating a production host/UI/session.
+
+Typical examples include calling `document_inspect`, `document_evaluate`, `document_definition`, or `document_references` against a frozen file-backed fixture and comparing structured output with a predeclared oracle.
+
+For such checks:
+
+- prefer an automated test when the same boundary can be exercised reliably in CI;
+- if an exact local built-artifact check is still useful, run a deterministic terminal/script verification outside Luna and record it as supporting verification rather than inventing a Luna Manual E2E unit;
+- do not use Luna merely as a wrapper around MCP calls, shell commands, or structured-result comparison that does not require agent-operated product-host behavior;
+- if an existing Manual E2E unit mixes MCP-only semantics with a production-host action, split the MCP-only part from the host-only part when the acceptance meaning is preserved;
+- do not duplicate the same semantic oracle in MCP-only verification and Luna host execution unless the cross-boundary agreement itself is the acceptance condition.
+
+MCP evidence may still be used **inside** a real Luna production-host run when it objectively corroborates host state, freshness, identity, diagnostics, or evaluation after Luna performs a required VS Code / Tauri / session action.
+
+Exceptions where the client/MCP path itself remains part of acceptance include cases that explicitly require proving:
+
+- Codex/Luna -> MCP registration, approval, startup, or tool exposure;
+- a specific external client -> MCP interoperability boundary;
+- attached production-host observation such as `vscode_observe` where the host lifecycle/action is itself under test.
+
+In those cases, do not replace the required end-to-end boundary with a direct standalone MCP call.
+
 ## Timing relative to merge
 
 Required Manual E2E is performed **after merge by default**.
@@ -67,6 +91,8 @@ Each unit should state, at minimum:
 - for `Executor: Human`, the reason when useful: `human judgment` or `Luna capability`.
 
 Do not classify at whole-Issue granularity when the Issue contains mixed checks. One Issue may contain both Luna-executable and Human-required units.
+
+Before assigning an Objective unit to Luna, first apply the MCP-only rule above. A deterministic MCP/script-only check is normally verification outside Manual E2E, not `Executor: Luna` and not `Executor: Human` merely because a person launches the script.
 
 ### Objective judgment
 
@@ -109,24 +135,26 @@ If multiple reasonable expected outcomes remain because product semantics / acce
 
 ## Executor selection
 
-Apply these rules after judgment classification:
+Apply these rules after judgment classification and after removing MCP/script-only verification that does not require Manual E2E:
 
 ```text
 Judgment: Human
 => Executor: Human
 
 Judgment: Objective
++ actual production-host / session operation is required
 + no known Luna capability / evidence blocker
 + reliable execution is reasonably expected
 => Executor: Luna
 
 Judgment: Objective
++ actual production-host / session operation is required
 + known required Luna capability is missing or unreliable
 => Executor: Human
    Reason: Luna capability
 ```
 
-For Objective units, prefer Luna unless a known operation / observation / evidence limitation already makes reliable execution unlikely. Do not route objective work to the user merely because Luna success is not guaranteed in advance.
+For Objective Manual E2E units, prefer Luna unless a known operation / observation / evidence limitation already makes reliable execution unlikely. Do not route objective work to the user merely because Luna success is not guaranteed in advance.
 
 Do not weaken or rewrite a Human judgment oracle merely to make a unit Luna-executable.
 
@@ -150,6 +178,8 @@ This is an executor-capability calibration, not a permanent `Executor: Human` as
 
 Use it when the unit introduces an operation/evidence primitive that is not already covered by the current proven capability baseline, for example a new VS Code surface interaction, new webview interaction type, new popup/hover/Quick Fix workflow, new drag/selection mechanism, or a new observation/evidence path.
 
+Do **not** use first-use paired calibration to justify sending MCP/script-only verification to Luna. If no production-host operation is required, remove that check from Luna execution instead.
+
 Do **not** repeat the Human side for every Issue or every equivalent case. Human effort is intentionally capped:
 
 - one Human ground-truth pass per materially new operation/evidence family is normally enough;
@@ -172,16 +202,18 @@ Immediately before generating a Luna prompt or presenting Human test instruction
 2. the current Issue contract and Manual E2E plan;
 3. the latest intended remote repository state / tested commit;
 4. whether the initial state, fixture, actions, and expected observations are still valid;
-5. whether Luna can still perform and observe each `Executor: Luna` unit reliably;
-6. whether any Human-judgment unit has accidentally been moved into agent execution.
+5. whether each proposed Luna unit still requires a production-host/session action rather than only deterministic MCP/script verification;
+6. whether Luna can still perform and observe each `Executor: Luna` unit reliably;
+7. whether any Human-judgment unit has accidentally been moved into agent execution.
 
 This is a freshness check, not a new product-design phase.
 
 Safe reclassification rules:
 
-- `Luna -> Human` is allowed when an actual Luna operation / observation / evidence capability limitation is established.
-- bounded environment or prompt/instruction problems should be corrected and retried when clearly fixable; they are not automatically a reason to assign Human execution.
-- `Human -> Luna` is allowed automatically only when `Judgment: Objective` and the previous Human assignment existed solely because of Luna capability.
+- a proposed Luna unit discovered to be MCP/script-only → remove it from Luna execution and route it to automated/local deterministic verification;
+- `Luna -> Human` is allowed when an actual Luna operation / observation / evidence capability limitation is established;
+- bounded environment or prompt/instruction problems should be corrected and retried when clearly fixable; they are not automatically a reason to assign Human execution;
+- `Human -> Luna` is allowed automatically only when `Judgment: Objective` and the previous Human assignment existed solely because of Luna capability;
 - `Judgment: Human` must not be converted to Luna execution merely for efficiency. Changing that judgment contract requires an explicit product / test-plan decision, not a prompt-generation shortcut.
 - newly discovered ambiguity in the product oracle is not a Luna-capability reclassification; return the contract / test plan to a non-Ready state and resolve the missing semantics.
 
@@ -203,6 +235,8 @@ The prompt must contain only the information needed to execute the selected obje
 - for each unit: action, expected observation, required evidence, and whether a failure invalidates later units;
 - explicit blocking conditions for stale remote state, unsafe checkout state, missing environment capability, or ambiguous instructions;
 - the required result format.
+
+Do not include a deterministic MCP/script-only check in the Luna prompt merely because Luna can call the tool. Use Luna only when the unit requires agent-operated production-host/session behavior or when the client/MCP path itself is explicitly under test.
 
 The prompt must explicitly keep Luna within the execution role:
 
@@ -276,7 +310,11 @@ While only some units have passed, keep the aggregate Linear state consistent wi
 ## Standard flow
 
 ```text
-Manual E2E requirement / plan decided
+acceptance condition
+        ↓
+can automated test or deterministic MCP/script prove it without production-host operation?
+  YES -> automated/local verification; do not spend Luna
+  NO  -> Manual E2E requirement / plan
         ↓
 classify each required test unit
   Judgment: Objective / Human
