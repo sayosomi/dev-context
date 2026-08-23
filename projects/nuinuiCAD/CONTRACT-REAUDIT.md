@@ -99,7 +99,10 @@ Issue descriptionには再調査後のcurrent有効contractを置き、調査で
 4. current executable sliceが存在する場合だけimplementation slicing / execution routeを再分類する。
 5. `only_chatgpt`はfreshなroute判定で適格と確認した場合だけ再付与する。
 6. `contract_reaudit`を外す。
-7. readiness条件に従って`Todo` / `Backlog`を同期する。
+7. Issueのcurrent lifecycle phaseを先に判定し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のstatus synchronization precedenceに従ってstatusを同期する。
+   - implementationがintended baseへmerge済みでrequired Manual E2Eだけが未完了なら`In Review`。
+   - implementation前またはimplementation再開待ちのWorkだけ、readiness条件により`Todo` / `Backlog`。
+   - re-audit完了や`Contract: Ready`への復帰だけを理由に`In Review`を`Todo` / `Backlog`へ戻さない。
 
 re-audit自体は完了したがuser product decision待ちになった場合、`contract_reaudit`は外して`Contract: Pending`を残す。markerは「再調査が必要」ではなく「今回の再調査が未完了」を表す。
 
