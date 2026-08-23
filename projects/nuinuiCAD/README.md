@@ -91,7 +91,7 @@ Notionは新規Work / Specの管理先には使わない。
 5. **Implementation / blocking-fix Coding Agent:** `shared/CODING-AGENT-WORKFLOW.md`を読む。skill選択が必要なときだけShared / nuinuiCAD Agent Skillsを追加で読む。
 6. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
 7. **`only_chatgpt` / `manual_e2e_only`:** 6に加えて`ONLY-CHATGPT.md`を読む。
-8. **Scheduled autonomous `only_chatgpt` runner creation / execution:** 6と7に加えて`SCHEDULED-RUNNER.md`と`WATCHDOG.md`を読む。Scheduled Taskのpromptにはpolicy本文をcopyせず、このREADME固定入口から毎run current ruleをloadさせる。
+8. **Scheduled autonomous `only_chatgpt` runner creation / execution:** 6と7に加えて`SCHEDULED-RUNNER.md`と`WATCHDOG.md`を読む。
 9. **Shared CI incident suspicion / human-terminal CI reproduction:** `ONLY-CHATGPT.md`のshared CI incident routeに該当した場合だけ`CI-INCIDENTS.md`を読む。通常の`only_chatgpt`開始時やordinary issue-local CI failureでは読まない。
 10. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`shared/AGENT-PROMPT-STYLE.md`と`LUNA-E2E-PLAYBOOK.md`を読む。Manual E2E test-operator promptであるという理由だけで`shared/CODING-AGENT-WORKFLOW.md`を読まない。別途implementation / blocking-fixを依頼するときだけ5を適用する。
 11. **Long-running web ChatGPT execution track / high-risk wait boundary:** workが1 response/tool batchを実質的に超え得る、またはCI waiting・large-file work等のsilent interruption riskがある場合は`WATCHDOG.md`を読み、そのtrackをarm / heartbeat / doneする。routineな短いconversation / research turnでは使わない。
