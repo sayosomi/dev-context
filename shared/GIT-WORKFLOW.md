@@ -19,6 +19,20 @@ Project固有のrepository policyやcheckout例外がある場合はそちらを
 
 ## Coding Agent start preflight
 
+### ChatGPT-side handoff freshness check
+
+Implementation Coding Agentへ実装開始を渡す直前に、ChatGPTはprompt / contract準備中に取得したSHAをそのまま再利用せず、expected baseとして使うauthoritative remote stateをGitHubから再取得する。
+
+- expected baseがlatest remote `main`なら、handoff直前にlatest `main`を再取得する。
+- expected baseが別branch / reviewed pushed commit等なら、そのintended baseのcurrent remote stateをhandoff直前に再確認する。
+- preparation中にremoteがadvanceしていた場合、intervening changesがcurrent Taskのcontract / semantic owner / slicingへ影響するかChatGPTが判断する。
+- unrelated changeだけでcontractが維持できる場合は、expected baseを新しいremote stateへ更新してからCoding Agentへ渡す。
+- relevant changeまたは影響が一意に判断できない場合は、Coding Agentを開始せずChatGPTがcontract / sliceを再評価する。
+
+Coding Agent自身の `git fetch origin --prune` とexpected-state照合は、このChatGPT-side checkの代替ではなく、handoff後にremoteがさらにadvanceしていないことを確認するsecond safety checkとして扱う。
+
+### Coding Agent-side second safety check
+
 Coding Agent向けimplementation promptでは、実装前に必ず:
 
 ```bash
