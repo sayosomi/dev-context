@@ -55,6 +55,8 @@ Typical priority:
 
 Never assume an interrupted in-memory operation succeeded. Reconcile persisted repository and work-management state first.
 
+Recovery logic should also detect inconsistent interrupted carry-over. If persisted branch/PR work proves that a runner-owned work item is still unfinished and there is no genuine completion, handoff, or stop reason, treat it as recoverable even when an earlier erroneous checkpoint returned the work item to a ready state or marked the watchdog `done`. Repair the work-management/liveness state according to current project policy and continue that track before selecting new work. A stale `done` liveness record must not suppress recovery of unfinished persisted runner work.
+
 A scheduled invocation that finds no safe executable work may complete as a successful no-op.
 
 ## Parallel lanes and interference
@@ -176,6 +178,7 @@ Before reusing this pattern in another project/repository, define all of the fol
 - whether recent multi-conversation context is available to the runner;
 - watchdog location, states, heartbeat interval, timeout executor, and alert destination;
 - recovery priority;
+- stale interrupted-carry-over recovery behavior;
 - per-run new-start limit;
 - invocation-boundary carry-over behavior;
 - Manual E2E / environment-bound handoff policy;
