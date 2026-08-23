@@ -21,6 +21,32 @@ Implementation decomposition is a continuing execution decision, not a one-time 
 
 最初から全PR構成を確定する必要はない。implementation開始時には少なくとも**最初のsafe checkpoint**を1つ定める。
 
+## Boundary map before implementation
+
+Contract: ReadyのIssueでも、acceptance全体をそのまま1 PRへ写像しない。
+
+複数のsemantic owner / API / adapter / data-flow boundaryを横断するIssueでは、最初のrepository write前に少なくとも次を整理する。
+
+- acceptance cluster
+- primary semantic owner / boundary
+- upstream / downstream dependency
+- independently verifiableか
+- そのclusterだけをmergeした場合にrepositoryが一貫するか
+
+このboundary mapを使い、**Issue boundaryとは独立して最初のPR / merge checkpointを決める**。
+
+特に次のようにowner / boundaryが段階的に接続されるTaskは、same Issue + sequential PRの強い候補とする。
+
+```text
+semantic / type foundation
+-> runtime / lowering / adapter integration
+-> editor / host / user-facing integration
+```
+
+ただし途中mergeがtemporary broken state、duplicate owner、または意図せず有効な未完成user-facing behaviorを作る場合はsplitしない。
+
+「scopeとして1 Issueである」「contractが1つである」「foundation featureである」ことだけを理由に1 PR完走を選ばない。
+
 ## Safe checkpoints
 
 ### Merge checkpoint
@@ -51,11 +77,28 @@ handoff checkpointでは少なくとも次を記録する。
 
 pause / resumeはhandoff checkpointを作る自然なtriggerだが、pauseのたびにPRをsplitする必要はない。
 
+### Verification boundary
+
+independently verifiableなsliceとは、内部representationやhelper単体が正しいだけでは不十分。
+
+current sliceがadapter / projection / lowering / serialization / editor integration等のboundaryを変更する場合、少なくとも1つは**そのboundaryを最後まで通したobservable result**を検証する。
+
+例:
+
+- completion candidate生成だけでなく、adapter適用後のlabel / replace range / resulting source text
+- semantic value生成だけでなく、Module / runtime consumerへ渡るresolved value
+- serializer payloadだけでなく、round-trip後のcanonical source / output
+- host-neutral queryだけでなく、production host adapterが公開する結果
+
+regression testは新しいfeature固有behaviorだけでなく、変更したshared boundaryに既存contractがある場合、その既存behaviorも含める。
+
+focused tests greenだけをmerge checkpointの十分条件にしない。shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration test / full suiteをTask末尾まで延期せず実行する。
+
 ## Re-evaluation triggers
 
 次のcheckpointではimplementation slicingを再評価する。
 
-1. 最初のbroad integration test / full suiteの結果が得られた。
+1. shared owner / adapter boundaryへ初めて接続した時点で、影響範囲に応じたbroad integration test / full suiteを可能な限り早く実行し、その結果が得られた。
 2. Taskをpause / resumeする。
 3. implementationが当初のsemantic owner / API / contract / data-flow boundaryを越えて拡張しようとしている。
 4. 複数の独立したfailure classが残った。
