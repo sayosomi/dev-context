@@ -73,6 +73,10 @@ result受領後のreusable lesson判定はSol Highが行う。runが再利用可
 
 ## Skill selection
 
+Implementation / blocking-fix / blocking reviewのskill選択はexecution routeに依存しない。standard Coding Agent routeだけでなく、web ChatGPTがdirect GitHub + CIで実装する`only_chatgpt` sliceにも同じselection ruleを適用する。
+
+`only_chatgpt`ではChatGPT自身がcurrent Taskに必要なShared / nuinuiCAD skillを読み、そのconstraint / impact check / review procedureを直接適用する。Coding Agentへpromptを渡さないことを理由にskillを省略しない。
+
 nuinuiCAD の一般的な Task 実装:
 
 - `keep-task-scope-tight`
