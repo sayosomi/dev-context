@@ -24,6 +24,7 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | checkout / persistent sub worktree | [Checkout / worktree policy](./CHECKOUTS.md) |
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) |
+| implementation slicing / sequential PR / execution checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | Coding Agent skill選択 | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Linear overview / routing | [Linear policy router](./LINEAR.md) |
 | Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
@@ -89,15 +90,16 @@ Notionは新規Work / Specの管理先には使わない。
 3. **Checkout / branch / worktree / local execution:** `CHECKOUTS.md`を読む。
 4. **Execution-agent prompt generation:** roleにかかわらず`shared/AGENT-PROMPT-STYLE.md`を読む。
 5. **Implementation / blocking-fix Coding Agent:** `shared/CODING-AGENT-WORKFLOW.md`を読む。skill選択が必要なときだけShared / nuinuiCAD Agent Skillsを追加で読む。
-6. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
-7. **`only_chatgpt` / `manual_e2e_only`:** 6に加えて`ONLY-CHATGPT.md`を読む。
-8. **Scheduled autonomous `only_chatgpt` runner creation / execution:** 6と7に加えて`SCHEDULED-RUNNER.md`と`WATCHDOG.md`を読む。
-9. **Shared CI incident suspicion / human-terminal CI reproduction:** `ONLY-CHATGPT.md`のshared CI incident routeに該当した場合だけ`CI-INCIDENTS.md`を読む。通常の`only_chatgpt`開始時やordinary issue-local CI failureでは読まない。
-10. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`shared/AGENT-PROMPT-STYLE.md`と`LUNA-E2E-PLAYBOOK.md`を読む。Manual E2E test-operator promptであるという理由だけで`shared/CODING-AGENT-WORKFLOW.md`を読まない。別途implementation / blocking-fixを依頼するときだけ5を適用する。
-11. **Long-running web ChatGPT execution track / high-risk wait boundary:** workが1 response/tool batchを実質的に超え得る、またはCI waiting・large-file work等のsilent interruption riskがある場合は`WATCHDOG.md`を読み、そのtrackをarm / heartbeat / doneする。routineな短いconversation / research turnでは使わない。
-12. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
-13. **Legacy履歴または明示的な移行中例外:** 必要なときだけ`NOTION-LEGACY.md`を読む。
-14. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
+6. **Implementation slicing / sequential PR / pause-resume checkpoint:** implementation Taskの開始・再開、safe merge checkpoint、same Issue内のnext PR、scope expansionを判断するときは`IMPLEMENTATION-SLICING.md`を読む。
+7. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
+8. **`only_chatgpt` / `manual_e2e_only`:** 7に加えて`ONLY-CHATGPT.md`を読む。
+9. **Scheduled autonomous `only_chatgpt` runner creation / execution:** 7と8に加えて`SCHEDULED-RUNNER.md`と`WATCHDOG.md`を読む。
+10. **Shared CI incident suspicion / human-terminal CI reproduction:** `ONLY-CHATGPT.md`のshared CI incident routeに該当した場合だけ`CI-INCIDENTS.md`を読む。通常の`only_chatgpt`開始時やordinary issue-local CI failureでは読まない。
+11. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`shared/AGENT-PROMPT-STYLE.md`と`LUNA-E2E-PLAYBOOK.md`を読む。Manual E2E test-operator promptであるという理由だけで`shared/CODING-AGENT-WORKFLOW.md`を読まない。別途implementation / blocking-fixを依頼するときだけ5を適用する。
+12. **Long-running web ChatGPT execution track / high-risk wait boundary:** workが1 response/tool batchを実質的に超え得る、またはCI waiting・large-file work等のsilent interruption riskがある場合は`WATCHDOG.md`を読み、そのtrackをarm / heartbeat / doneする。routineな短いconversation / research turnでは使わない。
+13. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
+14. **Legacy履歴または明示的な移行中例外:** 必要なときだけ`NOTION-LEGACY.md`を読む。
+15. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
 
 ## Maintenance rule
 
