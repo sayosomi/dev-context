@@ -184,6 +184,21 @@ done
 
 bounded retryをproduct behaviorのretryやfailure repairへ拡張しない。
 
+### Persistent PTY launch-lifetime fallback
+
+macOSのCodex/runner環境では、VS Code launch command自体が正しくても、one-shot shell/runner sessionの終了に引きずられてGUI processまたはCDP listenerのlifetimeが不安定になる場合がある。SAY-188 calibrationでは、同じGUI binary / launch argumentsをpersistent PTY内で保持することでfresh isolated hostのlifetimeが安定した実走例がある。
+
+このfallbackは**runner process lifetimeのenvironment対策**であり、nuinuiCAD product requirementでも全runのbaseline requirementでもない。
+
+使ってよい条件:
+
+- canonical launch args / env / exact tested stateは変更しない;
+- one-shot runner側のprocess lifetimeが原因と合理的に見える;
+- product actionをまだretryしていないlaunch/preflight段階である;
+- PTY内でも同じCDP readiness / fresh profile / process isolation ruleを使う。
+
+PTYを使った場合はresultへ記録する。PTYでもbounded launch procedure後にhostを確立できなければenvironment `BLOCKED`。
+
 ### macOS permission prompt / unattended launch pitfall
 
 Codex Desktop / ChatGPT.appからmacOS上のVS Code launchを行うと、OSのApp Data / privacy permission promptがlaunchを止める場合がある。SAY-158実走では、`code` invocation後にVS Code processもCDP listenerも残らずlaunch logも空、という形で現れ、permissionを許可してCodex Desktopをrestartした後は同じisolated launchがunattendedで成功した。
