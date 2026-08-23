@@ -7,6 +7,7 @@ Linear Issueのstatus、readiness、labels、metadata、recording、checkpoint s
 - execution ownership: [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md)
 - Manual E2E classification / execution semantics: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
 - implementation contract判断: [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)
+- implementation slicing / sequential PR: [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)
 - Free plan capacity: [`LINEAR-CAPACITY.md`](./LINEAR-CAPACITY.md)
 
 ## Issue lifecycle
@@ -14,6 +15,8 @@ Linear Issueのstatus、readiness、labels、metadata、recording、checkpoint s
 Feature / Task / Bug / Research / Verificationなど、実際に開始して完了する作業はIssueで管理する。
 
 1つのWork itemは開始から完了まで同じIssueを更新し、進捗段階ごとに別Issueを増やさない。途中で見つかった追加作業をsame Issueに残すかnew Issueへ分けるかは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) をauthorityとする。
+
+1つのIssueは複数のsequential implementation PR / execution trackを持ってよい。intermediate PRのmergeはIssue completionを意味せず、remaining acceptanceがある間は同じIssueを継続する。same Issue内のsafe merge checkpoint、next PR、pause / resume時の実装slice判断は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) をauthorityとする。
 
 通常の実装Issue:
 
@@ -284,6 +287,7 @@ Commentには確定した作業記録を置く。
 
 - research result
 - Coding Agent implementation result
+- implementation / merge checkpoint
 - blocking review result
 - Manual E2E result
 - important decision record
@@ -301,11 +305,14 @@ Linearをリアルタイム逐次ログとして使わない。チャット中�
 3. blocker relation / blocker completionでReady判定変更
 4. userがTask開始 / 中止を明示
 5. Coding Agent implementation完了
-6. blocking review完了
-7. PR merge
-8. Manual E2E開始 / 延期 / FAIL確定 / 完了
-9. 例外的Project assignment / Project cleanup
-10. decompositionで元tracking Issueのownershipがなくなった
+6. same Issue内のsafe merge / handoff checkpoint、またはnext sequential PRへの移行
+7. blocking review完了
+8. PR merge
+9. Manual E2E開始 / 延期 / FAIL確定 / 完了
+10. 例外的Project assignment / Project cleanup
+11. decompositionで元tracking Issueのownershipがなくなった
+
+same Issue内のintermediate merge checkpointでは [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) のrecord shapeに従い、completed acceptance / remaining acceptance / next intended slice / next baseを記録する。intermediate mergeをIssue completionとして扱わない。
 
 各checkpointでReady状態が変わり得るdirect dependentも確認する。
 
