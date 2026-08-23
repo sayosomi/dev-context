@@ -4,63 +4,52 @@
 
 Manual E2E in nuinuiCAD means verification that requires an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
 
-It does **not** mean that every check must be performed by a human.
+It does **not** mean every check is performed by a human.
 
-Manual E2E test units are classified by both judgment type and executor:
+Each Manual E2E unit is classified by:
 
-- `Judgment: Objective` — PASS / FAIL can be decided from a fully specified observable result without tester discretion.
-- `Judgment: Human` — PASS / FAIL intentionally depends on human visual, UX, design, or experiential judgment.
-- `Executor: Luna` — the unit is objective and Codex Luna xhigh can perform the required local operation, observation, and evidence capture reliably.
-- `Executor: Human` — the unit requires human judgment, or Luna cannot reliably execute / observe the required behavior.
+- `Judgment: Objective` — PASS / FAIL follows a predeclared observable oracle without tester discretion.
+- `Judgment: Human` — PASS / FAIL intentionally depends on human visual / UX / design / experiential judgment.
+- `Executor: Luna` — an Objective unit whose required production-host operation / observation / evidence path is currently reliable for Codex Luna xhigh.
+- `Executor: Human` — Human judgment is required, or the necessary Luna capability / evidence path is not reliable enough.
 
-The Linear `Manual E2E` label remains the aggregate state for the whole Issue. Do not create separate Linear labels for Luna / Human execution.
+The Linear `Manual E2E` label is aggregate state for the Issue. Do not create separate Luna / Human labels.
 
 ## When Manual E2E is required
 
 Manual E2E is `Required` only when at least one acceptance condition cannot be sufficiently verified by automated tests without operating an actual production execution environment.
 
-Use this decision order:
+Decision order:
 
-1. Does acceptance intentionally require human visual / UX / design / experiential judgment?
-   - YES → Manual E2E Required.
-2. Does acceptance depend on behavior that can only be verified reliably in an actual production host / execution environment, such as host wiring, lifecycle, focus, selection, window/session behavior, or another host-only boundary?
-   - YES → Manual E2E Required.
-3. Otherwise, can automated tests sufficiently prove all required acceptance against the authoritative production semantics / boundaries?
-   - YES → `Manual E2E: Not Required`.
+1. acceptance intentionally requires human visual / UX / design / experiential judgment → Manual E2E Required;
+2. acceptance depends on production-host / session behavior that automated tests cannot sufficiently prove, such as host wiring, lifecycle, focus, selection, window/session state, or another host-only boundary → Manual E2E Required;
+3. otherwise, if automated verification sufficiently proves acceptance → `Manual E2E: Not Required`.
 
-A Task is not Manual-E2E-required merely because it is user-facing, visual, UI-related, or implemented in a production host. If automated verification sufficiently proves the acceptance, do not add a manual check that only duplicates the same oracle.
+A Task is not Manual-E2E-required merely because it is UI-related, visual, user-facing, or implemented in a production host.
 
-Luna / Human executor capability does **not** decide whether Manual E2E is required. First decide whether an actual execution-environment check is needed; only then classify its units and executors.
+Executor capability does not decide requirement. First decide whether production-host Manual E2E is necessary; then classify executor.
 
-### MCP-only objective verification is not Luna work
+## Deterministic MCP / script verification is not Luna Manual E2E
 
-Do not spend Luna on a check that can be fully executed and judged by deterministic calls to repository-owned read-only MCP tools or an equivalent local script, without operating a production host/UI/session.
+Do not spend Luna on a check that can be fully executed and judged by deterministic repository-owned MCP calls or equivalent local scripts without operating a production host / UI / session.
 
-Typical examples include calling `document_inspect`, `document_evaluate`, `document_definition`, or `document_references` against a frozen file-backed fixture and comparing structured output with a predeclared oracle.
+Examples include frozen-fixture calls to `document_inspect`, `document_evaluate`, `document_definition`, or `document_references` with structured-result comparison.
 
-For such checks:
+For these checks:
 
-- prefer an automated test when the same boundary can be exercised reliably in CI;
-- if an exact local built-artifact check is still useful, run a deterministic terminal/script verification outside Luna and record it as supporting verification rather than inventing a Luna Manual E2E unit;
-- do not use Luna merely as a wrapper around MCP calls, shell commands, or structured-result comparison that does not require agent-operated product-host behavior;
-- if an existing Manual E2E unit mixes MCP-only semantics with a production-host action, split the MCP-only part from the host-only part when the acceptance meaning is preserved;
-- do not duplicate the same semantic oracle in MCP-only verification and Luna host execution unless the cross-boundary agreement itself is the acceptance condition.
+- prefer automated CI tests when the same boundary is reliable there;
+- otherwise use a deterministic terminal / script verification as supporting evidence;
+- do not use Luna merely as a wrapper around shell / MCP / JSON comparison;
+- split MCP-only semantics from genuine host-only actions when acceptance meaning is preserved;
+- avoid duplicate semantic oracles unless cross-boundary agreement is itself acceptance.
 
-MCP evidence may still be used **inside** a real Luna production-host run when it objectively corroborates host state, freshness, identity, diagnostics, or evaluation after Luna performs a required VS Code / Tauri / session action.
+MCP evidence may support a real Luna host run after Luna performs the required production-host action.
 
-Exceptions where the client/MCP path itself remains part of acceptance include cases that explicitly require proving:
-
-- Codex/Luna -> MCP registration, approval, startup, or tool exposure;
-- a specific external client -> MCP interoperability boundary;
-- attached production-host observation such as `vscode_observe` where the host lifecycle/action is itself under test.
-
-In those cases, do not replace the required end-to-end boundary with a direct standalone MCP call.
+Client/MCP path itself remains part of acceptance only when the Task explicitly tests that boundary, such as MCP registration / startup / interoperability or attached production-host observation.
 
 ## Timing relative to merge
 
-Required Manual E2E is performed **after merge by default**.
-
-Normal order:
+Required Manual E2E is **after merge by default**.
 
 ```text
 implementation
@@ -72,302 +61,291 @@ implementation
 -> Done
 ```
 
-Pre-merge Manual E2E is an exception and must be stated explicitly in the Task contract. Use it only when merging the unverified behavior creates unusual risk, or when the acceptance contract itself requires the production-host observation before merge.
+Pre-merge Manual E2E is an explicit Task-contract exception only when unusual merge risk or acceptance requires it.
 
-A post-merge Manual E2E `FAIL` returns the same Issue to its normal fix / review / merge / rerun loop. Do not redefine the default flow as pre-merge simply to avoid post-merge fixes.
+A post-merge FAIL returns the Work to normal implementation decomposition / fix / review / merge / rerun flow. Do not make pre-merge E2E the default merely to avoid post-merge fixes.
 
 ## Plan-time classification
 
-When a Manual E2E plan is created, classify each test unit before the Issue is considered `Manual E2E: Ready to Run`.
-
-Each unit should state, at minimum:
+Before `Manual E2E: Ready to Run`, each unit states:
 
 - initial state / fixture;
 - action;
 - expected observation;
-- evidence to record;
+- evidence;
 - `Judgment: Objective | Human`;
 - `Executor: Luna | Human`;
-- for `Executor: Human`, the reason when useful: `human judgment` or `Luna capability`.
+- for Human when useful: `Reason: human judgment | Luna capability`.
 
-Do not classify at whole-Issue granularity when the Issue contains mixed checks. One Issue may contain both Luna-executable and Human-required units.
+Do not classify only at whole-Issue granularity when units differ.
 
-Before assigning an Objective unit to Luna, first apply the MCP-only rule above. A deterministic MCP/script-only check is normally verification outside Manual E2E, not `Executor: Luna` and not `Executor: Human` merely because a person launches the script.
+Before assigning Objective work to Luna, remove deterministic MCP / script-only checks from Manual E2E.
 
-### Test-unit boundaries and materially distinct initial states
+## Test-unit boundaries
 
-A test unit's declared initial state is part of its oracle, not incidental setup.
+A unit's initial state is part of its oracle.
 
-When the same user action can follow materially different production-host or lifecycle paths depending on starting state, plan separate units for the distinct paths that can affect acceptance. Typical distinctions include a surface/session that does not yet exist versus one that is already open, or another host lifecycle boundary where initialization, reuse, focus, or readiness changes the implementation path.
+Split materially distinct lifecycle paths when starting state changes the production path, for example cold vs already-open surface / session. Do not build a mechanical Cartesian product of every possible state.
 
-Do not create a mechanical Cartesian product of every possible state. Split only states that route through meaningfully different host/lifecycle behavior or are independently required by the product contract.
+When one scenario contains independently judgeable Objective observations and Human visual / UX judgment, split them by default. Keep together only when separation changes acceptance meaning.
 
-If one scenario contains independently judgeable Objective observations and Human visual/UX judgment, split them into separate test units by default. This keeps binary product failures from being hidden inside a broad Human quality check and allows the correct executor to be chosen for each unit. Keep them together only when separating them would change the acceptance meaning or create artificial duplication of one inseparable judgment.
+Units may share setup without sharing judgment / executor classification.
 
-Units may share the same fixture or setup when convenient; shared setup does not require combining their result/oracle classification.
+## Objective judgment
 
-### Objective judgment
+Use `Judgment: Objective` only when:
 
-A test unit is `Judgment: Objective` only when all of the following are true:
+- expected result is concrete before execution;
+- observation can be compared without subjective interpretation;
+- tester need not invent missing semantics;
+- same initial state / action should yield the same PASS / FAIL;
+- useful evidence can be recorded.
 
-- the expected result can be written before execution as a concrete observable condition;
-- the observed result can be compared against that condition without subjective interpretation;
-- the tester does not need to invent missing product / UX semantics;
-- the same initial state and action should lead to the same PASS / FAIL conclusion;
-- useful evidence can be recorded after execution.
+Examples:
 
-Typical objective checks include:
+- specified command / menu / completion / diagnostic / element / state present or absent;
+- keyboard action produces specified source / selection / caret / Canvas state;
+- Undo / redo produces specified state;
+- exact label / message / value / source text appears;
+- explicit geometric condition such as viewport containment holds.
 
-- a specified command, menu item, completion candidate, diagnostic, element, or state is present or absent;
-- a keyboard action produces a specified source, selection, caret, document, or Canvas state change;
-- Undo / redo produces a specified state;
-- an exact label, message, value, or source text is shown;
-- a popup or element satisfies an explicitly specified geometric condition such as remaining inside the viewport.
+Visual observation alone does not make a unit Human.
 
-A test is not Human-only merely because the result is visual or must be observed in the UI.
+## Human judgment
 
-### Human judgment
+Use `Judgment: Human` for intentionally non-reducible quality judgment, including:
 
-Use `Judgment: Human` when the test intentionally asks whether the result has qualities that cannot be reduced to the stated contract without losing meaning.
-
-This includes checks such as:
-
-- visual or layout discomfort / `違和感`;
-- whether spacing, hierarchy, typography, color, iconography, or balance looks appropriate;
-- whether a UI feels crowded, natural, confusing, polished, or easy to understand;
-- whether an interaction feels awkward or natural;
-- whether the overall Canvas / Editor result looks wrong despite satisfying known binary conditions;
-- other design or experiential judgments where a human should notice problems not exhaustively described in advance.
+- visual / layout discomfort or `違和感`;
+- spacing / hierarchy / typography / color / iconography / balance;
+- whether UI feels crowded, natural, confusing, polished, or understandable;
+- whether interaction feels awkward / natural;
+- overall Canvas / Editor result looking wrong despite binary checks passing.
 
 Human judgment is an intentional quality gate, not an automation gap.
 
-**Human judgment is not a fallback for an incomplete oracle.**
-
-If multiple reasonable expected outcomes remain because product semantics / acceptance are not settled, the unit is not Ready. Resolve the implementation contract or test plan first. Do not hand an underspecified question to the user as `Judgment: Human` merely because the oracle is ambiguous.
+Do not use Human judgment as a fallback for an incomplete oracle. If product semantics remain ambiguous, return the contract / plan to non-Ready and resolve them first.
 
 ## Executor selection
 
-Apply these rules after judgment classification and after removing MCP/script-only verification that does not require Manual E2E:
+Apply after judgment classification and removal of MCP/script-only checks.
 
 ```text
 Judgment: Human
 => Executor: Human
 
 Judgment: Objective
-+ actual production-host / session operation is required
-+ no known Luna capability / evidence blocker
-+ reliable execution is reasonably expected
++ production-host / session operation required
++ required operation / observation / evidence family is covered by the current proven Luna baseline
++ no known blocker / material drift
 => Executor: Luna
 
 Judgment: Objective
-+ actual production-host / session operation is required
-+ known required Luna capability is missing or unreliable
++ production-host / session operation required
++ required Luna capability is unknown, missing, unreliable, or materially drifted
 => Executor: Human
    Reason: Luna capability
 ```
 
-For Objective Manual E2E units, prefer Luna unless a known operation / observation / evidence limitation already makes reliable execution unlikely. Do not route objective work to the user merely because Luna success is not guaranteed in advance.
+For Objective work, prefer Luna **within the proven capability baseline**. Do not use a live product Issue as an open-ended Luna capability experiment merely because the oracle is objective.
 
-Do not weaken or rewrite a Human judgment oracle merely to make a unit Luna-executable.
+Do not weaken a Human oracle to make it Luna-executable.
 
-For example, do not replace "the popup has no visual discomfort" with "the popup stays inside the viewport" unless the contract itself defines viewport containment as the required behavior. Those are different checks.
+## First-use capability calibration
 
-A mixed unit should be split into objective and Human parts by default when the observations are independently judgeable. Keep them together only when splitting would change the original acceptance meaning; the Human part must remain Human.
-
-## First-use paired capability calibration
-
-For an Objective unit whose **operation or evidence path is materially new to Luna**, use a one-time paired calibration when practical:
+When a new Objective operation / evidence primitive is strategically worth adding to the reusable Luna baseline, use one bounded paired calibration when practical:
 
 ```text
-same tested behavior / same oracle
-Human ground-truth pass once
+same behavior / same oracle
+Human ground-truth once
 -> Luna executes independently
--> Sol High compares the objective evidence
--> reusable operation/evidence lesson is recorded
+-> Sol High compares evidence
+-> record reusable capability
 ```
 
-This is an executor-capability calibration, not a permanent `Executor: Human` assignment and not an additional Human quality gate.
+This is capability calibration, not permanent Human assignment or a new quality gate.
 
-Use it when the unit introduces an operation/evidence primitive that is not already covered by the current proven capability baseline, for example a new VS Code surface interaction, new webview interaction type, new popup/hover/Quick Fix workflow, new drag/selection mechanism, or a new observation/evidence path.
+Use it for materially new operation/evidence families such as new VS Code surface interaction, webview interaction type, popup/hover/Quick Fix path, drag/selection mechanism, or observation path.
 
-Do **not** use first-use paired calibration to justify sending MCP/script-only verification to Luna. If no production-host operation is required, remove that check from Luna execution instead.
+Do not force calibration inside a product Issue when doing so would create more operational overhead than simply assigning the current Objective unit to Human. Capability improvement can be tracked separately.
 
-Do **not** repeat the Human side for every Issue or every equivalent case. Human effort is intentionally capped:
+Do not repeat Human calibration for already-proven primitives unless material drift in VS Code / Playwright/CDP / host wiring / observation API / surface structure invalidates the baseline.
 
-- one Human ground-truth pass per materially new operation/evidence family is normally enough;
-- after Human and Luna agree and Sol High accepts the evidence, record the positive capability in `LUNA-E2E-PLAYBOOK.md` / the relevant Skill and reuse it;
-- future Issues using the same proven operation/evidence family run Luna only unless there is material drift in VS Code version, Playwright/CDP behavior, host wiring, surface structure, observation API, or the operation itself;
-- if a new Issue combines proven primitives in a new product scenario, do not require a new Human capability calibration merely because the product behavior is new;
-- Human judgment units remain Human regardless of capability proof.
+Human judgment units remain Human regardless of Luna capability.
 
-The Human calibration pass should target only the **new primitive** needed to establish ground truth. Do not make the user repeat unrelated already-proven steps merely to mirror the full Luna scenario.
+If Human ground truth and Luna disagree, classify the mismatch as fixture/oracle, environment, operation, evidence, Luna capability, or product behavior before retrying. Do not repeatedly ask the Human to rerun by default.
 
-If the Human baseline and Luna disagree, first classify the mismatch as fixture/oracle, environment, operation, evidence, Luna capability, or product behavior. Do not resolve the disagreement by asking the Human to repeat the same run multiple times by default.
+## Execution-time freshness check
 
-## Execution-time classification freshness check
+Immediately before Luna prompt generation or Human instructions, Sol High re-checks:
 
-Plan-time classification is provisional until execution.
+1. latest Project Context;
+2. current Issue contract / Manual E2E plan;
+3. intended remote repository state / tested commit;
+4. initial state / fixture / actions / expected observations;
+5. whether proposed Luna units still require production-host action rather than deterministic MCP/script verification;
+6. whether the required Luna operation / observation / evidence family remains in the proven baseline without material drift;
+7. whether Human judgment has accidentally moved into agent execution.
 
-Immediately before generating a Luna prompt or presenting Human test instructions, Sol High must re-check:
+Safe reclassification:
 
-1. the latest nuinuiCAD Project Context;
-2. the current Issue contract and Manual E2E plan;
-3. the latest intended remote repository state / tested commit;
-4. whether the initial state, fixture, actions, and expected observations are still valid;
-5. whether each proposed Luna unit still requires a production-host/session action rather than only deterministic MCP/script verification;
-6. whether Luna can still perform and observe each `Executor: Luna` unit reliably;
-7. whether any Human-judgment unit has accidentally been moved into agent execution.
+- Luna unit becomes MCP/script-only → remove from Manual E2E and automate / script;
+- `Luna -> Human` when capability / evidence reliability is not sufficient;
+- bounded environment / prompt issue with a proven primitive → correct and retry when reasonable;
+- `Human -> Luna` only when `Judgment: Objective` and Human assignment existed solely because of Luna capability;
+- `Judgment: Human` never becomes Luna solely for efficiency;
+- ambiguous product oracle returns contract / plan to non-Ready.
 
-This is a freshness check, not a new product-design phase.
+Repeated capability boundaries belong in [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md).
 
-Safe reclassification rules:
+## Sol High -> Luna prompt
 
-- a proposed Luna unit discovered to be MCP/script-only → remove it from Luna execution and route it to automated/local deterministic verification;
-- `Luna -> Human` is allowed when an actual Luna operation / observation / evidence capability limitation is established;
-- bounded environment or prompt/instruction problems should be corrected and retried when clearly fixable; they are not automatically a reason to assign Human execution;
-- `Human -> Luna` is allowed automatically only when `Judgment: Objective` and the previous Human assignment existed solely because of Luna capability;
-- `Judgment: Human` must not be converted to Luna execution merely for efficiency. Changing that judgment contract requires an explicit product / test-plan decision, not a prompt-generation shortcut.
-- newly discovered ambiguity in the product oracle is not a Luna-capability reclassification; return the contract / test plan to a non-Ready state and resolve the missing semantics.
+Sol High owns classification and prompt construction. Luna is test operator, not designer or fixer.
 
-Repeated Luna capability boundaries should be recorded in [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) and reused in future plan-time classification rather than rediscovered every Issue.
+Prompt includes only what is needed:
 
-## Sol High -> Luna prompt generation
+- repository / checkout identity and expected branch / commit;
+- remote-state verification;
+- exact isolated launch / environment setup;
+- fixture / initial state;
+- exact Luna-assigned units;
+- per unit action / expected observation / evidence / failure dependency;
+- blocking conditions;
+- required result format.
 
-Sol High owns Manual E2E classification and Luna prompt construction. Luna is the test operator, not the test designer.
+Luna must not:
 
-Generate a Luna prompt only after the execution-time freshness check passes.
+- change implementation code;
+- fix failures;
+- redesign / expand test plan;
+- invent expected behavior;
+- make product / UX / aesthetic judgments;
+- perform Human-assigned units;
+- do unrelated cleanup / investigation.
 
-The prompt must contain only the information needed to execute the selected objective units:
-
-- repository / checkout identity and expected remote branch or commit;
-- required remote-state verification before testing;
-- the exact isolated launch / environment setup required by the current Manual E2E plan;
-- task-specific fixture and initial editor / application state;
-- the exact Luna-assigned test units;
-- for each unit: action, expected observation, required evidence, and whether a failure invalidates later units;
-- explicit blocking conditions for stale remote state, unsafe checkout state, missing environment capability, or ambiguous instructions;
-- the required result format.
-
-Do not include a deterministic MCP/script-only check in the Luna prompt merely because Luna can call the tool. Use Luna only when the unit requires agent-operated production-host/session behavior or when the client/MCP path itself is explicitly under test.
-
-The prompt must explicitly keep Luna within the execution role:
-
-- do not change implementation code;
-- do not fix a failure;
-- do not redesign or expand the test plan;
-- do not invent missing expected behavior;
-- do not make product, UX, aesthetic, or design judgments;
-- do not perform Human-assigned units;
-- do not do unrelated cleanup or investigation.
-
-Do not ask Luna to investigate architecture or choose a different implementation / test design. Sol High must resolve those questions first.
-
-Human-only units should remain outside the executable Luna test instructions. It is acceptable to identify excluded unit IDs so the boundary is explicit, but do not ask Luna to evaluate them.
+Do not include deterministic MCP/script-only work in Luna prompt merely because Luna can call it.
 
 ## Luna execution contract
 
-For Luna-assigned units, Luna should only:
+Luna only:
 
 ```text
 operate
 -> observe
--> compare with the predeclared oracle
+-> compare with predeclared oracle
 -> record evidence
 ```
 
-Per unit, the result should be one of:
+Per unit:
 
-- `PASS` — the expected observable condition was verified with sufficient evidence;
-- `FAIL` — the observed result objectively differs from the expected condition;
-- `BLOCKED` — the test cannot be executed reliably because the required environment, remote state, initial state, operation, observation, or oracle is unavailable / ambiguous.
+- `PASS` — expected observable condition verified with sufficient evidence;
+- `FAIL` — observed product behavior objectively differs;
+- `BLOCKED` — environment / initial state / operation / observation / evidence / oracle prevents reliable execution.
 
-For `FAIL`, record the expected result, observed result, reproduction steps, and concise evidence.
+A Luna `BLOCKED` is not product failure.
 
-For `BLOCKED`, report the blocking condition and do not guess.
+- bounded environment / instruction issue on a proven primitive → correct and retry when reasonable;
+- actual capability / evidence limitation → reclassify Objective unit to Human;
+- ambiguous oracle → resolve contract, not Human-judgment fallback.
 
-A Luna `BLOCKED` result does not imply product failure.
+Screenshots may be evidence for Objective state but do not authorize aesthetic judgment.
 
-- environment / launch / instruction problem that is clearly bounded and fixable → correct it and rerun the affected unit;
-- actual Luna operation / observation / evidence capability boundary → reclassify to `Judgment: Objective / Executor: Human`;
-- missing or ambiguous product oracle → do not reclassify as Human judgment; resolve the contract / test plan first.
-
-Screenshots may be evidence for objective UI state, but a screenshot is not permission to make an aesthetic or experiential judgment.
-
-If a failed unit invalidates later units, stop as specified by the plan. Otherwise continue independent units so one failure does not hide unrelated evidence.
-
-Luna must not modify repository files or repair the product during Manual E2E execution.
+Luna never modifies repository files during Manual E2E.
 
 ## Result handling by Sol High
 
-Sol High reviews Luna results and evidence before treating Luna-assigned units as complete.
+Sol High validates evidence before accepting Luna result.
 
-A Luna `PASS` is accepted only when the evidence actually supports the predeclared objective oracle. Luna commentary such as "looks correct" is not sufficient evidence by itself.
+A Luna `PASS` requires evidence supporting the predeclared oracle; commentary such as “looks correct” is insufficient.
 
-A Luna `FAIL` does not authorize Luna to fix the implementation. Return the result to the normal nuinuiCAD execution flow:
+A Luna or Human product `FAIL` does **not** choose the implementation executor.
 
-- implementation failure within the same Issue and ChatGPT-executable scope: follow the existing `manual_e2e_only -> only_chatgpt` failure loop;
-- test-environment or instruction problem: correct the setup / plan and rerun without treating it as an implementation failure;
-- newly exposed product / UX decision: stop autonomous implementation and return the contract to the appropriate non-Ready state.
+First classify the result:
 
-Human-assigned units are performed by the user. A Human failure is returned to Sol High for the same implementation-vs-product-decision classification; Luna does not decide the design outcome.
+- test environment / instruction problem → correct setup / plan and rerun;
+- Luna capability problem → reclassify executor; do not treat as product failure;
+- ambiguous / newly exposed product decision → return Contract / plan to non-Ready;
+- confirmed implementation failure → return to implementation decomposition.
 
-For mixed Manual E2E, prefer running Luna-assigned objective units before asking the user to perform Human judgment units when dependencies allow. This avoids spending human review effort on an implementation that already fails objective checks.
+### Implementation failure decomposition
 
-For first-use paired capability calibration, the Human ground-truth pass is intentionally different: it is performed once to establish the new operation/evidence primitive before or alongside the first Luna proof, and it is not repeated after that primitive becomes proven unless material drift requires re-calibration.
+For confirmed implementation failure:
 
-`Manual E2E: Passed` is set only after **all required test units**, both Luna-executed and Human-executed, have passed. A first-use Human calibration pass is supporting executor evidence; it does not silently add a new permanent acceptance unit unless the Issue contract explicitly says so.
+1. identify the concrete failure class and semantic owner;
+2. determine Same Issue vs independent new leaf using [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md);
+3. determine smallest natural fix slice / safe checkpoint using [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md);
+4. classify that fix slice independently under [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md):
+   - direct GitHub + CI suitable → `only_chatgpt` fix slice;
+   - integration-heavy / local iteration better → standard Coding Agent slice;
+5. implement / verify / review / merge;
+6. when only required Manual E2E remains again, return to `manual_e2e_only + In Review`.
 
-While only some units have passed, keep the aggregate Linear state consistent with the existing workflow (`Running` while actively testing, `Deferred` when intentionally paused, `Failed` when a confirmed failure remains).
+Do not automatically perform `manual_e2e_only -> only_chatgpt` merely because ChatGPT can technically edit the failure.
 
-### Rerun after an implementation fix
+Multiple independent failure classes may become separate leaf Issues or sequential slices when natural. Do not create a new Issue mechanically for every Human comment or micro-fix.
 
-After a confirmed Manual E2E failure is fixed, formally rerun each affected unit from the **declared initial state** for that unit.
+For mixed Manual E2E, run Luna Objective units before Human judgment when dependencies allow and the Luna units are within proven capability. This avoids spending Human quality-review effort on a product that already fails objective behavior.
 
-Reconstruct lifecycle-sensitive state rather than continuing from an incidental state left by the failed run. If the unit starts from a cold surface/session, recreate that cold state; if it requires a fresh process/profile or another production-host reset, use the host-specific environment rule for that reset.
+`Manual E2E: Passed` is set only after all required units pass.
 
-A quick spot check from a mutated continuation state may be useful during diagnosis, but it does not become the unit's formal PASS unless that state exactly matches the declared initial state and the full affected oracle is re-observed.
+## Rerun after implementation fix
 
-Previously passed unaffected units do not need to be repeated mechanically. Rerun them only when the fix changed a shared owner, contract, lifecycle path, or other premise that can make their earlier evidence stale.
+Rerun each affected unit from its **declared initial state**.
+
+Reconstruct lifecycle-sensitive cold / fresh state rather than continuing from incidental mutated state. A diagnosis spot-check is not formal PASS unless it exactly matches the declared initial state and full oracle.
+
+Previously passed unaffected units need not repeat mechanically. Repeat only when the fix changed a shared owner / contract / lifecycle path / premise that makes previous evidence stale.
+
+## Aggregate Linear state
+
+Use existing aggregate workflow:
+
+```text
+Plan Pending -> Ready to Run -> Running -> Passed
+Ready to Run -> Deferred -> Running -> Passed
+Running -> Failed
+```
+
+While only some units pass, keep `Running` while active, `Deferred` when intentionally paused, or `Failed` while a confirmed failure remains.
 
 ## Standard flow
 
 ```text
-acceptance condition
-        ↓
-can automated test or deterministic MCP/script prove it without production-host operation?
-  YES -> automated/local verification; do not spend Luna
-  NO  -> Manual E2E requirement / plan
-        ↓
-classify each required test unit
-  Judgment: Objective / Human
-  Executor: Luna / Human
-        ↓
+acceptance
+  ↓
+can automated test / deterministic script prove it without production host?
+  YES -> automate / script; no Manual E2E
+  NO
+  ↓
+Manual E2E plan
+  ↓
+Judgment: Objective / Human
+  ↓
+Human judgment -> Human
+Objective -> proven Luna capability?
+              YES -> Luna
+              NO  -> Human / Luna capability
+  ↓
 implementation / automated verification / review / merge
-        ↓
-manual_e2e_only
-Manual E2E: Ready to Run
-        ↓
-Sol High execution-time freshness check
-        ↓
-new Luna operation/evidence primitive?
-  YES -> Human ground truth once -> Luna proof -> record reusable capability
-  NO  -> reuse proven capability
-        ↓
-Luna units ──→ Sol High generates Luna prompt
-                 ↓
-               Luna executes + records evidence
-                 ↓
-               Sol High validates result
-
-Human judgment units ─→ user performs assigned checks
-                          ↓
-                        result returned to Sol High
-        ↓
+  ↓
+manual_e2e_only + Ready to Run
+  ↓
+execute units
+  ↓
+FAIL?
+  YES -> classify failure -> decompose fix -> only_chatgpt or Coding Agent -> merge -> rerun
+  NO
+  ↓
 all required units PASS
-        ↓
+  ↓
 Manual E2E: Passed
-        ↓
-Done-before Ready contract freshness check
-        ↓
+  ↓
+Done-before Ready freshness check
+  ↓
 Done
 ```
+
+## Loading rule
+
+Read this document whenever planning, classifying, executing, retrying, or handling results for Manual E2E.
+
+For VS Code production-host environment setup also read `VS-CODE-E2E.md`. For Luna prompt / capability / evidence work read shared prompt style + `LUNA-E2E-PLAYBOOK.md`. For implementation fixes, return to normal implementation authorities rather than using the E2E operator role.
