@@ -239,13 +239,19 @@ Per unit:
 
 - `PASS` — expected observable condition verified with sufficient evidence;
 - `FAIL` — observed product behavior objectively differs;
-- `BLOCKED` — environment / initial state / operation / observation / evidence / oracle prevents reliable execution.
+- `BLOCKED` — environment / remote state / initial state / operation / observation / evidence / oracle prevents reliable execution.
+
+For `FAIL`, record the expected result, observed result, concise reproduction steps, and evidence.
+
+For `BLOCKED`, record the exact blocking condition and do not guess through it.
 
 A Luna `BLOCKED` is not product failure.
 
 - bounded environment / instruction issue on a proven primitive → correct and retry when reasonable;
 - actual capability / evidence limitation → reclassify Objective unit to Human;
 - ambiguous oracle → resolve contract, not Human-judgment fallback.
+
+If a failed unit invalidates the initial state or meaning of later units, stop those dependent units. Otherwise continue independent units so one failure does not hide unrelated evidence.
 
 Screenshots may be evidence for Objective state but do not authorize aesthetic judgment.
 
