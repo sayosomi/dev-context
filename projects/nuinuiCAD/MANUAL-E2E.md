@@ -134,6 +134,34 @@ For example, do not replace "the popup has no visual discomfort" with "the popup
 
 A mixed unit may be split into objective and Human parts only when doing so preserves the original acceptance meaning. The Human part must remain Human.
 
+## First-use paired capability calibration
+
+For an Objective unit whose **operation or evidence path is materially new to Luna**, use a one-time paired calibration when practical:
+
+```text
+same tested behavior / same oracle
+Human ground-truth pass once
+-> Luna executes independently
+-> Sol High compares the objective evidence
+-> reusable operation/evidence lesson is recorded
+```
+
+This is an executor-capability calibration, not a permanent `Executor: Human` assignment and not an additional Human quality gate.
+
+Use it when the unit introduces an operation/evidence primitive that is not already covered by the current proven capability baseline, for example a new VS Code surface interaction, new webview interaction type, new popup/hover/Quick Fix workflow, new drag/selection mechanism, or a new observation/evidence path.
+
+Do **not** repeat the Human side for every Issue or every equivalent case. Human effort is intentionally capped:
+
+- one Human ground-truth pass per materially new operation/evidence family is normally enough;
+- after Human and Luna agree and Sol High accepts the evidence, record the positive capability in `LUNA-E2E-PLAYBOOK.md` / the relevant Skill and reuse it;
+- future Issues using the same proven operation/evidence family run Luna only unless there is material drift in VS Code version, Playwright/CDP behavior, host wiring, surface structure, observation API, or the operation itself;
+- if a new Issue combines proven primitives in a new product scenario, do not require a new Human capability calibration merely because the product behavior is new;
+- Human judgment units remain Human regardless of capability proof.
+
+The Human calibration pass should target only the **new primitive** needed to establish ground truth. Do not make the user repeat unrelated already-proven steps merely to mirror the full Luna scenario.
+
+If the Human baseline and Luna disagree, first classify the mismatch as fixture/oracle, environment, operation, evidence, Luna capability, or product behavior. Do not resolve the disagreement by asking the Human to repeat the same run multiple times by default.
+
 ## Execution-time classification freshness check
 
 Plan-time classification is provisional until execution.
@@ -239,7 +267,9 @@ Human-assigned units are performed by the user. A Human failure is returned to S
 
 For mixed Manual E2E, prefer running Luna-assigned objective units before asking the user to perform Human judgment units when dependencies allow. This avoids spending human review effort on an implementation that already fails objective checks.
 
-`Manual E2E: Passed` is set only after **all required test units**, both Luna-executed and Human-executed, have passed.
+For first-use paired capability calibration, the Human ground-truth pass is intentionally different: it is performed once to establish the new operation/evidence primitive before or alongside the first Luna proof, and it is not repeated after that primitive becomes proven unless material drift requires re-calibration.
+
+`Manual E2E: Passed` is set only after **all required test units**, both Luna-executed and Human-executed, have passed. A first-use Human calibration pass is supporting executor evidence; it does not silently add a new permanent acceptance unit unless the Issue contract explicitly says so.
 
 While only some units have passed, keep the aggregate Linear state consistent with the existing workflow (`Running` while actively testing, `Deferred` when intentionally paused, `Failed` when a confirmed failure remains).
 
@@ -259,15 +289,19 @@ Manual E2E: Ready to Run
         ↓
 Sol High execution-time freshness check
         ↓
+new Luna operation/evidence primitive?
+  YES -> Human ground truth once -> Luna proof -> record reusable capability
+  NO  -> reuse proven capability
+        ↓
 Luna units ──→ Sol High generates Luna prompt
                  ↓
                Luna executes + records evidence
                  ↓
                Sol High validates result
 
-Human units ─→ user performs assigned checks
-                 ↓
-               result returned to Sol High
+Human judgment units ─→ user performs assigned checks
+                          ↓
+                        result returned to Sol High
         ↓
 all required units PASS
         ↓
