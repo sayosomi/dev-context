@@ -67,7 +67,7 @@ Canceledの移行試験Issueや旧カテゴリProject等が残っている場合
 2. Linearで既存Issueを検索する。Projectは現在のTaskに関係する例外的な短期Projectが存在する場合だけ確認する。
 3. 必要なlong-term Specをrepository ownerまたはLinear Documentsから確認する。
 4. 対象IssueのContract / Manual E2E label、dependency、description、current Commentを確認する。
-5. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) に従いReady条件とBacklog / Todoが一致していることを確認する。
+5. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) に従いcurrent lifecycle phaseを先に判定し、Backlog / Todo / In Progress / In Reviewが実態と一致していることを確認する。Todo / BacklogのReady Queue判定はunstartedまたはimplementation再開待ちWorkにだけ適用する。
 6. Project assignmentを例外的に行う必要がある場合だけ [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) に従う。
 7. `Contract: Ready`でもlatest repositoryのactual owner / symbol / file pathを再確認する。
 8. implementation開始前に [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従い最初のsafe checkpointを定める。
