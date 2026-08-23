@@ -6,27 +6,112 @@ VS Code extensionのuser-facing behaviorをManual E2Eで確認するときの**i
 
 - test unitの`Judgment` / `Executor`分類、PASS / FAIL / BLOCKED、Sol Highの結果判定は [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 - Lunaを安定して操作させるprompt構成、stable test ref、evidence、known pitfallsは [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) を使う。
-- この文書はVS Code production-hostのisolation / launch baselineをownerとする。
+- この文書はVS Code production-hostのisolation / local preparation / launch baselineをownerとする。
+
+この文書のhost preparation ruleと`LUNA-E2E-PLAYBOOK.md`の古い記述が衝突する場合、この文書を優先する。
+
+## Responsibility split
+
+VS Codeの`Executor: Luna` Manual E2Eでは、標準責務を次のように分ける。
+
+```text
+Sol High
+  tested state / stable ref / fixture / launch contractを固定
+      ↓
+Human (terminal only)
+  exact checkoutを準備
+  build
+  fresh profile / fixtureを生成
+  stale VS Codeをcleanup
+  isolated Extension Development Hostを起動
+  CDP readinessを確認
+  handoff fileを書き出す
+      ↓
+counted Luna run
+  prepared hostへattach
+  environment identityを客観preflight
+  product operation -> observe -> compare -> evidence
+```
+
+Human preparationはManual E2Eのproduct test unitではない。Humanがshell scriptを起動しただけで`Executor: Human`へ分類しない。
+
+### Human access constraint
+
+Humanは**遠隔Terminalだけを操作できる**前提とする。
+
+Humanへ次を要求しない。
+
+- VS Code windowを見る
+- mouse / keyboardでVS Codeを操作する
+- dialog / modalを閉じる
+- macOS System Settingsを開く
+- permission promptをGUIで許可する
+- screenshotを撮る、またはGUI状態を判定する
+- Terminal外のアプリへ移動する
+
+Human preparationはshellだけで完結しなければならない。
+
+GUI-only permission / modal / OS interactionが必要になった場合、その場でHumanへTerminal外操作を依頼しない。host preparationをenvironment `BLOCKED`として止め、別途environment prerequisiteとして解決してからfresh preparationをやり直す。
 
 ## Baseline
 
-Manual E2Eでは、普段使いのVS Code profileをそのまま使わない。
+Manual E2Eでは普段使いのVS Code profileをそのまま使わない。
 
 標準環境:
 
+- exact tested checkout / commit
 - fresh `--user-data-dir`
 - empty `--extensions-dir`
 - VS Code built-in completion OFF
 - task-specific fixtureをcheckout外へ生成
-- current checkoutで`npm run build:vscode`
-- 必要なhost-neutral Rust `evaluation_stdio` binaryをcurrent checkoutの`rust-evaluator` crateからbuild
+- current tested checkoutで`npm run build:vscode`
+- 必要なhost-neutral Rust `evaluation_stdio` binaryをtested checkoutの`rust-evaluator` crateからbuild
 - `NUINUICAD_RUST_EVALUATION_BINARY`でexact binaryを明示
-- `--extensionDevelopmentPath="$PWD/vscode-extension"`
+- live VS Code observationが必要なrunでは`NUINUICAD_MCP_OBSERVATION=1`
+- `--extensionDevelopmentPath="$CHECKOUT/vscode-extension"`
 - `--disable-workspace-trust`
 - welcome / sessions welcome / release notesを抑止
 - repository workspace folderへ依存せずfixture fileを直接open
+- Luna objective UI runではdedicated CDP portを明示
 
 通常user settings、word-based suggestions、inline suggestions、keybindings、installed extensions等が結果へ混入すると、nuinuiCAD extension自体のPASS / FAILを判定できない。
+
+## Tested-state preparation ownership
+
+Sol HighがHuman向けsetup commandを生成する前に:
+
+1. latest remote stateを確認する。
+2. testするexact commitを決める。
+3. moving `main`からtest evidenceを隔離する必要があればstable remote E2E refを固定する。
+4. fixture sourceとrequired binaries / extension bundle / CDP portを決める。
+5. Humanへ渡す準備scriptにexpected commit/refを埋め込む。
+
+Humanはtested stateを設計しない。Human setup scriptはSol Highが固定したstateを機械的に準備するだけにする。
+
+## Human terminal setup contract
+
+Human向け準備は、可能な限り**1つのcopy/paste block**へまとめる。
+
+対話shell自体を誤って終了させないため、strict modeをHumanのcurrent shellへ直接設定しない。標準形は子shellに閉じ込める。
+
+```bash
+bash <<'BASH'
+set -Eeuo pipefail
+trap 's=$?; echo; echo "FAILED at line $LINENO: $BASH_COMMAND"; echo "exit=$s"; exit "$s"' ERR
+
+# preparation commands
+BASH
+```
+
+Human scriptは成功時に機械判定可能なfinal markerを出す。
+
+```text
+READY FOR LUNA
+```
+
+失敗時はTerminalを閉じず、失敗command / line / exit statusを表示する。
+
+Human setupはproduct oracleを実行しない。例えばCompletionを開く、Canvasをclickする、Renameを実行する等はsetupに含めない。
 
 ## Fresh profile settings
 
@@ -46,15 +131,16 @@ Manual E2Eでは、普段使いのVS Code profileをそのまま使わない。
 ## Fixture rule
 
 - Task-specific fixtureは`/tmp`等checkout/worktreeを汚さない場所へ生成する。
-- 起動command block内でfixtureを作り、そのfileを起動時に明示的にopenする。
+- setup command block内でfixtureを作り、そのfileを起動時に明示的にopenする。
 - Luna向けfixtureはcurrent runだけに対応するunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
+- setup終了時にfixture absolute pathをhandoff fileへ保存する。
 
-## Luna dedicated-machine process isolation
+## Dedicated-machine process isolation
 
 Luna Manual E2Eを実行するmacOS machineでは、実行中に他用途でVS Codeを使用しないことを前提とする。
 
-Luna run開始前に既存のVisual Studio Code processをすべて終了し、0 processであることを確認してからfresh isolated hostを起動する。通常終了後も残るstale Extension Development Host / helper processがある場合はforce terminationしてよい。
+**Human terminal setup中に**既存のVisual Studio Code processをすべて終了し、0 processであることを確認してからfresh isolated hostを起動する。通常終了後も残るstale Extension Development Host / helper processはTerminalからforce terminationしてよい。
 
 標準形:
 
@@ -73,24 +159,34 @@ if pgrep -f "$VSCODE_PATTERN" >/dev/null; then
 fi
 ```
 
-Luna run終了時も同じprocess cleanupを行う。Human Manual E2Eや、他用途のVS Code sessionを意図的に共存させるtestにはこの全process kill ruleを機械的に適用しない。
+counted Luna run開始後はHumanがprocess cleanup / relaunchを行わない。
 
-## Canonical launch shape
+## Canonical Human launch shape
 
-Taskごとのfixture sourceを差し替えて使う。
+Task-specific valueを差し替えて使う。
 
 ```bash
-cd <nuinuiCAD checkout>
+EXPECTED="<tested commit>"
+CHECKOUT="<tested checkout>"
+CDP_PORT=9223
+
+cd "$CHECKOUT"
+
+test "$(git rev-parse HEAD)" = "$EXPECTED"
+test -z "$(git status --porcelain)"
 
 npm run build:vscode
 cargo build --manifest-path rust-evaluator/Cargo.toml --bin evaluation_stdio
 
-RUST_BIN="$PWD/rust-evaluator/target/debug/evaluation_stdio"
+RUST_BIN="$CHECKOUT/rust-evaluator/target/debug/evaluation_stdio"
 test -x "$RUST_BIN"
-test -f "$PWD/vscode-extension/dist/extension.js"
+test -f "$CHECKOUT/vscode-extension/dist/extension.js"
 
 E2E_ROOT="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)"
-mkdir -p "$E2E_ROOT/user-data/User" "$E2E_ROOT/extensions"
+mkdir -p \
+  "$E2E_ROOT/user-data/User" \
+  "$E2E_ROOT/extensions" \
+  "$E2E_ROOT/evidence"
 
 cat > "$E2E_ROOT/user-data/User/settings.json" <<'EOF'
 {
@@ -101,7 +197,8 @@ cat > "$E2E_ROOT/user-data/User/settings.json" <<'EOF'
 }
 EOF
 
-cat > "$E2E_ROOT/<task-fixture>.nui" <<'EOF'
+FIXTURE="$E2E_ROOT/<task-fixture>.nui"
+cat > "$FIXTURE" <<'EOF'
 <task-specific fixture source>
 EOF
 
@@ -112,108 +209,147 @@ fi
 test -n "$CODE_BIN"
 test -x "$CODE_BIN"
 
-NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
-"$CODE_BIN" --new-window \
-  --user-data-dir="$E2E_ROOT/user-data" \
-  --extensions-dir="$E2E_ROOT/extensions" \
-  --extensionDevelopmentPath="$PWD/vscode-extension" \
-  --skip-welcome \
-  --skip-sessions-welcome \
-  --skip-release-notes \
-  --disable-workspace-trust \
-  "$E2E_ROOT/<task-fixture>.nui"
-```
-
-macOSでshellの`code` commandがunavailableでも、app bundle内のexecutableを直接使う。task-specific requirementが追加される場合も、fresh profile、empty extensions、built-in completion OFF、explicit dev extension path、workspace trust無効化、fixture-only openをbaselineとして維持する。
-
-`evaluation_stdio`のowner/pathはlatest repositoryをauthorityとする。上の`rust-evaluator` pathはcurrent canonical ownerであり、過去の`src-tauri/Cargo.toml` / `src-tauri/target/debug/evaluation_stdio`を古いpromptから流用しない。
-
-## Luna Playwright / CDP launch additions
-
-VS Code production-hostの`Executor: Luna` objective testでは、Playwrightから操作 / 観測できるsurfaceはComputer UseよりPlaywright/CDPを優先する。
-
-canonical launchへdedicated CDP portを追加する。current VS Code 1.134系で実走確認済みのlocal CDP pathでは`--remote-allow-origins=*`も付ける。
-
-```bash
-CDP_PORT=9223
-
 if lsof -nP -iTCP:"$CDP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "BLOCKED — CDP port already in use"
   exit 1
 fi
 
 NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
+NUINUICAD_MCP_OBSERVATION=1 \
 "$CODE_BIN" --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
   --extensions-dir="$E2E_ROOT/extensions" \
-  --extensionDevelopmentPath="$PWD/vscode-extension" \
+  --extensionDevelopmentPath="$CHECKOUT/vscode-extension" \
   --remote-debugging-port="$CDP_PORT" \
   '--remote-allow-origins=*' \
   --skip-welcome \
   --skip-sessions-welcome \
   --skip-release-notes \
   --disable-workspace-trust \
-  "$E2E_ROOT/<task-fixture>.nui"
+  "$FIXTURE"
 ```
+
+macOSでshellの`code` commandがunavailableでも、app bundle内のexecutableを直接使う。
+
+`evaluation_stdio`のowner/pathはlatest repositoryをauthorityとする。過去promptの古いRust pathを流用しない。
 
 `--enable-smoke-test-driver`等、通常のVS Code Extension Development Host pathを別test harnessへ変えるflagはTask contractが明示しない限り追加しない。
 
-### CDP readiness / bounded retry
+## CDP readiness is Human preparation
 
-CDP endpointは起動直後に即readyとは限らない。Luna runではproduct testへ入る前に最大約60秒までreadyをpollしてよい。
+Luna objective run用hostでは、Human setup scriptがLunaを呼ぶ前にCDP endpoint readyまで確認する。
 
 標準目安:
 
 ```bash
+READY=0
 for _ in $(seq 1 120); do
   if curl --max-time 1 -fsS \
     "http://127.0.0.1:${CDP_PORT}/json/version" \
     > "$E2E_ROOT/evidence/cdp-version.json"; then
+    READY=1
     break
   fi
   sleep 0.5
 done
+
+test "$READY" = 1
 ```
 
-最初のfresh launchが60秒以内にCDPを公開しなかった場合はproduct `FAIL`にしない。
+CDPを確立できない状態でcounted Luna runを開始しない。Human setup内でhost launchが失敗した場合はLuna tokenを使わずsetupを修正する。
 
-1. launch stdout / stderr、CLI exit、VS Code process一覧、port listener、fresh profile logsをevidenceへ保存する。
-2. VS Code processをすべてcleanupする。
-3. 同じprofileをreuseせず、新しいfresh `--user-data-dir` / empty `--extensions-dir`で**1回だけ**launch retryしてよい。
-4. 2回目もCDP endpointを確立できなければenvironment `BLOCKED`。
+setup scriptでbounded retryを許す場合も、product actionはまだ一切実行していないことを条件にする。retryはfresh profile / fresh fixtureで行い、古いhost stateをreuseしない。
 
-bounded retryをproduct behaviorのretryやfailure repairへ拡張しない。
+## GUI-only environment blockers
 
-### Persistent PTY launch-lifetime fallback
+HumanはTerminal外へ出られないため、次はHuman setup scriptでは解消不能なenvironment blockerとして扱う。
 
-macOSのCodex/runner環境では、VS Code launch command自体が正しくても、one-shot shell/runner sessionの終了に引きずられてGUI processまたはCDP listenerのlifetimeが不安定になる場合がある。SAY-188 calibrationでは、同じGUI binary / launch argumentsをpersistent PTY内で保持することでfresh isolated hostのlifetimeが安定した実走例がある。
+- macOS privacy / App Data permission prompt
+- GUI confirmation dialog
+- System Settings操作
+- VS Code window内でのmanual trust / modal dismissal
+- shellから客観確認できないGUI prerequisite
 
-このfallbackは**runner process lifetimeのenvironment対策**であり、nuinuiCAD product requirementでも全runのbaseline requirementでもない。
+これらが発生した場合:
 
-使ってよい条件:
+```text
+BLOCKED — GUI-only environment prerequisite requires separate resolution
+```
 
-- canonical launch args / env / exact tested stateは変更しない;
-- one-shot runner側のprocess lifetimeが原因と合理的に見える;
-- product actionをまだretryしていないlaunch/preflight段階である;
-- PTY内でも同じCDP readiness / fresh profile / process isolation ruleを使う。
+としてsetupを止める。
 
-PTYを使った場合はresultへ記録する。PTYでもbounded launch procedure後にhostを確立できなければenvironment `BLOCKED`。
+Humanへ「画面を見て許可」「VS Codeで閉じて」等を依頼しない。prerequisiteが別経路で解決された後、新しいfresh setupを最初から実行する。
 
-### macOS permission prompt / unattended launch pitfall
+Full Disk Access等を全runのbaseline requirementとして先回りで要求しない。
 
-Codex Desktop / ChatGPT.appからmacOS上のVS Code launchを行うと、OSのApp Data / privacy permission promptがlaunchを止める場合がある。SAY-158実走では、`code` invocation後にVS Code processもCDP listenerも残らずlaunch logも空、という形で現れ、permissionを許可してCodex Desktopをrestartした後は同じisolated launchがunattendedで成功した。
+## Handoff file
 
-この症状ではproduct FAILや「VS Codeは起動不能」と即断しない。
+Human setup成功時は、Lunaが再解釈せず使えるhandoff fileを`/tmp`へ書く。
 
-1. macOS側にpending permission promptがないか確認する。
-2. current machine policyで許可されるexpected promptなら、そのenvironment permissionを解消してhost appをrestartする。
-3. その後、通常のbounded fresh-profile retryを行う。
+最低限:
 
-Full Disk AccessをすべてのLuna E2Eのbaseline requirementとして先回りで要求しない。permission stateはmachine/environment固有であり、必要性が実際に確認された場合だけenvironment setupとして扱う。
+```text
+EXPECTED
+E2E_REF when used
+CHECKOUT
+E2E_ROOT
+FIXTURE
+CDP_PORT
+RUST_BIN
+```
+
+例:
+
+```bash
+cat > /tmp/nuinui-<issue>-luna.env <<EOF
+EXPECTED='$EXPECTED'
+E2E_REF='$E2E_REF'
+CHECKOUT='$CHECKOUT'
+E2E_ROOT='$E2E_ROOT'
+FIXTURE='$FIXTURE'
+CDP_PORT='$CDP_PORT'
+RUST_BIN='$RUST_BIN'
+EOF
+
+printf '\nREADY FOR LUNA\n'
+cat /tmp/nuinui-<issue>-luna.env
+```
+
+Humanはこのmarkerを確認したらsetupを終了する。VS Code GUIへ移動しない。
+
+## Counted Luna run boundary
+
+`READY FOR LUNA`後にcounted Luna runを開始する。
+
+Lunaはprepared hostへattachし、product action前にread-only environment preflightを行う。
+
+最低限:
+
+1. handoff fileを読む。
+2. checkout HEAD / stable E2E ref / clean status / execution-time `origin/main` relationshipを確認する。
+3. CDP endpointが引き続きreachableであることを確認する。
+4. 接続先workbenchがcurrent unique fixtureを含むことを確認する。
+5. active document / language mode / required extension registrationを確認する。
+6. `vscode_observe`が必要なrunではexact fixtureをresolveできることを確認する。
+
+このpreflightは**prepared environmentのidentity確認**であり、Lunaにbuild / checkout切替 / process cleanup / host launchをやり直させるものではない。
+
+preflightでprepared hostが不正・stale・unreachableと判明した場合はenvironment `BLOCKED`。counted run中にHuman rescueを入れない。
+
+## Failure after counted run begins
+
+counted Luna run開始後にhostが壊れた、CDPが消えた、unexpected dialogで操作不能になった等の場合:
+
+1. Lunaは`BLOCKED`を返す。
+2. Humanはrun中に介入しない。
+3. run終了後、必要ならHuman terminal setupをfresh root / fresh fixture / fresh hostでやり直す。
+4. Sol Highがaffected unitだけのretry可否を判断する。
+
+Human terminal preparationとcounted Luna product executionを1つのunattended runへ混ぜない。
 
 ## Extension-registration preflight
 
-Luna実行ではproduct unitへ入る前にenvironment preflightを行う。
+Lunaはproduct unitへ入る前にenvironment preflightを行う。
 
 最低限:
 
@@ -223,20 +359,19 @@ Luna実行ではproduct unitへ入る前にenvironment preflightを行う。
 4. Playwright/CDP runでは、接続先workbenchがcurrent runのunique fixtureを含むことを客観的に確認する。
 5. 必要ならRunning Extensions / fresh profile logsも確認する。
 
-command registration確認はsurface-awareに行う。Sourceから使う`Open Canvas` / `Open Output Preview`等はSource active時に確認できる。一方、Canvas-only commandをSource active時に要求しない。SAY-158実走では`Fit Drawing`をSource preflightで必須にしたことがfalse blockerになり、Canvasを開いた後の確認が正しかった。
+command registration確認はsurface-awareに行う。Source commandをCanvas-only surfaceで要求したり、その逆を行わない。
 
 preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 
 ## Relaunch rule
 
-次の場合、古いExtension Development Hostを閉じてfresh isolated hostを起動し直す。
+次の場合は**counted Luna runを開始する前にHuman terminal setupをやり直し**、fresh isolated hostを起動する。
 
 - `npm run build:vscode`をやり直した後
 - branch / commitを切り替えた後
 - blocking fix後の再試験
 - fresh profile stateが壊れた、またはinitial stateが不明になった場合
-
-Luna dedicated-machine runでは「古いhostを見分けてreuseする」のではなく、開始前にVS Codeを0 processへ戻してからfresh hostを1つだけ起動する。
+- previous Luna runがenvironment `BLOCKED`となりhostを再構築する場合
 
 古いhostをreuseして新しいbundleやcommitを検証したことにしない。
 
