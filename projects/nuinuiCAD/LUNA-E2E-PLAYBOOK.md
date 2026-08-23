@@ -398,6 +398,11 @@ HumanとLunaが一致しない場合、Human repeatを最初の解決策にし�
 - runtime selected ID namespaceをstable IDと分離
 - deterministic Source range verification -> one edit -> fresh live Source/Canvas evidence
 - ambiguous targetでguessせず`BLOCKED`
+- live diagnosticsは`vscode_observe`のexact range/code/messageとnative Problems UIのvisible textを組み合わせて客観確認できる
+- native `Trigger Suggest` completion popupはDOM/accessibility option rowsを列挙し、label/detailでshorthand等のdistinct candidate identityを確認してから1 candidateを選択し、fresh live Sourceでexact insertion textを検証できる
+- native Go to Definitionは事前にexact Source caret positionを固定し、command実行後のactive document + destination caret/selectionでtarget identityを確認できる。reference prefix文字自体をoracleに含める場合もそのexact positionから実行する
+- native Find All ReferencesはReferences treeのresult countを取得し、同一表示textのrowが複数ある場合は各rowをnavigateしてsource line/range identityを証明する
+- native Rename Symbolはexact source identifierからrename inputを開き、1回apply後にfull live Sourceを取得してcross-site rewrite条件を同時確認し、必要なら1 Undoでbaseline restorationを確認できる
 
 このbaselineに該当するoperationは、未知のLuna capabilityとして毎Issue Human pair/probeし直さない。tested commitのsurface freshnessとcurrent environment driftだけ確認する。
 
