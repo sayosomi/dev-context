@@ -190,7 +190,7 @@ This is an executor-capability calibration, not a permanent `Executor: Human` as
 
 Use it when the unit introduces an operation/evidence primitive that is not already covered by the current proven capability baseline, for example a new VS Code surface interaction, new webview interaction type, new popup/hover/Quick Fix workflow, new drag/selection mechanism, or a new observation/evidence path.
 
-Do **not** use first-use paired capability calibration to justify sending MCP/script-only verification to Luna. If no production-host operation is required, remove that check from Luna execution instead.
+Do **not** use first-use paired calibration to justify sending MCP/script-only verification to Luna. If no production-host operation is required, remove that check from Luna execution instead.
 
 Do **not** repeat the Human side for every Issue or every equivalent case. Human effort is intentionally capped:
 
