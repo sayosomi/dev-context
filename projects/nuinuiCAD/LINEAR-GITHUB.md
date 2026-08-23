@@ -22,6 +22,19 @@ Fixes SAY-38
 
 branch名へLinear Issue identifierを入れることは必須にしない。
 
+### Multiple sequential PRs for one Issue
+
+1つのLinear Issueを複数のsequential implementation PRへ分ける場合は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従う。
+
+closing magic wordは、そのPRのmergeでIssueのremaining acceptanceが完了する場合だけ使う。
+
+- intermediate PR: `Fixes` / `Closes`等でIssue completionを宣言しない。PR URLをLinear Issueのattachment / checkpoint recordとして明示的に記録する。
+- final completion PR: mergeでremaining acceptanceが完了するなら標準のclosing magic wordを使用してよい。
+- intermediate PR merge: Issueを`Done`またはManual E2E待ちの`In Review`へ進めない。remaining acceptanceがある限り同じWorkを継続する。
+- intermediate merge後のnext sliceはlatest intended baseを再確認し、Linearへimplementation checkpointを記録してから継続する。
+
+GitHub integration上のlink不足を避けるためだけにintermediate PRへ誤ったclosing magic wordを付けない。
+
 ## Pull request automations
 
 Sayosomi TeamのLinear `Workflows & automations > Pull request automations` は**5項目すべて `No action`**を維持する。
@@ -54,6 +67,7 @@ Pre-merge Manual E2Eは、Task contractがunusual risk等の理由で明示し�
 
 PR merge checkpointでは少なくとも次を確認する。
 
+- same Issueにremaining acceptanceがあるintermediate PR → `IMPLEMENTATION-SLICING.md`のimplementation checkpointを記録し、Issue completion transitionを行わない
 - Manual E2Eが`Passed` → completion条件を確認して`Done`
 - Manual E2Eが`Not Required` → completion条件を確認して`Done`
 - required Manual E2Eがあり、merge後すぐ実行可能 → leafのexecution ownershipを確認し、通常`In Review + Manual E2E: Ready to Run`
