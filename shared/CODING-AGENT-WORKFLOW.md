@@ -1,6 +1,6 @@
 # Shared Implementation Coding Agent Workflow
 
-複数projectで共通利用する、implementation / blocking-fixを担当するCoding Agentの役割分担、implementation prompt、handoff rule。
+複数projectで共通利用する、implementation / blocking-fixを担当するCoding Agentの役割分担、implementation prompt、continuity rule。
 
 この文書は**implementation agent専用**。Manual E2E test operatorなど、repository implementationを変更しないexecution roleには適用しない。
 
@@ -96,13 +96,21 @@ existing IssueがあるTaskはそのIssueを再利用するが、management upda
 
 Agent skillを使う場合は [`AGENT-SKILLS.md`](./AGENT-SKILLS.md) とproject固有skill policyからcurrent Taskに必要なものだけ選ぶ。
 
-## Handoff
+## Continuity and user-facing handoff
 
-ユーザーがimplementation workについて「引き継ぎを書いて」と依頼した場合、少なくとも次を含める。
+Durable policyやproject-wide workflowをchat-specific handoffへ複製しない。次のconversation / executionが必要とするcurrent Task固有の確定事項は、projectがwork-management / specification sourceを持つなら、そのdurable ownerへcheckpointで記録する。
 
-- ChatGPT / implementation Coding Agent role boundary
-- remote state verification
-- worktreeは真に同時並行の複数implementationが必要な場合だけ使い、不要になったら即削除する原則
-- commit / push
-- shared prompt style
-- current project固有のwork-management / source-of-truth rule
+別のChatGPT conversationやexecution trackへ継続するためだけに、毎回user-facing handoff文を書くことを標準工程にしない。次のconversationはcurrent Project Context、latest remote repository、work-management / spec sourceを再取得して再構成する。
+
+ユーザーが明示的にhandoff文を求めた場合、またはdurable current-state storeが存在しない場合だけ、handoffはcurrent Task固有の差分に限定する。必要に応じて含めるのは次のような情報。
+
+- current Task / Work identifier
+- current branch / PR / headなど、durable management sourceから一意に復元できないexecution state
+- completed acceptance / remaining acceptance
+- current blocker / verification result
+- next safe action
+- current Taskだけに適用されるexception / override
+
+通常のrole boundary、Git / worktree rule、prompt style、project-wide source-of-truth ruleをhandoffへ再掲しない。これらはowner documentを再読する。
+
+Handoff文そのものをsource of truthにしない。handoffとlatest repository / durable project recordが矛盾する場合は、current authorityを再取得して判断する。
