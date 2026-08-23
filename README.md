@@ -19,5 +19,6 @@ Project 固有 README から、必要な shared / project-specific 文書へ辿�
 - [Agent Prompt Style](./shared/AGENT-PROMPT-STYLE.md)
 - [Implementation Coding Agent Workflow](./shared/CODING-AGENT-WORKFLOW.md)
 - [Agent Skills](./shared/AGENT-SKILLS.md)
+- [Autonomous ChatGPT Runner Pattern](./shared/AUTONOMOUS-RUNNER-PATTERN.md)
 
 この repository には current task の commit SHA、branch、進捗、個別 implementation plan などの一時情報を置かない。そうした情報は各 project の repository または work-management system で管理する。
