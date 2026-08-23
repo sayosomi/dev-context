@@ -41,6 +41,17 @@ retained parentのexecution-ownership label ruleは [`ONLY-CHATGPT.md`](./ONLY-C
 
 ## Status
 
+### Status synchronization precedence
+
+statusを同期するときはreadinessだけから`Todo` / `Backlog`を決めない。まずcurrent lifecycle phaseを判定し、その後に該当phaseのstatus ruleを適用する。
+
+1. completion gateを満たすWorkはDone-before Ready contract freshness check後に`Done`。
+2. implementationがintended baseへmerge済みで、required Manual E2E等のpost-merge acceptanceだけが残るWorkは`In Review`。
+3. implementation / fix / required execution trackを現在進めているWorkは`In Progress`。
+4. 上記に該当しないunstartedまたはimplementation再開待ちWorkだけ、readiness + dependencyにより`Todo` / `Backlog`を決める。
+
+`Todo` / `Backlog`のReady Queue synchronizationは4にだけ適用する。`Contract: Ready`、Manual E2E plan確定、blocker解消等のreadiness changeだけを理由に、2または3のWorkを`Todo` / `Backlog`へ巻き戻さない。
+
 ### Backlog
 
 **まだ実装開始可能ではないWork**。
@@ -57,7 +68,7 @@ Contract / E2E planが揃っていても未完了blockerがある間はBacklog�
 
 **Ready Queueそのもの**。
 
-実装Issueで次をすべて満たしたら原則Todoへ同期する。
+Status synchronization precedenceで`In Progress` / `In Review` / `Done`に該当しない、未着手またはimplementation再開待ちの実装Issueで次をすべて満たしたら原則Todoへ同期する。
 
 - `Contract: Ready`
 - Manual E2E planが確定済み、またはManual E2E不要
@@ -67,7 +78,7 @@ Contract / E2E planが揃っていても未完了blockerがある間はBacklog�
 
 既に検証履歴があるIssueでは`Failed` / `Deferred`等でも、実装再開可能で未blockedならTodoへ戻り得る。
 
-Contract / E2E planが揃ったとき、または最後のblockerがDoneになったときはTodoへの同期を忘れない。Todoに新しい未完了blockerが追加された場合はBacklogへ戻す。
+Contract / E2E planが揃ったとき、または最後のblockerがDoneになったときはTodoへの同期を忘れない。ただし、既に`In Review`条件を満たすWorkはTodoへ戻さない。Todoに新しい未完了blockerが追加された場合はBacklogへ戻す。
 
 ### In Progress
 
@@ -138,7 +149,7 @@ latest remote `main`とactual implementationを基準に、Ready contract内の�
 
 ## Ready Queue synchronization
 
-Todoはreadiness + dependencyから導出されるmaterialized stateとして扱う。Linear自体にcomputed statusはないため、ChatGPTがcheckpointで同期する。
+Todoは、Status synchronization precedenceでpre-implementationまたはimplementation再開待ちと判定されたWorkについて、readiness + dependencyから導出されるmaterialized stateとして扱う。Linear自体にcomputed statusはないため、ChatGPTがcheckpointで同期する。
 
 次のcheckpointで対象Issueと直接dependent IssueのReady判定を再確認する。
 
@@ -149,7 +160,7 @@ Todoはreadiness + dependencyから導出されるmaterialized stateとして扱
 5. In Progressを終了 / 中止した
 6. IssueをDoneへ進める
 
-Ready条件を満たす未着手IssueはTodo、満たさない未着手IssueはBacklog。
+この同期はpre-implementationまたはimplementation再開待ちのWorkにだけ適用する。Ready条件を満たす該当WorkはTodo、満たさない該当WorkはBacklog。`In Review`条件を満たすIssueをreadinessだけを理由にTodoへ戻さない。
 
 ## Required metadata on create
 
@@ -356,7 +367,7 @@ Manual E2E failure後のimplementation ownershipは [`ONLY-CHATGPT.md`](./ONLY-C
 Issueを作成または重要metadataを更新した直後は、そのIssueを再取得して少なくとも確認する。
 
 - intended status
-- Ready条件とBacklog / Todoの一致
+- current lifecycle phaseとstatusの一致。`Todo` / `Backlog`に該当するWorkだけReady条件との一致も確認する
 - `Contract` labelが1つ
 - `Manual E2E` labelが1つ
 - descriptionのDraft / Ready / Blocked等とmetadataの整合
