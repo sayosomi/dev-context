@@ -226,7 +226,7 @@ resolve exact document
 
 ## 4. Keep counted Luna runs unattended
 
-User copy/paste before/after a Luna run istransportでありHuman executionではない。一方、**run開始後のHuman rescueはtest executionへの介入**になる。
+User copy/paste before/after a Luna run is transportでありHuman executionではない。一方、**run開始後のHuman rescueはtest executionへの介入**になる。
 
 counted Luna run中はHumanに次をさせない。
 
