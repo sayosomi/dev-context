@@ -25,7 +25,7 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | implementation slicing / sequential PR / execution checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
-| Coding Agent skill選択 | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
+| implementation / review skill選択 | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Linear overview / routing | [Linear policy router](./LINEAR.md) |
 | Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
 | Linear Issue status / Ready Queue / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
@@ -89,10 +89,10 @@ Notionは新規Work / Specの管理先には使わない。
 2. **Development work:** `shared/DEVELOPMENT.md` とrepositoryのcurrent `AGENTS.md`を読む。
 3. **Checkout / branch / worktree / local execution:** `CHECKOUTS.md`を読む。
 4. **Execution-agent prompt generation:** roleにかかわらず`shared/AGENT-PROMPT-STYLE.md`を読む。
-5. **Implementation / blocking-fix Coding Agent:** `shared/CODING-AGENT-WORKFLOW.md` とproject-specific `CODING-AGENT.md`を読む。skill選択が必要なときだけShared / nuinuiCAD Agent Skillsを追加で読む。
+5. **Implementation / blocking-fix Coding Agent:** `shared/CODING-AGENT-WORKFLOW.md` とproject-specific `CODING-AGENT.md`を読む。実装 / gate failure / blocking reviewでskillが適用される場合はShared / nuinuiCAD Agent Skillsも読む。
 6. **Implementation slicing / sequential PR / pause-resume checkpoint:** implementation Taskの開始・再開、safe merge checkpoint、same Issue内のnext PR、scope expansionを判断するときは`IMPLEMENTATION-SLICING.md`を読む。
 7. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`を読む。Issue / Project / PR integration / Documentの詳細は`LINEAR.md`のloading ruleに従って該当ownerを追加で読む。
-8. **`only_chatgpt` / `manual_e2e_only`:** 7に加えて`ONLY-CHATGPT.md`を読む。
+8. **`only_chatgpt` / `manual_e2e_only`:** 7に加えて`ONLY-CHATGPT.md`を読む。`only_chatgpt`でimplementation / blocking-fix / blocking reviewを行う場合は`shared/AGENT-SKILLS.md`とproject-specific `AGENT-SKILLS.md`も読み、current Taskに該当するskillをChatGPT自身が適用する。Coding Agentを使わないことを理由にskillを省略しない。
 9. **Scheduled autonomous `only_chatgpt` runner creation / execution:** 7と8に加えて`SCHEDULED-RUNNER.md`と`WATCHDOG.md`を読む。
 10. **Shared CI incident suspicion / human-terminal CI reproduction:** `ONLY-CHATGPT.md`のshared CI incident routeに該当した場合だけ`CI-INCIDENTS.md`を読む。通常の`only_chatgpt`開始時やordinary issue-local CI failureでは読まない。
 11. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`shared/AGENT-PROMPT-STYLE.md`と`LUNA-E2E-PLAYBOOK.md`を読む。Manual E2E test-operator promptであるという理由だけで`shared/CODING-AGENT-WORKFLOW.md`やproject-specific `CODING-AGENT.md`を読まない。別途implementation / blocking-fixを依頼するときだけ5を適用する。
