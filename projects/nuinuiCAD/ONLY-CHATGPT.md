@@ -4,261 +4,303 @@
 
 nuinuiCAD uses two execution-ownership labels for leaf / non-parent Issues:
 
-- `only_chatgpt` — the remaining implementation / verification / GitHub / work-management work can be performed by web ChatGPT without Coding Agent or a local nuinuiCAD execution environment.
-- `manual_e2e_only` — all implementation / review / merge / management work available to web ChatGPT is complete and the only remaining completion work is required Manual E2E in an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
+- `only_chatgpt` — the current implementation slice and all remaining pre-E2E work owned by that leaf are suitable for direct GitHub + GitHub CI execution by web ChatGPT without Coding Agent or a local nuinuiCAD execution environment.
+- `manual_e2e_only` — all implementation / review / merge / management work is complete and the only remaining completion work is required Manual E2E in an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
 
-These labels describe whether the remaining executable work is **web-ChatGPT-executable or execution-environment-bound**. They do not mean `ChatGPT vs human`.
+These labels describe the **current execution route**, not product scope, priority, or worker identity. They do not replace Contract, Manual E2E, type, dependency, or status metadata.
 
-A `manual_e2e_only` Issue may have Manual E2E units executed by Codex Luna xhigh or by the user according to [Manual E2E execution rules](./MANUAL-E2E.md). Human judgment is required only for the units classified as Human there.
+Execution-ownership labels are leaf-only. A retained parent with aggregate acceptance / integrated Manual E2E / final integration work does not receive either label.
 
-These labels do not replace Contract, Manual E2E, type, dependency, or status metadata.
+Implementation decomposition / sequential PR / execution checkpoint判断は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) をauthorityとする。Same Issue vs new Issueは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) をauthorityとする。
 
-Execution-ownership labels are leaf-only. A retained parent with its own aggregate acceptance / integrated Manual E2E / final execution work does not receive either label.
+## Standard implementation route
 
-Implementation slice / sequential PR / execution checkpoint判断は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) をauthorityとする。
+The normal nuinuiCAD implementation route is the shared development workflow:
 
-## `only_chatgpt`
+```text
+ChatGPT
+  repository investigation / architecture / implementation contract
+-> Implementation Coding Agent
+  concrete implementation / tests / git
+-> ChatGPT
+  blocking review / verification
+```
 
-Apply `only_chatgpt` only to a leaf / non-parent Issue when ChatGPT can perform all remaining pre-E2E implementation / verification / GitHub / work-management work without Coding Agent or local worktree use.
+`only_chatgpt` is an additional high-parallelism route for implementation slices whose shape is especially suitable for direct GitHub + CI execution.
 
-Typical ChatGPT-owned work includes:
+Do not ask only whether ChatGPT **can** edit the files remotely. A slice is `only_chatgpt` only when direct GitHub + CI is also a good execution method for that slice.
 
-- latest Project Context / remote repository inspection;
-- implementation-contract freshness checks;
-- direct GitHub branch/file/commit operations and PR operations when explicitly authorized;
-- automated test authoring;
-- GitHub Actions / CI inspection and fix loops;
-- blocking review;
-- merge when explicitly authorized;
-- Linear metadata, dependency, and status updates;
-- Done-before Ready contract freshness checks.
+Absence of `only_chatgpt` does not mean blocked, unready, or manually executed. A Ready implementation Issue without `only_chatgpt` normally uses the standard Implementation Coding Agent route.
 
-A future final Manual E2E requirement does not prevent an Issue from being `only_chatgpt` while implementation work remains. The execution label changes when all web-ChatGPT-executable implementation / verification / management work is finished.
+## Decomposition-first rule
+
+Do not classify a large Work item as one indivisible execution unit merely because it is represented by one Issue today.
+
+Before deciding that a broad feature / refactor / bug line is unsuitable for `only_chatgpt`, apply [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) and look for natural independently verifiable boundaries such as:
+
+```text
+semantic / type foundation
+-> host-neutral planner / transformation
+-> adapter / protocol / runtime integration
+-> host wiring / lifecycle integration
+-> interactive UX / production-host acceptance
+```
+
+When current repository ownership supports it, actively extract the portions that are good direct GitHub + CI work and route those portions through `only_chatgpt`.
+
+This is not permission to manufacture tiny Issues or artificial PRs. Decompose only when the boundary has real semantic ownership, independent verification, and a safe merge / handoff shape.
+
+A large feature may therefore have a mixed execution shape:
+
+```text
+large feature
+├─ leaf A: only_chatgpt
+├─ leaf B: only_chatgpt
+├─ leaf C: standard Coding Agent
+└─ aggregate / Manual E2E acceptance
+```
+
+Likewise, one Issue may use different execution routes across sequential slices when the Work remains one Issue but implementation boundaries are independently executable.
+
+## `only_chatgpt` eligibility
+
+Apply `only_chatgpt` only to a leaf / non-parent Issue when all of the following are true for the current remaining pre-E2E implementation shape:
+
+1. ChatGPT can perform the required repository / verification / GitHub / work-management work with available connected capabilities and without local-only implementation work.
+2. The implementation contract is sufficiently settled that direct execution does not require open-ended product / architecture design during coding.
+3. The current slice has a bounded semantic footprint and can be reviewed and verified independently.
+4. GitHub-visible source + tests + CI provide a sufficiently effective implementation/debug loop for the expected work.
+5. Direct GitHub execution is not predictably inferior to a local Coding Agent because of heavy exploratory editing, broad multi-owner integration, or rapid local test/debug iteration.
+
+Typical good shapes include:
+
+- focused parser / compiler / evaluator semantics with clear tests;
+- host-neutral pure logic, planners, transformations, queries, or adapters;
+- isolated diagnostics / language behavior;
+- narrow refactors with a clear owner and regression boundary;
+- focused test / fixture work;
+- deterministic CI / tooling / documentation changes;
+- small implementation fixes with an already-understood failure class.
+
+Typical signals to prefer the standard Coding Agent route for the current slice include:
+
+- multiple semantic owners must be changed as one tightly coupled unit;
+- Extension Host / Webview / process / session / lifecycle composition dominates the work;
+- implementation requires broad exploratory repository editing or repeated local test/debug loops;
+- several independent failure classes remain entangled in one current implementation shape;
+- a large integration refactor cannot reach a safe intermediate merge / handoff boundary;
+- subjective UX feedback is likely to cause repeated broad implementation changes rather than a narrow follow-up fix.
+
+These are semantic signals, not hard thresholds. File count, diff lines, commit count, and elapsed time are warnings only.
 
 Do not apply or retain `only_chatgpt` when:
 
 - the Issue is a parent / tracking Issue;
-- an unresolved product / UX decision blocks implementation;
+- an unresolved product / UX / scope decision blocks implementation;
 - required implementation depends on local-only work ChatGPT cannot perform;
 - a required external manual operation other than final Manual E2E remains;
-- safe completion would require destructive interaction with unrelated user work.
+- safe completion would require destructive interaction with unrelated user work;
+- direct GitHub + CI remains technically possible but the current slice has expanded into a shape better executed by the standard Coding Agent route.
 
-If direct GitHub + CI is insufficient to complete the current implementation shape safely, first apply [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md): use a safe Same Issue + next PR checkpoint when one exists, split the Issue only when there is a real independent Work boundary, or remove `only_chatgpt` when the remaining work is not web-ChatGPT-executable. Do not pretend a single autonomous execution track is required merely because the Issue remains the same.
+## Starting and executing
 
-### Starting and executing
+`only_chatgpt` does not auto-start a Todo by itself. The normal explicit-start rule still applies unless a dedicated policy such as [`SCHEDULED-RUNNER.md`](./SCHEDULED-RUNNER.md) grants standing authorization.
 
-`only_chatgpt` does not auto-start a Todo by itself. The normal explicit-start rule still applies unless the current conversation already authorizes continuing the same execution track.
+Once started, ChatGPT should continue through the current safe slice without asking the user to perform intermediate development work.
 
-Once started, ChatGPT should continue through all work that it can safely perform without asking the user to do intermediate development work. Do not stop merely because local Coding Agent worktrees are occupied.
+When the user asks ChatGPT to choose an `only_chatgpt` Issue rather than naming one, prefer a Ready candidate whose semantic footprint is independently verifiable and has the least concrete interference with active reservations. Do not choose solely by issue number, age, apparent diff size, or local worktree availability.
 
-When the user asks ChatGPT to choose an `only_chatgpt` Issue rather than naming one, prefer a Ready candidate whose planned semantic footprint has the least interference with currently active reservations. Do not choose solely by issue number, age, or apparent diff size when another independent candidate is available.
+## Execution-route re-evaluation
 
-### Implementation slicing re-evaluation
+`only_chatgpt` suitability is not a one-time label decision.
 
-`only_chatgpt` suitabilityと「このIssueを1つのPR / execution trackで完走できるか」は同じ判定ではない。`only_chatgpt`を維持したままsame Issueを複数のsequential PR / execution trackへ分けてよい。
+Re-run implementation slicing and execution-route classification at least when:
 
-開始時の`No split` / autonomous eligibility判定をTask完了まで固定しない。少なくとも次のときは [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従ってsafe checkpointを再評価する。
+- the first broad integration test / full suite reveals substantial remaining work;
+- a Task pauses / resumes;
+- implementation wants to expand beyond the published Parallel footprint;
+- a new semantic owner / API / contract / data-flow boundary is required;
+- multiple independent failure classes remain;
+- one slice is complete but another owner still has significant acceptance;
+- PR / fix loops have become a mixture of unrelated semantic changes;
+- remote `main` advance changes the remaining implementation shape;
+- Manual E2E exposes an implementation failure.
 
-- 最初のbroad integration test / full suite後;
-- pause / resume checkpoint;
-- Parallel footprintを新しいsemantic owner / API / contract / data-flow boundaryへ拡張する前;
-- 複数の独立したfailure classが残ったとき;
-- 一部のsemantic sliceは完成・検証可能だが別ownerのremaining acceptanceが大きく残るとき;
-- PR / fix loopが複数の独立semantic changeへ広がり、review / diagnosis境界が不明瞭になったとき;
-- remote `main` advanceでremaining implementation shapeが変わったとき。
+At each checkpoint, prefer this order:
 
-safe merge checkpointが成立するなら、Issueを機械的にsplitせず`Same Issue + next PR`を候補にする。逆に、remaining workがoriginal completion後でも独立延期可能なら`CONTRACT-DECISIONS.md`に従いnew Issueを検討する。
+1. identify whether a completed or newly exposed portion is a real independently verifiable Work / implementation boundary;
+2. if it is independent Work, use `CONTRACT-DECISIONS.md` to decide whether to create / reuse a separate leaf Issue;
+3. if it remains the same Work, use `IMPLEMENTATION-SLICING.md` to choose Same Issue + same PR or Same Issue + next PR;
+4. classify each next executable leaf / slice independently as `only_chatgpt` or standard Coding Agent work.
 
-file数、diff行数、commit数、経過時間はwarning signalでありhard limitではない。semantic ownership、independent verification、safe mergeabilityを優先する。
+Do not keep `only_chatgpt` merely because the current Issue started that way. Switching the next slice to Coding Agent is a normal routing decision, not a failure.
 
-### Parallel execution capacity
+Conversely, a broad Work item routed partly through Coding Agent may later expose a clean remaining leaf / slice that is suitable for `only_chatgpt`.
 
-Local worktree capacity is a constraint for local Coding Agent / local execution Tasks, not for `only_chatgpt`.
+## Parallel execution capacity
 
-`only_chatgpt` does not consume a local worktree slot. There is no fixed numeric concurrency cap for `only_chatgpt`; safe parallelism is governed by semantic interference, not by a global worker count.
+Local worktree capacity constrains local Coding Agent / local execution Tasks, not `only_chatgpt`.
 
-Do not defer an otherwise independent `only_chatgpt` Issue merely to preserve local checkout capacity. When multiple `only_chatgpt` Issues can proceed safely, continue the work that web ChatGPT can perform.
+`only_chatgpt` does not consume a local worktree slot. There is no fixed numeric concurrency cap; safe parallelism is governed by semantic interference.
 
-### Parallel footprint
+Do not defer an otherwise independent `only_chatgpt` leaf merely to preserve local checkout capacity.
 
-Every active `only_chatgpt` implementation Issue must publish a current **Parallel footprint** in its Linear Issue before the first repository write for that execution track. This is a soft reservation used by other ChatGPT sessions to coordinate parallel work.
+## Parallel footprint
 
-Derive the footprint from the latest remote repository and the current implementation contract. Prefer semantic ownership and contract boundaries from current repository architecture over file or directory names.
+Every active `only_chatgpt` implementation Issue must publish a current **Parallel footprint** in Linear before the first repository write for that execution track.
 
-Use this shape:
+Use:
 
 ```text
 Parallel footprint
 - Base main: <current remote main SHA>
 - Writes: <semantic owner / symbol / API / data-flow boundary>
-- Shared contracts: <contract or assumption that another Task could invalidate, or none>
+- Shared contracts: <contract or assumption another Task could invalidate, or none>
 - Depends on: <Issue / PR / unfinished base, or none>
-- Exclusive: <precise owner / contract that requires a single active writer, or none>
+- Exclusive: <precise owner / contract requiring one active writer, or none>
 ```
 
 Rules:
 
-- `Writes` names what the Task intends to change semantically. A file list may be added as supporting detail, but paths alone are not a sufficient footprint.
-- `Shared contracts` names current API, semantics, fixtures, ownership, or data-flow assumptions whose change could invalidate this Task even when files do not overlap.
-- `Depends on` records a real implementation dependency. Do not use it for a temporary parallel-execution hazard.
-- `Exclusive` is a narrow semantic soft lock. Use it only when concurrent writers to the same shared owner / contract cannot be safely separated or refreshed at a checkpoint. Do not lock an entire broad subsystem when the actual shared target is narrower.
-- High-coupling shared changes such as parser/compiler semantics, canonical document mutation boundaries, evaluator transport/semantic contracts, shared command infrastructure, or a normative DSL contract are common signals that an `Exclusive` reservation may be appropriate, but the current repository ownership is authoritative.
-- Two Tasks may touch the same file or subsystem without conflicting if their semantic write targets are independent. Conversely, different files may conflict through a shared API, semantic contract, or data-flow owner.
+- `Writes` names semantic targets; paths alone are insufficient.
+- `Shared contracts` records semantics / fixtures / ownership / API assumptions shared with other work.
+- `Depends on` records a real implementation dependency, not a temporary scheduling hazard.
+- `Exclusive` is a narrow soft lock only where concurrent writers cannot be safely separated or refreshed.
+- Same file or subsystem is only a warning; different files can still conflict through one API / semantic owner.
+- Update the footprint whenever current implementation scope changes.
 
-The footprint is current execution state, not a permanent specification. Update it when actual implementation scope or ownership changes.
+## Reservation protocol
 
-### Reservation protocol
+For newly started `only_chatgpt` work:
 
-For a newly started `only_chatgpt` Issue, use this order:
+1. inspect latest remote `main`, relevant branches / PRs, and active implementation Issues;
+2. inspect active Parallel footprints;
+3. derive the candidate footprint from current repository + contract;
+4. move the explicitly started Issue to `In Progress` and publish the footprint in the same startup checkpoint;
+5. re-read active reservations / relevant PR state;
+6. only then perform the first repository write.
 
-1. inspect latest remote `main`, relevant open branches / PRs, and active `In Progress` implementation Issues;
-2. inspect the active Issues' published Parallel footprints;
-3. determine the candidate's footprint from the latest repository and implementation contract;
-4. in the same startup checkpoint, move the explicitly started Issue to `In Progress` and publish its Parallel footprint in Linear;
-5. re-read active reservations / relevant PR state after publishing;
-6. only after that second check passes, perform the first repository write.
+If the second read discovers a concrete pre-existing conflict, the new candidate yields. If the hazard is temporary and not a real prerequisite, return it to `Todo`; do not invent a dependency.
 
-The second read is required because two ChatGPT sessions may have inspected the same pre-reservation state concurrently.
+If two new conflicting reservations appear concurrently and reliable temporal precedence is unavailable, the lower numeric Linear Issue identifier wins the race. The losing Issue returns to `Todo` before any repository write. This is only a race-resolution rule, not normal priority.
 
-If the second check discovers a concrete conflict with a reservation that was already active, the new candidate yields. If the hazard is temporary and there is no real prerequisite, return the candidate to `Todo`; do not invent a dependency.
+Before writing a new semantic owner outside the footprint, first re-run implementation slicing / route classification, then update the footprint and interference check.
 
-If two new conflicting reservations appear concurrently and reliable temporal precedence is not available, use the lower numeric Linear Issue identifier as the deterministic winner. The losing Issue returns to `Todo` before any repository write. This tie-break is only a race-resolution rule; it is not a priority policy for normal Issue selection.
+A current-slice reservation ends when that implementation ownership ends. An intermediate merge may release the current slice reservation before the same Issue begins its next slice.
 
-Before expanding implementation into a semantic owner, API, contract, or data-flow boundary not covered by the published footprint, first rerun the implementation-slicing re-evaluation, then update the footprint and rerun the interference gate **before writing that new target**.
+## Interference gate
 
-The implementation reservation ends when implementation ownership ends: after the Issue is merged and no implementation/fix work remains, or when it is otherwise returned to a non-active state. An intermediate PR merge with same-Issue remaining acceptance may release the current slice reservation at its implementation checkpoint and establish a fresh reservation for the next slice. `manual_e2e_only` does not retain an implementation-owner reservation.
+Parallel work is allowed unless there is a concrete interference path.
 
-### Interference gate
+Block when any of these applies:
 
-Before starting or materially expanding an `only_chatgpt` Issue in parallel with other active implementation work, inspect the latest remote repository, relevant open branches / PRs, and active reservations enough to determine whether the work can proceed independently.
+1. unfinished implementation dependency / base;
+2. same branch / ref ownership;
+3. incompatible writes to the same symbol / API / semantic contract / data-flow owner;
+4. overlap with another Task's `Exclusive` reservation;
+5. likely Ready-contract invalidation before a safe checkpoint;
+6. completion would require unsafe reset / force-update / rewrite of unrelated work.
 
-Parallel work is allowed unless there is a **concrete interference path**. Block parallel execution when any of the following is true:
-
-1. **unfinished implementation dependency / base** — the candidate actually depends on another active Task's unmerged result or unfinished prerequisite;
-2. **same branch / ref ownership** — both Tasks would write or move the same GitHub branch / ref;
-3. **conflicting shared write target** — both Tasks need incompatible changes to the same symbol, API, shared contract, data-flow owner, parser/compiler boundary, or other coupled owner;
-4. **exclusive reservation overlap** — a Task would write an owner / contract currently reserved as `Exclusive` by another active Task;
-5. **Ready-contract invalidation before a safe checkpoint** — one Task is likely to invalidate the other's `Contract: Ready` facts, fixtures, verification assumptions, ownership names, or published footprint before the other Task can safely refresh;
-6. **unsafe ownership rewrite** — safe completion would require resetting, force-updating, rewriting, or otherwise taking ownership of another active Task's branch or user work.
-
-Same file, directory, subsystem, or nearby code is a **warning signal**, not an automatic block. It becomes a block only when the actual write targets / contracts / data flow can conflict or one Task can invalidate the other's premises.
-
-Likewise, different files do not guarantee independence if both changes meet at the same API / semantics / data-flow contract.
-
-If the conflict is only a temporary parallel-execution hazard and the Issue is otherwise Ready, leave or return it to `Todo` and choose another independent candidate rather than inventing a dependency. If inspection reveals a real prerequisite, record the dependency and synchronize status according to `LINEAR-ISSUES.md`.
+When the conflict is only temporary, keep the Issue Ready and schedule another independent leaf instead. When inspection reveals a real prerequisite, record it according to the Linear workflow.
 
 For `only_chatgpt` work:
 
-- do not use Coding Agent;
+- do not use Coding Agent inside the same current `only_chatgpt` slice;
 - do not require a local worktree by default;
-- use latest GitHub remote state as the implementation authority;
-- use direct GitHub operations and GitHub CI as the normal implementation/debug loop;
-- preserve unrelated branches/worktrees/user changes;
+- use latest GitHub remote state as implementation authority;
+- use direct GitHub operations + GitHub CI as the implementation/debug loop;
+- preserve unrelated branches / worktrees / user changes;
 - follow ordinary authorization, blocking-review, merge, and freshness rules.
 
-### CI failure fallback when job logs are unavailable
+If the slice should move to Coding Agent, end / checkpoint the `only_chatgpt` slice first and hand off the next slice explicitly rather than silently mixing execution owners.
 
-An `only_chatgpt` execution must not treat inability to download a completed GitHub Actions job log as an automatic blocker. An empty, unavailable, permission-denied, or otherwise inaccessible job-log response is a tooling / evidence limitation; by itself it does not establish that the Issue cannot continue.
+## CI failure fallback
 
-When required CI fails, use this fallback sequence:
+Unavailable GitHub Actions log text is a tooling / evidence limitation, not an automatic blocker.
 
-1. establish the exact workflow run, head SHA, failing job, failing step, and available conclusions / step summaries from GitHub metadata;
-2. attempt the normal job-log retrieval path;
-3. if log text is unavailable, continue diagnosis from the available evidence, including the workflow YAML and exact command executed by the failing step, the PR / commit diff, relevant tests / fixtures / configuration / source owners, and workflow artifacts when they are material and accessible;
-4. if repository evidence identifies a concrete plausible cause, make the narrow fix allowed by the Issue contract and use the subsequent CI run as verification / additional evidence;
-5. continue any other safe, deterministic Issue work that does not depend on the missing log while diagnosis remains incomplete.
+When required CI fails:
 
-Do not make arbitrary speculative patches merely to probe CI when repository evidence does not connect the change to the failure. Conversely, do not stop at "job logs unavailable" when the failing command, changed code, test definitions, step metadata, artifacts, or a subsequent run can still narrow or verify the problem.
+1. establish the exact run, head SHA, failing job / step, and available conclusions;
+2. attempt normal log retrieval;
+3. if unavailable, inspect workflow command, diff, relevant tests / fixtures / source owners, and artifacts when useful;
+4. make only a narrow evidence-backed fix within the current slice contract;
+5. use subsequent CI as verification / additional evidence.
 
-Do not ask the user to manually retrieve or paste CI logs as the first fallback. Exhaust the web-ChatGPT-accessible evidence paths first.
+Do not make arbitrary speculative patches only to probe CI. Do not ask the user for logs before exhausting web-accessible evidence.
 
-The Issue may be treated as blocked, or `only_chatgpt` removed, only when the unavailable log contains materially necessary evidence and no supported fallback can safely determine the failure cause or verify a fix. Record the exact missing evidence and why it is indispensable rather than reporting only that the log API failed.
+The Issue becomes blocked or loses `only_chatgpt` only when materially necessary evidence / capability is unavailable or the current failure diagnosis expands into a shape that no longer suits direct GitHub + CI execution.
 
-A required failing CI check remains unresolved until it passes or is otherwise resolved by the authoritative workflow / Task contract. Missing log text never converts a failing or unknown required check into PASS and never authorizes merge / completion by itself.
+Required CI must still pass or be resolved by its authoritative contract before merge.
 
-### Shared CI incident escalation route
+### Shared CI incident escalation
 
-If required CI shows evidence that the failure may come from shared `main` state or common CI infrastructure rather than the current Issue, stop treating it as an ordinary isolated Issue failure and load [`CI-INCIDENTS.md`](./CI-INCIDENTS.md).
+When evidence suggests a failure comes from shared `main` state or common CI infrastructure rather than this Issue, load [`CI-INCIDENTS.md`](./CI-INCIDENTS.md).
 
-Typical routing signals are the same required job / step failing across semantically unrelated PRs, a failing test / owner outside the current Parallel footprint after `main` advances, or the same failure signature appearing on latest `main` / another unrelated branch.
+Signals include the same required job / step failing across unrelated PRs, failure outside the current footprint after `main` advance, or the same signature on latest `main` / another unrelated branch.
 
-Do **not** load `CI-INCIDENTS.md` during normal `only_chatgpt` startup or for an ordinary issue-local CI failure. The detailed Mac reproduction / human-terminal escalation procedure is conditional on this shared-incident suspicion.
+Do not load shared-incident policy for ordinary issue-local failures.
 
-### Main-advance interference checkpoint
+## Main-advance checkpoint
 
-Parallel safety must be refreshed when `main` advances while an `only_chatgpt` Issue is still active.
+Before another write, blocking-review completion, or merge when remote `main` has advanced beyond the published `Base main`, inspect intervening changes by semantic owner / API / contract / data flow.
 
-Before a further repository write, blocking review completion, or merge, compare the latest remote `main` with the Issue's published `Base main` when they differ.
-
-Inspect intervening merged changes by semantic owner / API / contract / data flow, not only by path overlap:
-
-- no relevant overlap or invalidation → update `Base main` in the footprint and continue;
-- current facts drifted but the established semantics / scope / acceptance still determine one implementation path → refresh the contract / footprint while keeping `Contract: Ready` according to `CONTRACT-DECISIONS.md`;
-- a concrete parallel conflict now exists → stop writes at the safe checkpoint until the conflicting Task merges / releases the owner or another non-conflicting path is established;
-- a real prerequisite is revealed → record the dependency and synchronize status;
-- a new product / UX / scope decision is required → return the contract to the appropriate non-Ready state.
-
-When an `only_chatgpt` PR is merged, the completing ChatGPT should also inspect other active `only_chatgpt` footprints that could plausibly be invalidated by the merged semantic changes and leave the affected Task to perform this freshness check before further writes. Do not rewrite another active Task's contract merely because it may have drifted.
+- no relevant invalidation → update `Base main` and continue;
+- fact drift with one uniquely determined implementation path → refresh contract / footprint while retaining `Contract: Ready`;
+- concrete conflict → stop writes at the safe checkpoint;
+- real prerequisite → record dependency;
+- new product / UX / scope decision → return contract to the appropriate non-Ready state;
+- remaining implementation shape becomes poorly suited to direct GitHub + CI → checkpoint and route the next slice to Coding Agent.
 
 ## `manual_e2e_only`
 
-Apply `manual_e2e_only` only to a leaf / non-parent Issue when **all web-ChatGPT-executable implementation / review / merge / management work is complete** and required Manual E2E in the actual nuinuiCAD execution environment is literally the only remaining completion step.
+Apply `manual_e2e_only` only when all implementation / automated verification / blocking review / merge / management work is complete and required Manual E2E is literally the only remaining completion step.
 
 Required conditions:
 
-- implementation required by the Issue is merged to the intended base;
-- required automated verification / CI is complete;
-- blocking review is complete;
+- required implementation is merged to the intended base;
+- automated verification / CI and blocking review are complete;
 - no implementation / review / merge / management work remains;
 - Contract remains `Ready` against latest remote `main`;
-- Manual E2E is required and its plan is ready to execute;
+- required Manual E2E plan is executable;
 - no unfinished blocker remains;
-- the Issue is not a parent / tracking Issue.
+- the Issue is a leaf / non-parent.
 
-When these conditions first become true, ChatGPT must perform the transition immediately:
+Transition immediately:
 
 ```text
-remove: only_chatgpt
+remove: only_chatgpt   # if present
 add:    manual_e2e_only
 state:  In Review
 Manual E2E: Ready to Run
 ```
 
-Do not leave the Issue in `Todo` or `In Progress`, and do not wait for a separate user instruction to mark the E2E handoff ready.
+Executor classification is owned by [`MANUAL-E2E.md`](./MANUAL-E2E.md).
 
-This transition means: **web ChatGPT's implementation / remote-management work is finished; the next executable action requires the actual nuinuiCAD execution environment.**
+If testing is postponed, keep `manual_e2e_only` with `In Review + Manual E2E: Deferred`.
 
-Who performs each Manual E2E test unit is determined by `MANUAL-E2E.md`:
+When testing begins, use `In Review + manual_e2e_only + Manual E2E: Running`.
 
-- objective units use Luna by default when no known capability / evidence blocker exists;
-- visual / UX / design / experiential judgment units use `Executor: Human`;
-- objective units with an established Luna capability limitation use `Executor: Human / Reason: Luna capability`.
-
-If testing is postponed, keep `manual_e2e_only` and use:
-
-```text
-In Review + Manual E2E: Deferred
-```
-
-When Luna or the user begins testing:
-
-```text
-In Review + manual_e2e_only + Manual E2E: Running
-```
-
-When all required Manual E2E units, across both Luna and Human executors, pass:
+When all required units pass:
 
 1. set `Manual E2E: Passed`;
-2. perform the normal Done-before Ready contract freshness check;
+2. perform Done-before Ready contract freshness check;
 3. move the Issue to `Done`.
-
-The execution label may remain on the closed Issue as historical metadata; open-issue filtering should use status together with the label.
 
 ## Manual E2E failure
 
-If Manual E2E fails because implementation work is required again, the Issue is no longer `manual_e2e_only`.
+A confirmed product implementation failure ends `manual_e2e_only` because implementation work exists again.
 
-If the fix remains the same Issue's acceptance / scope and ChatGPT can perform it:
+Do **not** automatically restore `only_chatgpt` merely because ChatGPT could technically edit the fix remotely.
+
+First classify the failure and re-run implementation decomposition / route selection:
+
+1. determine whether the failure is implementation, test environment/instruction, Luna capability, or a newly exposed product decision;
+2. if implementation, identify the concrete failure class and semantic owner;
+3. use `CONTRACT-DECISIONS.md` to decide Same Issue vs independent new leaf;
+4. use `IMPLEMENTATION-SLICING.md` to isolate the smallest natural fix slice / checkpoint;
+5. classify that fix slice independently as `only_chatgpt` or standard Coding Agent work.
+
+If the resulting fix slice is `only_chatgpt`:
 
 ```text
 remove: manual_e2e_only
@@ -267,86 +309,47 @@ state:  In Progress
 Manual E2E: Failed
 ```
 
-Before the first fix write, publish / refresh the Parallel footprint and run the normal reservation protocol. Continue the already-started execution track without requiring a new explicit start. Implement, verify, review, and merge the fix. When only execution-environment-bound Manual E2E remains again, switch back to `manual_e2e_only` and `In Review` immediately.
+Refresh the Parallel footprint and reservation before the first fix write. This is continuation of an already-started Work item and does not require a new explicit start.
 
-Whether a discovered fix stays in the same Issue or becomes a new Issue is determined by [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md). Do not create a child mechanically for a small fix that remains necessary for the original acceptance.
+If the fix is better executed by Coding Agent, remove `manual_e2e_only`, keep the Issue in the normal active implementation state, create a narrow implementation handoff for the selected fix slice, and do not add `only_chatgpt`.
 
-Do not treat a test-environment mistake, unsupported Luna operation, or unclear E2E instruction as an implementation failure. Correct the E2E setup / plan instead. If the failure exposes a new product decision, stop autonomous implementation and return the affected Contract to the appropriate non-Ready state.
+After the fix is merged and only required Manual E2E remains again, transition back to `manual_e2e_only + In Review`.
+
+Do not treat a test-environment mistake, unsupported Luna operation, or unclear E2E instruction as product implementation failure. Correct the E2E setup / executor classification instead. A new product decision returns the contract to the appropriate non-Ready state.
 
 ## Parent / decomposition rule
 
 Do not keep a pure tracking parent by default.
 
-When an original Issue is fully decomposed into independently verifiable leaf Issues **and all original scope / acceptance has been transferred to those children**, the original Issue should stop acting as an aggregate tracking shell. Use child relations / dependency relations for execution tracking.
+When original scope is decomposed into independently verifiable leaf Issues and all scope / acceptance has been transferred, the original Issue stops acting as an aggregate execution shell.
 
-- If the original Issue's actual Work was research / decomposition and that acceptance is complete, it may be `Done`.
-- If the original Issue represented feature delivery but no longer owns any remaining acceptance because that scope has been superseded by the child Issues, close it as no-longer-active tracking work according to the normal Issue / capacity policy; do **not** mark the feature delivered merely because decomposition happened.
-- Record the child Issue identifiers so the decomposition remains discoverable.
+Retain a parent only when it owns real aggregate work such as integrated Manual E2E, cross-child acceptance, final cutover / migration / integration, or another completion condition that cannot belong to one child.
 
-Retain a parent Issue only when the parent itself owns real aggregate work that cannot be attributed to individual children, for example:
+A retained parent never receives `only_chatgpt` or `manual_e2e_only`.
 
-- integrated Manual E2E that is meaningful only after multiple children merge;
-- cross-child aggregate acceptance;
-- final cutover / migration / cleanup / integration execution owned by the parent.
-
-A retained parent uses ordinary Linear status + Contract / Manual E2E metadata + relations. It never receives `only_chatgpt` or `manual_e2e_only`.
-
-## Decomposition rules
-
-Do not split Issues only to maximize `only_chatgpt` coverage or parallel worker count.
-
-A child should be a real independently verifiable implementation boundary, typically one owner/subsystem/API/data-flow layer with automated acceptance.
-
-When multiple independently verifiable boundaries genuinely exist, prefer a leaf scope that stays within one semantic owner / contract / data-flow layer where practical. This reduces the number of active reservations held by one Issue without inventing artificial decomposition.
-
-Prefer decomposition such as:
-
-```text
-host-neutral/core semantics
--> adapter/protocol/transport
--> user-facing integration
-```
-
-or another sequence that follows actual repository ownership.
-
-Each implementation child should normally use `Manual E2E: Not Required` when automated verification is sufficient. If a leaf child itself owns a required Manual E2E, it may transition from `only_chatgpt` to `manual_e2e_only` after merge.
-
-Only the first unblocked child in a dependency chain should materialize into `Todo`; later Ready children remain `Backlog` while blocked.
+Decomposition is not performed merely to maximize label count or parallel worker count. However, when a large Work item contains real independently verifiable semantic boundaries, actively consider extracting the direct-GitHub-friendly leaves instead of forcing the entire feature through one execution route.
 
 ## Status synchronization checkpoints
 
-In addition to the normal `LINEAR-ISSUES.md` checkpoints, re-evaluate execution ownership, implementation slicing, and parallel reservations whenever:
+Re-evaluate execution ownership, slicing, and reservations whenever:
 
-1. an `only_chatgpt` Issue starts implementation or resumes implementation after a fix handoff;
-2. the first broad/full integration test exposes multiple independent failure classes or substantial remaining acceptance;
-3. an active Issue's implementation expands beyond its published Parallel footprint;
-4. remote `main` advances beyond the Issue's published `Base main` before another write / review-completion / merge checkpoint;
-5. an `only_chatgpt` implementation branch / PR reaches a safe merge / handoff checkpoint or is merged;
+1. an implementation Task starts or resumes;
+2. a broad/full test exposes multiple failure classes or substantial remaining acceptance;
+3. implementation expands beyond the current footprint;
+4. `main` advances before another write / review / merge checkpoint;
+5. an implementation branch / PR reaches a safe merge / handoff checkpoint or is merged;
 6. blocking review / CI becomes complete;
-7. a blocker is completed or added;
-8. Manual E2E becomes executable;
-9. Manual E2E passes or fails;
-10. a Ready contract freshness check changes prerequisites;
-11. decomposition transfers all remaining acceptance out of a former tracking parent.
+7. a blocker changes;
+8. Manual E2E becomes executable, passes, or fails;
+9. Ready-contract freshness changes prerequisites;
+10. decomposition transfers scope between parent / leaves.
 
-Critical automatic leaf transition:
+Critical leaf transition:
 
 ```text
-only_chatgpt leaf
-+ implementation/review/CI/merge complete
+implementation/review/CI/merge complete
 + required Manual E2E is the only remaining work
 => release implementation reservation
-=> replace only_chatgpt with manual_e2e_only
-=> immediately In Review + Manual E2E: Ready to Run
-```
-
-Critical parent rule:
-
-```text
-pure tracking parent after complete scope transfer
-=> do not keep as active aggregate tracker
-
-retained parent with own aggregate work
-=> never only_chatgpt
-=> never manual_e2e_only
+=> manual_e2e_only
+=> In Review + Manual E2E: Ready to Run
 ```
