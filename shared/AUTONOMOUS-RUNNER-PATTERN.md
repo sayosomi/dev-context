@@ -125,6 +125,17 @@ A useful safety rule is **at most one newly started work item per scheduled invo
 
 This should not limit progress on the chosen/recovered track. Once selected, the runner may continue implementation, CI, review, merge, watchdog, and work-management synchronization as far as current policy permits.
 
+## Invocation-boundary carry-over
+
+The end of one Scheduled Task invocation must not be treated as completion, cancellation, or handoff by itself. If the selected/recovered work item is still unfinished and autonomous executable work remains:
+
+- persist the current repository/work-management checkpoint;
+- keep the work item in the project's active execution state rather than returning it to the ready queue solely because the invocation ended;
+- keep the watchdog/liveness record active with a fresh heartbeat near the invocation boundary;
+- require the next scheduled invocation to recover and continue that same track before selecting new work.
+
+Only a genuine project-defined completion, handoff, authorization, capability, interference, or policy stop boundary should release the active track. An unfinished Draft PR/branch combined with a ready-queue state and a `done` watchdog is a suspicious inconsistent state unless an independent stop reason is recorded.
+
 ## Completion and handoff
 
 Define explicit completion boundaries before enabling the runner.
@@ -166,6 +177,7 @@ Before reusing this pattern in another project/repository, define all of the fol
 - watchdog location, states, heartbeat interval, timeout executor, and alert destination;
 - recovery priority;
 - per-run new-start limit;
+- invocation-boundary carry-over behavior;
 - Manual E2E / environment-bound handoff policy;
 - safe no-op behavior;
 - stop boundaries for new decisions, unavailable capabilities, or destructive interference;
