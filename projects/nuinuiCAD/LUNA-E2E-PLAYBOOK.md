@@ -324,6 +324,8 @@ materially new Luna operation/evidence familyでは:
 
 objective evidenceだけでnew primitiveの成功を十分に確立できない場合は、Human GUI rescueへ切り替えず`Luna capability BLOCKED`とする。
 
+GUIを必要とする`Judgment: Human` unitもstandard remote flowでは実行不能。Terminalだけで代替判定せず、別途GUIへアクセスできるHuman sessionが用意されるまでDeferred / BLOCKEDとして扱う。
+
 別日にHumanがGUIへ直接アクセスできるlocal sessionが明示的に用意された場合だけ、one-time paired calibrationを実施してよい。そのsessionはterminal-only preparationとは別物として扱う。
 
 ### Proven capability reuse
@@ -373,7 +375,7 @@ fresh Luna sessionではexecution-critical informationをprompt内へ完結さ�
 - expected fixture identity
 - selected Luna units only
 - per unit: initial state / action / oracle / evidence
--同一host内で許可された restoration / stop条件
+- 同一host内で許可されたrestoration / stop条件
 - result format
 
 Luna promptへbuild / checkout switch / VS Code cleanup / host launch scriptを含めない。
