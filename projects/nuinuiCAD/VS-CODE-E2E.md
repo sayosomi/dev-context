@@ -357,7 +357,7 @@ Lunaはprepared hostへattachし、product action前にread-only environment pre
 1. handoff fileを読む。
 2. checkout HEAD / stable E2E ref / clean status / execution-time `origin/main` relationshipを確認する。
 3. CDP endpointが引き続きreachableであることを確認する。
-4. 接続先workbenchがcurrent unique fixtureを含むことを確認する。
+4. 接続先workbenchがcurrent runのunique fixtureを含むことを確認する。
 5. active document / language mode / required extension registrationを確認する。
 6. `vscode_observe`が必要なrunではexact fixtureをresolveできることを確認する。
 
