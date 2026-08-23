@@ -35,6 +35,26 @@ closing magic wordは、そのPRのmergeでIssueのremaining acceptanceが完了
 
 GitHub integration上のlink不足を避けるためだけにintermediate PRへ誤ったclosing magic wordを付けない。
 
+## Merge authorization
+
+ユーザーがimplementation Issueの開始またはcurrent execution trackの継続を明示的に許可した時点で、そのIssue内の**safe intermediate implementation merge**も許可されたものとする。qualifying intermediate PRごとに追加のmerge確認を要求しない。
+
+この開始 / 継続許可は、他policyにある`merge when explicitly authorized`等の表現についても、次の条件をすべて満たすintermediate PRのexplicit merge authorizationとして扱う。
+
+- merge後にもoriginal Issueのremaining implementation acceptanceが明確に残る。
+- [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) のMerge checkpointを満たす。
+- current sliceに必要なautomated verification / CIとblocking reviewが完了している。
+- latest remote `main`と、必要なinterference / freshness checkを再確認してmerge可能である。
+- unresolved blocker、新しいproduct / UX / scope decision、または未解決のrequired failureがない。
+- intermediate PRに`Fixes` / `Closes`等のclosing magic wordを付けない。
+- merge後、next slice開始前にimplementation checkpointをLinearへ記録する。
+
+**Final implementation mergeは確認制とする。** Final implementation mergeとは、そのmergeによってIssueのremaining implementation acceptanceがなくなるmergeを指す。Manual E2EやDone transitionがmerge後に残る場合でも、implementation acceptanceが尽きるならfinal implementation mergeである。
+
+Final implementation mergeは、PRがrequired verification / CI / blocking reviewを通過し、latest remote state / freshnessを再確認してreadyになった後に、ユーザーの明示的なmerge許可を得てから実行する。Issue開始時やintermediate slice開始時の許可をfinal implementation mergeの許可として流用しない。
+
+intermediateかfinalかを一意に判定できない場合はfinalとして扱い、merge前にユーザー確認を求める。
+
 ## Pull request automations
 
 Sayosomi TeamのLinear `Workflows & automations > Pull request automations` は**5項目すべて `No action`**を維持する。
