@@ -35,6 +35,7 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | Manual E2EのJudgment / Executor / PASS-FAIL-BLOCKED | [Manual E2E execution rules](./MANUAL-E2E.md) |
 | VS Code isolated Manual E2E host | [VS Code Manual E2E environment](./VS-CODE-E2E.md) |
 | Luna Manual E2E prompt / evidence / pitfalls | [Luna Manual E2E playbook](./LUNA-E2E-PLAYBOOK.md) |
+| long-running web ChatGPT execution watchdog | [ChatGPT watchdog operation](./WATCHDOG.md) |
 | implementation contract判断 | [Implementation contract decision rule](./CONTRACT-DECISIONS.md) |
 | user-facing command contract | [Command contract policy](./COMMAND-CONTRACTS.md) |
 | Linear Free plan capacity | [Linear free-plan capacity policy](./LINEAR-CAPACITY.md) |
@@ -91,9 +92,10 @@ Notionは新規Work / Specの管理先には使わない。
 7. **`only_chatgpt` / `manual_e2e_only`:** 6に加えて`ONLY-CHATGPT.md`を読む。
 8. **Shared CI incident suspicion / human-terminal CI reproduction:** `ONLY-CHATGPT.md`のshared CI incident routeに該当した場合だけ`CI-INCIDENTS.md`を読む。通常の`only_chatgpt`開始時やordinary issue-local CI failureでは読まない。
 9. **Manual E2E plan / classification / execution / result handling:** `MANUAL-E2E.md`を読む。VS Code production-host testなら`VS-CODE-E2E.md`も読む。`Executor: Luna`のprompt生成・retry・environment/evidence切り分けなら`shared/AGENT-PROMPT-STYLE.md`と`LUNA-E2E-PLAYBOOK.md`を読む。Manual E2E test-operator promptであるという理由だけで`shared/CODING-AGENT-WORKFLOW.md`を読まない。別途implementation / blocking-fixを依頼するときだけ5を適用する。
-10. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
-11. **Legacy履歴または明示的な移行中例外:** 必要なときだけ`NOTION-LEGACY.md`を読む。
-12. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
+10. **Long-running web ChatGPT execution track / high-risk wait boundary:** workが1 response/tool batchを実質的に超え得る、またはCI waiting・large-file work等のsilent interruption riskがある場合は`WATCHDOG.md`を読み、そのtrackをarm / heartbeat / doneする。routineな短いconversation / research turnでは使わない。
+11. **User-facing commandの追加・surface変更:** `COMMAND-CONTRACTS.md`を読む。allowed Palette scope等のdurable enumはcurrent repository `AGENTS.md`をauthorityとする。
+12. **Legacy履歴または明示的な移行中例外:** 必要なときだけ`NOTION-LEGACY.md`を読む。
+13. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
 
 ## Maintenance rule
 
