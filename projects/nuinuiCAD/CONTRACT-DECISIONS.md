@@ -83,6 +83,8 @@ original IssueをDoneにした後でも独立して進められる
 
 新しいproduct decisionを避けるためだけにIssueを分割しない。
 
+**same Issue / new Issue と、implementationを何PR・何execution trackへ分けるかは別判断。** same Issueと判定されたWorkでも、safe merge checkpointがあるなら複数のsequential PR / execution trackへ分けてよい。same Issueだからsame branch / same PR / same conversationで完走するとは扱わない。implementation slice / checkpoint /途中再判定は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) をauthorityとする。
+
 ## Current behavior vs normative contract
 
 repository authorityの役割を混同しない。
