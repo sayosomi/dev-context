@@ -6,7 +6,7 @@ A single user-created ChatGPT Scheduled Task may autonomously continue or start 
 
 This runner is intentionally limited to **already-decomposed direct GitHub + CI suitable work**. It does not take a broad feature and force the whole feature through autonomous ChatGPT implementation.
 
-Large Work is decomposed under [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) / [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md). The runner consumes the eligible `only_chatgpt` leaves / slices produced by that policy and stops at safe checkpoints when the remaining shape belongs to another execution route.
+Large Work is decomposed under [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) / [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md). The runner consumes the eligible `only_chatgpt` leaves / current slices produced by that policy and stops at safe checkpoints when the remaining shape belongs to another execution route.
 
 This document owns periodic selection, standing start / merge authorization, recovery priority, and scheduled-run continuation. Execution ownership is [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md); liveness is [`WATCHDOG.md`](./WATCHDOG.md); Linear status is [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md).
 
@@ -18,19 +18,22 @@ Maintain exactly one Scheduled Task for autonomous nuinuiCAD `only_chatgpt` exec
 
 - cadence: once per hour;
 - do not create staggered duplicate tasks to simulate sub-hour cadence;
-- every run starts by loading the latest Project Context README from GitHub;
-- follow that README's current loading rules instead of copying policy into the task prompt;
+- every run starts by loading the latest Project Context entrypoint from GitHub:
+  `https://github.com/sayosomi/dev-context/blob/main/projects/nuinuiCAD/README.md`;
+- after loading that README, follow its current loading rules instead of relying on policy copied into the task prompt;
 - use only connected GitHub / Linear capabilities available to the Scheduled Task.
 
-The Scheduled Task prompt should remain small: identify this runner, require loading the fixed Project Context README, then follow current policy for recovery / continuation / candidate selection.
+The Scheduled Task prompt should remain small: identify this runner, require loading the fixed Project Context README, then follow current policy for recovery / continuation / candidate selection. Do not embed a stale policy copy in the task prompt.
 
 ## Standing start and merge authorization
 
 Creating this Scheduled Task is standing authorization for the task to:
 
-- select and start an eligible `only_chatgpt` leaf / slice;
+- select and start an eligible `only_chatgpt` leaf / current slice;
 - create and manage PRs for that selected / recovered autonomous track;
 - merge those PRs when current Project Context gates permit merge.
+
+This is the narrow Scheduled Task exception to the ordinary explicit-start / merge-authorization rules. It applies only to the runner-selected eligible autonomous track.
 
 The Scheduled Task may newly start a candidate only when:
 
@@ -50,7 +53,7 @@ A merge is covered by standing authorization only when:
 - no protection / blocker / current policy forbids merge;
 - no force update, protection bypass, destructive unrelated-work takeover, or administrative override is required.
 
-Standing authorization does not authorize guessing through product / UX / scope decisions, local-only work, unsupported execution methods, or a slice that has ceased to satisfy `only_chatgpt` suitability.
+Standing authorization does not apply to arbitrary scheduled prompts, ordinary chat turns, unrelated PRs, non-`only_chatgpt` work, or a slice that has ceased to satisfy `only_chatgpt` suitability. It does not authorize guessing through product / UX / scope decisions, local-only work, or unsupported execution methods.
 
 ## Recovery before new work
 
@@ -62,11 +65,15 @@ Priority:
 2. unfinished `active` autonomous track that still has an eligible direct GitHub + CI slice;
 3. only when no recoverable / continuable autonomous track exists, select a new eligible Todo `only_chatgpt` leaf.
 
-Watchdog is liveness evidence, not work-management authority. Always re-read current Linear labels / status / dependencies and remote branch / PR state.
+Watchdog is liveness evidence, not work-management authority. For every recovery candidate, re-read current Linear labels / status / dependencies and remote repository / branch / PR state.
 
-If persisted branch / PR work proves an earlier checkpoint incorrectly returned an unfinished track to `Todo` or watchdog `done`, recover the persisted track first when current policy still authorizes that slice.
+For a `timed_out` track, resume only from state actually persisted remotely. Never assume an interrupted in-memory write, CI action, merge, comment, label update, or status update succeeded. Once execution actually resumes, re-arm / heartbeat the watchdog according to `WATCHDOG.md`.
 
-If the persisted track's remaining work has changed execution shape and no longer qualifies for `only_chatgpt`, do not recover it as autonomous implementation. Reconcile to a safe handoff checkpoint and end the watchdog track.
+If watchdog state is stale relative to authoritative remote state, follow the authoritative state. Do not manufacture work merely to match the watchdog record.
+
+If persisted branch / PR work proves an earlier checkpoint incorrectly returned an unfinished track to `Todo` or watchdog `done`, treat it as recoverable unfinished work when current policy still authorizes that current slice. Repair the work-management / watchdog state and recover it before selecting a new Issue.
+
+If the persisted track's remaining work has changed execution shape and no longer qualifies for `only_chatgpt`, do not recover it as autonomous implementation. Reconcile to a safe handoff checkpoint and end the autonomous watchdog track.
 
 ## New candidate selection
 
@@ -89,7 +96,7 @@ Prefer candidates with:
 
 Do not choose solely by issue number, age, apparent diff size, or available local worktree capacity.
 
-If a broad Ready Issue appears promising but is not yet decomposed enough to qualify, the runner may inspect and record that it needs decomposition, but it must not invent leaf Issues or rewrite product scope autonomously merely to create runner work. Decomposition that follows uniquely from current authority may be performed only when ordinary work-management policy permits it; otherwise skip the candidate.
+If a broad Ready Issue appears promising but is not yet decomposed enough to qualify, the runner may inspect and record that it needs decomposition, but it must not invent leaf Issues or rewrite product scope merely to create runner work. Decomposition that follows uniquely from current authority may be performed only when ordinary work-management policy permits it; otherwise skip the candidate.
 
 Before first write, run the full reservation protocol in `ONLY-CHATGPT.md`.
 
@@ -99,7 +106,7 @@ If no safe eligible candidate exists, no-op is successful.
 
 One scheduled invocation may newly start at most one `only_chatgpt` Issue.
 
-This limits **new starts**, not progress on the selected / recovered track. Continue the current slice as far as safely possible within the invocation, including CI / review / merge / Linear synchronization.
+This limits **new starts**, not progress on the selected / recovered track. Continue the current slice as far as safely possible within the invocation, including repository writes, CI / review / merge, watchdog updates, and Linear synchronization.
 
 Do not start a second Issue in the same invocation only because the first finished quickly.
 
@@ -131,7 +138,7 @@ If the next slice is better suited to Coding Agent or requires local-only work:
 - do not continue merely because the Issue itself still exists;
 - persist completed / remaining acceptance and next semantic boundary;
 - release the current Parallel footprint when implementation ownership ends;
-- remove `only_chatgpt` if no further direct-GitHub slice currently remains on that leaf;
+- remove `only_chatgpt` if the current next executable slice is no longer direct-GitHub suitable;
 - leave the Issue in the normal Ready / active state required by Linear policy;
 - set watchdog `done` for the autonomous track;
 - hand off the next implementation slice to the standard Coding Agent workflow outside this runner.
@@ -144,14 +151,14 @@ After selecting or recovering an autonomous track:
 
 - arm / reset watchdog to `active`;
 - heartbeat while actively continuing and before high-risk / long-wait boundaries;
-- keep heartbeat records on the configured watchdog hub;
+- write heartbeat state only through the watchdog mechanism defined by `WATCHDOG.md`;
 - after timed-out recovery, re-arm the same track.
 
 An hourly invocation boundary is not itself a stop boundary.
 
 If the same `only_chatgpt` slice remains unfinished and eligible for the next run, persist remote state, keep Issue `In Progress`, keep watchdog `active`, and require next invocation to recover it before starting new work.
 
-`Todo + watchdog done + unfinished autonomous Draft PR/branch` is invalid unless an independent current policy reason intentionally ended autonomous ownership.
+Do not return an unfinished eligible track to `Todo` or mark watchdog `done` merely because the current Scheduled Task invocation ended. `Todo + watchdog done + unfinished autonomous Draft PR/branch` is invalid unless an independent current policy reason intentionally ended autonomous ownership.
 
 Set watchdog `done` when:
 
