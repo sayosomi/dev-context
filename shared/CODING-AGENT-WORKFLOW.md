@@ -6,6 +6,8 @@
 
 Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先する。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従う。
 
+Projectがimplementation Coding Agentのdefault product / reasoning effort / resource policyを定義している場合は、そのproject-specific authorityを使う。ユーザーまたはcurrent Taskの明示指定はproject defaultより優先する。Project-specific defaultがない場合、このshared workflowだけを根拠に特定Coding Agent product / effortを仮定しない。
+
 ## Role boundary
 
 ChatGPTが担当する。
@@ -77,7 +79,7 @@ Manual E2Eではproject-specific Manual E2E authority / playbookをrole authorit
 1. remote state確認、existing Issue / Spec検索、repository調査を行い、implementation contractを確定する。
 2. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
 3. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
-4. ユーザーが選んだCoding Agentでimplementation開始できる状態を先に作る。特定Coding Agent productを前提にしない。
+4. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
 5. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
 
 existing Issue / Specのreadがcontract確定に必要なら先に行う。後回しにするのは、contract確定後の新規Issue createやstatus update等、Coding Agent開始を待たせる必要のないmanagement action。
