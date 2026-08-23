@@ -37,23 +37,35 @@ GitHub integration上のlink不足を避けるためだけにintermediate PRへ�
 
 ## Merge authorization
 
-ユーザーがimplementation Issueの開始またはcurrent execution trackの継続を明示的に許可した時点で、そのIssue内の**safe intermediate implementation merge**も許可されたものとする。qualifying intermediate PRごとに追加のmerge確認を要求しない。
+ユーザーがimplementation Issueの開始またはcurrent execution trackの継続を明示的に許可した時点で、そのexecution trackに必要な**safe implementation work / PR operations / merge / completion status synchronization**まで許可されたものとする。intermediate PRだけでなくfinal implementation PRについても、追加のmerge確認を要求しない。
 
-この開始 / 継続許可は、他policyにある`merge when explicitly authorized`等の表現についても、次の条件をすべて満たすintermediate PRのexplicit merge authorizationとして扱う。
+この開始 / 継続許可は、他policyにある`merge when explicitly authorized`や`PR operations when explicitly authorized`等の表現についても、current Issueを安全に実装完了まで進めるためのexplicit authorizationとして扱う。
 
-- merge後にもoriginal Issueのremaining implementation acceptanceが明確に残る。
+各implementation mergeでは、intermediate / finalを問わず少なくとも次を満たす。
+
 - [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) のMerge checkpointを満たす。
 - current sliceに必要なautomated verification / CIとblocking reviewが完了している。
 - latest remote `main`と、必要なinterference / freshness checkを再確認してmerge可能である。
-- unresolved blocker、新しいproduct / UX / scope decision、または未解決のrequired failureがない。
-- intermediate PRに`Fixes` / `Closes`等のclosing magic wordを付けない。
-- merge後、next slice開始前にimplementation checkpointをLinearへ記録する。
+- unresolved blocker、新しいproduct / UX / scope decision、未解決のrequired failure、または安全に継続できないownership conflictがない。
+- intermediate PRでは`Fixes` / `Closes`等のclosing magic wordを付けず、merge後にimplementation checkpointをLinearへ記録する。
+- final completion PRではremaining implementation acceptanceが本当に完了することを確認し、standard closing magic wordを使う。
 
-**Final implementation mergeは確認制とする。** Final implementation mergeとは、そのmergeによってIssueのremaining implementation acceptanceがなくなるmergeを指す。Manual E2EやDone transitionがmerge後に残る場合でも、implementation acceptanceが尽きるならfinal implementation mergeである。
+Issue開始 / 継続許可後は、通常のmerge確認そのものをhuman gateにしない。安全停止が必要なのは、new product / UX / scope decision、Contract readiness喪失、unresolved blocker / required failure、unsafe interference / ownership conflict、destructive operation、またはcurrent execution methodでは完了できないrequired work等、実装を安全に一意継続できない条件が発生した場合。
 
-Final implementation mergeは、PRがrequired verification / CI / blocking reviewを通過し、latest remote state / freshnessを再確認してreadyになった後に、ユーザーの明示的なmerge許可を得てから実行する。Issue開始時やintermediate slice開始時の許可をfinal implementation mergeの許可として流用しない。
+final implementation merge後は、current Manual E2E stateに従って次まで自動で同期する。
 
-intermediateかfinalかを一意に判定できない場合はfinalとして扱い、merge前にユーザー確認を求める。
+```text
+Manual E2E: Not Required
+-> Done-before Ready contract freshness check
+-> Done
+
+Manual E2E: Required
+-> implementation reservationをrelease
+-> applicable leafはonly_chatgptからmanual_e2e_onlyへtransition
+-> In Review + Manual E2E: Ready to Run / Deferred
+```
+
+Manual E2EがrequiredなIssueでは、implementation開始 / 継続許可をManual E2E実行許可として流用しない。通常のimplementation execution trackは`In Review`へのhandoffで終了し、その先のManual E2E executionは [`MANUAL-E2E.md`](./MANUAL-E2E.md) とexecution-owner ruleに従う。
 
 ## Pull request automations
 
