@@ -136,6 +136,35 @@ Human setupはproduct oracleを実行しない。例えばCompletionを開く、
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
 - setup終了時にfixture absolute pathをhandoff fileへ保存する。
 
+## Surface lifecycle coverage
+
+VS Code command / actionがCanvas、Output Preview、その他のWebview surfaceを新規作成・open・reveal・reuseできる場合、Manual E2E planはそのsurface lifecycleがuser-facing resultへ影響し得るかを確認する。
+
+同じactionが次のmaterially different pathを持つなら、原則として別test unitで扱う。
+
+- **cold path** — matching surface/sessionがまだ存在しない、またはclosed。command自身がsurfaceをopenして、その同じinvocationで要求されたselection / focus / navigation / operationまで完了する必要がある。
+- **warm path** — matching surface/sessionが既にopenでauthoritative。commandが既存surfaceをreuseして同じ要求を完了する。
+- **active / inactive path** — focus、command routing、view lifecycle等によって実装pathやacceptanceが変わる場合だけ追加する。
+
+全commandでclosed/open/active/inactiveのCartesian productを機械的に回さない。実装path、host readiness、focus handoff、session reuse等が意味を持つ場合だけ分ける。
+
+cold pathのacceptanceを、事前にtesterがsurfaceを手動openしてからactionを実行する手順で代替しない。commandがsurfaceを開く契約なら、`surfaceが開いた`だけでなく、open後に要求されたselection / focus / pan / target state等まで同じinvocationで成立したことを確認する。
+
+## Theme-sensitive visual coverage
+
+Human visual acceptanceがVS Code theme由来のcolor tokenやcontrastに依存する場合、少なくとも代表的な**Light theme 1つ + Dark theme 1つ**で確認する。
+
+対象例:
+
+- selection / focus / hover color
+- frame / border / guide / handle
+- label / icon / foreground-background contrast
+- theme tokenから派生するCanvas presentation
+
+選んだtheme名はevidenceまたはtest resultへ記録する。特定themeで不具合が見つかった場合、fix後は少なくともそのexact themeを再確認する。shared theme-resolution logicを変更した場合は、final PASS前にLight / Dark双方の代表確認を維持する。
+
+非visualなObjective unitまでthemeごとに重複実行しない。themeがbehaviorそのものを変える契約でない限り、theme pairはtheme-sensitiveなvisual acceptanceだけに適用する。
+
 ## Dedicated-machine process isolation
 
 Luna Manual E2Eを実行するmacOS machineでは、実行中に他用途でVS Codeを使用しないことを前提とする。
@@ -375,6 +404,8 @@ preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 
 古いhostをreuseして新しいbundleやcommitを検証したことにしない。
 
+正式なrerunでは、`MANUAL-E2E.md`のruleに従ってaffected unitのdeclared initial stateを再構築する。例えば`Canvas closed`がinitial stateなら、action前にmatching Canvas sessionが存在しない状態から開始し、既にopenしたCanvasをそのまま使ってcold-path PASSとしない。
+
 ## Test-unit grouping
 
 同じfixture・同じeditor state・同じ種類の操作で確認できる項目は、まとまったtest unitとして一度に実行する。
@@ -385,6 +416,10 @@ preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 - source mutation / revertが必要
 - failureが後続判定を無効にする
 - source close / dispose等の破壊的操作を最後へ分離する必要がある
+- surface/sessionのcold / warm等、lifecycle pathがmaterially different
+- Objective observationとHuman visual/UX judgmentを独立して判定できる
+
+最後の2点は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のtest-unit boundary ruleを優先する。同じfixtureを使えることだけを理由に、異なるlifecycle pathや独立したObjective/Human oracleを1つへまとめない。
 
 completion testでは、自動popupの有無だけに依存せず、必要に応じて`Trigger Suggest`を明示実行してnuinuiCAD providerの候補を確認する。
 
