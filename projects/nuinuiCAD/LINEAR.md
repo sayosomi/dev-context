@@ -28,6 +28,7 @@ Projectは通常の分類・roadmap単位にしない。通常のWork管理はIs
 | --- | --- |
 | Project粒度 / lifecycle / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
 | Issue status / Ready Queue / labels / checkpoints / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
+| explicit contract re-audit campaign / `contract_reaudit` | [Contract re-audit policy](./CONTRACT-REAUDIT.md) |
 | implementation slicing / sequential PR / execution checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | GitHub PR linking / PR automations / merge status sync | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
 | long-term specification / Linear Documents / Notion migration | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
@@ -105,11 +106,12 @@ Linearを扱うときも全owner documentを毎回読む必要はない。
 
 1. Linear操作・参照ではこの`LINEAR.md`を読む。
 2. Issueの作成 / status / labels / dependency / readiness / Doneでは`LINEAR-ISSUES.md`を読む。
-3. implementation開始 / pause-resume / sequential PR / merge checkpoint / scope expansionでは`IMPLEMENTATION-SLICING.md`を読む。
-4. Project作成 / assignment / label / completionでは`LINEAR-PROJECTS.md`を読む。
-5. PR linking / PR automation / merge checkpointでは`LINEAR-GITHUB.md`を読む。
-6. Linear Document / long-term Spec / Notion移行では`LINEAR-DOCUMENTS.md`を読む。
-7. execution ownership、Manual E2E、contract、capacity、public mirrorが関係するときはPolicy mapの専用ownerも読む。
+3. explicit contract re-audit campaign、`contract_reaudit` marker、または既存Ready contractの全面再調査では`CONTRACT-REAUDIT.md`も読む。
+4. implementation開始 / pause-resume / sequential PR / merge checkpoint / scope expansionでは`IMPLEMENTATION-SLICING.md`を読む。
+5. Project作成 / assignment / label / completionでは`LINEAR-PROJECTS.md`を読む。
+6. PR linking / PR automation / merge checkpointでは`LINEAR-GITHUB.md`を読む。
+7. Linear Document / long-term Spec / Notion移行では`LINEAR-DOCUMENTS.md`を読む。
+8. execution ownership、Manual E2E、contract、capacity、public mirrorが関係するときはPolicy mapの専用ownerも読む。
 
 ## Maintenance rule
 
