@@ -6,46 +6,110 @@
 
 Work decompositionとimplementation slicingを混同しない。
 
-- Work decomposition: original acceptanceをsame Linear Issueに残すか、independent Issueへ移すか。
+- Work decomposition: original scope / acceptanceをsame Linear Issueに残すか、independent leaf Issueへ移すか。
 - Implementation slicing: same Issueのimplementationを1つまたは複数のsequential PR / execution checkpointへどう分けるか。
+- Execution routing: 各leaf / sliceを`only_chatgpt` direct GitHub + CIで実行するか、standard Implementation Coding Agentで実行するか。
 
-same Issueであることは、same branch、same PR、same ChatGPT conversation、same uninterrupted execution trackを意味しない。
+same Issueであることは、same branch、same PR、same execution owner、same ChatGPT conversation、same uninterrupted execution trackを意味しない。
 
-Issue boundaryの判断は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) をauthorityとする。この文書はIssue boundaryを決めた後も継続するimplementation execution shapeをownerする。
+Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、execution label / reservationは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) をauthorityとする。この文書はimplementation boundary、safe checkpoint、再分解の判断をownerする。
 
 ## Core rule
 
 Implementation decomposition is a continuing execution decision, not a one-time Ready-contract decision.
 
-開始時に「split不要」と判断しても、その判断をTask完了まで固定しない。current repository state、実装済みslice、verification結果、残りacceptanceをcheckpointごとに再評価する。
+開始時に「split不要」「whole Issueを1 execution routeで進める」と判断してもTask完了まで固定しない。current repository state、実装済みslice、verification結果、Manual E2E result、残りacceptanceをcheckpointごとに再評価する。
 
-最初から全PR構成を確定する必要はない。implementation開始時には少なくとも**最初のsafe checkpoint**を1つ定める。
+大きなWorkを理由に`only_chatgpt`を諦めない。逆に、`only_chatgpt` coverageを増やすためだけに不自然なboundaryを作らない。
+
+目標は、**current repository ownershipが自然に分かれている箇所から、独立検証可能なdirect GitHub + CI向きleaf / sliceをできるだけ抽出し、切り出せないintegration-heavy部分だけ別execution routeへ残すこと**。
+
+最初から全PR構成を確定する必要はない。implementation開始時には少なくとも最初のsafe checkpointと、そのcheckpointまでのexecution routeを決める。
 
 ## Boundary map before implementation
 
-Contract: ReadyのIssueでも、acceptance全体をそのまま1 PRへ写像しない。
+Contract: ReadyのIssueでも、acceptance全体をそのまま1 PR / 1 execution routeへ写像しない。
 
-複数のsemantic owner / API / adapter / data-flow boundaryを横断するIssueでは、最初のrepository write前に少なくとも次を整理する。
+最初のrepository write前に、current repositoryを基準として少なくとも次を整理する。
 
 - acceptance cluster
 - primary semantic owner / boundary
 - upstream / downstream dependency
 - independently verifiableか
 - そのclusterだけをmergeした場合にrepositoryが一貫するか
+- remaining acceptanceから独立延期 / independent leaf化できるか
+- direct GitHub + CIがそのclusterの実装/debug loopとして適しているか
+- Coding Agentが必要になるintegration / lifecycle / exploratory workがどこに残るか
 
-このboundary mapを使い、**Issue boundaryとは独立して最初のPR / merge checkpointを決める**。
-
-特に次のようにowner / boundaryが段階的に接続されるTaskは、same Issue + sequential PRの強い候補とする。
+特に複数owner / API / adapter / data-flow boundaryを横断するWorkでは、次のような段階を意識する。
 
 ```text
 semantic / type foundation
--> runtime / lowering / adapter integration
--> editor / host / user-facing integration
+-> host-neutral planner / transformation / query
+-> adapter / protocol / runtime integration
+-> editor / host wiring / lifecycle integration
+-> interactive UX / production-host acceptance
 ```
 
-ただし途中mergeがtemporary broken state、duplicate owner、または意図せず有効な未完成user-facing behaviorを作る場合はsplitしない。
+この形は例であり、actual repository ownershipを優先する。
 
-「scopeとして1 Issueである」「contractが1つである」「foundation featureである」ことだけを理由に1 PR完走を選ばない。
+## `only_chatgpt` leaf extraction
+
+Large Workのboundary mapで、次を満たすclusterがあれば`only_chatgpt`候補として積極的に抽出する。
+
+- 1つまたは少数の明確なsemantic ownerで説明できる;
+- current acceptanceを独立して検証できる;
+- safe merge / handoff checkpointが成立する;
+- GitHub-visible source + tests + CIで実装とfailure diagnosisを十分に回せる;
+- open-ended architecture / UX判断をimplementation中に必要としない;
+- downstream integrationが未完成でもrepositoryを壊れた状態にしない。
+
+典型例:
+
+- parser / compiler / evaluatorのfocused semantics;
+- host-neutral model / planner / pure transformation;
+- protocol / adapterのisolated contract;
+- diagnostics / language query;
+- focused regression fix;
+- deterministic fixture / test / CI / tooling change;
+- narrow refactor with independent verification.
+
+抽出後の形は、Work boundaryに応じてどちらでもよい。
+
+### Independent Work boundary
+
+```text
+feature / aggregate scope
+├─ leaf A: only_chatgpt
+├─ leaf B: only_chatgpt
+└─ leaf C: Coding Agent / integration
+```
+
+独立Issue化は`CONTRACT-DECISIONS.md`に従う。
+
+### Same Work, sequential implementation slices
+
+```text
+SAY-X
+  slice / PR 1: only_chatgpt
+  slice / PR 2: only_chatgpt
+  slice / PR 3: Coding Agent
+```
+
+同じIssueでもexecution ownerはsliceごとに変えてよい。
+
+## Do not force decomposition
+
+次の場合は`only_chatgpt`化のためにsplitしない。
+
+- intermediate mergeがtemporary broken stateを作る;
+- duplicate source-of-truth / duplicate ownerが必要になる;
+- acceptanceが1つのcross-boundary transactionとしてしか意味を持たない;
+- child / slice単独では実質的なverification oracleがない;
+- artificial compatibility layerやtemporary APIを作らないと分離できない;
+- execution overheadだけ増え、semantic diagnosis / rollback境界が改善しない。
+
+PRを小さくすること、Issue数を増やすこと、parallel worker数を増やすこと自体を目的にしない。
 
 ## Safe checkpoints
 
@@ -53,159 +117,192 @@ semantic / type foundation
 
 current sliceをintended baseへmergeしてもrepositoryが一貫した状態を保ち、remaining acceptanceを後続sliceとして安全に実装できる地点。
 
-merge checkpointでは少なくとも次を満たす。
+少なくとも:
 
-- current sliceが1つのreview可能なsemantic changeとして説明できる。
-- current sliceに必要なautomated verification / blocking reviewが完了している。
-- mergeによって半端なsource-of-truth、壊れたproduction path、または意図せず有効な未完成user-facing behaviorを残さない。
-- remaining acceptanceがcurrent sliceの未merge implementationに暗黙依存しない。依存する場合は同じsliceを継続するか、明示的なsequential dependencyとして次sliceを設計する。
+- current sliceがreview可能なsemantic changeとして説明できる;
+- required automated verification / blocking reviewが完了している;
+- mergeで半端なsource-of-truth、壊れたproduction path、意図せず有効な未完成user-facing behaviorを残さない;
+- remaining acceptanceがcurrent unmerged implementationへ暗黙依存しない。
 
-同じLinear Issueにremaining acceptanceがある場合、intermediate PRのmergeはIssue completionを意味しない。
+同じLinear Issueにremaining acceptanceがある場合、intermediate PR mergeはIssue completionではない。
 
 ### Handoff checkpoint
 
-current stateをまだmergeすべきでないが、別execution track / 別conversationがlatest remote stateと記録から安全に再開できる地点。
+current stateをまだmergeすべきでないが、別execution track / Coding Agent / ChatGPT conversationがlatest remote stateと記録から安全に再開できる地点。
 
-handoff checkpointでは少なくとも次を記録する。
+少なくとも:
 
-- current branch / PR / head
-- completed implementation
-- remaining acceptance
-- current verification resultと既知のfailure class
-- next safe action
-- current base / relevant ownership drift
+- current branch / PR / head;
+- completed implementation;
+- remaining acceptance;
+- current verification result / failure classes;
+- next safe action;
+- current base / relevant ownership drift;
+- next intended execution route.
 
-pause / resumeはhandoff checkpointを作る自然なtriggerだが、pauseのたびにPRをsplitする必要はない。
+pause / resumeは自然なhandoff triggerだが、pauseのたびにPRをsplitしない。
 
 ### Verification boundary
 
-independently verifiableなsliceとは、内部representationやhelper単体が正しいだけでは不十分。
+independently verifiable sliceとは、内部helper単体が正しいだけでは不十分。
 
-current sliceがadapter / projection / lowering / serialization / editor integration等のboundaryを変更する場合、少なくとも1つは**そのboundaryを最後まで通したobservable result**を検証する。
+adapter / projection / lowering / serialization / editor integration等のboundaryを変更する場合、少なくとも1つはそのboundaryを最後まで通したobservable resultを検証する。
 
 例:
 
-- completion candidate生成だけでなく、adapter適用後のlabel / replace range / resulting source text
-- semantic value生成だけでなく、Module / runtime consumerへ渡るresolved value
-- serializer payloadだけでなく、round-trip後のcanonical source / output
-- host-neutral queryだけでなく、production host adapterが公開する結果
+- completion candidate生成だけでなくadapter適用後のlabel / replace range / resulting source;
+- semantic value生成だけでなくruntime consumerへ渡るresolved value;
+- serializer payloadだけでなくround-trip後のcanonical source;
+- host-neutral queryだけでなくproduction host adapterが公開するresult。
 
-regression testは新しいfeature固有behaviorだけでなく、変更したshared boundaryに既存contractがある場合、その既存behaviorも含める。
-
-focused tests greenだけをmerge checkpointの十分条件にしない。shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration test / full suiteをTask末尾まで延期せず実行する。
+shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration test / full suiteをTask末尾まで延期しない。
 
 ## Re-evaluation triggers
 
-次のcheckpointではimplementation slicingを再評価する。
+次でboundary map、safe checkpoint、execution routeを再評価する。
 
-1. shared owner / adapter boundaryへ初めて接続した時点で、影響範囲に応じたbroad integration test / full suiteを可能な限り早く実行し、その結果が得られた。
-2. Taskをpause / resumeする。
-3. implementationが当初のsemantic owner / API / contract / data-flow boundaryを越えて拡張しようとしている。
-4. 複数の独立したfailure classが残った。
-5. 1つのsemantic sliceは完成・検証可能だが、別ownerのacceptanceがまだ大きく残る。
-6. current PRが複数の独立したsemantic changeを抱え、review / diagnosis / rollback境界が不明瞭になった。
-7. remote `main`のadvanceによってcurrent implementation shapeまたはremaining acceptanceのownerが変わった。
-8. blocking fix loopが新しいownerへ広がる、または当初想定しなかった追加implementation surfaceが継続的に増える。
+1. shared owner / adapter boundaryへ初めて接続し、broad integration test / full suite resultが得られた;
+2. Taskをpause / resumeする;
+3. implementationが当初のsemantic owner / API / contract / data-flow boundaryを越えようとする;
+4. 複数の独立failure classが残った;
+5. 1 sliceは完成・検証可能だが別ownerのacceptanceが大きく残る;
+6. current PRが複数の独立semantic changeを抱え、review / diagnosis / rollback境界が不明瞭になった;
+7. remote `main` advanceでimplementation shape / remaining ownerが変わった;
+8. blocking fix loopが新しいownerへ継続的に広がる;
+9. Manual E2E FAILで新しいfailure class / ownerが露出した;
+10. direct GitHub + CI executionが、local Coding Agent executionより明らかに不利なshapeへ変わった。
 
-file数、diff行数、commit数、経過時間はwarning signalとして使ってよいが、それだけをhard split thresholdにしない。判断はsemantic ownership、independent verification、safe mergeabilityを優先する。
+file数、diff行数、commit数、経過時間はwarning signalのみ。semantic ownership、independent verification、safe mergeability、execution-loop suitabilityを優先する。
 
 ## Decision outcomes
 
-再評価結果は次のいずれかにする。
+再評価結果は次のいずれか。
 
-### A. Same Issue + same PR
+### A. Same Issue + same PR + same execution route
 
-remaining acceptanceがcurrent sliceと強く結合しており、途中mergeすると不整合・duplicate owner・一時的な壊れたcontractを作る場合。
+remaining acceptanceがcurrent sliceと強く結合し、途中merge / handoffで不整合やduplicate ownerを作る場合。
 
-current PRを継続する。ただし次のsafe checkpointを更新する。
+current PRを継続し、次safe checkpointを更新する。
 
 ### B. Same Issue + next PR
 
-current sliceを安全にmergeでき、remaining acceptanceもoriginal Issueのcompletionに必要だが、後続の独立したimplementation sliceとして進められる場合。
+current sliceを安全にmergeでき、remaining acceptanceは同じIssue completionに必要だが後続implementation sliceとして進められる場合。
 
-- current PRをrequired verification / review後にmergeする。
-- Linear Issueはremaining acceptanceがあるため完了扱いにしない。
-- merge checkpointをLinear Commentへ記録する。
-- latest remote `main`を次sliceのbaseとして再確認する。
-- next PR / next execution trackでremaining acceptanceを継続する。
+- current PRをverify / review後にmerge;
+- Issueはremaining acceptanceがあるため完了しない;
+- implementation checkpointを記録;
+- latest remote `main`を次baseとして再確認;
+- next sliceのexecution routeを**改めて**判定する。
 
-これはIssue splitではない。
+次sliceは`only_chatgpt`でもCoding Agentでもよい。
 
-### C. New Linear Issue
+### C. New / extracted leaf Issue
 
-remaining workがoriginal IssueをDoneにした後でも独立して延期できるfeature / cleanup / acceptanceである場合、またはoriginal scopeを本当にindependent leafへ移す場合。
+clusterが独立したscope / acceptance / verification boundaryを持ち、Workとして別leafへ移すのが自然な場合。
 
-Issue split / parent handlingは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) と [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) に従う。
+これはlarge featureから`only_chatgpt`向きleafを抽出する正式なoutcomeでもある。ただし`only_chatgpt`にしたいという理由だけではnew Issueを作らない。
 
-### D. Execution ownership change / blocker
+Issue boundary / parent handlingは`CONTRACT-DECISIONS.md`と`LINEAR-ISSUES.md`に従う。
 
-current execution methodでは安全に完了できない、必要なenvironment / capabilityがない、または新しいproduct decisionが必要な場合。
+### D. Execution route change
 
-execution ownership、Contract status、dependencyを各authorityに従って更新する。implementation slicingだけで実行不能を隠さない。
+Work / Issue boundaryは変わらないが、次sliceの実装methodを変更する場合。
+
+例:
+
+```text
+only_chatgpt slice complete
+-> next integration slice: Coding Agent
+```
+
+または
+
+```text
+Coding Agent integration complete
+-> remaining narrow regression slice: only_chatgpt
+```
+
+route変更は正常なcheckpoint判断であり、失敗扱いしない。
+
+### E. Blocker / contract reset
+
+必要なenvironment / capability / prerequisiteがない、または新しいproduct / UX / scope decisionが必要な場合。
+
+Contract / dependency / statusを各authorityに従って更新する。slicingで実行不能や未決定semanticsを隠さない。
 
 ## Sequential PR rule
 
 1つのLinear Issueは複数のsequential implementation PRを持ってよい。
 
-- intermediate PRはoriginal Issueの一部acceptanceだけを完了してよい。
-- intermediate merge後もremaining acceptanceがあるならIssueはactive / resumable Workとして継続する。
-- final completion PRとintermediate PRのLinear linking semanticsは [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) に従う。
-- each next sliceはmerge済みlatest baseを確認してからimplementationを開始する。
-- previous unmerged PRのimplementationへ次sliceが依存する場合、先にmerge checkpointを完了する。意図しないstacked PRをdefaultにしない。
+- intermediate PRはoriginal Issueの一部acceptanceだけを完了してよい;
+- remaining acceptanceがあればIssueはactive / resumable;
+- each next sliceはmerge済みlatest baseを確認してから開始;
+- previous unmerged implementationへの依存があるなら、先にmerge checkpointを完了する。意図しないstacked PRをdefaultにしない;
+- each next slice reclassifies execution route independently.
+
+PR / Linear linking semanticsは [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) に従う。
 
 ## Linear checkpoint record
 
-Same Issue + next PRを選んだintermediate merge checkpointでは、Linearへ少なくとも次を記録する。
+Same Issue + next PRまたはexecution route changeでは、Linearへ少なくとも:
 
 ```text
 Implementation checkpoint
-- Merged PR: <PR>
+- Merged / current PR: <PR>
 - Completed acceptance: <what this slice finished>
 - Remaining acceptance: <what still belongs to this Issue>
 - Next intended slice: <next semantic boundary>
+- Next execution route: <only_chatgpt | Coding Agent | undecided pending refresh>
 - Next base: <latest main / intended base>
 ```
 
-細かなcommit logを複製しない。次のexecutionが安全にscopeを再構成できるcurrent stateだけを記録する。
+細かなcommit logは複製しない。次executionが安全にscopeを再構成できるcurrent stateだけを記録する。
 
-## `only_chatgpt`
+## Manual E2E failure decomposition
 
-`only_chatgpt` eligibilityは開始時だけの判定ではない。
+Manual E2Eでconfirmed product failureが出たら、元Issue全体を自動的に1つのfix trackへ戻さない。
 
-active `only_chatgpt` Issueはこの文書のre-evaluation triggerでslicingを再評価する。independently verifiable boundaryが現れた場合、Issue splitだけを選択肢にせず、Same Issue + next PRが安全ならそれを使う。
+1. failureをproduct implementation / environment / executor capability / oracle問題へ分類する;
+2. implementation failureならfailure classとsemantic ownerを特定;
+3. original acceptanceに必要なfixか、independent follow-up Workかを`CONTRACT-DECISIONS.md`で判断;
+4. smallest natural fix leaf / sliceを決める;
+5. そのfix sliceを`ONLY-CHATGPT.md`に従いdirect GitHub + CIかCoding Agentか再分類する。
 
-Parallel footprint / interference gate / ownership transitionは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) をauthorityとする。
+複数failure classがある場合、自然に独立するものを別leaf / sequential sliceへ分けてよい。Human feedback 1件ごとに機械的なnew Issueを作ることはしない。
 
 ## Coding Agent work
 
-Coding Agentを使うTaskでも同じimplementation slicing ruleを適用する。
+Coding Agentを使うTaskでも同じboundary map / slicing ruleを使う。
 
-ChatGPTがsafe checkpointとcurrent sliceのcontractを決め、Coding Agentにはcurrent sliceのnarrow implementationだけを渡す。後続sliceのopen-ended architecture判断を現在のCoding Agent promptへ混ぜない。
+ChatGPTがcurrent sliceのcontractとsafe checkpointを決め、Coding Agentにはそのnarrow implementationだけを渡す。後続sliceのopen-ended architecture判断を現在promptへ混ぜない。
 
-Implementation Coding Agentのrole / handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) をauthorityとする。
+Implementation Coding Agent role / handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) をauthorityとする。
 
 ## Guardrails
 
-- PRを小さくすること自体を目的にしない。
-- test fileだけ、docsだけ等、semantic completionを持たない人工的なsliceを機械的に作らない。
-- temporary broken stateをmainへmergeして次PRで直す設計にしない。
-- Issue数を減らすために独立Workをsame Issueへ押し込まない。
-- Issueをsplitしないという判断から、1 PR完走を自動的に導かない。
-- current PRが既にcompletion直前まで収束している場合、過去の理想的sliceへ機械的に解体して余計なriskを作らない。remaining workとcurrent mergeabilityから判断する。
+- PRを小さくすること自体を目的にしない;
+- test fileだけ、docsだけ等semantic completionを持たない人工sliceを機械的に作らない;
+- temporary broken stateをmainへmergeして次PRで直す設計にしない;
+- Issue数を減らすため独立Workをsame Issueへ押し込まない;
+- `only_chatgpt`数を増やすため強くcoupled Workを人工分割しない;
+- same Issueだから1 PR / 1 execution ownerと決めつけない;
+- current PRがcompletion直前まで収束している場合、理想的な過去sliceへ機械的に解体しない。
 
 ## Loading rule
 
-この文書を読むのは次の場合。
+この文書を読むのは:
 
-1. implementation Taskを開始するとき。
-2. same Issueを複数PRへ分けるか判断するとき。
-3. implementationをpause / resumeするとき。
-4. broad/full test後に複数failure classまたは大きなremaining acceptanceが残るとき。
-5. current implementationが新しいsemantic owner / API / contract / data-flow boundaryへ拡張するとき。
-6. PR / execution trackが長大化し、次のsafe checkpointを再評価するとき。
+1. implementation Taskを開始するとき;
+2. broad Workからleaf / sliceを抽出するとき;
+3. same Issueを複数PRへ分けるか判断するとき;
+4. execution routeを`only_chatgpt` / Coding Agent間で判定するとき;
+5. implementationをpause / resumeするとき;
+6. broad/full test後に複数failure classまたは大きなremaining acceptanceが残るとき;
+7. implementationが新しいsemantic owner / API / contract / data-flow boundaryへ拡張するとき;
+8. Manual E2E FAIL後のfix boundaryを決めるとき。
 
 ## Maintenance rule
 
 Issue boundary / product scope判断をこの文書へ重複させない。それらは`CONTRACT-DECISIONS.md`をauthorityとする。
 
-Git mechanics、PR linking、Linear status、execution ownershipの詳細もそれぞれのownerへ置き、この文書はimplementation slice / checkpoint / re-evaluationの判断に集中する。
+Git mechanics、PR linking、Linear status、execution label / reservationの詳細も各ownerへ置き、この文書はimplementation decomposition / checkpoint / execution-route re-evaluationに集中する。

@@ -6,6 +6,8 @@ implementation contractの策定時に、platform標準挙動やnuinuiCADの既�
 
 ChatGPTは既存authorityから決められる事項を自分でcontractへ落とし、ユーザー確認は実際にproduct / UX / future semanticsが分岐する判断へ絞る。
 
+この文書は、追加Work / scopeをsame Issueに残すかindependent Issueへ分けるかもownerする。PR / execution sliceの分け方は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) がauthority。
+
 ## Rule
 
 Issueのimplementation contractを策定するとき、次のいずれかから結論が一意に決まる事項は、原則としてユーザーへA/B確認を求めず、その結論をIssue contractへ明記する。
@@ -40,7 +42,7 @@ Issueのimplementation contractを策定するとき、次のいずれかから�
 
 `Contract: Ready`は「current repositoryのfile名やimplementation pathが永久に固定された」という意味ではない。
 
-latest repositoryに合わせてcontractを更新するときは、次の質問で判定する。
+latest repositoryに合わせてcontractを更新するときは、次で判定する。
 
 > 既に確定したuser-facing semantics / scope / acceptanceを変えずに、latest authorityからcontractを一意にrefreshできるか？
 
@@ -53,6 +55,7 @@ latest repositoryに合わせてcontractを更新するときは、次の質問�
 - file / symbol / owner名が変わったが責務とacceptanceは同じ
 - current API shapeやfixture pathが変わったが採るべきimplementation pathがauthorityから一意に決まる
 - 別Taskのmergeで内部data flowが変わったが、既決定のproduct semanticsを保つ追従方法が一意
+- broad Issueをcurrent repository ownershipに沿うimplementation sliceへ再配置したが、product scope / acceptance自体は変えていない
 
 `Pending`へ戻す代表例:
 
@@ -60,30 +63,82 @@ latest repositoryに合わせてcontractを更新するときは、次の質問�
 - compatibility / migration / scope / acceptanceを選び直す必要がある
 - 既存のproduct decisionを変えなければcurrent architectureへ適合できない
 
-単なるfact driftをproduct decisionとしてユーザーへ再質問しない一方、product decisionを「freshness更新」と呼んで勝手に変更しない。
+単なるfact driftやexecution-route変更をproduct decisionとしてユーザーへ再質問しない一方、product decisionを「freshness更新」と呼んで勝手に変更しない。
 
 ## Same Issue vs new Issue
 
-実装・調査中に追加作業が見つかったときは、Issueを分けること自体を目的にしない。
+Issue boundaryは「original feature全体の完成に必要か」だけでは決めない。
 
-1. original acceptanceに明示されている修正・挙動なら同じIssueで扱う。
-2. 明示されていなくてもcurrent authorityからoriginal acceptanceを満たすために一意に必要と分かる作業なら同じIssueで扱う。
-3. 必要性はoriginal completionに直結するが新しいproduct decisionが必要なら、current Issueを`Contract: Pending`へ戻してdecisionを解決する。decision後もoriginal completionに必要なら同じIssueで扱う。
-4. original Issueを完了させても独立して延期できる追加feature / cleanup / acceptanceなら別Issueにする。
+大きなfeature / refactorは、完成まで全leafが必要でも、real independent Work boundaryを持つなら複数leaf Issueへ分解してよい。逆に、小さなfixでも独立したWork boundaryを持たなければsame Issueに残す。
 
-短い判定:
+### Keep in the same Issue
+
+次はsame Issueを優先する。
+
+- current acceptanceそのもののnarrow fix / adjustment;
+- 1つのfailure classを直すための実装で、独立したuser / engineering outcomeを持たない;
+- separate Issueにするとtemporary API、duplicate owner、人工的なdependency shellを作る;
+- semantic completion / verification oracleがcurrent Issueと不可分;
+- current Issueのimplementation sliceを分けるだけで十分で、Work scopeを移す理由がない。
+
+same Issueでも複数sequential PR / execution routeへ分けてよい。詳細は`IMPLEMENTATION-SLICING.md`。
+
+### Extract a new / existing leaf Issue
+
+次を満たすclusterは、original feature completionに必要でもindependent leaf Issueへ移してよい。
+
+1. **Scope boundary:** 何を提供 / 変更するWorkかを単独で説明できる。
+2. **Semantic owner:** primary owner / API / data-flow boundaryが明確である。
+3. **Independent acceptance:** leaf単独のobservable acceptance / verification oracleを持つ。
+4. **Safe completion:** leafを先にmerge / Doneしてもrepositoryが一貫し、残りWorkが明示的dependencyとして継続できる。
+5. **Durable tracking value:** failure / review / rollback / ownershipを別Issueで追う意味がある。
+
+この条件を満たす場合、large featureから`only_chatgpt`向きfoundation / planner / adapter leafを抽出することは正当なdecompositionである。
+
+ただし、`only_chatgpt` labelを付けたい、parallel worker数を増やしたい、PRを小さく見せたい、という理由だけではnew Issueにしない。
+
+### Independent follow-up Work
+
+original Issueを完了させた後でも延期可能な追加feature / cleanup / acceptanceは通常new Issue。
+
+新しいproduct decisionを避けるためだけにIssueを分割しない。original acceptanceに必要なdecisionならcurrent contractを`Pending`へ戻して解決する。
+
+### Short decision tree
 
 ```text
-直さないとoriginal IssueをDoneにできない
-=> same Issue
+real independent scope + semantic owner + independent acceptance + safe completion?
+  YES -> new / existing leaf Issueを検討
+  NO  -> same Issue
 
-original IssueをDoneにした後でも独立して進められる
-=> new Issue
+same Issueだがimplementation boundaryは分けられる?
+  YES -> Same Issue + sequential slice / PR
+
+additional Workはoriginal completion後でも独立延期可能?
+  YES -> new Issue
 ```
 
-新しいproduct decisionを避けるためだけにIssueを分割しない。
+Issue boundaryとexecution routeは別判断。
 
-**same Issue / new Issue と、implementationを何PR・何execution trackへ分けるかは別判断。** same Issueと判定されたWorkでも、safe merge checkpointがあるなら複数のsequential PR / execution trackへ分けてよい。same Issueだからsame branch / same PR / same conversationで完走するとは扱わない。implementation slice / checkpoint /途中再判定は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) をauthorityとする。
+```text
+new leaf Issue
+  -> only_chatgpt でも Coding Agentでもよい
+
+same Issue next slice
+  -> only_chatgpt から Coding Agentへ変えてよい
+  -> Coding Agentから only_chatgptへ変えてよい
+```
+
+execution suitabilityは`ONLY-CHATGPT.md`、slice / checkpointは`IMPLEMENTATION-SLICING.md`をauthorityとする。
+
+## Parent after decomposition
+
+original Issueのscopeを複数leafへ移した場合、pure tracking parentを自動的に残さない。
+
+- parent自身にaggregate acceptance / integrated Manual E2E / final cutover等が残る → retained parentとして維持。
+- original scope / acceptanceをすべてleafへ移し、親に独自Workがない → tracking shellとしてactiveに残さない。status handlingは`LINEAR-ISSUES.md`に従う。
+- decomposition / research自体がoriginal Workだった → そのacceptanceが完了すればDoneにしてよい。
+
+retained parentはexecution ownership labelを持たない。
 
 ## Current behavior vs normative contract
 
@@ -109,14 +164,17 @@ actual implementationを調べる質問と、normative behaviorを決める質�
 - 「一般的にはこうする」「たぶん自然」というだけでは一意決定扱いにしない。current authorityで根拠を確認する。
 - 標準挙動から意図的に外れる必要がある場合は、その理由とUX差分をユーザーへ提示する。
 - 将来仕様を不必要に先取りしない。current scopeだけで決まる最小のcontractにする。
+- decompositionの都合でproduct acceptanceを書き換えない。
 
 ## Contract workflow
 
 1. latest Project Contextとloading ruleに従って必要なauthorityを読む。
 2. current implementationに関係する判断はlatest remote repositoryで確認する。
 3. actual behaviorとnormative contractのauthorityを分けて確認する。
-4. platform標準または既存nuinuiCAD ruleから一意に決まる事項をcontractへ直接記録する。
-5. 一意に決まらないproduct decisionだけをユーザーへ確認する。
-6. 決定後、Issue本文・Contract label・Manual E2E plan・dependencyを同じcheckpointで整合させる。
+4. acceptance cluster / semantic ownerを見てreal Work boundaryがあるか確認する。
+5. platform標準または既存nuinuiCAD ruleから一意に決まる事項をcontractへ直接記録する。
+6. 一意に決まらないproduct decisionだけをユーザーへ確認する。
+7. boundary map / implementation slicing / execution routingは`IMPLEMENTATION-SLICING.md`と`ONLY-CHATGPT.md`で決定する。
+8. 決定後、Issue本文・Contract label・Manual E2E plan・dependencyを同じcheckpointで整合させる。
 
 ユーザーへ確認する項目数を減らすこと自体を目的にしない。目的は、既に決まっていることを再質問せず、本当に判断が必要な分岐だけに会話を使うこと。
