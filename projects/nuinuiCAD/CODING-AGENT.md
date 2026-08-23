@@ -33,6 +33,8 @@ Lunaへ渡す前に、ChatGPTがcurrent Project Contextとlatest remote reposito
 - required acceptance / tests / verificationの確定
 - ChatGPTで実行できるwork-management / design / review準備
 
+Expected baseのfreshness checkは [`../../shared/GIT-WORKFLOW.md`](../../shared/GIT-WORKFLOW.md) のChatGPT-side handoff freshness checkに従い、Luna handoff直前に完了する。
+
 これらをLunaへopen-ended taskとして委ねない。
 
 ## Luna receives only executable work
@@ -95,7 +97,7 @@ Lunaへroot-cause investigationとproduct redesignをまとめて委ねない。
 
 ## Cross-chat continuity
 
-nuinuiCADのimplementation Taskを別ChatGPT conversationへ継続する場合、別途長いhandoff文を作ることをdefaultにしない。
+nuinuiCADのimplementation Taskを別ChatGPT conversationへ継続する場合、別途長いhandoff文を書くことをdefaultにしない。
 
 current Task固有で次のconversationにも必要な確定事項は、通常はcurrent Linear Issueへcheckpointとして記録する。既存のrule / source-of-truth / repositoryから再取得できる情報はLinearへ重複保存しない。
 
