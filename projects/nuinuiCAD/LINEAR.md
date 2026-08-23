@@ -28,6 +28,7 @@ Projectは通常の分類・roadmap単位にしない。通常のWork管理はIs
 | --- | --- |
 | Project粒度 / lifecycle / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
 | Issue status / Ready Queue / labels / checkpoints / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
+| implementation slicing / sequential PR / execution checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | GitHub PR linking / PR automations / merge status sync | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
 | long-term specification / Linear Documents / Notion migration | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
 | `only_chatgpt` / `manual_e2e_only` execution ownership | [Execution ownership labels](./ONLY-CHATGPT.md) |
@@ -68,7 +69,8 @@ Canceledの移行試験Issueや旧カテゴリProject等が残っている場合
 5. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) に従いReady条件とBacklog / Todoが一致していることを確認する。
 6. Project assignmentを例外的に行う必要がある場合だけ [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) に従う。
 7. `Contract: Ready`でもlatest repositoryのactual owner / symbol / file pathを再確認する。
-8. ユーザーがTaskを明示的に開始した時点で、Issue workflowとexecution ownership ruleに従ってactive statusへ同期する。
+8. implementation開始前に [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従い最初のsafe checkpointを定める。
+9. ユーザーがTaskを明示的に開始した時点で、Issue workflowとexecution ownership ruleに従ってactive statusへ同期する。
 
 `Contract: Pending`の調査を進めること自体はIn Progressへの変更理由にしない。
 
@@ -103,10 +105,11 @@ Linearを扱うときも全owner documentを毎回読む必要はない。
 
 1. Linear操作・参照ではこの`LINEAR.md`を読む。
 2. Issueの作成 / status / labels / dependency / readiness / Doneでは`LINEAR-ISSUES.md`を読む。
-3. Project作成 / assignment / label / completionでは`LINEAR-PROJECTS.md`を読む。
-4. PR linking / PR automation / merge checkpointでは`LINEAR-GITHUB.md`を読む。
-5. Linear Document / long-term Spec / Notion移行では`LINEAR-DOCUMENTS.md`を読む。
-6. execution ownership、Manual E2E、contract、capacity、public mirrorが関係するときはPolicy mapの専用ownerも読む。
+3. implementation開始 / pause-resume / sequential PR / merge checkpoint / scope expansionでは`IMPLEMENTATION-SLICING.md`を読む。
+4. Project作成 / assignment / label / completionでは`LINEAR-PROJECTS.md`を読む。
+5. PR linking / PR automation / merge checkpointでは`LINEAR-GITHUB.md`を読む。
+6. Linear Document / long-term Spec / Notion移行では`LINEAR-DOCUMENTS.md`を読む。
+7. execution ownership、Manual E2E、contract、capacity、public mirrorが関係するときはPolicy mapの専用ownerも読む。
 
 ## Maintenance rule
 
