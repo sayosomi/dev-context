@@ -16,9 +16,15 @@ Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、execution
 
 ## Core rule
 
-Implementation decomposition is a continuing execution decision, not a one-time Ready-contract decision.
+Implementation decomposition has two stages: a pre-execution extraction audit and continuing per-slice re-evaluation.
 
-開始時に「split不要」「whole Issueを1 execution routeで進める」と判断してもTask完了まで固定しない。current repository state、実装済みslice、verification結果、Manual E2E result、残りacceptanceをcheckpointごとに再評価する。
+最初のexecution routeを決める前に、whole current implementation scopeを監査し、current repository ownershipの自然なboundaryでsliceすれば`only_chatgpt`にできる部分があるかを必ず確認する。該当部分があれば、broader Coding Agent workへ埋め込まず、safeかつindependently verifiableなleaf / sliceとして積極的に抽出する。
+
+自然な`only_chatgpt`部分がなく、remaining implementationのすべてがCoding Agent向きなら、`only_chatgpt` coverageを増やすためだけに分割しない。ただしsemantic ownership、verification、reviewability、rollback、safe checkpoint等の別理由によるslicing判断は独立して行う。
+
+事前auditで得たslice / route mapはprovisionalとする。各sliceを実際に開始するときはlatest repository state、実装済みslice、verification結果、Manual E2E result、残りacceptanceを再確認し、そのsliceのexecution routeを改めて判定する。
+
+開始時に「split不要」「whole Issueを1 execution routeで進める」と判断してもTask完了まで固定しない。checkpointごとの再評価も維持する。
 
 大きなWorkを理由に`only_chatgpt`を諦めない。逆に、`only_chatgpt` coverageを増やすためだけに不自然なboundaryを作らない。
 
@@ -26,9 +32,15 @@ Implementation decomposition is a continuing execution decision, not a one-time 
 
 最初から全PR構成を確定する必要はない。implementation開始時には少なくとも最初のsafe checkpointと、そのcheckpointまでのexecution routeを決める。
 
-## Boundary map before implementation
+## Pre-execution extraction audit
 
 Contract: ReadyのIssueでも、acceptance全体をそのまま1 PR / 1 execution routeへ写像しない。
+
+initial execution routeを選ぶ前に、whole current implementation scopeに対して次を明示的に問う。
+
+> current repository / semantic boundaryに沿ってsliceした場合、`only_chatgpt`にできるportionはあるか？
+
+答えがyesなら、そのportionをremaining integration-heavy workへ混ぜず、自然なsafe boundaryで先に抽出する。答えがnoで、すべてのimplementationがCoding Agentを必要とするなら、execution routingだけを理由に人工的なsliceを作らない。
 
 最初のrepository write前に、current repositoryを基準として少なくとも次を整理する。
 
@@ -161,16 +173,17 @@ shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じ�
 
 次でboundary map、safe checkpoint、execution routeを再評価する。
 
-1. shared owner / adapter boundaryへ初めて接続し、broad integration test / full suite resultが得られた;
-2. Taskをpause / resumeする;
-3. implementationが当初のsemantic owner / API / contract / data-flow boundaryを越えようとする;
-4. 複数の独立failure classが残った;
-5. 1 sliceは完成・検証可能だが別ownerのacceptanceが大きく残る;
-6. current PRが複数の独立semantic changeを抱え、review / diagnosis / rollback境界が不明瞭になった;
-7. remote `main` advanceでimplementation shape / remaining ownerが変わった;
-8. blocking fix loopが新しいownerへ継続的に広がる;
-9. Manual E2E FAILで新しいfailure class / ownerが露出した;
-10. direct GitHub + CI executionが、local Coding Agent executionより明らかに不利なshapeへ変わった。
+1. any implementation sliceを開始しようとするとき。first sliceも含む;
+2. shared owner / adapter boundaryへ初めて接続し、broad integration test / full suite resultが得られた;
+3. Taskをpause / resumeする;
+4. implementationが当初のsemantic owner / API / contract / data-flow boundaryを越えようとする;
+5. 複数の独立failure classが残った;
+6. 1 sliceは完成・検証可能だが別ownerのacceptanceが大きく残る;
+7. current PRが複数の独立semantic changeを抱え、review / diagnosis / rollback境界が不明瞭になった;
+8. remote `main` advanceでimplementation shape / remaining ownerが変わった;
+9. blocking fix loopが新しいownerへ継続的に広がる;
+10. Manual E2E FAILで新しいfailure class / ownerが露出した;
+11. direct GitHub + CI executionが、local Coding Agent executionより明らかに不利なshapeへ変わった。
 
 file数、diff行数、commit数、経過時間はwarning signalのみ。semantic ownership、independent verification、safe mergeability、execution-loop suitabilityを優先する。
 

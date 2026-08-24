@@ -33,7 +33,11 @@ Lunaへ渡す前に、ChatGPTがcurrent Project Contextとlatest remote reposito
 - required acceptance / tests / verificationの確定
 - ChatGPTで実行できるwork-management / design / review準備
 
-Expected baseのfreshness checkは [`../../shared/GIT-WORKFLOW.md`](../../shared/GIT-WORKFLOW.md) のChatGPT-side handoff freshness checkに従い、Luna handoff直前に完了する。
+Expected baseのfreshness checkは [`../../shared/GIT-WORKFLOW.md`](../../shared/GIT-WORKFLOW.md) のChatGPT-side handoff freshness checkと [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) のPre-prompt remote freshness gateに従う。
+
+このcheckはLuna promptを作成・提示する**前**に行う。repository調査、contract策定、previous checkpointで確認したremote SHAを、そのままLuna promptのexpected baseへ転記しない。freshness check後のauthoritative remote stateを基準としてpromptを作る。
+
+Luna側の`git fetch origin --prune`は、このpre-prompt check後からagent開始までのremote advanceを検出するsecond safety checkとして扱う。ChatGPT-side freshness checkの代替にしない。
 
 これらをLunaへopen-ended taskとして委ねない。
 
@@ -94,6 +98,49 @@ Lunaへroot-cause investigationとproduct redesignをまとめて委ねない。
 - settled design history
 - current sliceに無関係なfuture work
 - ChatGPTが既に解決済みの調査過程
+
+## Luna session selection
+
+Lunaへimplementation / blocking-fix promptを提示するとき、ChatGPTはそのpromptをどのCoding Agent sessionへ渡すかをユーザーへ必ず明示する。
+
+このsession instructionはLuna自身へのinstructionではなく、人間がどのsessionへpromptを渡すかを決めるためのhuman-facing instructionとする。Luna prompt本文には含めず、promptの外側に表示する。
+
+Defaultは**new Luna session**とする。
+
+Existing Luna sessionを再利用するのは、new sessionを開始するよりcurrent Work全体で消費するtokenを減らせるとChatGPTが確信できる場合だけとする。判断が不確実ならnew sessionを選ぶ。
+
+Existing session reuseが適する典型例:
+
+- same current executable sliceの直後のnarrow blocking-fix;
+- same branch / same implementation contextをそのまま継続する;
+- existing sessionが保持するrelevant contextにより、new sessionで必要になるcontext reconstruction / repeated explanationを明確に減らせる;
+- accumulated stale / irrelevant contextによる追加reasoning costよりcontinuityによるtoken savingの方が明らかに大きい。
+
+次の場合は原則new sessionを使う:
+
+- new implementation slice;
+- safe checkpoint後のnext slice;
+- execution route / semantic owner / contractが変わった;
+- remote advance等によりimplementation contextを大きくrefreshした;
+- previous Luna runがbroad explorationやstale assumptionsを多く含む;
+- existing session reuseとnew sessionのどちらがtoken-efficientか確信できない。
+
+Session reuseはcontinuity自体を目的にしない。判断基準はcurrent Work全体でのexpected token consumptionとする。
+
+ユーザーへpromptを提示するときは、promptの外側に少なくとも次のどちらかを明示する。
+
+```text
+Luna session: New session
+```
+
+または:
+
+```text
+Luna session: Reuse current session
+Reason: <why reuse is expected to reduce total token consumption>
+```
+
+Reuseの場合だけ理由を短く添える。session selection lineやreasonをLuna prompt本文へ混ぜない。
 
 ## Cross-chat continuity
 
