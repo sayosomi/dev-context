@@ -20,38 +20,37 @@ primaryとsecondaryはlocal implementation用、E2E slotはManual E2E専用と�
 
 worktree総数に固定numeric limitは設けないが、追加worktreeはstandard slotsでは安全に実行できない明確な理由がある場合だけ作る。
 
-## Slot ownership / lease
+## Occupancy model
 
-各standard slotは、local metadata fileでcurrent Issue ownershipを明示する。
+current occupancyは`dev-context`へ保存しない。新しいlocal Taskを始めるたびにactual local checkout stateを確認して判断する。
 
-lease file path:
+implementation slotのownershipは追加lease fileを使わず、current branch / HEAD / dirty stateから判断する。
+
+- Task branchをcheckoutしており、そのbranch名からLinear Issue key（例: `SAY-123`）を一意に読める場合、そのIssueがそのslotを使用中と判断する。
+- slot固有のidle stateにありcleanなら`FREE`。
+- dirty、unexpected branch / HEAD、Issue ownershipを一意に判断できない、またはcurrent Task contextとactual stateが食い違う場合は`BLOCKED / UNKNOWN`。
+- cleanであることだけを理由に、Task branch上のimplementation slotを`FREE`と判断しない。
+
+Manual E2E slotは通常detached HEADで使うため、branch名だけではIssue ownershipを表せない。E2E実行中だけGit local metadataに最小markerを持つ。
+
+marker path:
 
 ```bash
 $(git -C <checkout> rev-parse --git-dir)/nuinui-slot
 ```
 
-最小format:
+format:
 
 ```text
 issue=SAY-123
-purpose=implementation
-```
-
-Manual E2Eでは:
-
-```text
-issue=SAY-123
-purpose=manual-e2e
 ref=<exact tested commit or stable ref>
 ```
 
-lease fileはrepository working treeへ置かず、Gitのlocal metadataとして扱う。
+このmarkerはrepository working treeへ置かない。Manual E2E終了後、checkoutを安全にidle stateへ戻した最後に削除する。
 
-- leaseが存在するslotは、そのIssueが明示的にreleaseされるまで`BUSY`。
-- cleanであることだけを理由に`FREE`と判断しない。
-- leaseがなくてもdirty、unexpected branch / HEAD、unfinished local stateがある場合は`FREE`と判断しない。
-- leaseとactual branch / HEAD / task contextが食い違う場合は`BLOCKED / UNKNOWN`として扱い、勝手にlease削除・reset・stash・force-switchして解消しない。
-- local development Taskは原則としてLinear Issue keyを持ってからslotをclaimする。
+- E2E markerが存在し、actual detached HEAD / tested refと整合する場合は`BUSY`。
+- markerとactual stateが食い違う場合は`BLOCKED / UNKNOWN`。
+- E2E markerだけ先に削除して見かけ上`FREE`にしない。
 
 ## Mandatory slot preflight
 
@@ -60,10 +59,10 @@ lease fileはrepository working treeへ置かず、Gitのlocal metadataとして
 最低限、各slotについて次を確認する。
 
 - checkout pathが存在するか
-- lease fileの有無と`issue` / `purpose`
 - current branchまたはdetached HEAD
 - current HEAD commit
 - `git status --porcelain`がcleanか
+- branch名から読めるIssue key、またはE2E markerの`issue` / `ref`
 - intended base / tested refと両立するか
 
 開始前のreportは少なくとも次の形でIssue ownershipとavailabilityを明示する。
@@ -77,34 +76,35 @@ e2e       SAY-122   <tested commit>                yes     BUSY
 
 state判定:
 
-- `FREE`: leaseなし、clean、slot固有のidle stateにある。
-- `BUSY`: valid leaseがあり、actual checkout stateがそのIssueのcurrent Taskと整合する。
-- `BLOCKED / UNKNOWN`: dirty、lease mismatch、unexpected branch / HEAD、missing checkout、またはownershipを安全に判断できない。
+- `FREE`: cleanで、slot固有のidle stateにあり、E2Eならmarkerもない。
+- `BUSY`: implementationではTask branchからIssue ownershipを一意に判断できる。E2Eではmarkerとactual tested stateが整合する。
+- `BLOCKED / UNKNOWN`: dirty、unexpected branch / HEAD、marker mismatch、missing checkout、またはownershipを安全に判断できない。
 
-**新Taskは`FREE`と確認できたslotだけをclaimして開始する。** `BUSY`や`BLOCKED / UNKNOWN`のslotを空けるためにunrelated changesや進行中Taskをreset / stash / overwrite / force-switchしない。
+**新Taskは`FREE`と確認できたslotだけを使う。** `BUSY`や`BLOCKED / UNKNOWN`のslotを空けるためにunrelated changesや進行中Taskをreset / stash / overwrite / force-switchしない。
 
-## Claim / release lifecycle
+## Start / release lifecycle
 
-### Claim
+### Start
 
 1. standard 3 slotsのmandatory preflightを行う。
 2. Taskに適した`FREE` slotを選ぶ。
-3. slotへIssue leaseを書く。
-4. `git fetch origin --prune`を実行し、latest remote stateとintended base / tested refを確認する。
-5. その後にTask branch作成、checkout、detached tested commit準備等を行う。
-
-claim前にbranch / HEADをTask用stateへ変更しない。これにより「誰が使っているかわからないclean checkout」を作らない。
+3. `git fetch origin --prune`を実行し、latest remote stateとintended base / tested refを確認する。
+4. implementationではTask branchを作成 / checkoutする。
+5. Manual E2Eではexact tested commit / stable refへdetached checkoutし、actual HEADを確認したうえでE2E markerへ`issue` / `ref`を書く。
 
 ### Release
 
-Task完了・merge・中止・Manual E2E終了後は、次の順にreleaseする。
+Task完了・merge・中止に加え、**safe checkpointでcurrent workがremoteに安全に保存され、local slotを保持し続ける必要がない場合もimplementation slotをreleaseしてよい。** Issue自体をDoneにする必要はない。
+
+release時は次の順に行う。
 
 1. 未commit変更がないことを確認する。
-2. slot固有のidle stateへnon-destructiveに戻す。
-3. actual stateがidle条件を満たすことを確認する。
-4. 最後にlease fileを削除する。
+2. current workが必要なremote branch / merged commit等に安全に保存されていることを確認する。
+3. slot固有のidle stateへnon-destructiveに戻す。
+4. actual stateがidle条件を満たすことを確認する。
+5. Manual E2Eでは最後にmarkerを削除する。
 
-安全にidle stateへ戻せない場合はleaseを残したまま`BLOCKED`として扱う。leaseだけ先に削除して見かけ上`FREE`にしない。
+安全にidle stateへ戻せない場合は`BLOCKED`として扱う。reset / stash / force-switch等で無理にreleaseしない。
 
 ## Idle state by slot
 
@@ -118,17 +118,17 @@ Task完了・merge・中止・Manual E2E終了後は、次の順にreleaseする
 ### Secondary implementation slot
 
 - primaryで別local Taskが進行中で、本当に並列実装する必要がある場合に使う。
-- idle時はcleanに保ち、latest `origin/main` をdetached HEADでcheckoutして待機させる。
-- Task完了・merge・中止後は、未commit変更がないことを確認してからdetached HEADのlatest `origin/main`へ戻す。安全なら完了Taskのlocal branchを削除する。
+- idle時はcleanに保ち、latest `origin/main`をdetached HEADでcheckoutして待機させる。
+- Task完了・merge・中止・safe checkpoint release後は、未commit変更がないことを確認してからdetached HEADのlatest `origin/main`へ戻す。安全なら完了Taskのlocal branchを削除してよい。
 - persistent sub自体はTask完了後も削除しない。
 - 同じbranchをprimaryとsecondaryの両方でcheckoutしない。
 
 ### Manual E2E slot
 
 - Manual E2E専用。通常implementationには使わない。
-- tested Issueをleaseへ明示し、必要なexact tested commit / stable refへcheckoutして使う。
+- tested Issueとexact tested commit / stable refをE2E markerへ明示する。
 - Manual E2E実行中にimplementation Taskへ転用しない。
-- E2E終了後はhost / temporary test stateのcleanupをcurrent Manual E2E policyに従って完了し、checkoutがcleanであることを確認してからdetached HEADのlatest `origin/main`へ戻し、最後にleaseをreleaseする。
+- E2E終了後はhost / temporary test stateのcleanupをcurrent Manual E2E policyに従って完了し、checkoutがcleanであることを確認してからdetached HEADのlatest `origin/main`へ戻し、最後にmarkerを削除する。
 - testのためにprimary / secondaryのuser workをstash / reset / discard / force-switchしない。
 
 VS Code Manual E2Eのhost isolation、fixture、build、launch、process cleanup等は [`VS-CODE-E2E.md`](./VS-CODE-E2E.md) がauthority。
@@ -160,4 +160,4 @@ shared CI incidentでhuman-terminal reproductionが必要な場合は、通常�
 
 この節はShared Git Workflowの「temporary worktreeは終了時に削除」をnuinuiCAD向けに上書きする。目的はworktreeを増やすことではなく、**安全な既存checkoutを優先して再利用し、不必要なcreate/delete churnを避けること**。
 
-additional worktreeを継続reuseする場合も、standard slotsと同じくownershipを曖昧にしない。少なくともcurrent Issue、branch / HEAD、dirty stateを開始前に確認する。
+additional worktreeを継続reuseする場合もownershipを曖昧にしない。少なくともcurrent Issue、branch / HEAD、dirty stateを開始前に確認する。
