@@ -34,6 +34,34 @@ Human action待ちになる場合の原則:
 
 product / UX decision、approval-gated dev-context write、unsafe / destructive unknown-state recoveryなど、Human判断そのものが必要なboundaryはこのruleで自動決定しない。その場合も「何を判断 / 実行すれば先へ進めるか」を具体化して返す。
 
+## Implementation continuation completion rule
+
+HumanがLuna implementation / integration checkpoint等の結果を返した後、残る作業がChatGPTから直接扱えるremote / management stateだけで完結する場合、その工程をHumanへの細かなhandoffへ分割しない。
+
+典型的なremote-only continuation:
+
+```text
+Luna result
+-> pushed HEAD / latest main freshness
+-> fresh CI completion
+-> blocking review
+-> merge
+-> merged-state verification
+-> Linear synchronization
+```
+
+原則:
+
+- fresh CIが`queued` / `in_progress`でも、それ自体を理由に`CI結果をまた返してください`等のHuman actionへ変換しない。ChatGPTが同じexecution trackでremote stateを追跡し、PASS / FAIL / concrete blockerまで進める。
+- progress updateは出してよいが、Humanが何もする必要のないremote-only intermediate stateをconversation handoff boundaryにしない。
+- blocking reviewに必要なGitHub diff / code / review thread / CI evidenceをChatGPTが取得できるならHumanに再取得させない。
+- safe merge authorizationが既にcurrent execution trackへ与えられている場合、通常のmerge confirmationを再要求しない。merge gateは`LINEAR-GITHUB.md`に従う。
+- merge後のGitHub / Linear synchronizationも、Human-only actionがなければ同じcontinuationで完了する。
+
+Humanへ戻してよいのは、product / UX / scope decision、unsafe local state、destructive operation、Human-only environment / observation、required approval boundary、またはcurrent toolsでは解消できないconcrete blocker等、**Human actionが実際に必要な場合だけ**。
+
+local checkoutのdeterministic releaseだけが残る場合は、Work completion / Linear statusと物理lane cleanupを混同しない。lane stateは`CHECKOUTS.md`、Issue statusは`LINEAR-ISSUES.md` / `LINEAR-GITHUB.md`をauthorityとする。
+
 ## Startup / execution boundary
 
 Implementation開始・再開では、READMEのloading ruleに従ってcurrent Linear / remote repository / required implementation policiesを確認する。
@@ -54,4 +82,4 @@ Implementation chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocu
 
 ## Maintenance rule
 
-このdocumentはImplementation chat固有のstart / resume / handoff lifecycleだけをownerする。checkout操作、slice semantics、Coding Agent detail、Linear lifecycleは各owner documentを参照し、ここへ複製しない。
+このdocumentはImplementation chat固有のstart / resume / continuation / handoff lifecycleだけをownerする。checkout操作、slice semantics、Coding Agent detail、Linear lifecycleは各owner documentを参照し、ここへ複製しない。
