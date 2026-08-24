@@ -30,6 +30,7 @@ Human action待ちになる場合の原則:
 - 実際には提示していないcommand / blockを`上のcommand`、`先ほどのaudit`等として参照しない。
 - concrete blockerを報告するときは、blockerの説明と**解除するための次のaction**をセットで出す。
 - local lane evidence不足が唯一のblockerなら、[`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflight handoff ruleに従い、その場で最初の実行可能なread-only handoffまで出す。
+- versioned local helperがcurrentで利用可能なら、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に従い、長大なinline shellではなく必要値を埋めたhelper invocationをcomplete Human handoffとして使ってよい。helperが未install / stale / broken / unsupportedなら`CHECKOUTS.md`のinline fallbackを同じ応答で提示する。
 - Humanが必要なfresh evidenceをすでに現在の会話で提示している場合は、同じ取得手順を機械的に要求し直さない。
 
 product / UX decision、approval-gated dev-context write、unsafe / destructive unknown-state recoveryなど、Human判断そのものが必要なboundaryはこのruleで自動決定しない。その場合も「何を判断 / 実行すれば先へ進めるか」を具体化して返す。

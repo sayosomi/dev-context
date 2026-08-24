@@ -25,6 +25,7 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | Implementation chat start / resume / continuation handoff | [Implementation chat](./CHAT-IMPLEMENTATION.md) |
 | E2E chat lifecycle | [E2E chat](./CHAT-E2E.md) |
 | fixed execution lanes / checkout occupancy / checkpoint isolation | [Execution lane policy](./CHECKOUTS.md) |
+| local versioned helper / local dev-context sync / tool promotion | [Local tools](./LOCAL-TOOLS.md) |
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation / blocking-fix Luna workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
@@ -106,15 +107,16 @@ main/subは互いの途中変更を取り込まない。
 2. **Chat role / start / resume / rotation / handoff / recovery:** `CHAT-WORKFLOW.md` + current role owner (`CHAT-COORDINATOR.md` / `CHAT-AUTHORING.md` / `CHAT-IMPLEMENTATION.md` / `CHAT-E2E.md`)。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
-5. **Execution-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md`。
-6. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`。該当する場合Shared / nuinuiCAD Agent Skillsも読む。
-7. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`。
-8. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`。詳細は`LINEAR.md`のroutingに従う。
-9. **Manual E2E:** `MANUAL-E2E.md`。VS Code hostなら`VS-CODE-E2E.md`。Executor: Lunaならprompt style + `LUNA-E2E-PLAYBOOK.md`。
-10. **Shared CI incident suspicion / local reproduction:** strong signalがある場合だけ`CI-INCIDENTS.md`。reproductionにもFREEなmain/sub laneだけを使う。
-11. **User-facing command追加・surface変更:** `COMMAND-CONTRACTS.md`。
-12. **Legacy履歴または移行中例外:** 必要なときだけ`NOTION-LEGACY.md`。
-13. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
+5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
+6. **Execution-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md`。
+7. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`。該当する場合Shared / nuinuiCAD Agent Skillsも読む。
+8. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`。
+9. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`。詳細は`LINEAR.md`のroutingに従う。
+10. **Manual E2E:** `MANUAL-E2E.md`。VS Code hostなら`VS-CODE-E2E.md`。Executor: Lunaならprompt style + `LUNA-E2E-PLAYBOOK.md`。
+11. **Shared CI incident suspicion / local reproduction:** strong signalがある場合だけ`CI-INCIDENTS.md`。reproductionにもFREEなmain/sub laneだけを使う。
+12. **User-facing command追加・surface変更:** `COMMAND-CONTRACTS.md`。
+13. **Legacy履歴または移行中例外:** 必要なときだけ`NOTION-LEGACY.md`。
+14. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
 
 ## Maintenance rule
 

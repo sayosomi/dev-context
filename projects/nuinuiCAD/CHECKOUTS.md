@@ -46,13 +46,21 @@ Human向けterminal instructionを生成する場合はshared `human-terminal-in
 - precondition mismatchでは`BLOCKED:`等で具体的理由を表示して停止する;
 - current directoryや以前のshell変数へ暗黙依存しない。
 
+同じmechanical operationがversioned helperとして[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みで、current local clone上のhelperが利用可能なら、Human handoffではそのhelperを優先してよい。helperは上記safety requirementを省略するものではなく、確認とmutationをversioned implementationへ移すだけである。
+
 ### Mandatory preflight handoff rule
 
 implementation start / resume等でmandatory 3-lane preflightが必要なのに、ChatGPT側からactual local checkout stateを直接確認できない場合、`preflightが必要`、`lane状態がblocker`、`audit結果待ち`等とだけ述べて停止してはならない。
 
-その応答内で、Humanがそのままcopy/paste実行できる**完全なread-only 3-lane audit block**を提示する。
+versioned `nuinui` helperがcurrentで利用可能なら、その応答内でHumanがそのままcopy/paste実行できる**exact helper invocation**を提示する。標準path:
 
-そのauditは少なくとも`main` / `sub` / `e2e`の全3 laneについて次を一度に確認できること。
+```bash
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui preflight
+```
+
+helperが未install、stale / broken、またはcurrent operationをsupportしていない場合は、その応答内でHumanがそのままcopy/paste実行できる**完全なread-only 3-lane audit block**をfallbackとして提示する。
+
+helper outputまたはinline auditは、少なくとも`main` / `sub` / `e2e`の全3 laneについて次を一度に確認できること。
 
 - checkout path存在;
 - branch名またはdetached HEAD;
