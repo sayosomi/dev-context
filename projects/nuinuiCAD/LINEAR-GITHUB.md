@@ -60,12 +60,32 @@ Manual E2E: Not Required
 -> Done
 
 Manual E2E: Required
--> implementation reservationをrelease
--> applicable leafはonly_chatgptからmanual_e2e_onlyへtransition
+-> implementation execution終了
+-> applicable leafはmanual_e2e_onlyへtransition
 -> In Review + Manual E2E: Ready to Run / Deferred
 ```
 
 Manual E2EがrequiredなIssueでは、implementation開始 / 継続許可をManual E2E実行許可として流用しない。通常のimplementation execution trackは`In Review`へのhandoffで終了し、その先のManual E2E executionは [`MANUAL-E2E.md`](./MANUAL-E2E.md) とexecution-owner ruleに従う。
+
+### Merge completion vs local lane cleanup
+
+GitHub上でrequired merge gateを満たしてimplementation PRがintended baseへmergeされた時点で、repository implementation executionは終了する。local `main` / `sub` checkoutがまだTask branchにいることやidle stateへのdeterministic cleanupが未完了であることを、Issueを`In Progress`へ保持する理由にしない。
+
+merge後の責務を分離する。
+
+```text
+remote merge / implementation completion
+-> Linear statusをactual remaining Workへ同期
+-> local checkoutがidleでなければ lane = RELEASE-PENDING
+-> deterministic lane cleanup
+-> lane = FREE
+```
+
+- Issue statusはmerge / remaining acceptance / Manual E2E / completion gateに従う。
+- physical lane cleanupは[`CHECKOUTS.md`](./CHECKOUTS.md)の`RELEASE-PENDING` / release ruleに従う。
+- `RELEASE-PENDING` laneは新Issueへ割り当てないが、前Issueのimplementationがまだ実行中であることを意味しない。
+- local cleanup failureはlane availabilityのblockerとして扱い、すでに成立したremote mergeやIssue completion stateを巻き戻さない。ただしcleanup中にunmerged / unsaved workが判明した場合は新しいstateとして再評価する。
+- intermediate PR merge後にremaining implementation acceptanceがある場合はsequential PR ruleに従い、次sliceを即時開始していなければ`LINEAR-ISSUES.md`のstatus precedenceへ同期する。local cleanup待ちだけで`In Progress`を維持しない。
 
 ## Pull request automations
 
