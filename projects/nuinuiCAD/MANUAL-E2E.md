@@ -317,13 +317,15 @@ For confirmed implementation failure:
 1. identify the concrete failure class and semantic owner;
 2. determine Same Issue vs independent new leaf using [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md);
 3. determine smallest natural fix slice / safe checkpoint using [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md);
-4. classify that fix slice independently under [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md):
-   - direct GitHub + CI suitable → `only_chatgpt` fix slice;
-   - integration-heavy / local iteration better → standard Coding Agent slice;
+4. return the fix to normal implementation execution under [`CHECKOUTS.md`](./CHECKOUTS.md) and [`CODING-AGENT.md`](./CODING-AGENT.md):
+   - select a `FREE` `main` or `sub` implementation lane;
+   - freeze the fix Base checkpoint SHA and record the implementation checkpoint;
+   - Codex Luna xhigh performs implementation / blocking fix / verification / git work;
+   - never implement or repair the product from the `e2e` checkout;
 5. implement / verify / review / merge;
 6. when only required Manual E2E remains again, return to `manual_e2e_only + In Review`.
 
-Do not automatically perform `manual_e2e_only -> only_chatgpt` merely because ChatGPT can technically edit the failure.
+Do not create a direct web-ChatGPT implementation route for an E2E failure. ChatGPT owns failure classification, fix contract, slicing, lane assignment, blocking review, and management; Luna owns the repository implementation/fix execution.
 
 Multiple independent failure classes may become separate leaf Issues or sequential slices when natural. Do not create a new Issue mechanically for every Human comment or micro-fix.
 
@@ -376,7 +378,7 @@ manual_e2e_only + Ready to Run
 execute units
   ↓
 FAIL?
-  YES -> classify failure -> decompose fix -> only_chatgpt or Coding Agent -> merge -> rerun
+  YES -> classify failure -> FREE main/sub -> Luna fix -> merge -> rerun
   NO
   ↓
 all required units PASS
