@@ -14,20 +14,23 @@ Implementation chatを新しく作っただけではlaneをclaimしない。実�
 
 通常のrepository implementation / blocking fixは [`CODING-AGENT.md`](./CODING-AGENT.md) に従いLuna xhighが担当する。
 
-## Documentation-only direct execution exception
+## Documentation / policy direct execution exception
 
-次の条件を**すべて**満たすrepository Taskは、Luna / implementation laneを使わずChatGPTが直接実行してよい。
+Repository-owned documentation / specification / policy workは、source-code implementationとは別のexecution classとする。
 
-- 変更対象が`docs/**`、repository-owned policy/spec/documentationのようなdocumentation-only fileに限定される;
+次の条件をすべて満たすTaskは、implementation lane / Lunaを使わずChatGPTが直接実行してよい。
+
+- 変更対象が`docs/**`、`AGENTS.md`、repository/project `README.md`、`ARCHITECTURE.md`、CHANGELOG等のrepository-owned documentation / specification / policy fileに限定される;
 - source code、test code、fixtures、build設定、CI、runtime behavior、generated artifactを変更しない;
-- product / UX / architecture contractがすでに確定しており、新しい設計判断を必要としない;
-- current repositoryの実装事実をlatest remote stateから確認してから編集する;
-- verificationはdocumentation consistencyを確認するためのread-only / focused checkで足り、implementation-side test-debug loopを必要としない;
-- 変更範囲がこのdocumentation-only sliceからmaterially拡大しない。
+- plan、target file、intended changeをユーザーへ事前提示し、ユーザーの明示的な許可を得ている;
+- 文面修正だけでなく、新しいproduct / UX / architecture / engineering / operational ruleの決定を含んでもよい。ただし、その判断内容はユーザーが許可したplanのscope内であること;
+- latest remote repositoryとcurrent relevant management/spec stateを確認してから編集する;
+- verificationはdocumentation consistency / policy consistencyを確認するread-only / focused checkで足り、source-code implementation-side test-debug loopを必要としない;
+- scopeがdocumentation / specification / policy changeからsource-code implementationへmaterially拡大しない。
 
-この例外では、固定`main` / `sub` implementation laneをclaimせず、Luna promptも作らない。ChatGPTがremote repository上で編集、必要なverification、blocking review、commit / push / merge、Linear synchronizationまで直接担当してよい。
+この例外では固定`main` / `sub` implementation lane、Base checkpoint、Luna sessionをclaimしない。ChatGPTがremote repository上で編集、必要なfocused verification、blocking review、commit / push / merge、Linear synchronizationまで直接担当してよい。
 
-途中でsource code / test / generated outputの変更が必要になった場合、またはproduct / architecture判断が必要になった場合は、この例外を解除し、通常のLuna / implementation-lane lifecycleへ戻す。
+途中でsource code / test / generated outputの変更が必要になった場合、または許可されたplanのscopeを越えるproduct / architecture decisionが必要になった場合は、いったん停止してplanを更新し、必要なら通常のLuna / implementation-lane lifecycleへ戻す。
 
 Manual E2Eが必要な場合は本例外では扱わず、[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md) をauthorityとする。
 
@@ -84,11 +87,11 @@ local checkoutのdeterministic releaseだけが残る場合は、Work completion
 
 Implementation開始・再開では、READMEのloading ruleに従ってcurrent Linear / remote repository / required implementation policiesを確認する。
 
-通常のimplementation local executionが必要なら[`CHECKOUTS.md`](./CHECKOUTS.md)の3-lane preflightとstartup gateを使う。通常のsource-code sliceのslice / Base checkpoint / integration checkpointは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
+通常のsource-code implementation local executionが必要なら[`CHECKOUTS.md`](./CHECKOUTS.md)の3-lane preflightとstartup gateを使う。通常のsource-code sliceのslice / Base checkpoint / integration checkpointは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
 
-Documentation-only direct execution exceptionでは、implementation laneのclaim / Base checkpointは不要。ただしlatest remote main、current Linear、対象documentation、product/contract sourceを確認してからremote editを行う。
+Documentation / policy direct execution exceptionでは、implementation laneのclaim / Base checkpointは不要。ただしwrite直前にlatest remote target file SHA、current management/spec state、そしてユーザーが許可したplanとのscope一致を確認する。
 
-ChatGPT web環境からfixed checkoutへ直接アクセスできないことを理由に、通常のsource-code implementationについて代替clone / fourth worktree / direct-GitHub implementationへ迂回しない。Documentation-only direct execution exceptionだけは本policyの明示範囲内でGitHub remote editingを許可する。
+ChatGPT web環境からfixed checkoutへ直接アクセスできないことを理由に、通常のsource-code implementationについて代替clone / fourth worktree / direct-GitHub implementationへ迂回しない。Documentation / policy direct execution exceptionだけは本policyの明示範囲内でGitHub remote editingを許可する。
 
 ## Chat rotation
 
