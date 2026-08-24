@@ -1,15 +1,14 @@
 # nuinuiCAD-specific Agent Skills
 
-nuinuiCAD 固有の Agents custom skill。
-共通 skill は [`../../shared/AGENT-SKILLS.md`](../../shared/AGENT-SKILLS.md) を参照する。
+nuinuiCAD固有のAgents custom skill。共通skillは [`../../shared/AGENT-SKILLS.md`](../../shared/AGENT-SKILLS.md) を参照する。
 
 ## Make DSL Changes Safely
 
 `make-dsl-changes-safely`
 
-nuinuiCAD DSL 変更専用の impact-check skill。
+nuinuiCAD DSL変更専用のimpact-check skill。
 
-DSL 変更時に、変更内容に応じて次の surface を確認する。
+DSL変更時に、変更内容に応じて次のsurfaceを確認する。
 
 - tokenizer / scanner
 - parser / AST
@@ -27,18 +26,13 @@ DSL 変更時に、変更内容に応じて次の surface を確認する。
 - editor integration
 - tests / fixtures
 
-各 surface を次のいずれかに分類する。
+各surfaceを`affected | intentionally unchanged | deferred | not applicable`に分類する。
 
-- affected
-- intentionally unchanged
-- deferred
-- not applicable
+目的は毎回すべて変更することではなく、affected layerが旧仕様のまま残る事故を防ぐこと。
 
-目的は「毎回すべて変更する」ことではなく、parser だけ新仕様になって他の affected layer が旧仕様のまま残る事故を防ぐこと。
+特にsource span、replacement range、`@`、`::`、property access、日本語identifier、relative/absolute offset、stable statement identityを壊さない。
 
-特に source span、replacement range、`@`、`::`、property access、日本語 identifier、relative/absolute offset、stable statement identity を壊さないよう注意する。
-
-後続 Task に割り当てられた DSL surface は先取りしない。
+後続Taskに割り当てたsurfaceを先取りしない。
 
 ## nuinuiCAD Luna MCP-backed Manual E2E
 
@@ -46,7 +40,7 @@ DSL 変更時に、変更内容に応じて次の surface を確認する。
 
 repository-owned skill: `sayosomi/nuinuiCAD/.agents/skills/nuinuicad-luna-mcp-e2e/SKILL.md`
 
-predeclaredされた`Executor: Luna`のobjective Manual E2E unitを、isolated VS Code production host上で実行するためのnuinuiCAD固有skill。
+predeclaredされた`Executor: Luna`のObjective Manual E2E unitを、fixed `e2e` laneのisolated VS Code production host上で実行するためのskill。
 
 実行モデル:
 
@@ -55,51 +49,59 @@ Playwright/CDP = deterministic VS Code UI operation / DOM-accessibility observat
 nuinuiCAD MCP = exact-current structured product state / evidence
 Computer Use = required GUI / pixel-only gapだけのbounded fallback
 Luna = operate -> observe -> compare with predeclared oracle -> record evidence
-Human = Sol HighとLuna session間のmanual prompt/result copy-paste transport
+Human = transport or Human-judgment executor when required
 ```
 
-このHuman transportは`Judgment: Human`でも`Executor: Human`でもない。自動ChatGPT↔Luna session relayを導入・要求しない。
-
-このskillはexecution procedureを提供するが、authorityを置き換えない。
+このskillはexecution procedureを提供するがauthorityを置き換えない。
 
 - classification / executor / PASS-FAIL-BLOCKED: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
-- isolated VS Code host setup: [`VS-CODE-E2E.md`](./VS-CODE-E2E.md)
-- Luna prompt / tested-state / evidence / retry / pitfall / result handling: [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md)
-- current fixture / action / oracle / acceptance: current Linear IssueのManual E2E plan
+- fixed checkout / lane: [`CHECKOUTS.md`](./CHECKOUTS.md)
+- isolated VS Code host: [`VS-CODE-E2E.md`](./VS-CODE-E2E.md)
+- Luna prompt / tested-state / evidence / retry: [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md)
+- current fixture / oracle: current Linear Issue Manual E2E plan
 
-Lunaへimplementation fix、root-cause investigation、test-plan redesign、missing oracleの発明、Human judgmentをさせない。
+LunaへManual E2E operator roleの中でimplementation fix、root-cause redesign、test-plan redesign、missing oracleの発明、Human judgmentをさせない。
 
-result受領後のreusable lesson判定はSol Highが行う。runが再利用可能なoperation / evidence lessonを示した場合だけ、責務に応じてskill / `LUNA-E2E-PLAYBOOK.md` / 他のauthorityを更新する。一般化可能なMCP observation deficiencyは、恒久的なvisual inferenceへ逃がさずfocused MCP follow-up workとして扱う。何も再利用可能なlessonがなければ更新しない。
+## Implementation skill selection
 
-## Skill selection
+nuinuiCADのrepository implementation / blocking fixはLuna xhighが実行する。ChatGPTはcurrent Taskに必要なskillを選び、implementation promptへconstraint / procedureとして反映する。
 
-Implementation / blocking-fix / blocking reviewのskill選択はexecution routeに依存しない。standard Coding Agent routeだけでなく、web ChatGPTがdirect GitHub + CIで実装する`only_chatgpt` sliceにも同じselection ruleを適用する。
-
-`only_chatgpt`ではChatGPT自身がcurrent Taskに必要なShared / nuinuiCAD skillを読み、そのconstraint / impact check / review procedureを直接適用する。Coding Agentへpromptを渡さないことを理由にskillを省略しない。
-
-nuinuiCAD の一般的な Task 実装:
+一般的なimplementation:
 
 - `keep-task-scope-tight`
 - `reuse-existing-architecture`
-- 必要なら `keep-code-context-small`
+- 必要なら`keep-code-context-small`
 
-DSL 変更:
+DSL変更:
 
-- 上記に加えて `make-dsl-changes-safely`
+- 上記に加えて`make-dsl-changes-safely`
 
-required gate failure 修正:
+required gate failure修正:
 
 - `fix-precommit-errors`
 
-実装後 blocking review:
+implementation後blocking review:
 
-- `review-against-contract`
+- ChatGPTが`review-against-contract`を適用する。
 
-`Executor: Luna` のnuinuiCAD Manual E2E execution:
+## Lane-aware use
+
+skill selectionは`main` / `sub`のどちらでも同じ。
+
+- laneのBase checkpointは [`CHECKOUTS.md`](./CHECKOUTS.md) / [`CODING-AGENT.md`](./CODING-AGENT.md) に従う;
+- skillを理由にactive slice途中でlatest mainをmerge / rebaseしない;
+- skillがscope expansionを要求しそうならcurrent workをcheckpointし、ChatGPTへ戻す;
+- `e2e` laneでimplementation skillを使わない。
+
+## Manual E2E selection
+
+`Executor: Luna`のVS Code Manual E2E:
 
 - `nuinuicad-luna-mcp-e2e`
-- `MANUAL-E2E.md`に従い`Judgment: Objective`としてpredeclared oracleが確定しているunitだけを対象にする
-- VS Code production-host unitでは`VS-CODE-E2E.md`と`LUNA-E2E-PLAYBOOK.md`のcurrent ruleをSol High promptへ反映する
-- `Judgment: Human` / `Executor: Human` unit、implementation、blocking-fix、open-ended investigationには選択しない
+- `MANUAL-E2E.md`
+- `VS-CODE-E2E.md`
+- `LUNA-E2E-PLAYBOOK.md`
 
-すべての skill は parent task、repository の `AGENTS.md`、repository 固有の plan / instructions を上書きしない。
+`Judgment: Human` / `Executor: Human` unit、implementation、blocking-fix、open-ended investigationにはE2E skillを使わない。
+
+すべてのskillはparent task、repository `AGENTS.md`、current Linear contract、fixed lane policyを上書きしない。
