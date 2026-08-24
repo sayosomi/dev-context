@@ -4,6 +4,7 @@
 
 Linear Issueのstatus、readiness、execution-lane checkpoint、labels、Done freshnessを定義する。
 
+- chat roles / Issue Authoring / rotation: [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)
 - lane capacity / occupancy: [`CHECKOUTS.md`](./CHECKOUTS.md)
 - Manual E2E semantics: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
 - contract judgment: [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)
@@ -52,6 +53,18 @@ sub lane:  max 1 In Progress implementation track
 例外はimplementationではないResearch等が同じstatusを使う場合だが、そのWorkを3つ目のrepository implementation trackとして扱ってはならない。
 
 両implementation laneがBUSYなら、新しいReady implementation Issueは`Todo`に置く。3つ目のbranch / worktree / direct-GitHub executionを作らない。
+
+## Issue Authoring is not implementation occupancy
+
+[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) のIssue Authoringは、Issue作成 / Bug調査 / product相談 / contract策定 / acceptance整理 / dependency整理等のWork-management activityであり、repository implementation laneのoccupancyではない。
+
+- Issue Authoring chatの同時実行数に上限を設けない。
+- Authoringだけを理由に`In Progress`へ進めない。
+- Authoring chatは`main` / `sub` / `e2e` laneをclaimしない。
+- `Contract: Ready`かつrequired Manual E2E plan / blocker条件も満たしたimplementation待ちWorkは原則`Todo`。
+- implementation開始は必ず後述のIn Progress startup gateで実lane assignmentと同時に行う。
+
+複数Authoring chatが同じIssueを編集し得るため、Linear write前にはcurrent Issue / relevant commentsを再取得し、別chatのcurrent変更を消さない。競合するproduct decision / scope / acceptanceはlast-write-winsで上書きしない。詳細は`CHAT-WORKFLOW.md`。
 
 ## Backlog
 
@@ -125,6 +138,8 @@ Taskをpauseするとき、current workがremoteへ保存済みでsafeにlane re
 - local laneを [`CHECKOUTS.md`](./CHECKOUTS.md) に従ってrelease。
 
 Issueが未完了でもlaneを保持し続ける必要はない。
+
+**chat session rotation alone is not a Task pause.** 同じWorkを継続するためにchatだけを交換する場合、rotationだけを理由にstatus、lane ownership、Base checkpoint、branch、current sliceを変更しない。chat-onlyで外部stateから復元できない重要情報だけ必要に応じてcheckpointする。詳細は`CHAT-WORKFLOW.md`。
 
 ## In Review
 
@@ -213,6 +228,8 @@ current parallel stateは次だけで表現する。
 - `sub` lane current Issue;
 - `e2e` lane current tested Issue;
 - each IssueのBase checkpoint / branch / pushed head。
+
+Issue Authoring chatはこのexecution parallel stateへ数えない。
 
 semantic interferenceを発見した場合はdependent laneをsafe checkpointで止め、prerequisite merge後のintegration / restart checkpointで解決する。
 
