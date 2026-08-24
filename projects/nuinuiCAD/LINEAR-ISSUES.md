@@ -35,9 +35,11 @@ statusは次の順で決める。
 1. completion gateを満たす → `Done`。
 2. implementation merge済みでrequired Manual E2Eのみ残る → `In Review`。
 3. `main` / `sub` laneでcurrent implementation / fixを実行中 → `In Progress`。
-4. 上記でないunstarted / checkpoint-pause work → readinessにより`Todo`または`Backlog`。
+4. 上記でないunstarted / checkpoint-pause / next-slice待ちWork → readinessにより`Todo`または`Backlog`。
 
 Readyであることだけを理由にIn Progressへしない。実lane assignmentとexecution開始が必要。
+
+[`CHECKOUTS.md`](./CHECKOUTS.md) の`RELEASE-PENDING`はphysical lane cleanup stateであり、current implementation executionではない。local checkoutがTask branchに残っている、latest `origin/main`へのfast-forwardがまだ、等のdeterministic cleanupだけを理由にIssueを`In Progress`へ保持しない。
 
 ## Fixed implementation capacity
 
@@ -52,7 +54,7 @@ sub lane:  max 1 In Progress implementation track
 
 例外はimplementationではないResearch等が同じstatusを使う場合だが、そのWorkを3つ目のrepository implementation trackとして扱ってはならない。
 
-両implementation laneがBUSYなら、新しいReady implementation Issueは`Todo`に置く。3つ目のbranch / worktree / direct-GitHub executionを作らない。
+両implementation laneがBUSYまたは新規割当不能なら、新しいReady implementation Issueは`Todo`に置く。3つ目のbranch / worktree / direct-GitHub executionを作らない。`RELEASE-PENDING` laneもcleanup完了まで新Issueへ割り当てない。
 
 ## Issue Authoring is not implementation occupancy
 
@@ -84,9 +86,11 @@ implementation開始可能なReady Queue。
 - `Contract: Ready`;
 - Manual E2E plan確定済みまたは`Not Required`;
 - unfinished blockerなし;
-- 現在implementation laneを占有していない。
+- 現在implementation laneでexecutionを行っていない。
 
 previous remote branch / PRが存在しても、safe checkpointでlaneをreleaseして再開待ちならTodoにしてよい。その場合はIssue checkpointからremote stateを一意に復元できること。
+
+intermediate merge後にremaining acceptanceがあり、次sliceをまだ実際に開始していない場合も、ReadyならTodoへ同期する。local laneが`RELEASE-PENDING`であることはTodoへのtransitionを妨げない。
 
 ## In Progress startup gate
 
@@ -139,6 +143,8 @@ Taskをpauseするとき、current workがremoteへ保存済みでsafeにlane re
 
 Issueが未完了でもlaneを保持し続ける必要はない。
 
+local checkout cleanupが即時完了せずlaneが`RELEASE-PENDING`になっても、Issue statusは上記Work stateへ先に同期してよい。`RELEASE-PENDING`は新Taskのlane assignmentを止めるが、前Issueのimplementation executionを継続扱いにはしない。
+
 **chat session rotation alone is not a Task pause.** 同じWorkを継続するためにchatだけを交換する場合、rotationだけを理由にstatus、lane ownership、Base checkpoint、branch、current sliceを変更しない。chat-onlyで外部stateから復元できない重要情報だけ必要に応じてcheckpointする。詳細は`CHAT-WORKFLOW.md`。
 
 ## In Review
@@ -158,6 +164,8 @@ In Review + manual_e2e_only + Manual E2E: Deferred
 PR open / CI / blocking review中をIn Reviewとは呼ばない。
 
 Manual E2Eは`e2e` laneだけを使う。実行開始時はtested commit / stable refを固定し、E2E markerとIssue Commentを同期する。
+
+merge済みでrequired Manual E2Eだけが残るなら、implementation laneが`RELEASE-PENDING`でもIn Reviewへ進める。physical cleanup完了をIn Review transitionのgateにしない。
 
 ## Manual E2E failure
 
@@ -182,6 +190,8 @@ E2E failureだからという理由で`e2e` checkoutをimplementation laneへ変
 - Done-before Ready contract freshness check完了。
 
 `Deferred` / `Running` / `Failed`のままDoneにしない。
+
+local implementation laneが`RELEASE-PENDING`であること自体はDone blockerではない。DoneはWork completionを表し、lane cleanupは`CHECKOUTS.md`のcapacity stateとして別に完了させる。
 
 ## Done-before Ready contract freshness check
 
@@ -224,10 +234,10 @@ Done / archived historical Issueからの一括除去は必要ない。履歴上
 
 current parallel stateは次だけで表現する。
 
-- `main` lane current Issue;
-- `sub` lane current Issue;
+- `main` lane current Issueまたは`RELEASE-PENDING` cleanup state;
+- `sub` lane current Issueまたは`RELEASE-PENDING` cleanup state;
 - `e2e` lane current tested Issue;
-- each IssueのBase checkpoint / branch / pushed head。
+- each active IssueのBase checkpoint / branch / pushed head。
 
 Issue Authoring chatはこのexecution parallel stateへ数えない。
 
@@ -263,10 +273,10 @@ tracking parentをimplementation laneへ割り当てない。
 2. Manual E2E planが確定した;
 3. blocker relationが変わった;
 4. blockerがDoneになった;
-5. In Progress laneをreleaseした;
+5. In Progress executionが終了した / laneをrelease checkpointへ進めた;
 6. IssueをDoneへ進める。
 
-Ready条件を満たすimplementation待ちWorkはTodo。lane不足だけを理由にBacklogへ落とさない。
+Ready条件を満たすimplementation待ちWorkはTodo。lane不足や`RELEASE-PENDING` cleanupだけを理由にBacklogへ落とさない。
 
 ## Idea Inbox
 
