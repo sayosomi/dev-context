@@ -6,7 +6,22 @@ nuinuiCADのimplementation / blocking-fix executionを定義する。
 
 Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従う。
 
-Project-specific overrideとして、nuinuiCADのrepository implementation / blocking fixは**Codex Luna xhigh**を標準かつ唯一のimplementation executorとする。web ChatGPTがdirect GitHub editingでimplementationを代替するexecution routeは持たない。
+Project-specific overrideとして、nuinuiCADの**source-code implementation / blocking fix**は**Codex Luna xhigh**を標準かつ唯一のimplementation executorとする。web ChatGPTがdirect GitHub editingでsource-code implementationを代替するexecution routeは持たない。
+
+### Documentation-only direct execution exception
+
+次の条件をすべて満たすdocumentation-only Taskは、Luna xhighを使わずChatGPTがremote repository上で直接実行してよい。
+
+- 変更対象が`docs/**`、repository-owned policy/spec/documentationのようなdocumentation-only fileに限定される;
+- source code、test code、fixtures、build設定、CI、runtime behavior、generated artifactを変更しない;
+- product / UX / architecture contractがすでに確定しており、新しい設計判断を必要としない;
+- latest remote repositoryを確認したうえで、実装事実とdocumentation source of truthの整合を取るだけである;
+- verificationがread-only / focused documentation consistency checkで足り、implementation-side test-debug loopを必要としない;
+- scopeがdocumentation-only sliceからmaterially拡大しない。
+
+この例外ではimplementation lane、Base checkpoint、Luna sessionを要求しない。ChatGPTが編集、必要なfocused verification、blocking review、commit / push / merge、Linear synchronizationまで担当してよい。
+
+途中でsource code / test / generated outputの変更、product / architecture decision、broad implementation-side debuggingが必要になった場合は例外を解除し、通常のLuna xhigh lifecycleへ戻す。
 
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
@@ -26,7 +41,7 @@ ChatGPT owns:
 
 Luna owns:
 
-- current executable sliceの具体的implementation;
+- current executable source-code implementation sliceの具体的implementation;
 - focused / required test execution;
 - implementation-side failure diagnosis and fix within the settled contract;
 - branch commit / push;
@@ -58,32 +73,39 @@ Human terminal assistanceを使う場合、ChatGPTはshared `human-terminal-inst
 - broad local iteration / test-debug loop;
 - merge / rebase conflict resolution;
 - integration checkpointのintegration fix;
-- branch commit / pushを含むimplementation execution。
+- branch commit / pushを含むsource-code implementation execution。
+
+Documentation-only direct execution exceptionに該当するTaskのdocumentation editing / review / mergeはこの一覧のsource-code implementationには含めない。
 
 Default routing:
 
 ```text
 ChatGPT determines the operation
+-> documentation-only exception? YES -> ChatGPT direct remote execution
 -> simple deterministic local operation? YES -> Human terminal assistance
--> NO / implementation work -> Luna xhigh
+-> NO / source-code implementation work -> Luna xhigh
 ```
 
-Humanがterminal commandを実行したことを理由にimplementation ownershipをHumanへ移さない。implementation contract、lane、Base checkpoint、Luna ownershipはそのまま維持する。
+Humanがterminal commandを実行したことを理由にimplementation ownershipをHumanへ移さない。source-code implementation contract、lane、Base checkpoint、Luna ownershipはそのまま維持する。
 
 ## Fixed execution lanes
 
-Implementation executionは [`CHECKOUTS.md`](./CHECKOUTS.md) の2 laneだけを使う。
+Source-code implementation executionは [`CHECKOUTS.md`](./CHECKOUTS.md) の2 laneだけを使う。
 
 - `main`: `/Users/yosomi/Code/nuinuiCAD`
 - `sub`: `/Users/yosomi/Code/nuinuiCAD-sub`
 
-同時implementationは最大2 track。3つ目のimplementation checkout / worktree / cloneを作らない。
+同時source-code implementationは最大2 track。3つ目のimplementation checkout / worktree / cloneを作らない。
 
-Manual E2Eは`/Users/yosomi/Code/nuinuiCAD-e2e`専用で、implementationへ転用しない。
+Manual E2Eは`/Users/yosomi/Code/nuinuiCAD-e2e`専用で、source-code implementationへ転用しない。
+
+Documentation-only direct execution exceptionではこれらのimplementation laneをclaimしない。
 
 ## Base checkpoint semantics
 
-新しいimplementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
+新しいsource-code implementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
+
+Documentation-only direct execution exceptionにはこのBase checkpoint requirementを適用しない。ただし編集対象のlatest remote file SHAはwrite直前に確認する。
 
 Shared Coding Agent Workflowのpre-prompt freshness gateは、nuinuiCADでは次のように適用する。
 
@@ -107,7 +129,7 @@ remote advanceを理由にactive slice途中でbaseをrefreshしない。
 
 ### Integration checkpoint
 
-current sliceの実装とfocused verificationが完了し、remoteへ保存された時点でlatest remote `main`を再確認する。
+current source-code sliceの実装とfocused verificationが完了し、remoteへ保存された時点でlatest remote `main`を再確認する。
 
 必要なintegrationはそのlaneのLunaが行う。
 
@@ -141,7 +163,7 @@ Lunaへrepository全体のarchitecture探索やscope決定を依頼しない。
 
 ## Luna prompt contract
 
-Promptにはcurrent executable sliceだけを書く。
+Promptにはcurrent executable source-code sliceだけを書く。
 
 必須:
 
@@ -230,5 +252,7 @@ current Linear Issueへ最低限記録する。
 - remaining acceptance;
 - current verification / blocker;
 - next safe checkpoint。
+
+Documentation-only direct execution exceptionではlane / Base checkpointは記録せず、代わりに対象file、latest remote file SHA、commit SHA、verification outcome、remaining acceptanceをLinearへ記録する。
 
 次conversationはlatest Project Context、remote repository、Linearから再構成する。
