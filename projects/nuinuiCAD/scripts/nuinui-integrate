@@ -4,7 +4,7 @@
 # Initial version is intentionally narrow: audit task-branch safety and repair
 # EOF blank-line whitespace while preserving semantic changes.
 
-VERSION="1.0.0-trial-promoted"
+VERSION="1.0.0"
 
 usage() {
   cat <<'EOF'
@@ -130,7 +130,6 @@ classify_diff_check() {
     return 0
   fi
 
-  # The supported anomaly is exactly git's EOF blank-line diagnostic.
   if grep -Ev 'new blank line at EOF$' "$output_file" | grep -q .; then
     echo "ESCALATE: unsupported whitespace or diff-check anomaly detected"
     cat "$output_file"
@@ -171,7 +170,6 @@ import sys
 src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
 data = src.read_bytes()
-# Compare semantic content with the deterministic EOF newline normalization.
 normalized = data.rstrip(b"\n") + b"\n"
 dst.write_bytes(normalized)
 PY
