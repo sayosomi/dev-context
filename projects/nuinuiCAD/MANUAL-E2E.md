@@ -125,6 +125,20 @@ Human judgment is an intentional quality gate, not an automation gap.
 
 Do not use Human judgment as a fallback for an incomplete oracle. If product semantics remain ambiguous, return the contract / plan to non-Ready and resolve them first.
 
+## Human execution and screenshot evidence
+
+For `Executor: Human`, the Human may operate the production GUI directly with mouse / keyboard, make the required live visual or interaction judgment, and submit screenshots as evidence or diagnostic context.
+
+Use screenshot evidence efficiently:
+
+- when multiple cases are simultaneously observable in one frame, compose the fixture / viewport so one screenshot covers them together rather than requesting one screenshot per case;
+- do not split otherwise equivalent cases into separate test units or separate screenshots only to increase evidence count;
+- split when a different initial state, lifecycle path, dynamic interaction, mutation / revert boundary, or other materially different execution path makes one-frame judgment unreliable;
+- a static screenshot does not replace a live interaction oracle. For dynamic behavior such as stepping, focus, drag, stale-state cleanup, or transition quality, Human live observation plus a concise result report is sufficient when the declared acceptance does not require persistent visual evidence;
+- request additional screenshots when a failure, ambiguity, or diagnosis benefits from them rather than requiring them mechanically on every normal path.
+
+For `Judgment: Human`, Human PASS / FAIL remains the final quality judgment. ChatGPT may inspect submitted screenshots to confirm objective visible facts, summarize evidence, and help diagnose anomalies, but must not silently replace the required Human aesthetic / experiential judgment with its own screenshot interpretation.
+
 ## Executor selection
 
 Apply after judgment classification and removal of MCP/script-only checks.
@@ -369,7 +383,7 @@ all required units PASS
   ↓
 Manual E2E: Passed
   ↓
-Done-before Ready freshness check
+Done-before Ready contract freshness check
   ↓
 Done
 ```
