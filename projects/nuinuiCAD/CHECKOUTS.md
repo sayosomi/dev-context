@@ -126,11 +126,14 @@ current occupancyはdev-contextへ保存しない。actual local checkout state�
 
 state:
 
-- `FREE`: cleanでlaneのidle state。
-- `BUSY`: current Issue / tested refのownershipを一意に確認できる。
+- `FREE`: cleanでlaneのidle state。新しいexecutionへ割当可能。
+- `BUSY`: current Issue / tested refのownershipを一意に確認でき、executionが現在進行中。
+- `RELEASE-PENDING`: implementation自体はremote保存済みまたはmerge済みで終了しているが、cleanなcheckoutをidle stateへ戻すdeterministic local cleanupだけが残る。新しいIssueへはまだ割り当てない。
 - `BLOCKED / UNKNOWN`: dirty、unexpected HEAD、ownership不明、marker mismatch、missing checkout等。
 
-`BUSY` / `BLOCKED` laneを空けるためにreset / stash / force-switch / unrelated work破棄をしない。
+`BUSY` / `RELEASE-PENDING` / `BLOCKED` laneを空けるためにreset / stash / force-switch / unrelated work破棄をしない。
+
+`RELEASE-PENDING`はWork lifecycle statusではない。前Issueを`In Progress`へ保持する理由にせず、Linear statusはactual implementation / merge / Manual E2E stateに従う。
 
 ## E2E marker
 
@@ -200,6 +203,25 @@ release条件:
 - branch ownershipを失わず安全にidleへ戻せる。
 
 Task完了だけでなく、remote保存済みの明確なpause / handoff checkpointでもreleaseしてよい。
+
+implementation / mergeが終了した時点でlocal checkoutがまだTask branch等に残っている場合、そのlaneは`RELEASE-PENDING`とする。これはimplementation executionの継続ではなく、idleへ戻すdeterministic cleanup待ちである。
+
+#### Post-merge release authority
+
+PR merge後のimplementation lane releaseでは、merge済みtopic branchのremote refが残っていることを要求しない。GitHub設定やmerge操作でtopic branchが削除され、`git fetch --prune`後にremote-tracking refが消えるのは正常系になり得る。
+
+post-merge releaseのauthoritative evidenceは少なくとも:
+
+- local working treeがclean;
+- merge前に保存したexact integration / pushed checkpoint SHAが判明している;
+- current authoritative `origin/main`がそのcheckpoint SHAをancestorとして含む;
+- local idle stateへの移動がnon-destructiveに行える。
+
+この条件を満たすなら、remote topic branch missingだけを理由に`BLOCKED`へしない。
+
+また、merge直後に記録した`main` SHAとの完全一致もrelease条件にしない。別のsafe mergeによって`origin/main`がさらにadvanceしていても、保存済みcheckpointがcurrent `origin/main`に含まれ、local idle branchをsafeにfast-forwardできるならlatest `origin/main`へreleaseしてよい。
+
+`git fetch --prune`で証拠refを消してからそのrefの存在を後段conditionに使わない。Human向けcommand生成はshared `human-terminal-instructions` skillのremote-pruning ruleにも従う。
 
 idle state:
 
