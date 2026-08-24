@@ -207,6 +207,8 @@ Block when any of these applies:
 
 When the conflict is only temporary, keep the Issue Ready and schedule another independent leaf instead. When inspection reveals a real prerequisite, record it according to the Linear workflow.
 
+Temporary interference is scoped to the conflicting current reservation / slice, not to the lifetime or status of the other Issue. Do not wait for the other Issue to reach `Done` unless a real implementation prerequisite exists. When retrying the deferred Issue, re-read the latest repository state and active footprints; if the concrete interference is gone, execution may start even while the other Issue remains `In Progress`.
+
 For `only_chatgpt` work:
 
 - do not use Coding Agent inside the same current `only_chatgpt` slice;
