@@ -1,171 +1,197 @@
 # nuinuiCAD Implementation Coding Agent Policy
 
-nuinuiCADでimplementation / blocking-fixをCoding Agentへ渡すときのproject-specific defaultとresource policy。
+## Purpose
+
+nuinuiCADのimplementation / blocking-fix executionを定義する。
 
 Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従う。
 
-## Default agent
+Project-specific overrideとして、nuinuiCADのrepository implementation / blocking fixは**Codex Luna xhigh**を標準かつ唯一のimplementation executorとする。web ChatGPTがdirect GitHub editingでimplementationを代替するexecution routeは持たない。
 
-ユーザーまたはcurrent Taskが別のagent / reasoning effortを明示しない限り、nuinuiCADのimplementation / blocking-fix Coding Agentは次を既定とする。
+Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
-- agent: Codex Luna
-- reasoning effort: xhigh
+## Role boundary
 
-ユーザーが単に「Coding Agent」「コーディングエージェント」「Lunaに実装させる」と指定し、別model / effortを指定していない場合もこのdefaultを使う。
+ChatGPT owns:
 
-このdefaultはimplementation / blocking-fix roleに対するもの。`only_chatgpt` execution、Manual E2EのJudgment / Executor分類、Human作業へ自動的に適用しない。Manual E2Eで`Executor: Luna`を使う場合は [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) をauthorityとする。
+- latest Project Context / remote repository / Linear stateの取得;
+- repository / architecture / semantic owner調査;
+- product / architecture / implementation contract決定;
+- implementation slicingとsafe checkpoint決定;
+- execution lane選択;
+- Luna prompt生成;
+- blocking review / merge判断;
+- Linear / GitHub management。
 
-## Resource objective
+Luna owns:
 
-Lunaは貴重なimplementation resourceとして扱う。目的はLunaの使用回数を減らすことではなく、**1 runあたりの無駄なtoken / exploration / rerunを減らし、低コストで大量かつ確実に実装を進めること**。
+- current executable sliceの具体的implementation;
+- focused / required test execution;
+- implementation-side failure diagnosis and fix within the settled contract;
+- branch commit / push;
+- integration checkpointで必要なlatest-main integration / conflict resolution / integration fix。
 
-xhighを既定にする理由はimplementation reliabilityを優先するため。コスト削減の第一手段はreasoning effortを下げることではなく、ChatGPT側でworkをimplementation-readyにしてLunaへ渡すcontextと判断負荷を減らすこと。
+Lunaへopen-ended product designやarchitecture選択を委ねない。
 
-## Before Luna run — ChatGPT owns preparation
+## Fixed execution lanes
 
-Lunaへ渡す前に、ChatGPTがcurrent Project Contextとlatest remote repositoryを使って次を完了する。
+Implementation executionは [`CHECKOUTS.md`](./CHECKOUTS.md) の2 laneだけを使う。
 
-- repository / implementation調査
-- architecture / semantic owner / change locationの特定
-- product / architecture / implementation contractの決定
-- implementation slicingとcurrent executable sliceの確定
-- dependency / blocker / expected baseの確認
-- required acceptance / tests / verificationの確定
-- ChatGPTで実行できるwork-management / design / review準備
+- `main`: `/Users/yosomi/Code/nuinuiCAD`
+- `sub`: `/Users/yosomi/Code/nuinuiCAD-sub`
 
-Expected baseのfreshness checkは [`../../shared/GIT-WORKFLOW.md`](../../shared/GIT-WORKFLOW.md) のChatGPT-side handoff freshness checkと [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) のPre-prompt remote freshness gateに従う。
+同時implementationは最大2 track。3つ目のimplementation checkout / worktree / cloneを作らない。
 
-このcheckはLuna promptを作成・提示する**前**に行う。repository調査、contract策定、previous checkpointで確認したremote SHAを、そのままLuna promptのexpected baseへ転記しない。freshness check後のauthoritative remote stateを基準としてpromptを作る。
+Manual E2Eは`/Users/yosomi/Code/nuinuiCAD-e2e`専用で、implementationへ転用しない。
 
-Luna側の`git fetch origin --prune`は、このpre-prompt check後からagent開始までのremote advanceを検出するsecond safety checkとして扱う。ChatGPT-side freshness checkの代替にしない。
+## Base checkpoint semantics
 
-これらをLunaへopen-ended taskとして委ねない。
+新しいimplementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
 
-## Luna receives only executable work
+Shared Coding Agent Workflowのpre-prompt freshness gateは、nuinuiCADでは次のように適用する。
 
-Luna promptにはcurrent executable sliceを完了するために必要な情報だけを渡す。
+### New lane / new slice
 
-必須情報はshared workflowのimplementation prompt contractに従う。加えて次を守る。
+- prompt生成直前にlatest remote `main`を確認する;
+- relevant driftを判断する;
+- current sliceのbaseを確定する;
+- Linearへlane / Base checkpoint / branchをrecordする。
 
-- broad Issue全体ではなく、current safe sliceだけを渡す。
-- future slice、後続integration、未確定designを先取りさせない。
-- repository調査、architecture探索、design比較、scope決定を依頼しない。
-- settled design history、過去チャット、長い背景説明、Issueの全文を必要なく貼らない。
-- shared policyをpromptへ長く再掲しない。current taskで実行に必要なconstraintだけを書く。
-- change owner / required changes / acceptance / verification / Git safety / stop conditionを具体的に書く。
-- agentが自力でcontractを再構築しないと実装できないpromptはimplementation-readyではないため、ChatGPT側で先に不足を解消する。
+### Same active slice continuation
 
-## Stop instead of spending tokens on uncertainty
+active slice中にremote `main`が進んでもroutine merge / rebaseはしない。
 
-Lunaが次に当たった場合、勝手な広域調査・redesign・scope expansionへ進ませない。
+ChatGPTはremote advanceを観測し、次だけ判断する。
 
-- expected remote state mismatch
-- contractから一意に決められないproduct / architecture decision
-- current slice外のowner変更が必要になった
-- unrelated user changes / dirty checkoutで安全に進められない
-- required dependency / prerequisiteが成立していない
+- unrelated / non-invalidating drift → Base checkpointを変えずcurrent slice継続;
+- contract / ownershipをmaterially invalidateするdrift → current workをremoteへ保存し、safe checkpointで停止して再評価。
 
-その場合はblockerを簡潔に返して停止する。ChatGPTが再調査・再分解し、必要ならより狭いnext promptを作る。
+remote advanceを理由にactive slice途中でbaseをrefreshしない。
+
+### Integration checkpoint
+
+current sliceの実装とfocused verificationが完了し、remoteへ保存された時点でlatest remote `main`を再確認する。
+
+必要なintegrationはそのlaneのLunaが行う。
+
+```text
+slice implementation complete
+-> push checkpoint
+-> inspect latest main
+-> Luna merge/rebase/conflict resolution/integration fix
+-> required verification
+-> blocking review
+-> merge
+```
+
+相手implementation laneのunfinished branchを直接取り込まない。必要なdependencyは先にintended baseへmergeされること。
+
+## Before Luna run — ChatGPT preparation
+
+Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repository stateを使って次を確定する。
+
+- current Issue / current slice;
+- selected lane;
+- Base checkpoint SHA;
+- branch;
+- concrete change owner / files / symbols / API boundary;
+- settled acceptance;
+- required verification;
+- explicit non-goals;
+- blocking / stop conditions。
+
+Lunaへrepository全体のarchitecture探索やscope決定を依頼しない。
+
+## Luna prompt contract
+
+Promptにはcurrent executable sliceだけを書く。
+
+必須:
+
+- repository
+- lane checkout path
+- expected current lane branch / HEAD / Base checkpoint
+- current slice / change target
+- concrete required changes
+- required tests / verification
+- commit / push requirement
+- no-mid-slice-main-sync rule
+- blocking conditions
+
+Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
+
+Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は変更せず停止して報告させる。
+
+## Scope control
+
+Lunaが次に当たったら広域探索・redesignへ進ませない。
+
+- settled contractから一意に決められないproduct / architecture decision;
+- current slice外のsemantic owner変更が必要;
+- unrelated user changes;
+- required dependencyが未merge;
+- current implementationがnatural safe boundaryを越えて拡大する。
+
+その場合はcurrent workを安全に保存できるならcheckpointし、ChatGPTが再調査 / re-sliceする。
 
 ## Rerun minimization
 
-失敗runを同じ曖昧promptのまま繰り返さない。
+失敗runを同じ曖昧promptで繰り返さない。
 
-1. Luna result / failure evidenceをChatGPTが読む。
-2. failure classとownerをChatGPTが特定する。
-3. contract / slice / verificationを必要な範囲だけ更新する。
-4. blocking-fixをLunaへ戻す場合は、failure evidenceと具体的fix targetだけを含むnarrow promptを作る。
-
-Lunaへroot-cause investigationとproduct redesignをまとめて委ねない。
-
-## Prompt economy
-
-良いLuna promptは短いこと自体が目的ではない。**実装に必要な情報密度が高く、不要な探索を発生させないこと**を目的とする。
-
-削らないもの:
-
-- current Task固有のacceptance
-- exact base / branch / Git safety
-- concrete change target
-- required verification
-- explicit non-goal / stop conditionのうちimplementation driftを防ぐもの
-
-削るもの:
-
-- decorative formatting
-- conversational filler
-- duplicated rule text
-- settled design history
-- current sliceに無関係なfuture work
-- ChatGPTが既に解決済みの調査過程
+1. ChatGPTがLuna result / failure evidenceを読む。
+2. failure classとownerを特定する。
+3. contract / slice / verificationを必要範囲だけ更新する。
+4. same active sliceのnarrow blocking fixなら同lane / same session reuseを検討する。
+5. new slice / checkpoint後なら原則new Luna session。
 
 ## Luna session selection
 
-Lunaへimplementation / blocking-fix promptを提示するとき、ChatGPTはそのpromptをどのCoding Agent sessionへ渡すかをユーザーへ必ず明示する。
+Default: **New session**。
 
-このsession instructionはLuna自身へのinstructionではなく、人間がどのsessionへpromptを渡すかを決めるためのhuman-facing instructionとする。Luna prompt本文には含めず、promptの外側に表示する。
+Reuse current sessionは次をすべて満たすときだけ。
 
-Defaultは**new Luna session**とする。
+- same lane;
+- same current executable slice;
+- same branch;
+- narrow blocking-fix / direct continuation;
+- retained contextがreconstruction costを明確に下げる。
 
-Existing Luna sessionを再利用するのは、new sessionを開始するよりcurrent Work全体で消費するtokenを減らせるとChatGPTが確信できる場合だけとする。判断が不確実ならnew sessionを選ぶ。
+New sessionを使う典型:
 
-Existing session reuseが適する典型例:
+- new Issue / new slice;
+- integration checkpoint後;
+- execution lane変更;
+- semantic owner / contract変更;
+- major remote drift後;
+- previous sessionにstale / broad explorationが多い。
 
-- same current executable sliceの直後のnarrow blocking-fix;
-- same branch / same implementation contextをそのまま継続する;
-- existing sessionが保持するrelevant contextにより、new sessionで必要になるcontext reconstruction / repeated explanationを明確に減らせる;
-- accumulated stale / irrelevant contextによる追加reasoning costよりcontinuityによるtoken savingの方が明らかに大きい。
-
-次の場合は原則new sessionを使う:
-
-- new implementation slice;
-- safe checkpoint後のnext slice;
-- execution route / semantic owner / contractが変わった;
-- remote advance等によりimplementation contextを大きくrefreshした;
-- previous Luna runがbroad explorationやstale assumptionsを多く含む;
-- existing session reuseとnew sessionのどちらがtoken-efficientか確信できない。
-
-Session reuseはcontinuity自体を目的にしない。判断基準はcurrent Work全体でのexpected token consumptionとする。
-
-ユーザーへpromptを提示するときは、promptの外側に少なくとも次のどちらかを明示する。
+ユーザーへLuna promptを提示するとき、prompt外側に次を明示する。
 
 ```text
-Luna session: New session
+Luna lane: main | sub
+Luna session: New session | Reuse current session
 ```
 
-または:
+Reuse時だけ短い理由を添える。
 
-```text
-Luna session: Reuse current session
-Reason: <why reuse is expected to reduce total token consumption>
-```
+## E2E failure fix
 
-Reuseの場合だけ理由を短く添える。session selection lineやreasonをLuna prompt本文へ混ぜない。
+Manual E2Eでconfirmed implementation failureが出たら、`e2e` checkoutでは修正しない。
+
+ChatGPTがfailureをclassify / sliceし、`FREE`な`main`または`sub`へfixを割り当て、Lunaが実装する。fix merge後、new exact tested commitで`e2e`へ戻す。
 
 ## Cross-chat continuity
 
-nuinuiCADのimplementation Taskを別ChatGPT conversationへ継続する場合、別途長いhandoff文を書くことをdefaultにしない。
+別ChatGPT conversationへ継続するために長いhandoff proseを標準化しない。
 
-current Task固有で次のconversationにも必要な確定事項は、通常はcurrent Linear Issueへcheckpointとして記録する。既存のrule / source-of-truth / repositoryから再取得できる情報はLinearへ重複保存しない。
+current Linear Issueへ最低限記録する。
 
-Linearへ残す対象は、たとえば次のようなcurrent-state差分。
+- lane;
+- Base checkpoint;
+- branch / PR / pushed head;
+- completed acceptance;
+- remaining acceptance;
+- current verification / blocker;
+- next safe checkpoint。
 
-- completed acceptance / remaining acceptance
-- current branch / PR / tested headなど、継続に必要なexecution state
-- current blocker / verification result
-- next safe slice / next execution route / intended base
-- chat内で確定し、まだ他のdurable ownerに存在しないTask固有decision
-
-新しいconversationはhandoff proseや過去チャットをsource of truthにせず、latest Project Context、latest remote repository、current Linear Issue / Commentを再取得して再開する。
-
-ユーザーが明示的に「引き継ぎを書いて」と求めた場合でも、rule repoにある一般ruleを再掲せず、Linearやrepositoryから一意に復元できないcurrent Task固有事項だけを短くまとめる。
-
-## Re-evaluation boundary
-
-same Issueを複数sliceで進める場合、各safe checkpointで次のsliceを再分類する。
-
-- direct GitHub + CI向きなら`only_chatgpt`
-- local / integration-heavy implementationならLuna xhigh
-- product / architecture判断が再発したらChatGPTへ戻す
-
-一度Luna routeを選んだことを理由に、Issueの残り全体をLunaへ渡し続けない。
+次conversationはlatest Project Context、remote repository、Linearから再構成する。
