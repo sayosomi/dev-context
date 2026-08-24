@@ -21,7 +21,7 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 
 | Topic | Owner |
 | --- | --- |
-| checkout / persistent sub worktree | [Checkout / worktree policy](./CHECKOUTS.md) |
+| checkout / worktree slots / local occupancy | [Checkout / worktree policy](./CHECKOUTS.md) |
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | implementation slicing / sequential PR / execution checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
@@ -48,8 +48,9 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 
 標準配置だけここに保持する。運用ruleは [`CHECKOUTS.md`](./CHECKOUTS.md) がauthority。
 
-- primary: `/Users/yosomi/Code/nuinuiCAD`
-- persistent sub: `/Users/yosomi/Code/nuinuiCAD-sub`
+- primary implementation slot: `/Users/yosomi/Code/nuinuiCAD`
+- secondary implementation slot: `/Users/yosomi/Code/nuinuiCAD-sub`
+- Manual E2E slot: `/Users/yosomi/Code/nuinuiCAD-e2e`
 
 ## Repository-owned sources of truth
 
