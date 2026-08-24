@@ -20,7 +20,24 @@ Repositoryのdurable engineering ruleはcurrent [`AGENTS.md`](https://github.com
 
 - current repository `AGENTS.md` が許可するPalette scopeから1つを明示する。
 - allowed scope listをこのdev-context文書へ複製しない。repository側でsurface taxonomyが変わった場合はcurrent `AGENTS.md`を読む。
-- Palette visibilityはsurface relevanceを表す。selection、caret、semantic target、drawable availability等のtransient stateで細かく出し分ける設計にしない。
+- `menus.commandPalette[].when` はbroad surface relevanceを表す。selection、caret、semantic target、drawable availability等のtransient target stateをここへ詰め込まない。
+
+### Target availability
+
+Command Paletteへ出すcommandは、Palette scopeとは別にtarget availabilityを明示する。
+
+- `Surface-only`: current surface自体でoperationを開始でき、pre-existing user targetを必要としない。target-based `contributes.commands[].enablement`を追加しない。
+- `Target-contextual`: operation開始前にcurrent Source / Canvas等のuser targetが必要。canonical current ownerが少なくとも1つのoperation targetを証明できるときだけ、`contributes.commands[].enablement`でcoarse target availabilityを投影する。
+
+Target-contextual commandではcontractに最低限、次を明示する。
+
+- coarse target availabilityとして何を要求するか;
+- target / selection semanticsのcanonical ownerは何か;
+- availability projectionがそのownerを再利用し、Palette専用のparser / resolver / selection model / business ruleを作らないこと;
+- ownerがunavailable、stale、ambiguous、またはtargetを証明できない場合はfail closedでunavailableにすること;
+- `enablement`はfull operation successを予測するoracleではなく、command executionがexact current stateを再解決・再検証してauthoritativeに成否を決めること。
+
+planner / rewrite success、cross-target legality、later user input、stale race、mutation / apply safety等、valid targetの存在より深い条件は原則としてexecution-time validationに残す。
 
 ### Context menu
 
