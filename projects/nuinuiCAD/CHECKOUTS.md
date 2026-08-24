@@ -46,6 +46,32 @@ Human向けterminal instructionを生成する場合はshared `human-terminal-in
 - precondition mismatchでは`BLOCKED:`等で具体的理由を表示して停止する;
 - current directoryや以前のshell変数へ暗黙依存しない。
 
+### Mandatory preflight handoff rule
+
+implementation start / resume等でmandatory 3-lane preflightが必要なのに、ChatGPT側からactual local checkout stateを直接確認できない場合、`preflightが必要`、`lane状態がblocker`、`audit結果待ち`等とだけ述べて停止してはならない。
+
+その応答内で、Humanがそのままcopy/paste実行できる**完全なread-only 3-lane audit block**を提示する。
+
+そのauditは少なくとも`main` / `sub` / `e2e`の全3 laneについて次を一度に確認できること。
+
+- checkout path存在;
+- branch名またはdetached HEAD;
+- actual HEAD SHA;
+- `git status --porcelain`相当のcleanliness;
+- `git worktree list`からのcurrent worktree state;
+- implementation laneでcurrent branch / stateから読めるIssue ownership情報;
+- `e2e` laneのmarker有無と、存在する場合は内容。
+
+handoff生成時の追加原則:
+
+- path、Issue key、commit SHA等、ChatGPTが確定できる値をHumanに手入力・置換させない。
+- auditはread-onlyに限定し、`fetch`、checkout、switch、reset、stash、clean、marker作成/削除等のmutationを混ぜない。
+- 実際には提示していないcommandを`上のaudit`、`先ほどのpreflight`等として参照しない。
+- command生成自体を妨げるconcrete blockerがある場合だけ`BLOCKED`とし、その理由と次に必要なactionを明示する。
+- Humanからaudit出力が返ったら、それをfresh evidenceとしてlane stateを判定し、結果がまだfreshでmaterial state changeのsignalがない限り同じpreflightを機械的に要求し直さない。
+
+このruleはlane safety checkを省略するものではなく、**必要なcheckをHumanへ依頼するときのhandoffを不完全なまま終わらせない**ためのruleである。
+
 Humanへ任せないもの:
 
 - product code implementation / blocking fix;
