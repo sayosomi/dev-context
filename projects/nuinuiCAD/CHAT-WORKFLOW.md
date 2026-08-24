@@ -80,6 +80,26 @@ Implementation chatを新しく作っただけではlaneをclaimしない。実�
 
 repository implementation / blocking fixは [`CODING-AGENT.md`](./CODING-AGENT.md) に従いLuna xhighが担当する。
 
+#### Implementation start / resume completion rule
+
+Humanがimplementation Issueについて`開始` / `再開` / `続ける` / `進める`等を指示した場合、ChatGPTはremote / Linear / policyの再確認やblocker説明だけで停止しない。
+
+その応答は、次のどちらかに到達して初めてstart / resume handoffとして完了する。
+
+1. ChatGPT側で次のexecutionを実際に開始できる状態まで進み、必要なlane assignment / checkpoint / Luna handoffを開始する。
+2. Human actionが必要なら、Humanが**その応答から直ちに実行できる最初の完全なhandoff**を同じ応答内に提示する。
+
+Human action待ちになる場合の原則:
+
+- `Xの出力待ち`、`preflight結果待ち`、`上のaudit結果待ち`等とだけ述べて停止しない。
+- そのXを取得するためのcommand / instructionが必要なら、同じ応答内に完全な形で提示する。
+- 実際には提示していないcommand / blockを`上のcommand`、`先ほどのaudit`等として参照しない。
+- concrete blockerを報告するときは、blockerの説明と**解除するための次のaction**をセットで出す。
+- local lane evidence不足が唯一のblockerなら、[`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflight handoff ruleに従い、その場で最初の実行可能なread-only handoffまで出す。
+- Humanが必要なfresh evidenceをすでに現在の会話で提示している場合は、同じ取得手順を機械的に要求し直さない。
+
+product / UX decision、approval-gated dev-context write、unsafe / destructive unknown-state recoveryなど、Human判断そのものが必要なboundaryはこのruleで自動決定しない。その場合も「何を判断 / 実行すれば先へ進めるか」を具体化して返す。
+
 ### E2E chat
 
 required Manual E2Eを実行するchat。
