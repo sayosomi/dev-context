@@ -33,6 +33,20 @@ Git remote/local同期確認、working tree確認、指定fileの確認はarchit
 
 Git safety / remote-state preflightは [`GIT-WORKFLOW.md`](./GIT-WORKFLOW.md) に従う。
 
+## Pre-prompt remote freshness gate
+
+Implementation Coding Agent向けpromptを作成・提示する**前**に、ChatGPTは [`GIT-WORKFLOW.md`](./GIT-WORKFLOW.md) のChatGPT-side handoff freshness checkを実行する。
+
+repository調査、contract策定、previous checkpoint、過去チャットで取得したremote SHAを、そのままimplementation promptのexpected baseへ転記しない。promptに書くexpected base / remote stateは、このpre-prompt checkで再取得したauthoritative remote stateから決める。
+
+preparation中にauthoritative remote stateがadvanceしていた場合:
+
+- intervening changesがcurrent Taskのcontract / semantic owner / slicingへ影響するか、promptを書く前にChatGPTが判断する;
+- unrelated changeだけでcontractが維持できる場合は、expected baseを新しいremote stateへ更新してからpromptを作る;
+- relevant changeまたは影響が一意に判断できない場合は、prompt生成を止めてcontract / sliceを再評価する。
+
+このgateを通過してからimplementation promptを作成・提示する。Coding Agent側の`git fetch origin --prune`は、このcheck後からagent開始までのraceを検出するsecond safety checkであり、ChatGPT-side pre-prompt checkの代替ではない。
+
 ## Implementation prompt
 
 current implementation Taskの実行に必要な情報だけを書く。
@@ -77,10 +91,11 @@ Manual E2Eではproject-specific Manual E2E authority / playbookをrole authorit
 新規開発Taskでwork-management Issueの新規作成が必要でも、Issue作成をimplementation Coding Agent開始の前提にしない。
 
 1. remote state確認、existing Issue / Spec検索、repository調査を行い、implementation contractを確定する。
-2. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
-3. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
-4. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
-5. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
+2. `Pre-prompt remote freshness gate`を通過する。
+3. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
+4. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
+5. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
+6. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
 
 existing Issue / Specのreadがcontract確定に必要なら先に行う。後回しにするのは、contract確定後の新規Issue createやstatus update等、Coding Agent開始を待たせる必要のないmanagement action。
 
