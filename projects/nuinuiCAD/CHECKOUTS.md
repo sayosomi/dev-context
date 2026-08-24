@@ -1,42 +1,84 @@
-# nuinuiCAD checkout / worktree policy
+# nuinuiCAD execution lane / checkout policy
 
 ## Purpose
 
-nuinuiCAD固有のlocal checkout / worktree運用を定義する。
+nuinuiCADのlocal execution capacityを、常設3 checkoutに固定して管理する。
 
-Shared ruleは [`shared/DEVELOPMENT.md`](../../shared/DEVELOPMENT.md) を基本とし、この文書はnuinuiCAD固有の例外だけを持つ。
+この3 checkoutは単なる再利用候補ではなく、**存在を許可するexecution laneそのもの**である。Issue数、Ready数、worker数を理由に追加worktree / clone / checkoutを作らない。
 
-このpolicyのworktree capacity / reuse ruleは、**localでCoding Agentまたはlocal executionを行うTask**に適用する。direct GitHub + CIで進める`only_chatgpt` Issueはlocal worktreeを占有しないため、このcapacity制約の対象外。`only_chatgpt`のparallel可否は [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) のinterference gateをauthorityとする。
+## Fixed lanes
 
-## Standard worktree slots
+| Lane | Checkout | Role |
+| --- | --- | --- |
+| `main` | `/Users/yosomi/Code/nuinuiCAD` | Luna implementation / blocking fix / implementation-side diagnosis |
+| `sub` | `/Users/yosomi/Code/nuinuiCAD-sub` | Luna implementation / blocking fix / implementation-side diagnosis |
+| `e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Manual E2E only |
 
-通常運用では次の**常設3スロット**を基本とする。
+`main` laneという呼称はGit branch `main`とは別概念。`main` / `sub` implementation laneはそれぞれTask branchをcheckoutしてよい。
 
-- primary implementation slot: `/Users/yosomi/Code/nuinuiCAD`
-- secondary implementation slot: `/Users/yosomi/Code/nuinuiCAD-sub`
-- Manual E2E slot: `/Users/yosomi/Code/nuinuiCAD-e2e`
+Hard limits:
 
-primaryとsecondaryはlocal implementation用、E2E slotはManual E2E専用とする。Issueごとにworktreeを増やすのではなく、まずこの3スロットを安全に再利用する。
+- implementationは同時に最大2 track。`main`と`sub`を各1 trackだけ使う。
+- Manual E2Eは同時に最大1 track。`e2e`だけを使う。
+- 4つ目のworktree / clone / CI-repro checkoutを作らない。
+- `e2e`をimplementationへ転用しない。
+- `main` / `sub`が両方BUSYなら、新しいimplementationは開始しない。
 
-worktree総数に固定numeric limitは設けないが、追加worktreeはstandard slotsでは安全に実行できない明確な理由がある場合だけ作る。
+## Lane isolation rule
+
+implementation laneはTask / current implementation slice開始時に**Base checkpoint SHA**を固定する。
+
+active sliceの途中では、次を行わない。
+
+- remote `main` advanceのmerge / rebase / cherry-pick;
+- もう一方のimplementation laneのunfinished change取り込み;
+- unrelated PR branchの取り込み;
+- 「最新にしておく」ことだけを目的としたbase refresh。
+
+remote `main`が進んだ事実は観測してよい。contract / ownershipを無効化する重大な変更が見つかった場合は、現在の変更を安全に保存してcheckpointで停止する。**途中同期して継続することはしない。**
+
+## Integration checkpoint
+
+他line / latest `main`の変更を取り込めるのは、current sliceが明確なintegration checkpointへ到達したときだけ。
+
+典型的には:
+
+1. current sliceの実装とfocused verificationを完了する。
+2. branchへcommit / pushし、現在のstateをremoteに保存する。
+3. current laneのBase checkpoint以降にremote `main`へ入ったchangeを確認する。
+4. Lunaが必要なmerge / rebase / conflict resolution / integration fixをそのlaneで行う。
+5. integration後のrequired verificationを行う。
+6. blocking review / merge gateへ進む。
+
+integration checkpoint前に相手laneの進行中branchへ依存しない。必要なdependencyがあるなら、依存先がmergeされるまでcurrent sliceをcheckpointで止める。
 
 ## Occupancy model
 
-current occupancyは`dev-context`へ保存しない。新しいlocal Taskを始めるたびにactual local checkout stateを確認して判断する。
+current occupancyはdev-contextへ保存しない。actual local checkout stateとLinear checkpointから判断する。
 
-implementation slotのownershipは追加lease fileを使わず、current branch / HEAD / dirty stateから判断する。
+新しいlocal executionを始める前に3 laneすべてについて最低限確認する。
 
-- Task branchをcheckoutしており、そのbranch名からLinear Issue key（例: `SAY-123`）を一意に読める場合、そのIssueがそのslotを使用中と判断する。
-- slot固有のidle stateにありcleanなら`FREE`。
-- dirty、unexpected branch / HEAD、Issue ownershipを一意に判断できない、またはcurrent Task contextとactual stateが食い違う場合は`BLOCKED / UNKNOWN`。
-- cleanであることだけを理由に、Task branch上のimplementation slotを`FREE`と判断しない。
+- path存在
+- branch / detached HEAD
+- HEAD SHA
+- `git status --porcelain`
+- implementation laneならbranchから読めるIssue key
+- e2e laneならtested Issue / exact ref marker
 
-Manual E2E slotは通常detached HEADで使うため、branch名だけではIssue ownershipを表せない。E2E実行中だけGit local metadataに最小markerを持つ。
+state:
 
-marker path:
+- `FREE`: cleanでlaneのidle state。
+- `BUSY`: current Issue / tested refのownershipを一意に確認できる。
+- `BLOCKED / UNKNOWN`: dirty、unexpected HEAD、ownership不明、marker mismatch、missing checkout等。
+
+`BUSY` / `BLOCKED` laneを空けるためにreset / stash / force-switch / unrelated work破棄をしない。
+
+## E2E marker
+
+`e2e` laneはdetached HEADを使えるため、実行中だけGit local metadataへmarkerを持つ。
 
 ```bash
-$(git -C <checkout> rev-parse --git-dir)/nuinui-slot
+$(git -C /Users/yosomi/Code/nuinuiCAD-e2e rev-parse --git-dir)/nuinui-slot
 ```
 
 format:
@@ -46,118 +88,85 @@ issue=SAY-123
 ref=<exact tested commit or stable ref>
 ```
 
-このmarkerはrepository working treeへ置かない。Manual E2E終了後、checkoutを安全にidle stateへ戻した最後に削除する。
+markerはworking treeへ置かない。E2E releaseの最後に削除する。
 
-- E2E markerが存在し、actual detached HEAD / tested refと整合する場合は`BUSY`。
-- markerとactual stateが食い違う場合は`BLOCKED / UNKNOWN`。
-- E2E markerだけ先に削除して見かけ上`FREE`にしない。
+## Lane start
 
-## Mandatory slot preflight
+### main / sub implementation
 
-新しいlocal implementationまたはManual E2Eを始める前に、**branch / HEADを変更する前にstandard 3 slotsすべてを確認する**。
+1. mandatory 3-lane preflightを行う。
+2. `FREE`なimplementation laneを選ぶ。
+3. `git fetch origin --prune`でremote stateを確認する。
+4. start時点のintended baseを確定し、Base checkpoint SHAとして記録する。
+5. Task branchを作成 / checkoutする。
+6. Linearへlane / Base checkpoint / branch / current sliceをcheckpointする。
+7. 以降はintegration checkpointまでbaseを固定する。
 
-最低限、各slotについて次を確認する。
+新しいTask開始時点で`main`と`sub`が両方FREEなら通常`main`を優先する。`main`がBUSYなら`sub`を使う。並列化自体を目的にTaskを増やさない。
 
-- checkout pathが存在するか
-- current branchまたはdetached HEAD
-- current HEAD commit
-- `git status --porcelain`がcleanか
-- branch名から読めるIssue key、またはE2E markerの`issue` / `ref`
-- intended base / tested refと両立するか
+### e2e
 
-開始前のreportは少なくとも次の形でIssue ownershipとavailabilityを明示する。
+1. `e2e`がFREEであることを確認する。
+2. exact tested commit / stable refを決める。
+3. detached checkoutし、actual HEADを確認する。
+4. markerへIssue / refを書く。
+5. Manual E2Eをその固定stateで実行する。
+
+E2E中にremote `main`が進んでもtested stateを途中更新しない。
+
+## E2E failure
+
+confirmed product implementation failureが出ても`e2e` laneでは修正しない。
 
 ```text
-slot      issue     ref/branch                     clean   state
-primary   SAY-123   sayosomi/say-123-...           yes     BUSY
-sub       -         detached origin/main           yes     FREE
-e2e       SAY-122   <tested commit>                yes     BUSY
+e2e FAIL
+-> failure classification / fix contract
+-> FREEな main または sub implementation lane
+-> Luna fix / verification / merge
+-> new exact tested commit
+-> e2e laneでaffected unitをrerun
 ```
 
-state判定:
+両implementation laneがBUSYならfixは開始可能なcheckpointまで待つ。E2E laneを4つ目の実装lineにしない。
 
-- `FREE`: cleanで、slot固有のidle stateにあり、E2Eならmarkerもない。
-- `BUSY`: implementationではTask branchからIssue ownershipを一意に判断できる。E2Eではmarkerとactual tested stateが整合する。
-- `BLOCKED / UNKNOWN`: dirty、unexpected branch / HEAD、marker mismatch、missing checkout、またはownershipを安全に判断できない。
+## Lane release
 
-**新Taskは`FREE`と確認できたslotだけを使う。** `BUSY`や`BLOCKED / UNKNOWN`のslotを空けるためにunrelated changesや進行中Taskをreset / stash / overwrite / force-switchしない。
+### main / sub
 
-## Start / release lifecycle
+release条件:
 
-### Start
+- uncommitted changeなし;
+- current workがremote branch / merged commitへ保存済み;
+- Linear checkpointから再開可能;
+- branch ownershipを失わず安全にidleへ戻せる。
 
-1. standard 3 slotsのmandatory preflightを行う。
-2. Taskに適した`FREE` slotを選ぶ。
-3. `git fetch origin --prune`を実行し、latest remote stateとintended base / tested refを確認する。
-4. implementationではTask branchを作成 / checkoutする。
-5. Manual E2Eではexact tested commit / stable refへdetached checkoutし、actual HEADを確認したうえでE2E markerへ`issue` / `ref`を書く。
+Task完了だけでなく、remote保存済みの明確なpause / handoff checkpointでもreleaseしてよい。
 
-### Release
+idle state:
 
-Task完了・merge・中止に加え、**safe checkpointでcurrent workがremoteに安全に保存され、local slotを保持し続ける必要がない場合もimplementation slotをreleaseしてよい。** Issue自体をDoneにする必要はない。
+- `main`: cleanなlocal `main`。release時点で安全ならlatest `origin/main`へfast-forward。
+- `sub`: cleanなlatest `origin/main` detached HEAD。
 
-release時は次の順に行う。
+### e2e
 
-1. 未commit変更がないことを確認する。
-2. current workが必要なremote branch / merged commit等に安全に保存されていることを確認する。
-3. slot固有のidle stateへnon-destructiveに戻す。
-4. actual stateがidle条件を満たすことを確認する。
-5. Manual E2Eでは最後にmarkerを削除する。
+host / fixture cleanupを完了し、cleanを確認してlatest `origin/main` detached HEADへ戻し、最後にmarkerを削除する。
 
-安全にidle stateへ戻せない場合は`BLOCKED`として扱う。reset / stash / force-switch等で無理にreleaseしない。
+## CI reproduction
 
-## Idle state by slot
+CI reproductionも4つ目のcheckoutを作らない。
 
-### Primary implementation slot
+local reproductionが必要なら、`FREE`な`main`または`sub` implementation laneを一時的に使用し、そのincidentのexact failing SHA / workflowをauthorityとしてLunaが診断する。両laneがBUSYなら、既存Taskを壊してslotを作らず、先にどちらかのsafe checkpointを完了する。
 
-- 通常の第一implementation slot。
-- idle時はcleanな`main`で待機する。
-- Task開始時はlatest remote `main`を再確認し、必要なら安全なfast-forwardで同期してからTask branchを作る。
-- `main`に未commit変更、unexpected local commit、または別Task branchが残っている場合はidleではない。
+詳細はshared CI incident時だけ [`CI-INCIDENTS.md`](./CI-INCIDENTS.md) を読む。
 
-### Secondary implementation slot
+## Prohibited patterns
 
-- primaryで別local Taskが進行中で、本当に並列実装する必要がある場合に使う。
-- idle時はcleanに保ち、latest `origin/main`をdetached HEADでcheckoutして待機させる。
-- Task完了・merge・中止・safe checkpoint release後は、未commit変更がないことを確認してからdetached HEADのlatest `origin/main`へ戻す。安全なら完了Taskのlocal branchを削除してよい。
-- persistent sub自体はTask完了後も削除しない。
-- 同じbranchをprimaryとsecondaryの両方でcheckoutしない。
+- Issueごとのdisposable worktree
+- persistent 4th checkout
+- `/Users/yosomi/Code/nuinuiCAD-ci-repro`
+- active slice途中のroutine merge-main / rebase-main
+- unfinished parallel branch同士の取り込み
+- E2E checkoutでのproduct fix
+- checkout capacity不足をworktree追加で解消すること
 
-### Manual E2E slot
-
-- Manual E2E専用。通常implementationには使わない。
-- tested Issueとexact tested commit / stable refをE2E markerへ明示する。
-- Manual E2E実行中にimplementation Taskへ転用しない。
-- E2E終了後はhost / temporary test stateのcleanupをcurrent Manual E2E policyに従って完了し、checkoutがcleanであることを確認してからdetached HEADのlatest `origin/main`へ戻し、最後にmarkerを削除する。
-- testのためにprimary / secondaryのuser workをstash / reset / discard / force-switchしない。
-
-VS Code Manual E2Eのhost isolation、fixture、build、launch、process cleanup等は [`VS-CODE-E2E.md`](./VS-CODE-E2E.md) がauthority。
-
-## Shared CI incident reproduction checkout
-
-shared CI incidentでhuman-terminal reproductionが必要な場合は、通常のimplementation / E2E slotsとは分離した専用clone `/Users/yosomi/Code/nuinuiCAD-ci-repro` を使う。
-
-このcheckoutはimplementation / Manual E2E / Coding Agent用slotではない。通常のlocal execution capacityやreuse-first判断には含めない。詳細なtrigger、環境合わせ、allowed operations、handoffは [`CI-INCIDENTS.md`](./CI-INCIDENTS.md) がauthorityであり、shared CI incidentが実際に疑われる場合だけ読む。
-
-## Reuse-first rule
-
-新しいlocal Coding Agent Taskを開始するときは、mandatory slot preflight後、既存standard slotを安全に再利用できるか確認する。
-
-- `FREE`なprimaryを通常の第一候補とする。
-- primaryが`BUSY`で、本当に並列local implementationが必要なら`FREE`なsecondaryを使う。
-- Manual E2Eは`FREE`なE2E slotを使う。
-- Taskごとに専用worktreeを作成し、Task終了ごとに削除し、次Taskでまた作るdisposable運用を既定にしない。
-- active Task、unrelated user changes、異なる同時base等を壊さずstandard slotを再利用できない場合にだけ追加worktreeを検討する。
-- 追加worktreeを作る理由は「別Issueだから」「Ready Issueが余っているから」ではなく、そのlocal Taskを安全に実行するためのisolationが実際に必要であること。
-
-## Additional worktrees
-
-追加worktreeは、既存standard slotsでは安全に進められないlocal Coding Agent / local execution Taskが実際にある場合だけ作る。
-
-追加worktreeをTask終了直後に機械的に削除する必要はない。cleanで、今後もlocal Taskのreuse先として運用上の価値があるなら保持してよい。
-
-一方、特定の一時検証だけのために作ったもの、重複して役割がないもの、checkout数を増やすだけでreuse価値がないものは不要になった時点で整理する。
-
-この節はShared Git Workflowの「temporary worktreeは終了時に削除」をnuinuiCAD向けに上書きする。目的はworktreeを増やすことではなく、**安全な既存checkoutを優先して再利用し、不必要なcreate/delete churnを避けること**。
-
-additional worktreeを継続reuseする場合もownershipを曖昧にしない。少なくともcurrent Issue、branch / HEAD、dirty stateを開始前に確認する。
+並列性は**main / subの2 implementation lane**で表現する。それ以上の並列ismは作らない。
