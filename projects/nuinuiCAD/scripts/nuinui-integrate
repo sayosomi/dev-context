@@ -1,0 +1,325 @@
+#!/bin/zsh
+
+# nuinuiCAD deterministic integration helper.
+# Initial version is intentionally narrow: audit task-branch safety and repair
+# EOF blank-line whitespace while preserving semantic changes.
+
+VERSION="1.0.0-trial-promoted"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  nuinui-integrate audit <repo> <expected-base> <branch>
+  nuinui-integrate repair-eof <repo> <expected-base> <commit-message>
+
+Scope:
+  - deterministic task-branch safety/audit
+  - deterministic EOF blank-line repair
+  - semantic-diff preservation verification
+  - unsupported anomaly => ESCALATE
+
+Never automated here:
+  reset, stash, force-push, conflict resolution, CI, PR, merge
+EOF
+}
+
+assert_repo() {
+  local repo="$1"
+  if [[ ! -d "$repo" ]]; then
+    echo "BLOCKED: repository path does not exist"
+    echo "PATH: $repo"
+    return 1
+  fi
+  if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "BLOCKED: path is not a Git worktree"
+    echo "PATH: $repo"
+    return 1
+  fi
+}
+
+assert_clean() {
+  local repo="$1"
+  local wt_status="$(git -C "$repo" status --porcelain)"
+  if [[ -n "$wt_status" ]]; then
+    echo "BLOCKED: working tree is dirty"
+    echo "$wt_status"
+    return 1
+  fi
+}
+
+assert_branch() {
+  local repo="$1"
+  local expected_branch="$2"
+  local actual_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+  if [[ -z "$actual_branch" ]]; then
+    echo "BLOCKED: repository is detached HEAD"
+    return 1
+  fi
+
+  if [[ "$actual_branch" != "$expected_branch" ]]; then
+    echo "BLOCKED: unexpected task branch"
+    echo "EXPECTED: $expected_branch"
+    echo "ACTUAL:   $actual_branch"
+    return 1
+  fi
+
+  if [[ "$actual_branch" == "main" ]]; then
+    echo "BLOCKED: integration helper refuses to mutate main"
+    return 1
+  fi
+}
+
+assert_base_relation() {
+  local repo="$1"
+  local expected_base="$2"
+  local head="$(git -C "$repo" rev-parse HEAD)"
+
+  if ! git -C "$repo" cat-file -e "${expected_base}^{commit}" 2>/dev/null; then
+    echo "BLOCKED: expected base commit is unknown locally"
+    echo "EXPECTED_BASE: $expected_base"
+    return 1
+  fi
+
+  if ! git -C "$repo" merge-base --is-ancestor "$expected_base" "$head"; then
+    echo "BLOCKED: expected base is not an ancestor of current HEAD"
+    echo "EXPECTED_BASE: $expected_base"
+    echo "HEAD:          $head"
+    return 1
+  fi
+}
+
+audit() {
+  local repo="$1"
+  local expected_base="$2"
+  local branch="$3"
+  local head=""
+
+  assert_repo "$repo" || return 1
+  assert_clean "$repo" || return 1
+  assert_branch "$repo" "$branch" || return 1
+  assert_base_relation "$repo" "$expected_base" || return 1
+
+  head="$(git -C "$repo" rev-parse HEAD)"
+  echo "AUDIT PASS"
+  echo "  repo=$repo"
+  echo "  branch=$branch"
+  echo "  expected-base=$expected_base"
+  echo "  head=$head"
+  echo "  worktree=clean"
+}
+
+collect_changed_files() {
+  local repo="$1"
+  local base="$2"
+  git -C "$repo" diff --name-only -z "$base" --
+}
+
+classify_diff_check() {
+  local repo="$1"
+  local output_file="$2"
+  local rc=0
+
+  set +e
+  git -C "$repo" diff --check >"$output_file" 2>&1
+  rc=$?
+  set -e
+
+  if [[ "$rc" -eq 0 ]]; then
+    echo "DIFF CHECK: CLEAN"
+    return 0
+  fi
+
+  # The supported anomaly is exactly git's EOF blank-line diagnostic.
+  if grep -Ev 'new blank line at EOF$' "$output_file" | grep -q .; then
+    echo "ESCALATE: unsupported whitespace or diff-check anomaly detected"
+    cat "$output_file"
+    return 2
+  fi
+
+  if grep -q 'new blank line at EOF$' "$output_file"; then
+    echo "EOF ANOMALY DETECTED"
+    cat "$output_file"
+    return 3
+  fi
+
+  echo "ESCALATE: unexpected git diff --check failure"
+  cat "$output_file"
+  return 2
+}
+
+snapshot_semantics() {
+  local repo="$1"
+  local base="$2"
+  local snapshot_dir="$3"
+  local relative=""
+  local source=""
+
+  while IFS= read -r -d '' relative; do
+    source="$repo/$relative"
+    if [[ ! -f "$source" ]]; then
+      echo "ESCALATE: changed path is not a regular file"
+      echo "PATH: $relative"
+      return 1
+    fi
+
+    mkdir -p "$snapshot_dir/$(dirname "$relative")"
+    python3 - "$source" "$snapshot_dir/$relative" <<'PY'
+from pathlib import Path
+import sys
+
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+data = src.read_bytes()
+# Compare semantic content with the deterministic EOF newline normalization.
+normalized = data.rstrip(b"\n") + b"\n"
+dst.write_bytes(normalized)
+PY
+  done < <(collect_changed_files "$repo" "$base")
+}
+
+compare_semantics() {
+  local left_dir="$1"
+  local right_dir="$2"
+  if ! diff -ruN "$left_dir" "$right_dir" >/dev/null; then
+    echo "ESCALATE: semantic content changed during EOF repair"
+    return 1
+  fi
+}
+
+repair_eof() {
+  local repo="$1"
+  local expected_base="$2"
+  local commit_message="$3"
+  local branch=""
+  local head_before=""
+  local diff_check_file=""
+  local before_dir=""
+  local after_dir=""
+  local repair_commit=""
+  local repair_rc=0
+
+  if [[ -z "$commit_message" ]]; then
+    echo "ERROR: commit message is required"
+    return 2
+  fi
+
+  assert_repo "$repo" || return 1
+  assert_clean "$repo" || return 1
+
+  branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [[ -z "$branch" ]]; then
+    echo "BLOCKED: repository is detached HEAD"
+    return 1
+  fi
+  if [[ "$branch" == "main" ]]; then
+    echo "BLOCKED: integration helper refuses to mutate main"
+    return 1
+  fi
+
+  assert_base_relation "$repo" "$expected_base" || return 1
+
+  head_before="$(git -C "$repo" rev-parse HEAD)"
+  diff_check_file="$(mktemp "${TMPDIR:-/tmp}/nuinui-integrate-diff.XXXXXX")"
+  before_dir="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-integrate-before.XXXXXX")"
+  after_dir="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-integrate-after.XXXXXX")"
+
+  cleanup() {
+    rm -f "$diff_check_file"
+    rm -rf "$before_dir" "$after_dir"
+  }
+  trap cleanup RETURN
+
+  set +e
+  classify_diff_check "$repo" "$diff_check_file"
+  repair_rc=$?
+  set -e
+
+  if [[ "$repair_rc" -eq 0 ]]; then
+    echo "BLOCKED: no supported EOF anomaly is present"
+    return 1
+  fi
+  if [[ "$repair_rc" -ne 3 ]]; then
+    return 2
+  fi
+
+  snapshot_semantics "$repo" "$expected_base" "$before_dir" || return 2
+
+  echo "REPAIR: EOF blank-line whitespace only"
+
+  local relative=""
+  while IFS= read -r -d '' relative; do
+    local path="$repo/$relative"
+    python3 - "$path" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+repaired = data.rstrip(b"\n") + b"\n"
+if repaired != data:
+    path.write_bytes(repaired)
+    print(f"REPAIRED: {path}")
+PY
+  done < <(collect_changed_files "$repo" "$expected_base")
+
+  set +e
+  git -C "$repo" diff --check
+  repair_rc=$?
+  set -e
+  if [[ "$repair_rc" -ne 0 ]]; then
+    echo "ESCALATE: EOF repair did not produce a clean diff"
+    return 2
+  fi
+
+  snapshot_semantics "$repo" "$expected_base" "$after_dir" || return 2
+  compare_semantics "$before_dir" "$after_dir" || return 2
+
+  if [[ -z "$(git -C "$repo" diff --name-only)" ]]; then
+    echo "ERROR: repair produced no working-tree change"
+    return 1
+  fi
+
+  echo "SEMANTIC CHANGE: PRESERVED"
+
+  git -C "$repo" add -- .
+  if [[ -z "$(git -C "$repo" diff --cached --name-only)" ]]; then
+    echo "ERROR: no repair change is staged"
+    return 1
+  fi
+
+  git -C "$repo" commit -m "$commit_message" || {
+    echo "ERROR: repair commit failed"
+    return 1
+  }
+
+  repair_commit="$(git -C "$repo" rev-parse HEAD)"
+  if [[ -n "$(git -C "$repo" status --porcelain)" ]]; then
+    echo "ERROR: worktree is not clean after repair commit"
+    return 1
+  fi
+
+  echo "REPAIR COMMIT: $repair_commit"
+  echo "BASE:          $expected_base"
+  echo "PREVIOUS HEAD: $head_before"
+  echo "BRANCH:        $branch"
+  echo "RESULT:        SUCCESS"
+}
+
+command_name="${1:-}"
+shift || true
+
+case "$command_name" in
+  audit)
+    [[ "$#" -eq 3 ]] || { usage; exit 2; }
+    audit "$@"
+    ;;
+  repair-eof)
+    [[ "$#" -eq 3 ]] || { usage; exit 2; }
+    repair_eof "$@"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
