@@ -107,6 +107,23 @@ Manual E2Eは`/Users/yosomi/Code/nuinuiCAD-e2e`専用で、source-code implement
 
 Documentation / policy direct execution exceptionではこれらのimplementation laneをclaimしない。
 
+### Codex project / initial cwd is not lane ownership
+
+CodexのProject root、Luna processのinitial working directory、またはsession開始時の`pwd`はimplementation laneを定義しない。
+
+implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLinear checkpointへ記録したfixed checkout pathである。
+
+- `main` laneなら`/Users/yosomi/Code/nuinuiCAD`;
+- `sub` laneなら`/Users/yosomi/Code/nuinuiCAD-sub`。
+
+Lunaは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushを行う前に、assigned fixed checkoutを明示的にtargetし、そのcheckoutへ移動するか`git -C <assigned-checkout>`で検証する。
+
+session開始時の`pwd`がassigned laneと違うことだけを理由に`LANE_MISMATCH`として停止してはならない。`LANE_MISMATCH`は、assigned checkoutをtargetした後にrepository identity / branch / HEAD / clean state等のrequired lane conditionが一致しない場合だけ使う。
+
+sub laneを使うために別Codex Project、別VS Code window、4つ目のcheckout/worktreeを作る必要はない。同じCodex Projectからfixed sub checkoutをtargetしてよい。
+
+ChatGPTがLuna promptを生成するときは、initial `pwd`一致をpreconditionにせず、`assigned checkoutをtargetする -> そのcheckoutでbranch / HEAD / clean / remote stateを検証する`順序で書く。
+
 ## Base checkpoint semantics
 
 新しいsource-code implementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
@@ -184,6 +201,8 @@ Promptにはcurrent executable source-code sliceだけを書く。
 - blocking conditions
 
 Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
+
+Promptのstartup sequenceでは、Luna processのinitial cwdをlane validationに使わない。assigned lane checkoutを先にtargetし、そのcheckout上でrepository identity、branch、HEAD、clean state、remote stateを検証する。
 
 Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は変更せず停止して報告させる。
 
