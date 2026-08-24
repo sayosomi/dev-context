@@ -23,18 +23,48 @@ Prefer commands that work directly in macOS zsh. Use an explicit `bash` child sh
 
 Do not assume GNU userland options are available when macOS ships BSD variants.
 
+## Preserve the Human's interactive shell
+
+A copy/paste block must not terminate, replace, or persistently reconfigure the Human's interactive shell when a precondition fails.
+
+For multi-line blocks pasted into an interactive terminal:
+
+- do not use top-level `exit`, `return`, `exec`, or `logout`;
+- do not enable `set -e`, `set -u`, `setopt`, install `trap`s, or otherwise change shell options/state at top level when that state could survive after the block;
+- when early termination or strict shell state is useful, wrap the whole block in a subshell such as `(...)` or an explicit child shell and terminate only that child execution boundary;
+- a safety failure must leave the Human's terminal session alive and usable;
+- treat **"failure does not close the terminal"** as a regression invariant for Human-facing blocks.
+
+A subshell is the preferred default when a block contains multiple safety checks followed by mutation:
+
+```zsh
+(
+  # checks and mutations
+  if [[ "..." != "..." ]]; then
+    echo "BLOCKED: precondition mismatch"
+    exit 1
+  fi
+)
+```
+
+Top-level one-line commands that naturally return a non-zero status are fine; the prohibition is against terminating or persistently altering the interactive shell itself.
+
 ## Make the execution target self-contained
 
 When a command is intended for a specific checkout or worktree, make the command itself establish that location instead of requiring the Human to navigate there beforehand.
 
-Prefer an absolute-path `cd` at the start of the copy/paste block:
+Prefer an absolute-path target inside the same safe execution boundary:
 
 ```zsh
-cd /absolute/path/to/worktree || {
-  echo "ERROR: cannot enter the required worktree:"
-  echo "  /absolute/path/to/worktree"
-  exit 1
-}
+(
+  cd /absolute/path/to/worktree || {
+    echo "ERROR: cannot enter the required worktree:"
+    echo "  /absolute/path/to/worktree"
+    exit 1
+  }
+
+  # remaining checks / commands
+)
 ```
 
 If a particular starting branch, detached commit, repository identity, or other checkout state is required, verify it inside the same block before mutation.
@@ -48,7 +78,7 @@ The principle is not merely "stop safely". The Human must be able to understand 
 For a meaningful failure boundary:
 
 - print `ERROR:` for an execution/setup failure or `BLOCKED:` for a safety/precondition mismatch;
-- state the concrete reason before exiting;
+- state the concrete reason before terminating the child execution boundary or skipping mutation;
 - when there is an expected and actual value, print both;
 - when useful, state what mutation was not performed because the command stopped;
 - make the message actionable enough that the Human can report the exact blocker back to ChatGPT.
@@ -118,12 +148,14 @@ If the remote branch itself is the evidence, verify it before pruning or preserv
 For a merged checkpoint whose remote topic branch may already be deleted, prefer verifying the exact checkpoint commit against the authoritative surviving ref, for example:
 
 ```zsh
-if ! git merge-base --is-ancestor "$EXPECTED_HEAD" origin/main; then
-  echo "BLOCKED: checkpoint commit is not contained in origin/main"
-  echo "  checkpoint: $EXPECTED_HEAD"
-  echo "No branch switch or cleanup was performed."
-  exit 1
-fi
+(
+  if ! git merge-base --is-ancestor "$EXPECTED_HEAD" origin/main; then
+    echo "BLOCKED: checkpoint commit is not contained in origin/main"
+    echo "  checkpoint: $EXPECTED_HEAD"
+    echo "No branch switch or cleanup was performed."
+    exit 1
+  fi
+)
 ```
 
 Choose the exact ancestry/ref check according to the governing repository policy; this skill does not itself decide which ref is authoritative.
