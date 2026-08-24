@@ -24,6 +24,39 @@ Hard limits:
 - `e2e`をimplementationへ転用しない。
 - `main` / `sub`が両方BUSYなら、新しいimplementationは開始しない。
 
+## Human terminal operations
+
+Humanがterminalでlocal checkoutへ対して行う**mechanical / deterministic operation**はlane ownershipそのものではなく、Luna implementation routeとは別の操作補助として扱う。
+
+ChatGPTがlocal状態の確認や単純な環境準備を必要とするときは、Luna sessionを起動する前に、Humanが安全にcopy/paste実行できるcommandで済むかを優先して判断する。
+
+Humanへ任せてよい典型:
+
+- read-only audit: `git status`, `git rev-parse`, `git worktree list`, branch / HEAD / upstream / path確認;
+- safety conditionが確定した後の単純な`git fetch`, fast-forward, exact checkout / detached checkout;
+- cleanで不要と証明済みのworktree整理;
+- E2E markerの作成 / 読み取り / 削除;
+- dev host / test hostの起動・停止など、implementationを含まない環境操作。
+
+Human向けterminal instructionを生成する場合はshared `human-terminal-instructions` skillを必ず使い、少なくとも次を守る。
+
+- absolute pathで対象checkoutを固定する;
+- auditとmutationを分ける;
+- mutation直前にsafety-critical factsを再確認する;
+- precondition mismatchでは`BLOCKED:`等で具体的理由を表示して停止する;
+- current directoryや以前のshell変数へ暗黙依存しない。
+
+Humanへ任せないもの:
+
+- product code implementation / blocking fix;
+- implementation-side failure diagnosisがcode changeや広いlocal iterationを伴う作業;
+- merge / rebase conflict resolutionやintegration fix;
+- 状態不明のcheckoutに対する`reset`, `stash`, force-switch, force-push;
+- dirty / untracked workの保存判断を伴うworktree削除やcleanup;
+- unrelated Human workを破棄・上書きする操作。
+
+Human terminal assistanceはimplementation executorの変更ではない。repository implementation / blocking fixは引き続き[`CODING-AGENT.md`](./CODING-AGENT.md)に従いLuna xhighが担当する。
+
 ## Lane isolation rule
 
 implementation laneはTask / current implementation slice開始時に**Base checkpoint SHA**を固定する。
