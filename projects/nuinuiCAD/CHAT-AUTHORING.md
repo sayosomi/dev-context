@@ -48,6 +48,60 @@ Issue contractの判断詳細は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.
 
 細かなchat transcriptや議論履歴をLinearへ複製しない。current Work state / decision / checkpointだけを残す。
 
+## Interactive Decision Mock
+
+Human判断が必要なreal UX branchについて、文章だけのA/B質問より**触って比較した方が判断品質が高い**場合は、Issue AuthoringでInteractive Decision Mockを優先してよい。
+
+Humanは例えば次のように指定できる。
+
+```text
+このIssue、Interactive Decision Mock方式で詰めて
+```
+
+典型的に向いている判断:
+
+- placement / panel split / toolbar placement
+- information density / row height / card-vs-table
+- hierarchy / grouping / disclosure
+- visual emphasis / cue placement / detail hierarchy
+- hover / focus / selection / context menu interaction
+- keyboard interaction / tab behavior
+- resize / narrow-width behavior
+- 複数の独立したUX branchを組み合わせて比較したい場合
+
+次をすべて満たすときに使う。
+
+1. latest authorityを確認しても複数の合理的なuser-facing UX選択肢が残る。
+2. 選択差が見た目・空間・操作感として体験可能で、hands-on比較に意味がある。
+3. fake / static fixture dataを使ってproduction semanticsから安全に分離できる。
+
+### Authoring workflow
+
+1. latest repository / spec / Linearから一意に決まる事項を先に除外する。
+2. Human判断が必要なUX branchだけを独立した比較軸として整理する。
+3. disposableなinteractive mockを作り、必要なbranchをtoggle / selectable variantとして触れる状態にする。
+4. 判断に関係する場合はclick、keyboard、scroll、resize、themeなども近似する。
+5. mockがbrowser approximation等でtarget hostそのものではない場合は、その差を明示する。
+6. Humanが触って選択した結果だけをcurrent product decisionとしてLinear Issue / Commentへ記録する。
+7. 選択結果をacceptance criteria / Manual E2E planへ落とし、他のcontract条件も満たせば`Contract: Ready`へ進める。
+
+mockそのものはproduction implementationでもdurable specificationでもない。mock内の表示、fixture、仮interactionは、Humanが選択しcurrent contractへ記録されるまではproduct decisionのauthorityにしない。
+
+### Boundary
+
+Interactive Decision Mockで決めないもの:
+
+- DSL / document / persistence semantics
+- runtime evaluation / diagnosticsの意味
+- canonical data ownership / source of truth
+- architecture / host lifecycle / production transport
+- compatibility / migration semantics
+- current authorityから一意に決まる既存behavior
+
+これらはrepository / normative spec / durable policy等のauthorityからcontractを決める。mock都合でproduction semanticsを発明しない。
+
+Issue Authoringのmock作成はexecution laneをclaimするrepository implementationではない。production codeへprototypeを混ぜず、比較用artifactとして切り離す。
+
 ## Handoff to implementation
 
 Issue / contractがReadyになっても、そのchatだけを理由にimplementationを開始しない。

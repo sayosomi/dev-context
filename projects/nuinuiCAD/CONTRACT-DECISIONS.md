@@ -51,6 +51,21 @@ Issueのimplementation contractを策定するとき、次のいずれかから�
 
 このような分岐では、選択肢ごとの差を具体例で説明してからユーザー判断を取る。
 
+### Interactive decision for embodied UX branches
+
+real product branchのうち、差がplacement、density、hierarchy、visual emphasis、selection、hover/focus、keyboard、scroll、resize等の**体験可能なUX**として現れ、文章説明よりhands-on比較の方が判断しやすい場合は、[`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md) のInteractive Decision Mockを使ってよい。
+
+順序は必ず次とする。
+
+1. latest repository / platform / normative spec / durable policyから一意に決まる事項を先に除外する。
+2. 残ったreal UX branchだけをmockの比較軸にする。
+3. fake / static fixtureでproduction semanticsから分離できる範囲に限定してHumanへ触って比較してもらう。
+4. Humanが選んだ結果をcurrent Linear contractへ記録して初めてproduct decisionとして扱う。
+
+mockそのもの、fixture、仮interaction、default variantはauthorityではない。mockで見せたからという理由でDSL semantics、diagnostic meaning、persistence、canonical ownership、runtime architecture、compatibility等を決めない。
+
+mockとtarget hostに差がある場合、その差が選択判断へ影響し得ることを明示する。host固有挙動を正確に確認しなければ決められないbranchは、approximationだけでReadyにしない。
+
 ## Ready contract refresh vs Pending
 
 `Contract: Ready`は「current repositoryのfile名やimplementation pathが永久に固定された」という意味ではない。
