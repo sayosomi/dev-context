@@ -109,14 +109,9 @@ Humanはtested stateを設計しない。Human setup scriptはSol Highが固定�
 
 Human向け準備は、可能な限り**1つのcopy/paste block**へまとめる。
 
-対象checkout / working directoryが既知なら、Humanへ渡すcode blockの**最初のexecutable commandはabsolute pathを使った `cd "<path>"`** にする。Humanのcurrent directoryや前の会話で実行した`cd`へ依存させず、`source`、build、file mutation、Git command等より先にworking directoryを明示する。
-
-checkout-selection preflightのように、まだtarget directory自体を決定するためのread-only commandを出す場合だけこの`cd`先頭ruleの例外とする。targetが決まった次のhandoffからは必ず先頭に`cd`を書く。
-
-対話shell自体を誤って終了させないため、strict modeをHumanのcurrent shellへ直接設定しない。標準形はworking directoryを明示してから子shellに閉じ込める。
+対話shell自体を誤って終了させないため、strict modeをHumanのcurrent shellへ直接設定しない。標準形は子shellに閉じ込める。
 
 ```bash
-cd "<execution checkout or working directory>" || exit 1
 bash <<'BASH'
 set -Eeuo pipefail
 trap 's=$?; echo; echo "FAILED at line $LINENO: $BASH_COMMAND"; echo "exit=$s"; exit "$s"' ERR
@@ -224,11 +219,11 @@ counted Luna run開始後はHumanがprocess cleanup / relaunchを行わない。
 Task-specific valueを差し替えて使う。以下はLuna向けhost preparationを含む完全形であり、`Executor: Human`ではLuna専用CDP / observation / handoff要件をtask contractに応じて省略してよい。
 
 ```bash
-cd "<tested checkout>" || exit 1
-
 EXPECTED="<tested commit>"
-CHECKOUT="$PWD"
+CHECKOUT="<tested checkout>"
 CDP_PORT=9223
+
+cd "$CHECKOUT"
 
 test "$(git rev-parse HEAD)" = "$EXPECTED"
 test -z "$(git status --porcelain)"
