@@ -1,0 +1,367 @@
+#!/bin/zsh
+
+VERSION="1.0.0-trial"
+SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
+E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
+VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
+DEFAULT_CDP_PORT="${NUINUI_E2E_CDP_PORT-9223}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
+  nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+
+Purpose:
+  Prepare a deterministic Human Manual E2E environment in the dedicated e2e
+  checkout, without mutating product source code or killing unrelated VS Code
+  processes.
+
+The tested ref and e2e marker must already be fixed by the E2E lane helper.
+EOF
+}
+
+block() {
+  echo "BLOCKED: $*"
+  return 1
+}
+
+resolve_existing_path() {
+  local input_path="$1"
+
+  command -v realpath >/dev/null 2>&1 || return 1
+  realpath "$input_path" 2>/dev/null
+}
+
+assert_fixture_external() {
+  local fixture="$1"
+  local fixture_real=""
+  local repo_real=""
+
+  [[ -d "$E2E_WT" ]] || return 0
+
+  fixture_real="$(resolve_existing_path "$fixture")" || {
+    echo "ERROR: could not resolve fixture path"
+    echo "FIXTURE: $fixture"
+    return 1
+  }
+  repo_real="$(resolve_existing_path "$E2E_WT")" || {
+    echo "ERROR: could not resolve e2e checkout path"
+    echo "PATH: $E2E_WT"
+    return 1
+  }
+
+  case "$fixture_real" in
+    "$repo_real"|"$repo_real"/*)
+      echo "BLOCKED: fixture resolves inside dedicated e2e checkout"
+      echo "FIXTURE: $fixture_real"
+      echo "CHECKOUT: $repo_real"
+      return 1
+      ;;
+  esac
+}
+
+assert_inputs() {
+  local issue="$1"
+  local tested_ref="$2"
+  local fixture="$3"
+
+  [[ "$issue" =~ '^SAY-[0-9]+$' ]] || { echo "ERROR: Issue must look like SAY-123"; return 2; }
+  [[ "$tested_ref" =~ '^[0-9a-fA-F]{40}$' ]] || { echo "ERROR: tested-ref must be a full commit SHA"; return 2; }
+  [[ -f "$fixture" ]] || { echo "BLOCKED: fixture does not exist"; echo "FIXTURE: $fixture"; return 1; }
+  assert_fixture_external "$fixture" || return $?
+}
+
+assert_checkout() {
+  local issue="$1"
+  local tested_ref="$2"
+  local repo="$E2E_WT"
+  local origin=""
+  local dirty=""
+  local branch=""
+  local head=""
+  local marker=""
+  local marker_issue=""
+  local marker_ref=""
+
+  [[ -d "$repo" ]] || { echo "BLOCKED: e2e checkout does not exist"; echo "PATH: $repo"; return 1; }
+  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    echo "BLOCKED: e2e checkout is not a Git worktree"
+    echo "PATH: $repo"
+    return 1
+  }
+
+  origin="$(git -C "$repo" remote get-url origin 2>/dev/null)" || {
+    echo "BLOCKED: e2e origin remote is missing"
+    return 1
+  }
+  [[ "$origin" == *"sayosomi/nuinuiCAD"* ]] || {
+    echo "BLOCKED: unexpected e2e repository origin"
+    echo "ACTUAL: $origin"
+    return 1
+  }
+
+  dirty="$(git -C "$repo" status --porcelain)"
+  [[ -z "$dirty" ]] || {
+    echo "BLOCKED: e2e checkout is dirty"
+    git -C "$repo" status --short
+    return 1
+  }
+
+  branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  [[ -z "$branch" ]] || {
+    echo "BLOCKED: e2e checkout is not detached"
+    echo "BRANCH: $branch"
+    return 1
+  }
+
+  head="$(git -C "$repo" rev-parse HEAD)" || return 1
+  [[ "$head" == "$tested_ref" ]] || {
+    echo "BLOCKED: e2e HEAD does not match tested-ref"
+    echo "HEAD:       $head"
+    echo "TESTED_REF: $tested_ref"
+    return 1
+  }
+
+  marker="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)/nuinui-slot" || return 1
+  [[ -f "$marker" ]] || {
+    echo "BLOCKED: e2e marker is missing; run the lane e2e-start helper first"
+    echo "MARKER: $marker"
+    return 1
+  }
+
+  marker_issue="$(sed -n 's/^issue=//p' "$marker")"
+  marker_ref="$(sed -n 's/^ref=//p' "$marker")"
+  [[ "$marker_issue" == "$issue" ]] || {
+    echo "BLOCKED: e2e marker Issue mismatch"
+    echo "MARKER_ISSUE: $marker_issue"
+    echo "REQUESTED:    $issue"
+    return 1
+  }
+  [[ "$marker_ref" == "$tested_ref" ]] || {
+    echo "BLOCKED: e2e marker ref mismatch"
+    echo "MARKER_REF: $marker_ref"
+    echo "TESTED_REF: $tested_ref"
+    return 1
+  }
+
+  echo "E2E CHECKOUT VERIFIED"
+  echo "  issue=$issue"
+  echo "  tested_ref=$tested_ref"
+  echo "  checkout=$repo"
+  echo "  marker=$marker"
+}
+
+ensure_dependencies() {
+  local repo="$E2E_WT"
+  local e2e_root="$1"
+  local npm_cache="$e2e_root/npm-cache"
+
+  if [[ -x "$repo/node_modules/.bin/esbuild" ]]; then
+    assert_no_tracked_mutations "dependency preparation" || return 1
+    echo "DEPENDENCIES: READY"
+    return 0
+  fi
+
+  mkdir -p "$npm_cache" || {
+    echo "ERROR: could not create isolated npm cache"
+    return 1
+  }
+
+  echo "DEPENDENCIES: INSTALL"
+  NPM_CONFIG_CACHE="$npm_cache" npm -C "$repo" install --package-lock=false --include=dev || {
+    echo "ERROR: dependency installation failed"
+    return 1
+  }
+
+  [[ -x "$repo/node_modules/.bin/esbuild" ]] || {
+    echo "ERROR: esbuild is unavailable after dependency installation"
+    return 1
+  }
+
+  assert_no_tracked_mutations "dependency preparation" || return 1
+
+  echo "DEPENDENCIES: READY"
+}
+
+assert_no_tracked_mutations() {
+  local phase="$1"
+  local repo="$E2E_WT"
+  local dirty=""
+
+  dirty="$(git -C "$repo" status --porcelain --untracked-files=no)" || {
+    echo "ERROR: could not inspect tracked-file status after $phase"
+    return 1
+  }
+  [[ -z "$dirty" ]] || {
+    echo "ERROR: tracked-file mutation detected after $phase"
+    git -C "$repo" status --short --untracked-files=no
+    return 1
+  }
+}
+
+build_artifacts() {
+  local repo="$E2E_WT"
+
+  npm -C "$repo" run build:vscode || {
+    echo "ERROR: npm run build:vscode failed"
+    return 1
+  }
+  assert_no_tracked_mutations "npm run build:vscode" || return 1
+
+  cargo build --manifest-path "$repo/rust-evaluator/Cargo.toml" --bin evaluation_stdio || {
+    echo "ERROR: evaluation_stdio build failed"
+    return 1
+  }
+  assert_no_tracked_mutations "cargo build" || return 1
+
+  [[ -f "$repo/vscode-extension/dist/extension.js" ]] || {
+    echo "ERROR: VS Code extension build artifact missing"
+    return 1
+  }
+
+  [[ -x "$repo/rust-evaluator/target/debug/evaluation_stdio" ]] || {
+    echo "ERROR: evaluation_stdio binary missing"
+    return 1
+  }
+}
+
+resolve_code_bin() {
+  local code_bin="$VS_CODE_APP/Contents/Resources/app/bin/code"
+  if [[ -x "$code_bin" ]]; then
+    echo "$code_bin"
+    return 0
+  fi
+  code_bin="$(command -v code || true)"
+  [[ -n "$code_bin" && -x "$code_bin" ]] || return 1
+  echo "$code_bin"
+}
+
+prepare() {
+  local issue="$1"
+  local tested_ref="$2"
+  local fixture="$3"
+  local cdp_port="${4:-$DEFAULT_CDP_PORT}"
+  local repo="$E2E_WT"
+  local code_bin=""
+  local e2e_root=""
+  local fixture_name=""
+  local prepared_fixture=""
+  local rust_bin=""
+  local handoff=""
+  local ready=0
+  local vscode_pid=""
+
+  assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
+
+  e2e_root="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)" || {
+    echo "ERROR: could not create E2E root"
+    return 1
+  }
+  mkdir -p "$e2e_root/user-data/User" "$e2e_root/extensions" "$e2e_root/evidence" || return 1
+
+  ensure_dependencies "$e2e_root" || return 1
+  build_artifacts || return 1
+
+  code_bin="$(resolve_code_bin)" || {
+    echo "BLOCKED: VS Code CLI executable not found"
+    return 1
+  }
+
+  if lsof -nP -iTCP:"$cdp_port" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "BLOCKED: CDP port already in use"
+    echo "PORT: $cdp_port"
+    return 1
+  fi
+
+  cat > "$e2e_root/user-data/User/settings.json" <<'EOF'
+{
+  "editor.wordBasedSuggestions": "off",
+  "editor.inlineSuggest.enabled": false,
+  "editor.quickSuggestions": false,
+  "editor.snippetSuggestions": "none"
+}
+EOF
+
+  fixture_name="$(basename "$fixture")"
+  prepared_fixture="$e2e_root/$fixture_name"
+  cp "$fixture" "$prepared_fixture" || {
+    echo "ERROR: fixture copy failed"
+    return 1
+  }
+
+  rust_bin="$repo/rust-evaluator/target/debug/evaluation_stdio"
+
+  NUINUICAD_RUST_EVALUATION_BINARY="$rust_bin" \
+  NUINUICAD_MCP_OBSERVATION=1 \
+  "$code_bin" --new-window \
+    --user-data-dir="$e2e_root/user-data" \
+    --extensions-dir="$e2e_root/extensions" \
+    --extensionDevelopmentPath="$repo/vscode-extension" \
+    --remote-debugging-port="$cdp_port" \
+    '--remote-allow-origins=*' \
+    --skip-welcome \
+    --skip-sessions-welcome \
+    --skip-release-notes \
+    --disable-workspace-trust \
+    "$prepared_fixture" >/dev/null 2>&1 &
+  vscode_pid=$!
+
+  for _ in $(seq 1 120); do
+    if curl --max-time 1 -fsS \
+      "http://127.0.0.1:${cdp_port}/json/version" \
+      > "$e2e_root/evidence/cdp-version.json"; then
+      ready=1
+      break
+    fi
+    sleep 0.5
+  done
+
+  if [[ "$ready" != 1 ]]; then
+    echo "ERROR: CDP readiness timeout"
+    echo "E2E_ROOT: $e2e_root"
+    kill "$vscode_pid" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  handoff="/tmp/nuinui-${issue}-human-e2e.env"
+  cat > "$handoff" <<EOF
+ISSUE='$issue'
+TESTED_REF='$tested_ref'
+CHECKOUT='$repo'
+E2E_ROOT='$e2e_root'
+FIXTURE='$prepared_fixture'
+CDP_PORT='$cdp_port'
+RUST_BIN='$rust_bin'
+EOF
+
+  echo "E2E SETUP READY"
+  echo "  issue=$issue"
+  echo "  tested_ref=$tested_ref"
+  echo "  checkout=$repo"
+  echo "  e2e_root=$e2e_root"
+  echo "  fixture=$prepared_fixture"
+  echo "  cdp_port=$cdp_port"
+  echo "  handoff=$handoff"
+  echo "READY FOR HUMAN E2E"
+}
+
+case "${1:-}" in
+  version)
+    echo "$VERSION"
+    ;;
+  check)
+    [[ "$#" -eq 4 ]] || { usage; exit 2; }
+    assert_inputs "$2" "$3" "$4" || exit $?
+    assert_checkout "$2" "$3"
+    ;;
+  prepare)
+    [[ "$#" -eq 4 || "$#" -eq 5 ]] || { usage; exit 2; }
+    assert_inputs "$2" "$3" "$4" || exit $?
+    prepare "$2" "$3" "$4" "${5:-$DEFAULT_CDP_PORT}"
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac
