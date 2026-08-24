@@ -18,10 +18,11 @@ ChatGPTはnuinuiCAD作業開始時、local cloneの有無にかかわらず、�
 /Users/yosomi/Code/dev-context
 ```
 
-versioned helper path:
+versioned helper paths:
 
 ```text
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-e2e-prepare
 ```
 
 この`dev-context` cloneはnuinuiCAD repositoryの4th checkoutではない。
@@ -64,6 +65,23 @@ current commands:
 | `nuinui context-sync` | cleanなlocal dev-context `main`をsafe fast-forward |
 | `nuinui doctor` | helper / lane / local dev-contextのdiagnostic表示 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
+
+## Human Manual E2E preparation helper
+
+`projects/nuinuiCAD/scripts/nuinui-e2e-prepare`は、`nuinui e2e-start`で固定済みのdedicated e2e laneを使って、Human Manual E2Eのhostを一発で準備するversioned helperである。
+
+current commands:
+
+```text
+nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
+nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+```
+
+`prepare`は、exact tested ref / e2e marker / clean detached checkoutを検証し、必要ならisolated npm cacheでdevDependenciesをmaterializeし、VS Code extensionと`evaluation_stdio`をbuildし、fresh profile / empty extensions / fixture / caller-selected CDP portでExtension Development Hostを起動し、CDP readinessとHuman handoffを確認する。成功時は`READY FOR HUMAN E2E`を出す。
+
+このhelperはproduct source、tested marker、既存の無関係なVS Code processを自動repairしない。fixtureはdedicated e2e checkoutの外側でなければならず、dependency準備またはbuildによるtracked-file mutationはBLOCKされる。
+
+Humanへcommandを渡すときは、Issue key、tested ref、fixture path、必要ならCDP port等、確定値を埋めたcopy/paste-ready commandにする。Humanにplaceholder判断を委ねない。
 
 ChatGPTがHumanへhelper commandを渡すときは、path、Issue key、expected base、checkpoint、branch、tested ref等、ChatGPT側で確定できる値を埋めたcopy/paste-ready commandにする。Humanにplaceholder判断を委ねない。
 
