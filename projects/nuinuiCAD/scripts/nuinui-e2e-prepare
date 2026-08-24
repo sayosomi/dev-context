@@ -26,6 +26,41 @@ block() {
   return 1
 }
 
+resolve_existing_path() {
+  local input_path="$1"
+
+  command -v realpath >/dev/null 2>&1 || return 1
+  realpath "$input_path" 2>/dev/null
+}
+
+assert_fixture_external() {
+  local fixture="$1"
+  local fixture_real=""
+  local repo_real=""
+
+  [[ -d "$E2E_WT" ]] || return 0
+
+  fixture_real="$(resolve_existing_path "$fixture")" || {
+    echo "ERROR: could not resolve fixture path"
+    echo "FIXTURE: $fixture"
+    return 1
+  }
+  repo_real="$(resolve_existing_path "$E2E_WT")" || {
+    echo "ERROR: could not resolve e2e checkout path"
+    echo "PATH: $E2E_WT"
+    return 1
+  }
+
+  case "$fixture_real" in
+    "$repo_real"|"$repo_real"/*)
+      echo "BLOCKED: fixture resolves inside dedicated e2e checkout"
+      echo "FIXTURE: $fixture_real"
+      echo "CHECKOUT: $repo_real"
+      return 1
+      ;;
+  esac
+}
+
 assert_inputs() {
   local issue="$1"
   local tested_ref="$2"
@@ -34,6 +69,7 @@ assert_inputs() {
   [[ "$issue" =~ '^SAY-[0-9]+$' ]] || { echo "ERROR: Issue must look like SAY-123"; return 2; }
   [[ "$tested_ref" =~ '^[0-9a-fA-F]{40}$' ]] || { echo "ERROR: tested-ref must be a full commit SHA"; return 2; }
   [[ -f "$fixture" ]] || { echo "BLOCKED: fixture does not exist"; echo "FIXTURE: $fixture"; return 1; }
+  assert_fixture_external "$fixture" || return $?
 }
 
 assert_checkout() {
@@ -122,6 +158,7 @@ ensure_dependencies() {
   local npm_cache="$e2e_root/npm-cache"
 
   if [[ -x "$repo/node_modules/.bin/esbuild" ]]; then
+    assert_no_tracked_mutations "dependency preparation" || return 1
     echo "DEPENDENCIES: READY"
     return 0
   fi
@@ -142,13 +179,25 @@ ensure_dependencies() {
     return 1
   }
 
-  if [[ -n "$(git -C "$repo" status --porcelain -- package-lock.json package.json)" ]]; then
-    echo "ERROR: dependency installation changed tracked manifest/lock files"
-    git -C "$repo" status --short -- package-lock.json package.json
-    return 1
-  fi
+  assert_no_tracked_mutations "dependency preparation" || return 1
 
   echo "DEPENDENCIES: READY"
+}
+
+assert_no_tracked_mutations() {
+  local phase="$1"
+  local repo="$E2E_WT"
+  local dirty=""
+
+  dirty="$(git -C "$repo" status --porcelain --untracked-files=no)" || {
+    echo "ERROR: could not inspect tracked-file status after $phase"
+    return 1
+  }
+  [[ -z "$dirty" ]] || {
+    echo "ERROR: tracked-file mutation detected after $phase"
+    git -C "$repo" status --short --untracked-files=no
+    return 1
+  }
 }
 
 build_artifacts() {
@@ -158,11 +207,13 @@ build_artifacts() {
     echo "ERROR: npm run build:vscode failed"
     return 1
   }
+  assert_no_tracked_mutations "npm run build:vscode" || return 1
 
   cargo build --manifest-path "$repo/rust-evaluator/Cargo.toml" --bin evaluation_stdio || {
     echo "ERROR: evaluation_stdio build failed"
     return 1
   }
+  assert_no_tracked_mutations "cargo build" || return 1
 
   [[ -f "$repo/vscode-extension/dist/extension.js" ]] || {
     echo "ERROR: VS Code extension build artifact missing"
