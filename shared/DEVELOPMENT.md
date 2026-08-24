@@ -12,6 +12,21 @@ Coding Agentをimplementation / blocking-fixに使う場合は、確定済みcon
 
 Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) がauthority。Implementation Coding Agentのrole / prompt content / handoffは [`CODING-AGENT-WORKFLOW.md`](./CODING-AGENT-WORKFLOW.md) がauthority。
 
+## dev-context write approval
+
+この`dev-context` repositoryへのcreate / update / deleteは、ChatGPTが実際のwriteを行う前にユーザーへ変更planを提示し、明示的な承認を得てから実行する。
+
+変更planには最低限、次を含める。
+
+- current state / problem
+- change purpose
+- target file(s)
+- intended change summary
+
+read-onlyな調査・fetch・比較には承認を要求しない。
+
+承認は提示したplanの範囲に対して有効とする。対象file、責務、意味上のscopeがmaterially拡大する場合は、write前に更新planを再提示して承認を取り直す。
+
 ## New development Task
 
 過去チャットやpromptに書かれたcommit hashを現在値として無条件に信用しない。
@@ -36,7 +51,7 @@ remote/local照合、checkout / worktree、commit / push / reviewの詳細は [`
 | commit / push / pushed-state review | [Shared Git Workflow](./GIT-WORKFLOW.md) |
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](./AGENT-PROMPT-STYLE.md) |
 | implementation Coding Agent role / prompt content / management ordering / handoff | [Shared Implementation Coding Agent Workflow](./CODING-AGENT-WORKFLOW.md) |
-| reusable implementation/review skills | [Shared Agent Skills](./AGENT-SKILLS.md) |
+| reusable implementation/review skills and Human terminal instruction skill routing | [Shared Agent Skills](./AGENT-SKILLS.md) |
 
 ## Task lifecycle
 
@@ -61,7 +76,7 @@ Manual E2E test operatorなどimplementation以外のexecution roleは、このi
 2. Git remote state、branch / checkout / worktree、commit / push / reviewが関係する場合は`GIT-WORKFLOW.md`を読む。
 3. Execution agent向けpromptを生成する場合は、roleにかかわらず`AGENT-PROMPT-STYLE.md`を読む。
 4. Implementation / blocking-fix Coding Agent向けprompt、implementation role boundary、implementation handoffが関係する場合だけ`CODING-AGENT-WORKFLOW.md`を読む。
-5. Agent skill選択が必要な場合だけ`AGENT-SKILLS.md`とproject固有skill policyを読む。
+5. Agent skill選択が必要な場合は`AGENT-SKILLS.md`とproject固有skill policyを読む。Humanがcopy/pasteして実行するterminal command / shell scriptをChatGPTが生成する場合も`AGENT-SKILLS.md`を読み、そこに登録されたHuman terminal instruction skillのactivation ruleに従う。
 6. Project固有ruleが同じtopicを上書き / 追加する場合はproject policyを優先する。
 
 Manual E2E test-operator promptであるという理由だけで`CODING-AGENT-WORKFLOW.md`を読まない。Manual E2Eのallowed operationsはproject-specific Manual E2E authorityを読む。
