@@ -119,4 +119,11 @@ required gate failure 修正:
 
 - `review-against-contract`
 
+Human向けterminal instruction generation:
+
+- dedicated skill identifier: `human-terminal-instructions`
+- trigger: ChatGPTがHumanにcopy/pasteして実行してもらうterminal command / shell scriptを生成するとき。
+- activation: skill本文がrepositoryに追加された後は、このtriggerに該当する生成で常に適用する。
+- skill本文がまだ存在しない間はidentifierだけからshell-specific ruleを推測してnormative behaviorとして扱わない。
+
 project 固有の追加 skill がある場合は、その project の `AGENT-SKILLS.md` を参照する。
