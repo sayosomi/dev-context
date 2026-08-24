@@ -19,122 +19,14 @@ current stateのauthorityは次の通り。
 
 Chat roleは会話整理のための分類であり、Issue status、execution ownership、lane occupancyそのものではない。
 
-### Coordinator chat
+| Role | Purpose | Owner |
+| --- | --- | --- |
+| Coordinator | Project全体のstatus整理、Work選択、routing | [`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md) |
+| Issue Authoring | Issue作成・調査・仕様・contract・dependency整理 | [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md) |
+| Implementation | Ready Issueのimplementation / fix / verification / integration / review / merge | [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) |
+| E2E | required Manual E2Eの実行・再開 | [`CHAT-E2E.md`](./CHAT-E2E.md) |
 
-Project全体の整理とroutingを行う。
-
-主な用途:
-
-- current status / Ready Queue / blockersの確認
-- 次に進めるWorkの選択
-- lane / remote / Linearの整合確認
-- project運用ruleの検討
-- 個別Issue / E2E chatへの振り分け
-
-Coordinator chat自体はimplementation laneやManual E2E laneを占有しない。
-
-### Issue Authoring chat
-
-Issueを**作る / 育てる / 編集する**ためのchat。
-
-主な用途:
-
-- Humanが報告したBugを調査してIssue化する
-- 要望 / アイデアを正式Workへ育てる
-- existing Issueの仕様をHumanと相談して決める
-- product / UX / compatibility / scope decisionを確定する
-- latest repositoryを調査して細かなimplementation contractを策定する
-- same Issue / new Issueのboundaryを決める
-- dependency / parent-child / relationを整理する
-- acceptance criteria / Manual E2E planを策定する
-- `Contract: Pending | Blocked`を`Ready`へ進める
-- current fact driftに合わせてReady contractをrefreshする
-
-Issue Authoringはrepository implementationではない。
-
-- `main` / `sub` / `e2e` laneをclaimしない。
-- implementation branch / worktreeを作らない。
-- product code implementation / blocking fixを開始しない。
-- Readyになっただけでは`In Progress`へ進めない。
-- implementation待ちのReady Workは原則`Todo`に置く。
-
-**Issue Authoring chatの同時実行数に上限を設けない。**
-
-複数IssueのAuthoringを別chatで並行してよい。これはfixed implementation capacityとは無関係であり、3つ目以降のimplementation trackを許可する意味ではない。
-
-同じIssueを複数Authoring chatが扱うことも禁止しない。ただしLinear write前にcurrent Issue / relevant commentsを再取得し、別chatの新しい変更を失わないこと。競合するproduct decisionをlast-write-winsで上書きしない。一意に統合できない場合はHumanへ判断を戻す。
-
-Issue contractの判断詳細は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、Linear lifecycleは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) をauthorityとする。
-
-### Implementation chat
-
-`Contract: Ready`なIssueのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
-
-実行capacityはchat数ではなく [`CHECKOUTS.md`](./CHECKOUTS.md) のfixed implementation laneで決まる。
-
-- `main`: at most 1 implementation track
-- `sub`: at most 1 implementation track
-- 合計最大2 implementation track
-
-Implementation chatを新しく作っただけではlaneをclaimしない。実際のstartup gate / lane assignment / Base checkpoint記録が完了した時点でexecutionが開始する。
-
-repository implementation / blocking fixは [`CODING-AGENT.md`](./CODING-AGENT.md) に従いLuna xhighが担当する。
-
-#### Implementation start / resume completion rule
-
-Humanがimplementation Issueについて`開始` / `再開` / `続ける` / `進める`等を指示した場合、ChatGPTはremote / Linear / policyの再確認やblocker説明だけで停止しない。
-
-その応答は、次のどちらかに到達して初めてstart / resume handoffとして完了する。
-
-1. ChatGPT側で次のexecutionを実際に開始できる状態まで進み、必要なlane assignment / checkpoint / Luna handoffを開始する。
-2. Human actionが必要なら、Humanが**その応答から直ちに実行できる最初の完全なhandoff**を同じ応答内に提示する。
-
-Human action待ちになる場合の原則:
-
-- `Xの出力待ち`、`preflight結果待ち`、`上のaudit結果待ち`等とだけ述べて停止しない。
-- そのXを取得するためのcommand / instructionが必要なら、同じ応答内に完全な形で提示する。
-- 実際には提示していないcommand / blockを`上のcommand`、`先ほどのaudit`等として参照しない。
-- concrete blockerを報告するときは、blockerの説明と**解除するための次のaction**をセットで出す。
-- local lane evidence不足が唯一のblockerなら、[`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflight handoff ruleに従い、その場で最初の実行可能なread-only handoffまで出す。
-- Humanが必要なfresh evidenceをすでに現在の会話で提示している場合は、同じ取得手順を機械的に要求し直さない。
-
-product / UX decision、approval-gated dev-context write、unsafe / destructive unknown-state recoveryなど、Human判断そのものが必要なboundaryはこのruleで自動決定しない。その場合も「何を判断 / 実行すれば先へ進めるか」を具体化して返す。
-
-#### Implementation continuation completion rule
-
-HumanがLuna implementation / integration checkpoint等の結果を返した後、残る作業がChatGPTから直接扱えるremote / management stateだけで完結する場合、その工程をHumanへの細かなhandoffへ分割しない。
-
-典型的なremote-only continuation:
-
-```text
-Luna result
--> pushed HEAD / latest main freshness
--> fresh CI completion
--> blocking review
--> merge
--> merged-state verification
--> Linear synchronization
-```
-
-原則:
-
-- fresh CIが`queued` / `in_progress`でも、それ自体を理由に`CI結果をまた返してください`等のHuman actionへ変換しない。ChatGPTが同じexecution trackでremote stateを追跡し、PASS / FAIL / concrete blockerまで進める。
-- progress updateは出してよいが、Humanが何もする必要のないremote-only intermediate stateをconversation handoff boundaryにしない。
-- blocking reviewに必要なGitHub diff / code / review thread / CI evidenceをChatGPTが取得できるならHumanに再取得させない。
-- safe merge authorizationが既にcurrent execution trackへ与えられている場合、通常のmerge confirmationを再要求しない。merge gateは`LINEAR-GITHUB.md`に従う。
-- merge後のGitHub / Linear synchronizationも、Human-only actionがなければ同じcontinuationで完了する。
-
-Humanへ戻してよいのは、product / UX / scope decision、unsafe local state、destructive operation、Human-only environment / observation、required approval boundary、またはcurrent toolsでは解消できないconcrete blocker等、**Human actionが実際に必要な場合だけ**。
-
-local checkoutのdeterministic releaseだけが残る場合は、Work completion / Linear statusと物理lane cleanupを混同しない。lane stateは`CHECKOUTS.md`、Issue statusは`LINEAR-ISSUES.md` / `LINEAR-GITHUB.md`をauthorityとする。
-
-### E2E chat
-
-required Manual E2Eを実行するchat。
-
-実行capacityは [`CHECKOUTS.md`](./CHECKOUTS.md) の`e2e` lane最大1 track。Judgment / Executor / PASS-FAIL-BLOCKEDは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。
-
-E2E chatを新しく作っただけでは`e2e` laneをclaimしない。tested commit / marker / Issue checkpointを固定した時点でexecutionが開始する。
+chatを新しく作っただけではIssue statusやexecution laneを変更しない。各role固有のstartup / handoffはそのowner documentに従う。
 
 ## Chat role and Work identity are separate
 
@@ -156,9 +48,7 @@ chatとlaneも固定対応させない。`main chat` / `sub chat`のような恒
 
 ## Rotation is always allowed
 
-Humanがchatを重い、遅い、混乱している、判断品質が落ちた、または単に切り替えたいと感じた場合、同じWorkの途中でも新chatへrotationしてよい。
-
-rotation自体を正当化する必要はない。
+Humanがchatを重い、遅い、混乱している、判断品質が落ちた、または単に切り替えたいと感じた場合、同じWorkの途中でも新chatへrotationしてよい。rotation自体を正当化する必要はない。
 
 ### Normal rotation
 
@@ -246,21 +136,6 @@ Manual E2E           -> e2eで最大1 track
 
 Issue Authoringを多数並行することは許可するが、Ready Workが増えたことを理由にimplementation laneを追加しない。
 
-## Linear write safety for concurrent Authoring
-
-Issue Authoringは多数並行できるため、Linear writeではcurrent stateを再確認する。
-
-原則:
-
-1. write直前にtarget Issue / relevant current commentsを取得する。
-2. 自分のchat開始時点より新しい変更があれば意味を確認する。
-3. independentな追加は統合する。
-4. descriptionを更新する場合、別chatのcurrent decision / acceptanceを消さない。
-5. incompatibleなproduct decision、scope、acceptance変更が競合した場合は勝手に上書きしない。
-6. write後は`LINEAR-ISSUES.md`のpost-write verificationに従う。
-
-細かなchat transcriptや議論履歴をLinearへ複製しない。current Work state / decision / checkpointだけを残す。
-
 ## Handoff between chat roles
 
 典型flow:
@@ -278,16 +153,17 @@ Human report / idea
 -> Done
 ```
 
-Issue AuthoringからImplementationへ移る際、同じchatを継続することも技術的には禁止しないが、chat roleとexecution boundaryを明確にするため新chatへ切り替えてよい。どちらの場合もimplementation startup gateを省略しない。
+roleを切り替える際も、destination roleのstartup gateを省略しない。同じchatを継続するか新chatへ切り替えるかはWork identityとは別判断。
 
 ## Loading rule
 
-1. Chat role判断、chat開始 / 再開、rotation、handoff、外部state recoveryではこの文書を読む。
-2. Issue Authoringでは`LINEAR.md`、`LINEAR-ISSUES.md`、`CONTRACT-DECISIONS.md`と、READMEが要求するrelevant authorityを読む。
-3. Implementation chatではREADMEのimplementation loading ruleに従う。
-4. E2E chatではREADMEのManual E2E loading ruleに従う。
-5. local lane操作が必要な場合だけ`CHECKOUTS.md`を読む。
+1. Chat role判断、rotation、handoff、external-state recoveryではこのdocumentを読む。
+2. Coordinator workでは`CHAT-COORDINATOR.md`。
+3. Issue Authoringでは`CHAT-AUTHORING.md`。
+4. Implementationでは`CHAT-IMPLEMENTATION.md`。
+5. E2Eでは`CHAT-E2E.md`。
+6. 各role ownerを読んだ後、READMEのtopic-specific loading ruleに従う。
 
 ## Maintenance rule
 
-Issue lifecycle、contract semantics、implementation executor、checkout、Manual E2Eの詳細をこの文書へ複製しない。それぞれのowner documentを参照し、この文書はchat session lifecycle / role / rotation / recoveryのboundaryだけをownerする。
+このdocumentはchat共通lifecycle / role routing / rotation / recoveryだけをownerする。role固有の動作は各`CHAT-*.md`へ置き、Issue lifecycle、contract semantics、implementation executor、checkout、Manual E2Eの詳細はそれぞれのowner documentへ置く。
