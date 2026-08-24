@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="trial-2"
+VERSION="trial-3"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 
 if [[ "${NUINUI_SELFTEST:-0}" == "1" ]]; then
@@ -66,6 +66,15 @@ marker_path() {
   local git_dir=""
   git_dir="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
   echo "$git_dir/nuinui-slot"
+}
+
+lane_repo() {
+  case "$1" in
+    main) echo "$MAIN_WT" ;;
+    sub) echo "$SUB_WT" ;;
+    e2e) echo "$E2E_WT" ;;
+    *) return 2 ;;
+  esac
 }
 
 show_lane() {
@@ -134,7 +143,7 @@ preflight() {
   echo "  ERROR: no usable worktree found"
 }
 
-start_lane() {
+verify_lane() {
   local lane="$1"
   local issue="$2"
   local expected_base="$3"
@@ -146,6 +155,7 @@ start_lane() {
   local remote_main=""
   local branch_lc=""
   local issue_num=""
+  local action=""
 
   case "$lane" in
     main) repo="$MAIN_WT" ;;
@@ -155,6 +165,10 @@ start_lane() {
 
   if [[ ! "$issue" =~ '^SAY-[0-9]+$' ]]; then
     echo "ERROR: Issue must look like SAY-123"
+    return 2
+  fi
+  if [[ ! "$expected_base" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "ERROR: expected base must be a full 40-character commit SHA"
     return 2
   fi
 
@@ -173,7 +187,7 @@ start_lane() {
   dirty="$(git -C "$repo" status --porcelain)"
   if [[ -n "$dirty" ]]; then
     echo "BLOCKED: $lane lane has uncommitted changes"
-    echo "No mutation was performed."
+    git -C "$repo" status --short
     return 1
   fi
 
@@ -181,17 +195,18 @@ start_lane() {
   if [[ "$lane" == "main" && "$current_branch" != "main" ]]; then
     echo "BLOCKED: main lane is not on idle branch main"
     echo "ACTUAL: ${current_branch:-DETACHED}"
-    echo "No mutation was performed."
     return 1
   fi
   if [[ "$lane" == "sub" && -n "$current_branch" ]]; then
     echo "BLOCKED: sub lane is not at idle detached HEAD"
     echo "ACTUAL: $current_branch"
-    echo "No mutation was performed."
     return 1
   fi
 
-  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; return 1; }
+  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || {
+    echo "ERROR: git fetch failed"
+    return 1
+  }
   remote_main="$(git -C "$repo" rev-parse origin/main)" || return 1
   current_head="$(git -C "$repo" rev-parse HEAD)" || return 1
 
@@ -199,12 +214,6 @@ start_lane() {
     echo "BLOCKED: expected base is stale"
     echo "EXPECTED: $expected_base"
     echo "ACTUAL:   $remote_main"
-    return 1
-  fi
-  if [[ "$current_head" != "$expected_base" ]]; then
-    echo "BLOCKED: idle lane HEAD does not match expected base"
-    echo "HEAD:     $current_head"
-    echo "EXPECTED: $expected_base"
     return 1
   fi
 
@@ -219,7 +228,71 @@ start_lane() {
     return 1
   fi
 
-  git -C "$repo" switch -c "$branch" "$expected_base" || { echo "ERROR: branch creation failed"; return 1; }
+  if [[ "$current_head" == "$expected_base" ]]; then
+    action="STARTABLE"
+  elif git -C "$repo" merge-base --is-ancestor "$current_head" "$expected_base"; then
+    action="STARTABLE_AFTER_SAFE_NORMALIZATION"
+  else
+    echo "BLOCKED: idle lane HEAD is not an ancestor of expected Base"
+    echo "HEAD: $current_head"
+    echo "Base: $expected_base"
+    return 1
+  fi
+
+  echo "VERIFIED"
+  echo "  lane=$lane"
+  echo "  issue=$issue"
+  echo "  branch=$branch"
+  echo "  current_head=$current_head"
+  echo "  expected_base=$expected_base"
+  echo "  origin_main=$remote_main"
+  echo "  action=$action"
+}
+
+start_lane() {
+  local lane="$1"
+  local issue="$2"
+  local expected_base="$3"
+  local branch="$4"
+  local repo=""
+
+  repo="$(lane_repo "$lane")" || {
+    echo "ERROR: lane must be main or sub"
+    return 2
+  }
+
+  verify_lane "$lane" "$issue" "$expected_base" "$branch" >/dev/null || return $?
+
+  local current_head="$(git -C "$repo" rev-parse HEAD)"
+  if [[ "$current_head" != "$expected_base" ]]; then
+    if [[ "$lane" == "main" ]]; then
+      git -C "$repo" merge --ff-only origin/main || {
+        echo "ERROR: safe fast-forward failed"
+        return 1
+      }
+    else
+      git -C "$repo" switch --detach "$expected_base" || {
+        echo "ERROR: safe detached normalization failed"
+        return 1
+      }
+    fi
+  fi
+
+  local normalized_head="$(git -C "$repo" rev-parse HEAD)"
+  if [[ "$normalized_head" != "$expected_base" ]]; then
+    echo "ERROR: normalization did not reach expected Base"
+    echo "ACTUAL: $normalized_head"
+    echo "EXPECTED: $expected_base"
+    return 1
+  fi
+
+  verify_lane "$lane" "$issue" "$expected_base" "$branch" >/dev/null || return $?
+
+  git -C "$repo" switch -c "$branch" "$expected_base" || {
+    echo "ERROR: branch creation failed"
+    return 1
+  }
+
   echo "STARTED"
   echo "  lane=$lane"
   echo "  issue=$issue"
@@ -277,7 +350,10 @@ release_lane() {
   fi
 
   if [[ "$lane" == "main" ]]; then
-    local_main="$(git -C "$repo" rev-parse refs/heads/main 2>/dev/null)" || { echo "BLOCKED: local main branch is missing"; return 1; }
+    local_main="$(git -C "$repo" rev-parse refs/heads/main 2>/dev/null)" || {
+      echo "BLOCKED: local main branch is missing"
+      return 1
+    }
     if ! git -C "$repo" merge-base --is-ancestor "$local_main" "$remote_main"; then
       echo "BLOCKED: local main cannot fast-forward to origin/main"
       echo "LOCAL_MAIN:  $local_main"
@@ -389,7 +465,10 @@ e2e_release() {
   fi
 
   marker="$(marker_path "$repo")" || return 1
-  if [[ ! -f "$marker" ]]; then echo "BLOCKED: E2E marker does not exist"; return 1; fi
+  if [[ ! -f "$marker" ]]; then
+    echo "BLOCKED: E2E marker does not exist"
+    return 1
+  fi
 
   marker_issue="$(sed -n 's/^issue=//p' "$marker")"
   marker_ref="$(sed -n 's/^ref=//p' "$marker")"
@@ -408,7 +487,11 @@ e2e_release() {
     return 1
   fi
 
-  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; echo "Marker was retained."; return 1; }
+  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || {
+    echo "ERROR: git fetch failed"
+    echo "Marker was retained."
+    return 1
+  }
   remote_main="$(git -C "$repo" rev-parse origin/main)" || return 1
 
   git -C "$repo" switch --detach "$remote_main" || {
@@ -417,7 +500,11 @@ e2e_release() {
     return 1
   }
 
-  rm -- "$marker" || { echo "ERROR: returned to idle HEAD but marker removal failed"; return 1; }
+  rm -- "$marker" || {
+    echo "ERROR: returned to idle HEAD but marker removal failed"
+    return 1
+  }
+
   echo "E2E RELEASED"
   echo "  head=$remote_main"
   echo "  marker=none"
@@ -474,8 +561,11 @@ self_test() {
   local context_repo=""
   local admin_repo=""
   local base=""
+  local advanced_base=""
   local checkpoint=""
   local wrong_base=""
+  local out=""
+  local divergent_head=""
 
   root="$(mktemp -d "/Users/yosomi/Code/nuinui-local-tools/integrated-test.XXXXXX")" || {
     echo "SELFTEST FAIL: mktemp"
@@ -525,58 +615,120 @@ self_test() {
   echo "TEST: preflight"
   "$SCRIPT_PATH" preflight >/dev/null || return 1
 
-  echo "TEST: stale start blocked"
-  if "$SCRIPT_PATH" start main SAY-999 "$wrong_base" test/say-999-main >/dev/null 2>&1; then
+  echo "TEST: verify exact base"
+  "$SCRIPT_PATH" verify main SAY-999 "$base" test/say-999-main >/dev/null || return 1
+
+  echo "TEST: verify stale base blocked"
+  if "$SCRIPT_PATH" verify main SAY-999 "$wrong_base" test/say-999-main >/dev/null 2>&1; then
     echo "SELFTEST FAIL: stale base accepted"
     return 1
   fi
 
+  echo "TEST: behind ancestor verify + normalized start"
+  echo remote-advance >> "$seed/file.txt"
+  git -C "$seed" add file.txt
+  git -C "$seed" commit -q -m remote-advance
+  git -C "$seed" push -q origin main
+  advanced_base="$(git -C "$seed" rev-parse HEAD)"
+  git -C "$main_repo" fetch origin --prune >/dev/null 2>&1 || return 1
+
+  out="$("$SCRIPT_PATH" verify main SAY-998 "$advanced_base" test/say-998-main 2>&1)" || {
+    echo "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q 'action=STARTABLE_AFTER_SAFE_NORMALIZATION' || {
+    echo "SELFTEST FAIL: ancestor verify did not expose safe normalization"
+    return 1
+  }
+
+  "$SCRIPT_PATH" start main SAY-998 "$advanced_base" test/say-998-main >/dev/null || return 1
+  [[ "$(git -C "$main_repo" rev-parse HEAD)" == "$advanced_base" ]] || {
+    echo "SELFTEST FAIL: main normalization did not reach expected Base"
+    return 1
+  }
+
+  echo "TEST: local branch already exists blocked"
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+  git -C "$main_repo" branch test/say-997-local "$advanced_base"
+  if "$SCRIPT_PATH" verify main SAY-997 "$advanced_base" test/say-997-local >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: local branch accepted"
+    return 1
+  fi
+
+  echo "TEST: remote branch already exists blocked"
+  git -C "$main_repo" branch test/say-996-remote "$advanced_base"
+  git -C "$main_repo" push -q origin test/say-996-remote:refs/heads/test/say-996-remote || return 1
+  git -C "$main_repo" branch -D test/say-996-remote >/dev/null
+  git -C "$main_repo" fetch origin --prune >/dev/null 2>&1 || return 1
+  if "$SCRIPT_PATH" verify main SAY-996 "$advanced_base" test/say-996-remote >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: remote branch accepted"
+    return 1
+  fi
+
+  echo "TEST: dirty verify blocked"
+  echo dirty >> "$main_repo/file.txt"
+  if "$SCRIPT_PATH" verify main SAY-995 "$advanced_base" test/say-995-dirty >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: dirty lane accepted"
+    return 1
+  fi
+  git -C "$main_repo" restore -- file.txt
+
+  echo "TEST: divergent HEAD blocked"
+  git -C "$main_repo" switch -c selftest-divergent "$base" >/dev/null 2>&1 || return 1
+  echo divergent > "$main_repo/divergent.txt"
+  git -C "$main_repo" add divergent.txt
+  git -C "$main_repo" commit -q -m divergent
+  divergent_head="$(git -C "$main_repo" rev-parse HEAD)"
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+  git -C "$main_repo" reset --hard "$divergent_head" >/dev/null || return 1
+  if "$SCRIPT_PATH" verify main SAY-994 "$advanced_base" test/say-994-divergent >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: divergent HEAD accepted"
+    return 1
+  fi
+
   echo "TEST: main start/release"
-  "$SCRIPT_PATH" start main SAY-999 "$base" test/say-999-main >/dev/null || return 1
+  git -C "$main_repo" reset --hard "$advanced_base" >/dev/null
+  git -C "$main_repo" switch main >/dev/null 2>&1
+  "$SCRIPT_PATH" start main SAY-993 "$advanced_base" test/say-993-main >/dev/null || return 1
   echo main >> "$main_repo/file.txt"
   git -C "$main_repo" add file.txt
   git -C "$main_repo" commit -q -m main
   checkpoint="$(git -C "$main_repo" rev-parse HEAD)"
-  git -C "$main_repo" push -q origin HEAD:refs/heads/test/say-999-main
-
+  git -C "$main_repo" push -q origin HEAD:refs/heads/test/say-993-main || return 1
   if "$SCRIPT_PATH" release main "$checkpoint" >/dev/null 2>&1; then
     echo "SELFTEST FAIL: unmerged release accepted"
     return 1
   fi
-
-  git -C "$main_repo" push -q origin HEAD:main
+  git -C "$main_repo" push -q origin HEAD:main || return 1
   "$SCRIPT_PATH" release main "$checkpoint" >/dev/null || return 1
 
   echo "TEST: e2e marker/start/release"
-  git -C "$e2e_repo" fetch origin --prune >/dev/null 2>&1
-  git -C "$e2e_repo" switch --detach origin/main >/dev/null 2>&1
+  git -C "$e2e_repo" fetch origin --prune >/dev/null 2>&1 || return 1
+  git -C "$e2e_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
   base="$(git -C "$e2e_repo" rev-parse HEAD)"
-  "$SCRIPT_PATH" e2e-start SAY-999 "$base" >/dev/null || return 1
-
-  if "$SCRIPT_PATH" e2e-start SAY-999 "$base" >/dev/null 2>&1; then
+  "$SCRIPT_PATH" e2e-start SAY-992 "$base" >/dev/null || return 1
+  if "$SCRIPT_PATH" e2e-start SAY-992 "$base" >/dev/null 2>&1; then
     echo "SELFTEST FAIL: duplicate E2E start accepted"
     return 1
   fi
   "$SCRIPT_PATH" e2e-release >/dev/null || return 1
 
   echo "TEST: sub start/dirty release/clean release"
-  git -C "$sub_repo" fetch origin --prune >/dev/null 2>&1
-  git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1
+  git -C "$sub_repo" fetch origin --prune >/dev/null 2>&1 || return 1
+  git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
   base="$(git -C "$sub_repo" rev-parse HEAD)"
-  "$SCRIPT_PATH" start sub SAY-998 "$base" test/say-998-sub >/dev/null || return 1
+  "$SCRIPT_PATH" start sub SAY-991 "$base" test/say-991-sub >/dev/null || return 1
   echo sub >> "$sub_repo/file.txt"
   git -C "$sub_repo" add file.txt
   git -C "$sub_repo" commit -q -m sub
   checkpoint="$(git -C "$sub_repo" rev-parse HEAD)"
-  git -C "$sub_repo" push -q origin HEAD:main
+  git -C "$sub_repo" push -q origin HEAD:main || return 1
   echo dirty >> "$sub_repo/file.txt"
-
   if "$SCRIPT_PATH" release sub "$checkpoint" >/dev/null 2>&1; then
     echo "SELFTEST FAIL: dirty release accepted"
     return 1
   fi
-
-  git -C "$sub_repo" restore file.txt
+  git -C "$sub_repo" restore -- file.txt
   "$SCRIPT_PATH" release sub "$checkpoint" >/dev/null || return 1
 
   echo "TEST: context-sync"
@@ -587,13 +739,12 @@ self_test() {
   echo context >> "$admin_repo/context.txt"
   git -C "$admin_repo" add context.txt
   git -C "$admin_repo" commit -q -m context
-  git -C "$admin_repo" push -q origin main
+  git -C "$admin_repo" push -q origin main || return 1
   "$SCRIPT_PATH" context-sync >/dev/null || return 1
-
-  if [[ "$(git -C "$context_repo" rev-parse HEAD)" != "$(git -C "$context_repo" rev-parse origin/main)" ]]; then
+  [[ "$(git -C "$context_repo" rev-parse HEAD)" == "$(git -C "$context_repo" rev-parse origin/main)" ]] || {
     echo "SELFTEST FAIL: context-sync did not reach origin/main"
     return 1
-  fi
+  }
 
   echo "SELFTEST PASS"
 }
@@ -601,6 +752,10 @@ self_test() {
 case "${1:-}" in
   version) echo "$VERSION" ;;
   preflight) preflight ;;
+  verify)
+    [[ $# -eq 5 ]] || { echo "Usage: $0 verify <main|sub> <SAY-123> <expected-base-sha> <branch>"; exit 2; }
+    verify_lane "$2" "$3" "$4" "$5"
+    ;;
   start)
     [[ $# -eq 5 ]] || { echo "Usage: $0 start <main|sub> <SAY-123> <expected-base-sha> <branch>"; exit 2; }
     start_lane "$2" "$3" "$4" "$5"
@@ -620,7 +775,11 @@ case "${1:-}" in
     echo
     preflight
     echo
-    if [[ -d "$DEV_CONTEXT_WT" ]]; then echo "dev-context=$DEV_CONTEXT_WT"; else echo "dev-context=not-installed"; fi
+    if [[ -d "$DEV_CONTEXT_WT" ]]; then
+      echo "dev-context=$DEV_CONTEXT_WT"
+    else
+      echo "dev-context=not-installed"
+    fi
     ;;
   self-test) self_test ;;
   *)
@@ -628,6 +787,7 @@ case "${1:-}" in
     echo
     echo "Commands:"
     echo "  preflight"
+    echo "  verify <main|sub> <SAY-123> <expected-base-sha> <branch>"
     echo "  start <main|sub> <SAY-123> <expected-base-sha> <branch>"
     echo "  release <main|sub> <merged-checkpoint-sha>"
     echo "  e2e-start <SAY-123> <tested-ref>"
