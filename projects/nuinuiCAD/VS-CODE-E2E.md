@@ -35,11 +35,13 @@ counted Luna run
 
 Human preparationはManual E2Eのproduct test unitではない。Humanがshell scriptを起動しただけで`Executor: Human`へ分類しない。
 
-### Human access constraint
+### Luna host-preparation Human access constraint
 
-Humanは**遠隔Terminalだけを操作できる**前提とする。
+この制約は**`Executor: Luna` runの前段でHumanがhostを準備するフェーズだけ**に適用する。`Executor: Human`としてproduct test unit自体を実行するHumanには適用しない。
 
-Humanへ次を要求しない。
+Luna向けhost preparationのHumanは**遠隔Terminalだけを操作できる**前提とする。
+
+Luna向けhost preparation中のHumanへ次を要求しない。
 
 - VS Code windowを見る
 - mouse / keyboardでVS Codeを操作する
@@ -49,9 +51,24 @@ Humanへ次を要求しない。
 - screenshotを撮る、またはGUI状態を判定する
 - Terminal外のアプリへ移動する
 
-Human preparationはshellだけで完結しなければならない。
+Luna向けHuman preparationはshellだけで完結しなければならない。
 
 GUI-only permission / modal / OS interactionが必要になった場合、その場でHumanへTerminal外操作を依頼しない。host preparationをenvironment `BLOCKED`として止め、別途environment prerequisiteとして解決してからfresh preparationをやり直す。
+
+### Executor: Human GUI execution
+
+`Executor: Human` のManual E2Eでは、terminal preparationが完了した後、HumanはVS Code Extension Development Hostへ移動してproduct test unitを直接実行してよい。
+
+HumanはTaskのdeclared action / oracleに必要な範囲で:
+
+- VS Code GUIを見る;
+- mouse / keyboardを操作する;
+- visual / interaction qualityを判断する;
+- screenshotを撮ってChatGPTへ提出する。
+
+Screenshotのcase grouping、Human judgmentとの境界、追加evidenceの要求条件は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のHuman execution / screenshot evidence ruleをauthorityとする。1枚で複数caseを明確に判定できる場合は、fixture / viewportを構成してその1枚へまとめる。
+
+`Executor: Human` の環境準備自体は引き続きcopy/paste-ready terminal blockで行う。Luna専用のCDP port、`NUINUICAD_MCP_OBSERVATION=1`、handoff file等はHuman unitのcontractに必要な場合だけ使い、Human testのために機械的に要求しない。
 
 ## Baseline
 
@@ -103,15 +120,21 @@ trap 's=$?; echo; echo "FAILED at line $LINENO: $BASH_COMMAND"; echo "exit=$s"; 
 BASH
 ```
 
-Human scriptは成功時に機械判定可能なfinal markerを出す。
+Human scriptは成功時に、次のexecutorを区別できる機械判定可能なfinal markerを出す。
 
 ```text
 READY FOR LUNA
 ```
 
+または:
+
+```text
+READY FOR HUMAN E2E
+```
+
 失敗時はTerminalを閉じず、失敗command / line / exit statusを表示する。
 
-Human setupはproduct oracleを実行しない。例えばCompletionを開く、Canvasをclickする、Renameを実行する等はsetupに含めない。
+Human setupはproduct oracleを実行しない。例えばCompletionを開く、Canvasをclickする、Renameを実行する等はsetupに含めない。`READY FOR HUMAN E2E`後のGUI操作はHuman test unit本体として扱う。
 
 ## Fresh profile settings
 
@@ -132,9 +155,10 @@ Human setupはproduct oracleを実行しない。例えばCompletionを開く、
 
 - Task-specific fixtureは`/tmp`等checkout/worktreeを汚さない場所へ生成する。
 - setup command block内でfixtureを作り、そのfileを起動時に明示的にopenする。
-- Luna向けfixtureはcurrent runだけに対応するunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
+- current runのfixtureはunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
-- setup終了時にfixture absolute pathをhandoff fileへ保存する。
+- Luna runではsetup終了時にfixture absolute pathをhandoff fileへ保存する。
+- Human visual runで複数caseを一画面へ安全に配置できる場合は、`MANUAL-E2E.md`のscreenshot evidence grouping ruleに従ってfixture側でまとめてよい。
 
 ## Surface lifecycle coverage
 
@@ -169,7 +193,7 @@ Human visual acceptanceがVS Code theme由来のcolor tokenやcontrastに依存�
 
 Luna Manual E2Eを実行するmacOS machineでは、実行中に他用途でVS Codeを使用しないことを前提とする。
 
-**Human terminal setup中に**既存のVisual Studio Code processをすべて終了し、0 processであることを確認してからfresh isolated hostを起動する。通常終了後も残るstale Extension Development Host / helper processはTerminalからforce terminationしてよい。
+**Luna向けHuman terminal setup中に**既存のVisual Studio Code processをすべて終了し、0 processであることを確認してからfresh isolated hostを起動する。通常終了後も残るstale Extension Development Host / helper processはTerminalからforce terminationしてよい。
 
 標準形:
 
@@ -192,7 +216,7 @@ counted Luna run開始後はHumanがprocess cleanup / relaunchを行わない。
 
 ## Canonical Human launch shape
 
-Task-specific valueを差し替えて使う。
+Task-specific valueを差し替えて使う。以下はLuna向けhost preparationを含む完全形であり、`Executor: Human`ではLuna専用CDP / observation / handoff要件をtask contractに応じて省略してよい。
 
 ```bash
 EXPECTED="<tested commit>"
@@ -289,9 +313,9 @@ CDPを確立できない状態でcounted Luna runを開始しない。Human setu
 
 setup scriptでbounded retryを許す場合も、product actionはまだ一切実行していないことを条件にする。retryはfresh profile / fresh fixtureで行い、古いhost stateをreuseしない。
 
-## GUI-only environment blockers
+## GUI-only environment blockers during Luna host preparation
 
-HumanはTerminal外へ出られないため、次はHuman setup scriptでは解消不能なenvironment blockerとして扱う。
+Luna向けHuman preparationではHumanはTerminal外へ出ないため、次はsetup scriptでは解消不能なenvironment blockerとして扱う。
 
 - macOS privacy / App Data permission prompt
 - GUI confirmation dialog
@@ -307,13 +331,13 @@ BLOCKED — GUI-only environment prerequisite requires separate resolution
 
 としてsetupを止める。
 
-Humanへ「画面を見て許可」「VS Codeで閉じて」等を依頼しない。prerequisiteが別経路で解決された後、新しいfresh setupを最初から実行する。
+Luna向けpreparation中のHumanへ「画面を見て許可」「VS Codeで閉じて」等を依頼しない。prerequisiteが別経路で解決された後、新しいfresh setupを最初から実行する。
 
 Full Disk Access等を全runのbaseline requirementとして先回りで要求しない。
 
-## Handoff file
+## Luna handoff file
 
-Human setup成功時は、Lunaが再解釈せず使えるhandoff fileを`/tmp`へ書く。
+`Executor: Luna` のHuman setup成功時は、Lunaが再解釈せず使えるhandoff fileを`/tmp`へ書く。
 
 最低限:
 
@@ -344,7 +368,7 @@ printf '\nREADY FOR LUNA\n'
 cat /tmp/nuinui-<issue>-luna.env
 ```
 
-Humanはこのmarkerを確認したらsetupを終了する。VS Code GUIへ移動しない。
+Luna向けHuman preparationではこのmarkerを確認したらsetupを終了する。VS Code GUIへ移動しない。
 
 ## Counted Luna run boundary
 
@@ -420,6 +444,8 @@ preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 - Objective observationとHuman visual/UX judgmentを独立して判定できる
 
 最後の2点は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のtest-unit boundary ruleを優先する。同じfixtureを使えることだけを理由に、異なるlifecycle pathや独立したObjective/Human oracleを1つへまとめない。
+
+`Executor: Human` のvisual evidenceでは、同じ画面で複数caseを明確に判定できるなら1枚のscreenshotへまとめる。screenshot枚数を増やすためだけにcaseを分割しない。静止画で表現できないinteractionはHuman live observationで確認し、failure / ambiguity時に必要な追加screenshotを取る。
 
 completion testでは、自動popupの有無だけに依存せず、必要に応じて`Trigger Suggest`を明示実行してnuinuiCAD providerの候補を確認する。
 
