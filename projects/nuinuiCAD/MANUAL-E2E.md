@@ -197,6 +197,30 @@ Safe reclassification:
 
 Repeated capability boundaries belong in [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md).
 
+## Meaning of start for In Review Manual E2E
+
+When the user asks to start, restart, or resume an `In Review` Issue whose current execution track is Manual E2E, do not stop after re-audit, classification, or Linear state transition.
+
+`Start` is complete only when the next executor has an immediately actionable first handoff in the same response, unless a concrete blocker prevents execution.
+
+Before that handoff:
+
+1. re-audit the current Issue / Manual E2E plan;
+2. perform the execution-time freshness check;
+3. when local execution is required, determine the execution checkout using [`CHECKOUTS.md`](./CHECKOUTS.md) and its reuse-first rule before generating a launch/setup command;
+4. move Manual E2E to `Running` only when execution is actually beginning;
+5. provide the first executable handoff immediately.
+
+For `Executor: Human`:
+
+- if local environment preparation is required and the safe checkout is already known, provide the complete copy/paste-ready terminal setup block required by the environment owner document;
+- do not make the Human manually substitute commit SHAs, checkout paths, fixture source, ports, or other values that Sol High can fix in advance;
+- do not choose the primary checkout merely because it is the canonical repository path, and do not create an additional/disposable worktree merely to avoid selecting among existing standard / reusable checkouts;
+- if the current local usage / cleanliness of candidate checkouts is not known to Sol High, the first handoff must instead be one copy/paste-ready **read-only checkout-selection preflight command** that inspects the standard / reusable candidates without switching branches, resetting, stashing, cleaning, or otherwise mutating user work;
+- after the Human returns that preflight output, select the safe checkout and provide the next complete copy/paste-ready setup block.
+
+Do not report an `In Review` Manual E2E Issue as newly started while the user still has to ask separately for the first command.
+
 ## Sol High -> Luna prompt
 
 Sol High owns classification and prompt construction. Luna is test operator, not designer or fixer.
