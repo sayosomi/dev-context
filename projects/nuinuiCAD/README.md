@@ -19,7 +19,11 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 
 | Topic | Owner |
 | --- | --- |
-| Chat session roles / Issue Authoring / rotation / external-state recovery | [Chat workflow](./CHAT-WORKFLOW.md) |
+| Chat common lifecycle / role routing / rotation / external-state recovery | [Chat workflow](./CHAT-WORKFLOW.md) |
+| Coordinator status / Work selection / routing handoff | [Coordinator chat](./CHAT-COORDINATOR.md) |
+| Issue Authoring / contract investigation chat behavior | [Issue Authoring chat](./CHAT-AUTHORING.md) |
+| Implementation chat start / resume / continuation handoff | [Implementation chat](./CHAT-IMPLEMENTATION.md) |
+| E2E chat lifecycle | [E2E chat](./CHAT-E2E.md) |
 | fixed execution lanes / checkout occupancy / checkpoint isolation | [Execution lane policy](./CHECKOUTS.md) |
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation / blocking-fix Luna workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
@@ -99,7 +103,7 @@ main/subは互いの途中変更を取り込まない。
 毎回すべてのlinked documentを読む必要はない。
 
 1. **Always:** このREADMEを読む。
-2. **Chat start / resume / rotation / handoff / recovery、またはIssue Authoring:** `CHAT-WORKFLOW.md`。
+2. **Chat role / start / resume / rotation / handoff / recovery:** `CHAT-WORKFLOW.md` + current role owner (`CHAT-COORDINATOR.md` / `CHAT-AUTHORING.md` / `CHAT-IMPLEMENTATION.md` / `CHAT-E2E.md`)。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Execution-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md`。
