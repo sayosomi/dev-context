@@ -19,6 +19,7 @@ ChatGPT owns:
 - product / architecture / implementation contract決定;
 - implementation slicingとsafe checkpoint決定;
 - execution lane選択;
+- Human terminal assistanceとLuna handoffの使い分け;
 - Luna prompt生成;
 - blocking review / merge判断;
 - Linear / GitHub management。
@@ -32,6 +33,42 @@ Luna owns:
 - integration checkpointで必要なlatest-main integration / conflict resolution / integration fix。
 
 Lunaへopen-ended product designやarchitecture選択を委ねない。
+
+## Human terminal assistance vs Luna
+
+Humanがcopy/pasteできる単純なlocal terminal operationはimplementation executorではない。
+
+ChatGPTがlocal checkoutの観測・準備・cleanupを必要とするときは、まず[`CHECKOUTS.md`](./CHECKOUTS.md)のHuman terminal operations ruleに照らし、**mechanical / deterministicで安全条件をcommand内に固定できるならHuman terminal assistanceを優先**する。
+
+典型例:
+
+- checkout / branch / HEAD / status / worktree inventory;
+- exact ref確認;
+- safety条件が確定した単純なfetch / fast-forward / checkout;
+- cleanで不要と証明済みのworktree整理;
+- E2E markerやhost起動などimplementationを伴わないlocal preparation。
+
+Human terminal assistanceを使う場合、ChatGPTはshared `human-terminal-instructions` skillに従ったcopy/paste-ready commandを生成する。
+
+一方、次はHuman terminal assistanceへ委譲せずLuna xhighへ渡す。
+
+- product codeのimplementation;
+- blocking fix;
+- code changeを伴うimplementation-side failure diagnosis;
+- broad local iteration / test-debug loop;
+- merge / rebase conflict resolution;
+- integration checkpointのintegration fix;
+- branch commit / pushを含むimplementation execution。
+
+Default routing:
+
+```text
+ChatGPT determines the operation
+-> simple deterministic local operation? YES -> Human terminal assistance
+-> NO / implementation work -> Luna xhigh
+```
+
+Humanがterminal commandを実行したことを理由にimplementation ownershipをHumanへ移さない。implementation contract、lane、Base checkpoint、Luna ownershipはそのまま維持する。
 
 ## Fixed execution lanes
 
