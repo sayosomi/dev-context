@@ -23,6 +23,7 @@ versioned helper paths:
 ```text
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-e2e-prepare
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-integrate
 ```
 
 この`dev-context` cloneはnuinuiCAD repositoryの4th checkoutではない。
@@ -65,6 +66,21 @@ current commands:
 | `nuinui context-sync` | cleanなlocal dev-context `main`をsafe fast-forward |
 | `nuinui doctor` | helper / lane / local dev-contextのdiagnostic表示 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
+
+## Versioned `nuinui-integrate` helper
+
+`projects/nuinuiCAD/scripts/nuinui-integrate`は、integration checkpointで繰り返すdeterministicなtask-branch safety auditと、GitのEOF blank-line whitespaceだけを対象にした安全なrepairを提供する正式versioned helperである。
+
+current commands:
+
+```text
+nuinui-integrate audit <repo> <expected-base> <branch>
+nuinui-integrate repair-eof <repo> <expected-base> <commit-message>
+```
+
+`audit`はclean worktree、expected baseとのancestor関係、expected task branch、main直接変更禁止を確認する。`repair-eof`はcleanな非-main task branch上で、expected baseからのdiffにGitの`new blank line at EOF`だけが存在する場合に限ってEOF改行を正規化し、semantic content preservationを比較確認したうえでrepair commitを作成する。対象外のwhitespace anomaly、unexpected diff-check failure、semantic change、precondition mismatchは`BLOCKED:`または`ESCALATE:`で停止する。
+
+このhelperはreset / stash / force-switch / force-push / conflict resolution / CI / PR / merge、またはproduct / UX / Linear checkpoint判断を自動化しない。
 
 ## Human Manual E2E preparation helper
 
