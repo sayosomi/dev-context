@@ -2,320 +2,255 @@
 
 ## Purpose
 
-1つのWork / Linear Issueを、implementation、Pull Request、execution trackとしてどこで区切るかを定義する。
+1つのWork / Linear Issueを、implementation slice、Pull Request、safe checkpointとしてどこで区切るかを定義する。
 
 Work decompositionとimplementation slicingを混同しない。
 
 - Work decomposition: original scope / acceptanceをsame Linear Issueに残すか、independent leaf Issueへ移すか。
-- Implementation slicing: same Issueのimplementationを1つまたは複数のsequential PR / execution checkpointへどう分けるか。
-- Execution routing: 各leaf / sliceを`only_chatgpt` direct GitHub + CIで実行するか、standard Implementation Coding Agentで実行するか。
+- Implementation slicing: same Issueのimplementationを1つまたは複数のsequential slice / PRへどう分けるか。
+- Execution lane: current implementation sliceを`main`または`sub`のどちらで実行するか。
 
-same Issueであることは、same branch、same PR、same execution owner、same ChatGPT conversation、same uninterrupted execution trackを意味しない。
+Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、lane capacity / checkout isolationは [`CHECKOUTS.md`](./CHECKOUTS.md)、implementation executorは [`CODING-AGENT.md`](./CODING-AGENT.md) がauthority。
 
-Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、execution label / reservationは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) をauthorityとする。この文書はimplementation boundary、safe checkpoint、再分解の判断をownerする。
+same Issueであることはsame branch、same PR、same Luna session、same uninterrupted execution trackを意味しない。
 
 ## Core rule
 
-Implementation decomposition has two stages: a pre-execution extraction audit and continuing per-slice re-evaluation.
+Implementationはcurrent repository ownershipの自然なboundaryでsliceし、**1 sliceを1 implementation lane上で、1つの固定Base checkpointから次のsafe checkpointまで完結させる。**
 
-最初のexecution routeを決める前に、whole current implementation scopeを監査し、current repository ownershipの自然なboundaryでsliceすれば`only_chatgpt`にできる部分があるかを必ず確認する。該当部分があれば、broader Coding Agent workへ埋め込まず、safeかつindependently verifiableなleaf / sliceとして積極的に抽出する。
+最初から全PR構成を確定する必要はない。current slice開始時には少なくとも次を固定する。
 
-自然な`only_chatgpt`部分がなく、remaining implementationのすべてがCoding Agent向きなら、`only_chatgpt` coverageを増やすためだけに分割しない。ただしsemantic ownership、verification、reviewability、rollback、safe checkpoint等の別理由によるslicing判断は独立して行う。
+- current acceptance cluster;
+- primary semantic owner / boundary;
+- selected lane: `main | sub`;
+- Base checkpoint SHA;
+- branch;
+- next safe checkpoint;
+- required verification。
 
-事前auditで得たslice / route mapはprovisionalとする。各sliceを実際に開始するときはlatest repository state、実装済みslice、verification結果、Manual E2E result、残りacceptanceを再確認し、そのsliceのexecution routeを改めて判定する。
+実装executorはLuna xhigh。sliceごとに別execution routeを選ぶ仕組みは持たない。
 
-開始時に「split不要」「whole Issueを1 execution routeで進める」と判断してもTask完了まで固定しない。checkpointごとの再評価も維持する。
+## Pre-execution slicing audit
 
-大きなWorkを理由に`only_chatgpt`を諦めない。逆に、`only_chatgpt` coverageを増やすためだけに不自然なboundaryを作らない。
+Contract: ReadyのIssueでもacceptance全体をそのまま1 PRへ写像しない。
 
-目標は、**current repository ownershipが自然に分かれている箇所から、独立検証可能なdirect GitHub + CI向きleaf / sliceをできるだけ抽出し、切り出せないintegration-heavy部分だけ別execution routeへ残すこと**。
+implementation開始前にwhole current scopeを監査し、次を整理する。
 
-最初から全PR構成を確定する必要はない。implementation開始時には少なくとも最初のsafe checkpointと、そのcheckpointまでのexecution routeを決める。
+- acceptance cluster;
+- primary semantic owner / boundary;
+- upstream / downstream dependency;
+- independently verifiableか;
+- intermediate merge後もrepositoryが一貫するか;
+- later acceptanceがcurrent unmerged implementationへ暗黙依存しないか;
+- broad integration / lifecycle boundaryがどこか;
+- parallel laneで別Taskが同じowner / prerequisiteを持っていないか。
 
-## Pre-execution extraction audit
-
-Contract: ReadyのIssueでも、acceptance全体をそのまま1 PR / 1 execution routeへ写像しない。
-
-initial execution routeを選ぶ前に、whole current implementation scopeに対して次を明示的に問う。
-
-> current repository / semantic boundaryに沿ってsliceした場合、`only_chatgpt`にできるportionはあるか？
-
-答えがyesなら、そのportionをremaining integration-heavy workへ混ぜず、自然なsafe boundaryで先に抽出する。答えがnoで、すべてのimplementationがCoding Agentを必要とするなら、execution routingだけを理由に人工的なsliceを作らない。
-
-最初のrepository write前に、current repositoryを基準として少なくとも次を整理する。
-
-- acceptance cluster
-- primary semantic owner / boundary
-- upstream / downstream dependency
-- independently verifiableか
-- そのclusterだけをmergeした場合にrepositoryが一貫するか
-- remaining acceptanceから独立延期 / independent leaf化できるか
-- direct GitHub + CIがそのclusterの実装/debug loopとして適しているか
-- Coding Agentが必要になるintegration / lifecycle / exploratory workがどこに残るか
-
-特に複数owner / API / adapter / data-flow boundaryを横断するWorkでは、次のような段階を意識する。
+自然なboundary例:
 
 ```text
 semantic / type foundation
--> host-neutral planner / transformation / query
+-> host-neutral planner / transformation
 -> adapter / protocol / runtime integration
--> editor / host wiring / lifecycle integration
+-> host wiring / lifecycle integration
 -> interactive UX / production-host acceptance
 ```
 
-この形は例であり、actual repository ownershipを優先する。
-
-## `only_chatgpt` leaf extraction
-
-Large Workのboundary mapで、次を満たすclusterがあれば`only_chatgpt`候補として積極的に抽出する。
-
-- 1つまたは少数の明確なsemantic ownerで説明できる;
-- current acceptanceを独立して検証できる;
-- safe merge / handoff checkpointが成立する;
-- GitHub-visible source + tests + CIで実装とfailure diagnosisを十分に回せる;
-- open-ended architecture / UX判断をimplementation中に必要としない;
-- downstream integrationが未完成でもrepositoryを壊れた状態にしない。
-
-典型例:
-
-- parser / compiler / evaluatorのfocused semantics;
-- host-neutral model / planner / pure transformation;
-- protocol / adapterのisolated contract;
-- diagnostics / language query;
-- focused regression fix;
-- deterministic fixture / test / CI / tooling change;
-- narrow refactor with independent verification.
-
-抽出後の形は、Work boundaryに応じてどちらでもよい。
-
-### Independent Work boundary
-
-```text
-feature / aggregate scope
-├─ leaf A: only_chatgpt
-├─ leaf B: only_chatgpt
-└─ leaf C: Coding Agent / integration
-```
-
-独立Issue化は`CONTRACT-DECISIONS.md`に従う。
-
-### Same Work, sequential implementation slices
-
-```text
-SAY-X
-  slice / PR 1: only_chatgpt
-  slice / PR 2: only_chatgpt
-  slice / PR 3: Coding Agent
-```
-
-同じIssueでもexecution ownerはsliceごとに変えてよい。
+actual repository ownershipを優先する。
 
 ## Do not force decomposition
 
-次の場合は`only_chatgpt`化のためにsplitしない。
+次の場合はsplitしない。
 
 - intermediate mergeがtemporary broken stateを作る;
-- duplicate source-of-truth / duplicate ownerが必要になる;
+- duplicate source-of-truth / duplicate ownerが必要;
 - acceptanceが1つのcross-boundary transactionとしてしか意味を持たない;
-- child / slice単独では実質的なverification oracleがない;
-- artificial compatibility layerやtemporary APIを作らないと分離できない;
-- execution overheadだけ増え、semantic diagnosis / rollback境界が改善しない。
+- slice単独のverification oracleがない;
+- artificial compatibility layerやtemporary APIが必要;
+- overheadだけ増え、review / diagnosis / rollback境界が改善しない。
 
-PRを小さくすること、Issue数を増やすこと、parallel worker数を増やすこと自体を目的にしない。
+PRを小さくすること、Issue数を増やすこと、2 laneを常時埋めること自体を目的にしない。
 
 ## Safe checkpoints
 
-### Merge checkpoint
+### Implementation checkpoint
 
-current sliceをintended baseへmergeしてもrepositoryが一貫した状態を保ち、remaining acceptanceを後続sliceとして安全に実装できる地点。
+current laneの作業をremote branchへ安全に保存し、別conversation / Luna sessionから再開できる地点。
 
-少なくとも:
+最低限:
 
-- current sliceがreview可能なsemantic changeとして説明できる;
-- required automated verification / blocking reviewが完了している;
-- mergeで半端なsource-of-truth、壊れたproduction path、意図せず有効な未完成user-facing behaviorを残さない;
-- remaining acceptanceがcurrent unmerged implementationへ暗黙依存しない。
-
-同じLinear Issueにremaining acceptanceがある場合、intermediate PR mergeはIssue completionではない。
-
-### Handoff checkpoint
-
-current stateをまだmergeすべきでないが、別execution track / Coding Agent / ChatGPT conversationがlatest remote stateと記録から安全に再開できる地点。
-
-少なくとも:
-
-- current branch / PR / head;
+- current branch / pushed head;
+- Base checkpoint;
 - completed implementation;
 - remaining acceptance;
-- current verification result / failure classes;
-- next safe action;
-- current base / relevant ownership drift;
-- next intended execution route.
+- verification result / failure classes;
+- next safe action。
 
-pause / resumeは自然なhandoff triggerだが、pauseのたびにPRをsplitしない。
+pause / handoff時はここまで到達させる。checkpointしただけではlatest `main`を取り込まない。
+
+### Merge checkpoint
+
+current sliceをintended baseへmergeしてもrepositoryが一貫し、remaining acceptanceを後続sliceとして安全に実装できる地点。
+
+最低限:
+
+- current sliceがreview可能なsemantic changeとして説明できる;
+- focused verificationが完了;
+- remote branchへ保存済み;
+- remaining acceptanceがcurrent unmerged implementationへ暗黙依存しない。
+
+### Integration checkpoint
+
+**他line / latest remote `main`を取り込める唯一の通常checkpoint。**
+
+current slice implementationとfocused verificationを完了しremoteへ保存した後、blocking review / merge前に行う。
+
+```text
+pushed implementation checkpoint
+-> inspect Base checkpoint..latest main
+-> determine relevant drift
+-> Luna integrates latest intended base in same lane
+-> resolve conflicts / integration regressions
+-> required broad verification
+-> blocking review
+-> merge
+```
+
+active slice途中のroutine merge-main / rebase-mainは禁止。
+
+remote advanceがcurrent contractをmaterially invalidateした場合は、途中同期せずcurrent workを保存してcheckpointで停止し、contract / sliceを再評価する。
 
 ### Verification boundary
 
-independently verifiable sliceとは、内部helper単体が正しいだけでは不十分。
-
-adapter / projection / lowering / serialization / editor integration等のboundaryを変更する場合、少なくとも1つはそのboundaryを最後まで通したobservable resultを検証する。
+内部helper単体だけでなく、変更したboundaryを最後まで通したobservable resultを少なくとも1つ検証する。
 
 例:
 
-- completion candidate生成だけでなくadapter適用後のlabel / replace range / resulting source;
-- semantic value生成だけでなくruntime consumerへ渡るresolved value;
-- serializer payloadだけでなくround-trip後のcanonical source;
+- candidate生成だけでなくadapter適用後のlabel / replace range / resulting source;
+- semantic valueだけでなくruntime consumerへ渡るresolved value;
+- serializer payloadだけでなくround-trip canonical source;
 - host-neutral queryだけでなくproduction host adapterが公開するresult。
 
-shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration test / full suiteをTask末尾まで延期しない。
+shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration testをTask末尾まで延期しない。
+
+## Lane assignment
+
+implementation slice開始時に [`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflightを行う。
+
+- `main` FREE →通常第一候補;
+- `main` BUSYかつ`sub` FREE →独立Taskなら`sub`;
+- 両方BUSY →新しいimplementationは開始しない;
+- `e2e`はimplementationへ使わない。
+
+2 laneを超えるparallelismをIssue / branch / worktree追加で表現しない。
+
+## Cross-lane dependency rule
+
+`main`と`sub`はそれぞれ固定Base checkpointから独立して進める。
+
+禁止:
+
+- lane Aがlane Bのunfinished branchを取り込む;
+- lane Bがlane Aのmid-slice commitをbaseにする;
+- 相手laneが進んだからという理由だけのroutine sync。
+
+real prerequisiteが判明した場合:
+
+1. dependent laneをremote保存済みcheckpointで止める;
+2. prerequisite laneをintended baseへmergeする;
+3. dependent laneは次のintegration / restart checkpointでlatest mainから再構成する。
+
+stacked PRをdefaultにしない。
 
 ## Re-evaluation triggers
 
-次でboundary map、safe checkpoint、execution routeを再評価する。
+次でboundary map / safe checkpointを再評価する。
 
-1. any implementation sliceを開始しようとするとき。first sliceも含む;
-2. shared owner / adapter boundaryへ初めて接続し、broad integration test / full suite resultが得られた;
-3. Taskをpause / resumeする;
-4. implementationが当初のsemantic owner / API / contract / data-flow boundaryを越えようとする;
+1. any implementation slice開始前;
+2. shared owner / adapter boundaryへ初めて接続した;
+3. Task pause / resume;
+4. implementationが当初owner / API / contract / data-flow boundaryを越えようとする;
 5. 複数の独立failure classが残った;
-6. 1 sliceは完成・検証可能だが別ownerのacceptanceが大きく残る;
-7. current PRが複数の独立semantic changeを抱え、review / diagnosis / rollback境界が不明瞭になった;
-8. remote `main` advanceでimplementation shape / remaining ownerが変わった;
-9. blocking fix loopが新しいownerへ継続的に広がる;
-10. Manual E2E FAILで新しいfailure class / ownerが露出した;
-11. direct GitHub + CI executionが、local Coding Agent executionより明らかに不利なshapeへ変わった。
+6. current PRが複数の独立semantic changeを抱えた;
+7. Base checkpoint以降のremote main advanceがcontract / ownershipをmaterially変えた;
+8. blocking fix loopが新ownerへ広がる;
+9. Manual E2E FAILでnew failure class / ownerが露出した。
 
-file数、diff行数、commit数、経過時間はwarning signalのみ。semantic ownership、independent verification、safe mergeability、execution-loop suitabilityを優先する。
+file数、diff行数、commit数、経過時間はwarning signalのみ。
 
 ## Decision outcomes
 
-再評価結果は次のいずれか。
+### A. Same Issue + same slice
 
-### A. Same Issue + same PR + same execution route
+remaining acceptanceがcurrent sliceと強く結合し、途中mergeで不整合を作る場合。
 
-remaining acceptanceがcurrent sliceと強く結合し、途中merge / handoffで不整合やduplicate ownerを作る場合。
-
-current PRを継続し、次safe checkpointを更新する。
+same lane / branchで継続し、Base checkpointはintegration checkpointまで固定する。
 
 ### B. Same Issue + next PR
 
-current sliceを安全にmergeでき、remaining acceptanceは同じIssue completionに必要だが後続implementation sliceとして進められる場合。
+current sliceを安全にmergeでき、remaining acceptanceはsame Issue completionに必要な場合。
 
-- current PRをverify / review後にmerge;
-- Issueはremaining acceptanceがあるため完了しない;
-- implementation checkpointを記録;
-- latest remote `main`を次baseとして再確認;
-- next sliceのexecution routeを**改めて**判定する。
-
-次sliceは`only_chatgpt`でもCoding Agentでもよい。
+- current sliceをintegration / verify / review / merge;
+- Issueはactive / resumableのまま;
+- implementation checkpointをLinearへ記録;
+- current laneをreleaseしてよい;
+- next slice開始時にlaneを改めて選び、latest remote mainから新しいBase checkpointを固定する。
 
 ### C. New / extracted leaf Issue
 
-clusterが独立したscope / acceptance / verification boundaryを持ち、Workとして別leafへ移すのが自然な場合。
+clusterが独立scope / acceptance / verification boundaryを持つ場合。
 
-これはlarge featureから`only_chatgpt`向きleafを抽出する正式なoutcomeでもある。ただし`only_chatgpt`にしたいという理由だけではnew Issueを作らない。
+Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従う。
 
-Issue boundary / parent handlingは`CONTRACT-DECISIONS.md`と`LINEAR-ISSUES.md`に従う。
+### D. Blocker / contract reset
 
-### D. Execution route change
+必要なenvironment / prerequisiteがない、またはnew product / UX / scope decisionが必要な場合。
 
-Work / Issue boundaryは変わらないが、次sliceの実装methodを変更する場合。
-
-例:
-
-```text
-only_chatgpt slice complete
--> next integration slice: Coding Agent
-```
-
-または
-
-```text
-Coding Agent integration complete
--> remaining narrow regression slice: only_chatgpt
-```
-
-route変更は正常なcheckpoint判断であり、失敗扱いしない。
-
-### E. Blocker / contract reset
-
-必要なenvironment / capability / prerequisiteがない、または新しいproduct / UX / scope decisionが必要な場合。
-
-Contract / dependency / statusを各authorityに従って更新する。slicingで実行不能や未決定semanticsを隠さない。
+current workをremoteへ保存しsafe checkpointで停止する。slicingで未決定semanticsを隠さない。
 
 ## Sequential PR rule
 
-1つのLinear Issueは複数のsequential implementation PRを持ってよい。
+1つのLinear Issueは複数のsequential PRを持ってよい。
 
 - intermediate PRはoriginal Issueの一部acceptanceだけを完了してよい;
-- remaining acceptanceがあればIssueはactive / resumable;
-- each next sliceはmerge済みlatest baseを確認してから開始;
-- previous unmerged implementationへの依存があるなら、先にmerge checkpointを完了する。意図しないstacked PRをdefaultにしない;
-- each next slice reclassifies execution route independently.
-
-PR / Linear linking semanticsは [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) に従う。
+- remaining acceptanceがあればIssueは完了しない;
+- previous slice merge後、次sliceはnew lane startとしてlatest remote mainからBase checkpointを固定する;
+- previous unmerged implementationへの依存があるなら先にmerge checkpointを完了する;
+- accidental stacked PRを作らない。
 
 ## Linear checkpoint record
 
-Same Issue + next PRまたはexecution route changeでは、Linearへ少なくとも:
+implementation lane開始 / pause / next PRでは少なくとも:
 
 ```text
 Implementation checkpoint
-- Merged / current PR: <PR>
-- Completed acceptance: <what this slice finished>
-- Remaining acceptance: <what still belongs to this Issue>
-- Next intended slice: <next semantic boundary>
-- Next execution route: <only_chatgpt | Coding Agent | undecided pending refresh>
-- Next base: <latest main / intended base>
+- Lane: main | sub
+- Base checkpoint: <sha>
+- Branch: <branch>
+- PR / pushed head: <pr or sha>
+- Completed acceptance: <what is done>
+- Remaining acceptance: <what remains>
+- Current / next slice: <semantic boundary>
+- Next safe checkpoint: <implementation | integration | merge>
 ```
 
-細かなcommit logは複製しない。次executionが安全にscopeを再構成できるcurrent stateだけを記録する。
+細かなcommit logは複製しない。
 
-## Manual E2E failure decomposition
+## Manual E2E failure
 
-Manual E2Eでconfirmed product failureが出たら、元Issue全体を自動的に1つのfix trackへ戻さない。
+Manual E2Eでconfirmed implementation failureが出たら`e2e` laneでfixしない。
 
-1. failureをproduct implementation / environment / executor capability / oracle問題へ分類する;
+1. failureをimplementation / environment / capability / oracleへ分類;
 2. implementation failureならfailure classとsemantic ownerを特定;
-3. original acceptanceに必要なfixか、independent follow-up Workかを`CONTRACT-DECISIONS.md`で判断;
-4. smallest natural fix leaf / sliceを決める;
-5. そのfix sliceを`ONLY-CHATGPT.md`に従いdirect GitHub + CIかCoding Agentか再分類する。
+3. Same Issue vs new leafを判断;
+4. smallest natural fix sliceを決める;
+5. FREEな`main` / `sub` implementation laneへ載せる;
+6. Luna fix / verification / integration / merge;
+7. new exact tested commitでaffected E2E unitをrerun。
 
-複数failure classがある場合、自然に独立するものを別leaf / sequential sliceへ分けてよい。Human feedback 1件ごとに機械的なnew Issueを作ることはしない。
+previously passed unaffected unitsはshared owner / premiseが変わらない限り機械的にrepeatしない。
 
-## Coding Agent work
+## Coding Agent execution
 
-Coding Agentを使うTaskでも同じboundary map / slicing ruleを使う。
+各implementation sliceのexecutorはLuna xhigh。
 
-ChatGPTがcurrent sliceのcontractとsafe checkpointを決め、Coding Agentにはそのnarrow implementationだけを渡す。後続sliceのopen-ended architecture判断を現在promptへ混ぜない。
-
-Implementation Coding Agent role / handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) をauthorityとする。
-
-## Guardrails
-
-- PRを小さくすること自体を目的にしない;
-- test fileだけ、docsだけ等semantic completionを持たない人工sliceを機械的に作らない;
-- temporary broken stateをmainへmergeして次PRで直す設計にしない;
-- Issue数を減らすため独立Workをsame Issueへ押し込まない;
-- `only_chatgpt`数を増やすため強くcoupled Workを人工分割しない;
-- same Issueだから1 PR / 1 execution ownerと決めつけない;
-- current PRがcompletion直前まで収束している場合、理想的な過去sliceへ機械的に解体しない。
-
-## Loading rule
-
-この文書を読むのは:
-
-1. implementation Taskを開始するとき;
-2. broad Workからleaf / sliceを抽出するとき;
-3. same Issueを複数PRへ分けるか判断するとき;
-4. execution routeを`only_chatgpt` / Coding Agent間で判定するとき;
-5. implementationをpause / resumeするとき;
-6. broad/full test後に複数failure classまたは大きなremaining acceptanceが残るとき;
-7. implementationが新しいsemantic owner / API / contract / data-flow boundaryへ拡張するとき;
-8. Manual E2E FAIL後のfix boundaryを決めるとき。
-
-## Maintenance rule
-
-Issue boundary / product scope判断をこの文書へ重複させない。それらは`CONTRACT-DECISIONS.md`をauthorityとする。
-
-Git mechanics、PR linking、Linear status、execution label / reservationの詳細も各ownerへ置き、この文書はimplementation decomposition / checkpoint / execution-route re-evaluationに集中する。
+ChatGPTがcurrent sliceのcontract / lane / Base checkpoint / safe checkpointを決め、Lunaにはそのnarrow implementationだけを渡す。詳細は [`CODING-AGENT.md`](./CODING-AGENT.md)。
