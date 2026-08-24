@@ -6,7 +6,20 @@ implementation contractの策定時に、platform標準挙動やnuinuiCADの既�
 
 ChatGPTは既存authorityから決められる事項を自分でcontractへ落とし、ユーザー確認は実際にproduct / UX / future semanticsが分岐する判断へ絞る。
 
-この文書は、追加Work / scopeをsame Issueに残すかindependent Issueへ分けるかもownerする。PR / execution sliceの分け方は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) がauthority。
+この文書は、追加Work / scopeをsame Issueに残すかindependent Issueへ分けるかもownerする。chat session / Issue Authoring運用は [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)、PR / execution sliceの分け方は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) がauthority。
+
+## Issue Authoring boundary
+
+Issue作成、Bug調査、仕様相談、contract策定、acceptance整理、dependency / decompositionは`CHAT-WORKFLOW.md`のIssue Authoring chatで並行して行ってよい。
+
+Issue Authoringはrepository implementationではない。
+
+- Authoring chat数にimplementation capacity上限を適用しない。
+- `main` / `sub` / `e2e` laneをclaimしない。
+- contractをReadyにしただけでは`In Progress`へ進めない。
+- repository implementation / blocking fixはReady後にfixed implementation laneへ割り当て、Luna xhighで実行する。
+
+複数Authoring chatが同じIssueを扱う場合、Linear write前にcurrent Issue / relevant commentsを再取得し、別chatのcurrent decisionを失わない。競合するproduct decisionをlast-write-winsで上書きしない。
 
 ## Rule
 
@@ -93,9 +106,9 @@ same Issueでも複数sequential PR / execution routeへ分けてよい。詳細
 4. **Safe completion:** leafを先にmerge / Doneしてもrepositoryが一貫し、残りWorkが明示的dependencyとして継続できる。
 5. **Durable tracking value:** failure / review / rollback / ownershipを別Issueで追う意味がある。
 
-この条件を満たす場合、large featureから`only_chatgpt`向きfoundation / planner / adapter leafを抽出することは正当なdecompositionである。
+この条件を満たす場合、large featureからfoundation / planner / adapter等の独立leafを抽出することは正当なdecompositionである。
 
-ただし、`only_chatgpt` labelを付けたい、parallel worker数を増やしたい、PRを小さく見せたい、という理由だけではnew Issueにしない。
+ただし、parallel execution数を増やしたい、PRを小さく見せたい、という理由だけではnew Issueにしない。
 
 ### Independent follow-up Work
 
@@ -117,18 +130,20 @@ additional Workはoriginal completion後でも独立延期可能?
   YES -> new Issue
 ```
 
-Issue boundaryとexecution routeは別判断。
+Issue boundary、chat、execution laneは別判断。
 
 ```text
 new leaf Issue
-  -> only_chatgpt でも Coding Agentでもよい
+  -> Authoring / contract Ready
+  -> Todo
+  -> FREEなmain/sub laneへstartupした時だけIn Progress
 
 same Issue next slice
-  -> only_chatgpt から Coding Agentへ変えてよい
-  -> Coding Agentから only_chatgptへ変えてよい
+  -> current laneで継続、またはsafe checkpointでrelease / later restart
+  -> implementationはLuna xhigh
 ```
 
-execution suitabilityは`ONLY-CHATGPT.md`、slice / checkpointは`IMPLEMENTATION-SLICING.md`をauthorityとする。
+execution capacity / laneは`CHECKOUTS.md`、implementation executorは`CODING-AGENT.md`、slice / checkpointは`IMPLEMENTATION-SLICING.md`をauthorityとする。
 
 ## Parent after decomposition
 
@@ -174,7 +189,8 @@ actual implementationを調べる質問と、normative behaviorを決める質�
 4. acceptance cluster / semantic ownerを見てreal Work boundaryがあるか確認する。
 5. platform標準または既存nuinuiCAD ruleから一意に決まる事項をcontractへ直接記録する。
 6. 一意に決まらないproduct decisionだけをユーザーへ確認する。
-7. boundary map / implementation slicing / execution routingは`IMPLEMENTATION-SLICING.md`と`ONLY-CHATGPT.md`で決定する。
-8. 決定後、Issue本文・Contract label・Manual E2E plan・dependencyを同じcheckpointで整合させる。
+7. boundary map / implementation slicing / later execution routingは`IMPLEMENTATION-SLICING.md`、`CHECKOUTS.md`、`CODING-AGENT.md`で決定する。
+8. Linear write直前にcurrent Issue / relevant commentsを再取得し、並行Authoringの変更を失わないことを確認する。
+9. 決定後、Issue本文・Contract label・Manual E2E plan・dependencyを同じcheckpointで整合させる。
 
 ユーザーへ確認する項目数を減らすこと自体を目的にしない。目的は、既に決まっていることを再質問せず、本当に判断が必要な分岐だけに会話を使うこと。
