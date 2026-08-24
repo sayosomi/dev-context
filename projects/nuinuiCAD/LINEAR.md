@@ -4,9 +4,7 @@
 
 LinearをnuinuiCADの正式なWork管理・長期仕様管理の場所として使う。
 
-ユーザー自身が管理画面を細かく操作することより、ChatGPTが安定して検索・作成・更新できることを優先する。
-
-この文書はLinear運用の**入口 / router**。詳細ruleはowner documentへ分離する。
+この文書はLinear運用の入口 / router。実装済み事実はlatest `sayosomi/nuinuiCAD` repository、execution capacityは [`CHECKOUTS.md`](./CHECKOUTS.md) がauthority。
 
 ## Structure
 
@@ -14,107 +12,105 @@ LinearをnuinuiCADの正式なWork管理・長期仕様管理の場所として�
 - Team: Sayosomi
 - Initiative: nuinuiCAD
 - Project: exception-onlyの極短期aggregate tracking
-- Project label: 例外的にProjectを使う場合の分野分類
 - Issue: 実際に着手・完了するWork
-- Document: repositoryに既存ownerがない長期的な仕様・設計
+- Document: repositoryにownerがない長期仕様・設計
 
-Taskや個別開発テーマをInitiativeにしない。製品ごとにTeamを増やさず、当面はSayosomi Team 1つで運用する。
-
-Projectは通常の分類・roadmap単位にしない。通常のWork管理はIssue + relationを基本とし、Project利用条件は [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) をauthorityとする。
+Projectは通常の分類・roadmap単位にしない。通常のWork管理はIssue + relationを基本とする。
 
 ## Policy map
 
 | Topic | Owner |
 | --- | --- |
-| Project粒度 / lifecycle / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
-| Issue status / Ready Queue / labels / checkpoints / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
-| explicit contract re-audit campaign / `contract_reaudit` | [Contract re-audit policy](./CONTRACT-REAUDIT.md) |
-| implementation slicing / sequential PR / execution checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
-| GitHub PR linking / PR automations / merge status sync | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
-| long-term specification / Linear Documents / Notion migration | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
-| `only_chatgpt` / `manual_e2e_only` execution ownership | [Execution ownership labels](./ONLY-CHATGPT.md) |
-| Manual E2E classification / executor / PASS-FAIL-BLOCKED | [Manual E2E execution rules](./MANUAL-E2E.md) |
+| Project粒度 / lifecycle | [Linear Project policy](./LINEAR-PROJECTS.md) |
+| Issue status / Ready Queue / lane checkpoints / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
+| execution lane / checkout capacity | [Execution lane policy](./CHECKOUTS.md) |
+| implementation slicing / integration checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
+| implementation Coding Agent | [nuinuiCAD Coding Agent policy](./CODING-AGENT.md) |
+| explicit contract re-audit campaign | [Contract re-audit policy](./CONTRACT-REAUDIT.md) |
+| GitHub PR linking / merge sync | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
+| long-term specification / Linear Documents | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
+| Manual E2E classification / executor / result | [Manual E2E execution rules](./MANUAL-E2E.md) |
 | implementation contract judgment | [Implementation contract decision rule](./CONTRACT-DECISIONS.md) |
 | Linear Free plan capacity | [Linear free-plan capacity policy](./LINEAR-CAPACITY.md) |
 | GitHub Issues public mirror | [GitHub Issues sync](./GITHUB-ISSUES-SYNC.md) |
-| legacy Notion browsing | [Legacy Notion archive](./NOTION-LEGACY.md) |
+| legacy Notion | [Legacy Notion archive](./NOTION-LEGACY.md) |
 
 ## Search before create
 
-Initiative / Project / Issue / Documentを新規作成する前に、必ず既存項目を検索する。
+Initiative / Project / Issue / Documentを新規作成する前に既存項目を検索する。
 
-同じWork / Specがある場合は新規作成せず更新する。
-
-Canceledの移行試験Issueや旧カテゴリProject等が残っている場合があるため、タイトルだけで判断せず内容とstatusも確認する。
-
-軽い思いつきは新規Issueを乱造せず、 [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のIdea Inbox ruleに従う。
+同じWork / Specがある場合は新規作成せず更新する。軽い思いつきは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のIdea Inboxへ置く。
 
 ## Source of truth
 
 - actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
 - repository-owned normative contract: repositoryの該当spec / policy owner
-- work plan / progress / research result: Linear Issue / Project
+- work plan / progress / current execution checkpoint: Linear Issue / Comment
 - repositoryにownerがない長期仕様・設計: Linear Document
-- pre-migration history: Notion legacy archive
+- local lane occupancy: actual checkout state + current Linear checkpoint
 
-実装事実についてLinear / Notion / 過去チャットとrepositoryが矛盾する場合はlatest repositoryをauthoritativeとする。actual behaviorとnormative contractの衝突判断は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従う。
+実装事実についてLinear / Notion / 過去チャットとrepositoryが矛盾する場合はlatest repositoryをauthoritativeとする。
 
 ## New Task startup
 
 新規開発Task開始前に:
 
-1. latest GitHub remote stateを確認する。
-2. Linearで既存Issueを検索する。Projectは現在のTaskに関係する例外的な短期Projectが存在する場合だけ確認する。
-3. 必要なlong-term Specをrepository ownerまたはLinear Documentsから確認する。
-4. 対象IssueのContract / Manual E2E label、dependency、description、current Commentを確認する。
-5. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) に従いcurrent lifecycle phaseを先に判定し、Backlog / Todo / In Progress / In Reviewが実態と一致していることを確認する。Todo / BacklogのReady Queue判定はunstartedまたはimplementation再開待ちWorkにだけ適用する。
-6. Project assignmentを例外的に行う必要がある場合だけ [`LINEAR-PROJECTS.md`](./LINEAR-PROJECTS.md) に従う。
-7. `Contract: Ready`でもlatest repositoryのactual owner / symbol / file pathを再確認する。
-8. implementation開始前に [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従い最初のsafe checkpointを定める。
-9. ユーザーがTaskを明示的に開始した時点で、Issue workflowとexecution ownership ruleに従ってactive statusへ同期する。
+1. latest Project Contextを読む。
+2. latest GitHub remote stateを確認する。
+3. Linearでexisting Issue / relevant specを確認する。
+4. Contract / Manual E2E / dependency / current commentsを確認する。
+5. current lifecycle phaseを判定しstatusを同期する。
+6. [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) でcurrent executable sliceを決める。
+7. [`CHECKOUTS.md`](./CHECKOUTS.md) の3-lane preflightを行う。
+8. `FREE`な`main` / `sub` implementation laneがある場合だけimplementationを開始する。
+9. lane start時点のlatest remote mainからBase checkpoint SHAを固定する。
+10. Issueを`In Progress`へ進め、lane / Base checkpoint / branch / current sliceを同じstartup checkpointでrecordする。
 
-`Contract: Pending`の調査を進めること自体はIn Progressへの変更理由にしない。
+`Contract: Pending`の調査だけではIn Progressにしない。
 
-Notionを新Taskの通常Spec検索先にしない。legacy exception / migrationは [`LINEAR-DOCUMENTS.md`](./LINEAR-DOCUMENTS.md) と [`NOTION-LEGACY.md`](./NOTION-LEGACY.md) に従う。
+implementation laneが2つともBUSYならReady IssueはTodoのまま待つ。3つ目のparallel implementation trackをIssue / branch / worktreeで作らない。
 
 ## ChatGPT manages Linear operations
 
 ユーザーにLinearの手動更新を要求しない。
 
-Issue作成、status変更、label更新、Project紐付け、Project label、Comment、Document更新等は原則ChatGPTが行う。
+Issue作成、status変更、label更新、relations、Comment、Document更新等は原則ChatGPTが行う。
 
-Linear APIで未対応の管理操作だけ、必要最小限のUI操作をユーザーへ依頼してよい。
-
-新しい分類・status・label groupを勝手に追加しない。必要ならユーザーと運用を決めてから追加する。
-
-Linear管理自体を開発作業の主目的にせず、checkpointで必要なrecordだけをまとめて更新する。Issue checkpointとpost-write verificationは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) がauthority。
+Linear管理はcheckpointで必要なcurrent-state recordだけをまとめて更新する。細かなcommit logや過去チャットの複製をIssueへ積まない。
 
 ## Coding Agent boundary
 
-Linear運用によってChatGPT / Coding Agentの役割分担を変更しない。
+- ChatGPT: repository調査、contract、slicing、lane assignment、blocking review、merge判断、Manual E2E plan、Linear管理
+- Luna xhigh: implementation / blocking fix / tests / git / integration checkpoint work
 
-- ChatGPT: repository調査、architecture把握、implementation contract、blocking review、Manual E2E plan、Linear管理
-- Coding Agent: 確定済みcontractに従うimplementation / test / commit / push
+local executionは [`CHECKOUTS.md`](./CHECKOUTS.md)、prompt / executor detailは [`CODING-AGENT.md`](./CODING-AGENT.md) をauthorityとする。
 
-local worktree運用は [`CHECKOUTS.md`](./CHECKOUTS.md)、direct GitHub execution ownershipは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) をauthorityとする。
+web ChatGPTによるdirect GitHub implementationを別execution routeとして管理しない。
 
-remote-state verification、prompt順序、Git safetyは [`shared/DEVELOPMENT.md`](../../shared/DEVELOPMENT.md) をauthorityとする。
+## Parallel work model
+
+ParallelismはLinear reservation labelやworker-specific execution labelではなく、**固定2 implementation lane**で管理する。
+
+```text
+main lane -> at most 1 implementation track
+sub lane  -> at most 1 implementation track
+e2e lane  -> at most 1 Manual E2E track
+```
+
+same file / subsystem overlapは開始判断のsignalにはなるが、active lane同士を途中同期して解決しない。real dependency / owner conflictが判明した場合はdependent laneをsafe checkpointで止め、prerequisite merge後のnext integration / restart checkpointで解決する。
 
 ## Loading rule
 
-Linearを扱うときも全owner documentを毎回読む必要はない。
-
 1. Linear操作・参照ではこの`LINEAR.md`を読む。
-2. Issueの作成 / status / labels / dependency / readiness / Doneでは`LINEAR-ISSUES.md`を読む。
-3. explicit contract re-audit campaign、`contract_reaudit` marker、または既存Ready contractの全面再調査では`CONTRACT-REAUDIT.md`も読む。
-4. implementation開始 / pause-resume / sequential PR / merge checkpoint / scope expansionでは`IMPLEMENTATION-SLICING.md`を読む。
-5. Project作成 / assignment / label / completionでは`LINEAR-PROJECTS.md`を読む。
-6. PR linking / PR automation / merge checkpointでは`LINEAR-GITHUB.md`を読む。
-7. Linear Document / long-term Spec / Notion移行では`LINEAR-DOCUMENTS.md`を読む。
-8. execution ownership、Manual E2E、contract、capacity、public mirrorが関係するときはPolicy mapの専用ownerも読む。
+2. Issue作成 / status / labels / readiness / Done / lane checkpointでは`LINEAR-ISSUES.md`を読む。
+3. implementation開始 / pause-resume / sequential PR / integration checkpointでは`IMPLEMENTATION-SLICING.md`を読む。
+4. local execution start / lane capacityでは`CHECKOUTS.md`を読む。
+5. Contract re-auditでは`CONTRACT-REAUDIT.md`。
+6. Projectでは`LINEAR-PROJECTS.md`。
+7. PR linking / merge checkpointでは`LINEAR-GITHUB.md`。
+8. Linear Documentでは`LINEAR-DOCUMENTS.md`。
+9. Manual E2E / contract / capacity / public mirrorはPolicy mapのownerを読む。
 
 ## Maintenance rule
 
-新しいLinear詳細ruleをこのrouterへ積み上げない。
-
-既存ownerへ置き、ここにはroute / shared boundary / loading conditionだけを残す。
+新しいLinear詳細ruleをこのrouterへ積み上げない。既存ownerへ置き、ここにはroute / shared boundary / loading conditionだけを残す。
