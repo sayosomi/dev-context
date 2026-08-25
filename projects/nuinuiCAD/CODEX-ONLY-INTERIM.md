@@ -56,6 +56,17 @@ Rules:
 - narrow mechanical workを上位modelへ移さない一方、severe unknown bugをLunaで反復して総tokenを増やさない。
 - model別rate-limit consumptionが不明な場合、単一runの見かけ上の安さではなく、retry、context reload、duplicate reviewを含むexpected total consumptionで選ぶ。
 
+### Coordinator-managed model decision checkpoints
+
+Coordinator chatが別Codex taskをexecutorとして扱う場合、taskの開始・再開時にcurrent work classへ適したmodel / reasoningと、次のmodel-decision checkpointを指定する。
+
+- child taskは、別のdefault routeへ移り得るwork class境界、またはfailure evidenceからescalationを再判断する境界で、current atomic operationを最初のsafe recovery pointまで終えて停止する。通常checkpointごとの機械的な停止は行わず、同じrouteの作業は継続する。
+- model切替だけを理由にcommit、push、Linear sync、new task作成を行わない。repository / external stateのcheckpointは各ownerの既存ruleが要求する場合だけ作る。
+- 停止時は、完了内容とevidence、current local / Git checkpoint、次のwork class、未解決のfailure / ambiguity、推奨model / reasoningをconciseに返す。
+- Coordinatorはhandoffを評価し、Humanの再指示を待たず、原則として同じchild taskへ選択したmodel / reasoning override付きで次段階を送る。段階開始時のmodel / reasoning明示は維持する。
+- normal implementationからunknown root cause investigation、high failureからxhigh再試行、implementation / reviewからfocused verification・Git・Linear等のroutine continuationへ移る場合はmodel-decision checkpointとする。
+- この停止はHuman action待ちではない。Human-only判断やconcrete blockerがなければCoordinatorがcontinuationを再開し、remote-only continuationをHumanへの細かなhandoffへ分割しない。
+
 ## Sequential Git batch
 
 通常のsource-code workは`main` laneのlong-lived branch `codex/interim-sequential`で、複数Issueを1件ずつ逐次処理する。
