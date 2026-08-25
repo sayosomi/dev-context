@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="trial-3"
+VERSION="trial-4"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 
 if [[ "${NUINUI_SELFTEST:-0}" == "1" ]]; then
@@ -437,6 +437,110 @@ e2e_start() {
   echo "  ref=$target_head"
 }
 
+e2e_start_local_main() {
+  local issue="$1"
+  local ref="$2"
+  local repo="$E2E_WT"
+  local main_repo="$MAIN_WT"
+  local dirty=""
+  local branch=""
+  local marker=""
+  local old_head=""
+  local remote_main=""
+  local main_head=""
+  local target_head=""
+
+  if [[ ! "$issue" =~ '^SAY-[0-9]+$' ]]; then
+    echo "ERROR: Issue must look like SAY-123"
+    return 2
+  fi
+  if [[ ! "$ref" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "ERROR: tested-ref must be a full 40-character commit SHA"
+    return 2
+  fi
+
+  assert_git_repo "$main_repo" || return 1
+  assert_origin "$main_repo" "$TARGET_REPO_TOKEN" || return 1
+  branch="$(git -C "$main_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [[ "$branch" != "codex/interim-sequential" ]]; then
+    echo "BLOCKED: main lane is not on the active interim branch"
+    echo "EXPECTED: codex/interim-sequential"
+    echo "ACTUAL:   ${branch:-DETACHED}"
+    return 1
+  fi
+  dirty="$(git -C "$main_repo" status --porcelain)"
+  if [[ -n "$dirty" ]]; then
+    echo "BLOCKED: main interim lane is dirty"
+    git -C "$main_repo" status --short
+    return 1
+  fi
+  main_head="$(git -C "$main_repo" rev-parse HEAD)" || return 1
+  target_head="$(git -C "$main_repo" rev-parse "${ref}^{commit}" 2>/dev/null)" || {
+    echo "BLOCKED: tested local commit cannot be resolved"
+    echo "REF: $ref"
+    return 1
+  }
+  if [[ "$main_head" != "$target_head" ]]; then
+    echo "BLOCKED: main interim HEAD does not match tested-ref"
+    echo "HEAD:       $main_head"
+    echo "TESTED_REF: $target_head"
+    return 1
+  fi
+
+  assert_git_repo "$repo" || return 1
+  assert_origin "$repo" "$TARGET_REPO_TOKEN" || return 1
+  dirty="$(git -C "$repo" status --porcelain)"
+  if [[ -n "$dirty" ]]; then
+    echo "BLOCKED: e2e lane is dirty"
+    return 1
+  fi
+  branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if [[ -n "$branch" ]]; then
+    echo "BLOCKED: e2e lane is not detached"
+    echo "BRANCH: $branch"
+    return 1
+  fi
+  marker="$(marker_path "$repo")" || { echo "ERROR: cannot resolve marker path"; return 1; }
+  if [[ -e "$marker" ]]; then
+    echo "BLOCKED: E2E marker already exists"
+    echo "MARKER: $marker"
+    return 1
+  fi
+
+  old_head="$(git -C "$repo" rev-parse HEAD)"
+  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; return 1; }
+  remote_main="$(git -C "$repo" rev-parse origin/main)" || return 1
+  if ! git -C "$main_repo" merge-base --is-ancestor "$remote_main" "$target_head"; then
+    echo "BLOCKED: tested local commit is not based on current origin/main"
+    echo "TESTED_REF:  $target_head"
+    echo "ORIGIN_MAIN: $remote_main"
+    return 1
+  fi
+  if [[ "$old_head" != "$remote_main" ]]; then
+    if ! git -C "$repo" merge-base --is-ancestor "$old_head" "$remote_main"; then
+      echo "BLOCKED: e2e lane cannot safely advance to current origin/main"
+      echo "HEAD:        $old_head"
+      echo "ORIGIN_MAIN: $remote_main"
+      return 1
+    fi
+    git -C "$repo" switch --detach "$remote_main" || {
+      echo "ERROR: safe e2e normalization failed"
+      return 1
+    }
+  fi
+
+  git -C "$repo" switch --detach "$target_head" || { echo "ERROR: detached checkout failed"; return 1; }
+  if ! printf 'issue=%s\nref=%s\n' "$issue" "$target_head" > "$marker"; then
+    echo "ERROR: marker write failed; restoring previous idle HEAD"
+    git -C "$repo" switch --detach "$old_head" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  echo "E2E STARTED LOCAL MAIN"
+  echo "  issue=$issue"
+  echo "  ref=$target_head"
+}
+
 e2e_release() {
   local repo="$E2E_WT"
   local marker=""
@@ -713,6 +817,20 @@ self_test() {
   fi
   "$SCRIPT_PATH" e2e-release >/dev/null || return 1
 
+  echo "TEST: local-main E2E marker/start/release"
+  git -C "$main_repo" switch -c codex/interim-sequential >/dev/null 2>&1 || return 1
+  echo local-e2e >> "$main_repo/file.txt"
+  git -C "$main_repo" add file.txt
+  git -C "$main_repo" commit -q -m local-e2e
+  checkpoint="$(git -C "$main_repo" rev-parse HEAD)"
+  "$SCRIPT_PATH" e2e-start-local-main SAY-990 "$checkpoint" >/dev/null || return 1
+  if [[ "$(git -C "$e2e_repo" rev-parse HEAD)" != "$checkpoint" ]]; then
+    echo "SELFTEST FAIL: local-main E2E did not select the tested checkpoint"
+    return 1
+  fi
+  "$SCRIPT_PATH" e2e-release >/dev/null || return 1
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
   echo "TEST: sub start/dirty release/clean release"
   git -C "$sub_repo" fetch origin --prune >/dev/null 2>&1 || return 1
   git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
@@ -768,6 +886,10 @@ case "${1:-}" in
     [[ $# -eq 3 ]] || { echo "Usage: $0 e2e-start <SAY-123> <tested-ref>"; exit 2; }
     e2e_start "$2" "$3"
     ;;
+  e2e-start-local-main)
+    [[ $# -eq 3 ]] || { echo "Usage: $0 e2e-start-local-main <SAY-123> <tested-ref>"; exit 2; }
+    e2e_start_local_main "$2" "$3"
+    ;;
   e2e-release) e2e_release ;;
   context-sync) context_sync_repo "$DEV_CONTEXT_WT" "$DEV_CONTEXT_TOKEN" ;;
   doctor)
@@ -791,6 +913,7 @@ case "${1:-}" in
     echo "  start <main|sub> <SAY-123> <expected-base-sha> <branch>"
     echo "  release <main|sub> <merged-checkpoint-sha>"
     echo "  e2e-start <SAY-123> <tested-ref>"
+    echo "  e2e-start-local-main <SAY-123> <tested-ref>"
     echo "  e2e-release"
     echo "  context-sync"
     echo "  doctor"

@@ -62,6 +62,7 @@ current commands:
 | `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | verified FREE laneをexact baseからTask branchへ開始 |
 | `nuinui release <main\|sub> <checkpoint-sha>` | merged checkpointを確認してimplementation laneをidleへrelease |
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
+| `nuinui e2e-start-local-main <SAY-123> <tested-ref>` | Active interim workflow時だけ、cleanな`codex/interim-sequential` main laneのlocal checkpointをe2e laneへ安全に固定しmarker作成 |
 | `nuinui e2e-release` | verified e2e stateをlatest `origin/main` detachedへ戻しmarker削除 |
 | `nuinui context-sync` | cleanなlocal dev-context `main`をsafe fast-forward |
 | `nuinui doctor` | helper / lane / local dev-contextのdiagnostic表示 |
@@ -84,7 +85,7 @@ nuinui-integrate repair-eof <repo> <expected-base> <commit-message>
 
 ## Human Manual E2E preparation helper
 
-`projects/nuinuiCAD/scripts/nuinui-e2e-prepare`は、`nuinui e2e-start`で固定済みのdedicated e2e laneを使って、Human Manual E2Eのhostを一発で準備するversioned helperである。
+`projects/nuinuiCAD/scripts/nuinui-e2e-prepare`は、`nuinui e2e-start`またはActive interim workflow中の`nuinui e2e-start-local-main`で固定済みのdedicated e2e laneを使って、Human Manual E2Eのhostを一発で準備するversioned helperである。
 
 current commands:
 
