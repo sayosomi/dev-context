@@ -23,8 +23,8 @@ product contract、repository architecture、implementation semantics、source-o
 
 ## Token-minimizing default
 
-- 1つのCodex task、1 agent、1 active implementationだけで進める。
-- subagent、parallel task、`sub` implementation laneは使わない。Humanが個別に明示許可した場合だけ例外にできる。
+- 1つのprimary Codex task、1 active implementationだけで進める。
+- 後述のLuna read-only monitoring exceptionを除き、subagent、parallel task、`sub` implementation laneは使わない。Humanが個別に明示許可した場合だけ例外にできる。
 - implementationは`main` lane、Manual E2Eは`e2e` laneだけを使う。4つ目のcheckout / clone / worktreeを作らない。
 - 同じCodex task内で既に読んだdocumentを、変更signalなしに読み直さない。
 - startupではこのREADME router、本document、repository `AGENTS.md`、current workに必要なownerだけを読む。全owner documentを一括loadしない。
@@ -66,6 +66,17 @@ Coordinator chatが別Codex taskをexecutorとして扱う場合、taskの開始
 - Coordinatorはhandoffを評価し、Humanの再指示を待たず、原則として同じchild taskへ選択したmodel / reasoning override付きで次段階を送る。段階開始時のmodel / reasoning明示は維持する。
 - normal implementationからunknown root cause investigation、high failureからxhigh再試行、implementation / reviewからfocused verification・Git・Linear等のroutine continuationへ移る場合はmodel-decision checkpointとする。
 - この停止はHuman action待ちではない。Human-only判断やconcrete blockerがなければCoordinatorがcontinuationを再開し、remote-only continuationをHumanへの細かなhandoffへ分割しない。
+
+### Luna read-only monitoring subagent exception
+
+明確なterminal conditionを持つread-only monitoringは、active implementationを増やさない限定例外として、同じprimary task tree内のLuna medium subagentへ委任してよい。
+
+- Sol / Terra parentがCI、PR checks、その他のexternal jobを一度確認し、statusが`queued` / `in_progress`等の非terminal stateなら、以後の監視を自動的にLuna medium subagentへ委任する。single immediate status checkだけなら委任せず、parentがLunaなら新しいsubagentを作らず自身で監視する。
+- monitoring subagentは同時に最大1つとし、複数check / jobも1 agentへまとめる。parentは同じ対象を重複pollingせず、subagentのterminal reportを待つ。
+- monitoringにはbounded wait / polling mechanismを使い、tight loopを行わない。PASS、FAIL、cancelled、timeout、またはstatus / authority ambiguityをterminal report条件とする。
+- monitoring subagentはread-onlyに限定する。code / test実行、failure diagnosis、review、merge、GitHub / Linear update、checkout / lane操作、Manual E2Eを行わない。
+- terminal reportには対象ref / check / job、最終status、必要な最小evidence、次の推奨work classを含める。FAIL / ambiguityでは原因を推測せずmodel-decision checkpointとしてparentへ返す。
+- この例外はnew user-owned Codex task、implementation lane、checkout / worktreeを作らない。monitoring終了時にsubagentを終了し、Coordinatorまたはparentが次のmodel / reasoningを選択してcurrent execution trackを続ける。
 
 ## Sequential Git batch
 
