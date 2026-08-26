@@ -65,7 +65,10 @@ current commands:
 | `nuinui e2e-release` | verified e2e stateをlatest `origin/main` detachedへ戻しmarker削除 |
 | `nuinui context-sync` | cleanなlocal dev-context `main`をsafe fast-forward |
 | `nuinui doctor` | helper / lane / local dev-contextのdiagnostic表示 |
+| `nuinui doctor --full` | preflight、E2E session status、local dev-context stateを1回で収集するread-only handoff snapshot |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
+
+`nuinui doctor --full`はfetch、checkout変更、cleanup、process停止を行わない。3 laneまたはlocal dev-contextがdirty、lane構成が不整合、E2E statusがBLOCKED、E2E status helperが欠落している場合は、観測結果を出力してnonzeroで停止する。Issue選択、lane割当、release可否、次のoperationの決定は行わない。
 
 ## Human Manual E2E preparation helper
 

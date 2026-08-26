@@ -1,7 +1,8 @@
 #!/bin/zsh
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
+E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 
 if [[ "${NUINUI_SELFTEST:-0}" == "1" ]]; then
   MAIN_WT="${NUINUI_MAIN_WT}"
@@ -755,6 +756,70 @@ context_sync_repo() {
   echo "  head=$(git -C "$repo" rev-parse HEAD)"
 }
 
+show_dev_context_state() {
+  local repo="$DEV_CONTEXT_WT"
+  local branch=""
+  local head=""
+  local dirty=""
+
+  if [[ ! -d "$repo" ]]; then
+    echo "dev-context=not-installed"
+    return 0
+  fi
+  if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "dev-context=$repo git=no"
+    return 1
+  fi
+
+  branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  head="$(git -C "$repo" rev-parse HEAD)"
+  dirty="$(git -C "$repo" status --porcelain)"
+  echo "dev-context=$repo"
+  echo "  branch=${branch:-DETACHED}"
+  echo "  head=$head"
+  echo "  clean=$([[ -z "$dirty" ]] && echo yes || echo no)"
+  [[ -z "$dirty" ]]
+}
+
+doctor_full() {
+  local result=0
+  local lane=""
+  local repo=""
+  local dirty=""
+
+  echo "nuinui $VERSION"
+  echo "DOCTOR FULL (read-only)"
+  echo
+  preflight || result=1
+  for lane in main sub e2e; do
+    repo="$(lane_repo "$lane")"
+    if git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      dirty="$(git -C "$repo" status --porcelain)"
+      if [[ -n "$dirty" ]]; then
+        echo "BLOCKED: $lane lane is dirty"
+        result=1
+      fi
+    fi
+  done
+  echo
+  if [[ ! -x "$E2E_STATUS_HELPER" ]]; then
+    echo "BLOCKED: E2E status helper is unavailable"
+    echo "PATH: $E2E_STATUS_HELPER"
+    result=1
+  else
+    NUINUI_E2E_PREPARE_WT="$E2E_WT" "$E2E_STATUS_HELPER" status || result=1
+  fi
+  echo
+  show_dev_context_state || result=1
+
+  if (( result != 0 )); then
+    echo "DOCTOR FULL BLOCKED"
+    return 1
+  fi
+
+  echo "DOCTOR FULL PASS"
+}
+
 self_test() (
   local root=""
   local remote=""
@@ -771,6 +836,12 @@ self_test() (
   local out=""
   local divergent_head=""
   local session=""
+  local e2e_temp=""
+  local e2e_marker=""
+  local e2e_session=""
+  local e2e_ref=""
+  local e2e_root=""
+  local e2e_handoff=""
 
   root="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-local-tools.XXXXXX")" || {
     echo "SELFTEST FAIL: mktemp"
@@ -812,6 +883,9 @@ self_test() (
   export NUINUI_SUB_WT="$sub_repo"
   export NUINUI_E2E_WT="$e2e_repo"
   export NUINUI_DEV_CONTEXT_WT="$context_repo"
+  e2e_temp="$root/e2e-temp"
+  mkdir -p "$e2e_temp" || return 1
+  export NUINUI_E2E_TEMP_PARENT="$e2e_temp"
 
   base="$(git -C "$main_repo" rev-parse origin/main)"
   wrong_base="${base%?}0"
@@ -992,6 +1066,75 @@ self_test() (
     return 1
   }
 
+  echo "TEST: doctor --full normal state"
+  out="$("$SCRIPT_PATH" doctor --full 2>&1)" || {
+    echo "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q 'DOCTOR FULL PASS' || {
+    echo "SELFTEST FAIL: doctor --full did not pass a normal state"
+    return 1
+  }
+
+  echo "TEST: doctor --full blocks dirty lane"
+  echo dirty >> "$main_repo/file.txt"
+  if "$SCRIPT_PATH" doctor --full >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: doctor --full accepted dirty lane"
+    return 1
+  fi
+  git -C "$main_repo" restore -- file.txt
+
+  echo "TEST: doctor --full blocks missing lane"
+  if NUINUI_SUB_WT="$root/missing-sub" "$SCRIPT_PATH" doctor --full >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: doctor --full accepted missing lane"
+    return 1
+  fi
+
+  echo "TEST: doctor --full blocks extra lane"
+  git -C "$main_repo" worktree add -q --detach "$root/doctor-extra" origin/main || return 1
+  if "$SCRIPT_PATH" doctor --full >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: doctor --full accepted extra lane"
+    return 1
+  fi
+  git -C "$main_repo" worktree remove "$root/doctor-extra" || return 1
+
+  e2e_marker="$(marker_path "$e2e_repo")" || return 1
+  e2e_session="$(session_path "$e2e_repo")" || return 1
+  e2e_ref="$(git -C "$e2e_repo" rev-parse HEAD)" || return 1
+  e2e_root="$e2e_temp/nuinui-vscode-e2e.active"
+  e2e_handoff="$e2e_temp/nuinui-SAY-988-human-e2e.env"
+  mkdir -p "$e2e_root" || return 1
+  : > "$e2e_handoff"
+  printf 'issue=SAY-988\nref=%s\n' "$e2e_ref" > "$e2e_marker"
+  printf 'issue=SAY-988\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=999999\n' \
+    "$e2e_ref" "$e2e_root" "$e2e_handoff" > "$e2e_session"
+
+  echo "TEST: doctor --full reports active E2E session"
+  out="$("$SCRIPT_PATH" doctor --full 2>&1)" || {
+    echo "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q 'session=active' || {
+    echo "SELFTEST FAIL: doctor --full did not report active session"
+    return 1
+  }
+
+  echo "TEST: doctor --full blocks invalid E2E session"
+  printf 'issue=SAY-988\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=999999\n' \
+    "$e2e_ref" "$root/not-owned" "$e2e_handoff" > "$e2e_session"
+  if "$SCRIPT_PATH" doctor --full >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: doctor --full accepted invalid E2E session"
+    return 1
+  fi
+  rm -f -- "$e2e_session" "$e2e_marker" "$e2e_handoff"
+  rm -rf -- "$e2e_root"
+
+  echo "TEST: doctor --full blocks missing E2E helper"
+  if NUINUI_E2E_STATUS_HELPER="$root/missing-e2e-helper" "$SCRIPT_PATH" doctor --full >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: doctor --full accepted missing E2E helper"
+    return 1
+  fi
+
   echo "SELFTEST PASS"
 )
 
@@ -1021,6 +1164,11 @@ case "${1:-}" in
   e2e-release) e2e_release ;;
   context-sync) context_sync_repo "$DEV_CONTEXT_WT" "$DEV_CONTEXT_TOKEN" ;;
   doctor)
+    if [[ "$#" -eq 2 && "$2" == "--full" ]]; then
+      doctor_full
+      exit $?
+    fi
+    [[ "$#" -eq 1 ]] || { echo "Usage: $0 doctor [--full]"; exit 2; }
     echo "nuinui $VERSION"
     echo
     preflight
@@ -1044,7 +1192,7 @@ case "${1:-}" in
     echo "  e2e-start-local-main <SAY-123> <tested-ref>"
     echo "  e2e-release"
     echo "  context-sync"
-    echo "  doctor"
+    echo "  doctor [--full]"
     echo "  self-test"
     exit 2
     ;;
