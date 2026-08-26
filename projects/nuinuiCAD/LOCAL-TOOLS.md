@@ -76,6 +76,7 @@ current commands:
 ```text
 nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+nuinui-e2e-prepare status
 nuinui-e2e-prepare cleanup
 ```
 
@@ -83,9 +84,11 @@ nuinui-e2e-prepare cleanup
 
 `prepare`は専用session metadataへexact E2E root / handoff / launch PIDを記録する。`cleanup`はそのmetadataとE2E markerを再検証してから、同rootに属するprocessだけを終了し、root・handoff・session metadataを削除する。cleanup未完了の間、E2E laneはreleaseできない。
 
+`status`はread-onlyでE2E checkout、marker、active session metadata、記録済みroot / handoff / launch PIDの状態、および同じtemporary parent直下のunmanaged artifact候補を表示する。unmanaged artifactは削除可能と判定しない。`status`はcleanup、process停止、checkout変更、fetchを行わない。
+
 このhelperはproduct source、tested marker、既存の無関係なVS Code processを自動repairしない。fixtureはdedicated e2e checkoutの外側でなければならず、dependency準備またはbuildによるtracked-file mutationはBLOCKされる。
 
-`projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`は、temporary Git checkoutとfake hostを使ってprepare失敗時のcleanupと、成功したsessionのcleanupを検証するisolated self-testである。実機のVS Code / dependency / CDP lifecycleは別途actual laneで確認する。
+`projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`は、temporary Git checkoutとfake hostを使ってprepare失敗時のcleanup、成功したsessionのcleanup、`status`の正常/不整合session・unmanaged artifact表示を検証するisolated self-testである。実機のVS Code / dependency / CDP lifecycleは別途actual laneで確認する。
 
 Humanへcommandを渡すときは、Issue key、tested ref、fixture path、必要ならCDP port等、確定値を埋めたcopy/paste-ready commandにする。Humanにplaceholder判断を委ねない。
 
