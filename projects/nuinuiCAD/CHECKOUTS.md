@@ -48,6 +48,8 @@ Human向けterminal instructionを生成する場合はshared `human-terminal-in
 
 同じmechanical operationがversioned helperとして[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みで、current local clone上のhelperが利用可能なら、Human handoffではそのhelperを優先してよい。helperは上記safety requirementを省略するものではなく、確認とmutationをversioned implementationへ移すだけである。
 
+helper commandの存在はlaneのcurrent利用許可ではない。executor / lane選択はREADME routerとActive overrideがauthorityであり、helperは許可済みoperationのmechanical preconditionとmutationだけを担う。
+
 ### Mandatory preflight handoff rule
 
 implementation start / resume等でmandatory 3-lane preflightが必要なのに、ChatGPT側からactual local checkout stateを直接確認できない場合、`preflightが必要`、`lane状態がblocker`、`audit結果待ち`等とだけ述べて停止してはならない。
@@ -239,6 +241,8 @@ idle state:
 ### e2e
 
 host / fixture cleanupを完了し、cleanを確認してlatest `origin/main` detached HEADへ戻し、最後にmarkerを削除する。
+
+`nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup`でexact session metadata、E2E root、handoff、同rootに属するprocessをcleanupする。session metadataが残る間はe2e releaseを行わない。
 
 ## CI reproduction
 

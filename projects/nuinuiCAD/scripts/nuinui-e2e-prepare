@@ -1,16 +1,18 @@
 #!/bin/zsh
 
-VERSION="1.0.0-trial"
+VERSION="1.0.0"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
 DEFAULT_CDP_PORT="${NUINUI_E2E_CDP_PORT-9223}"
+E2E_TEMP_PARENT="${NUINUI_E2E_TEMP_PARENT-/private/tmp}"
 
 usage() {
   cat <<'EOF'
 Usage:
   nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
   nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+  nuinui-e2e-prepare cleanup
 
 Purpose:
   Prepare a deterministic Human Manual E2E environment in the dedicated e2e
@@ -18,6 +20,7 @@ Purpose:
   processes.
 
 The tested ref and e2e marker must already be fixed by the E2E lane helper.
+Run cleanup before releasing the E2E lane.
 EOF
 }
 
@@ -31,6 +34,115 @@ resolve_existing_path() {
 
   command -v realpath >/dev/null 2>&1 || return 1
   realpath "$input_path" 2>/dev/null
+}
+
+session_path() {
+  local git_dir=""
+  git_dir="$(git -C "$E2E_WT" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  printf '%s/nuinui-e2e-session\n' "$git_dir"
+}
+
+marker_path() {
+  local git_dir=""
+  git_dir="$(git -C "$E2E_WT" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  printf '%s/nuinui-slot\n' "$git_dir"
+}
+
+assert_session_root() {
+  local root="$1"
+  local relative=""
+  local parent_real=""
+  local root_real=""
+
+  relative="${root#"$E2E_TEMP_PARENT"/}"
+  if [[ "$relative" == "$root" || "$relative" != nuinui-vscode-e2e.* || "$relative" == */* ]]; then
+    echo "BLOCKED: session root is outside the dedicated E2E temporary area"
+    echo "ROOT: $root"
+    return 1
+  fi
+
+  parent_real="$(resolve_existing_path "$E2E_TEMP_PARENT")" || {
+    echo "BLOCKED: dedicated E2E temporary area cannot be resolved"
+    echo "TEMP_PARENT: $E2E_TEMP_PARENT"
+    return 1
+  }
+  if [[ -e "$root" ]]; then
+    root_real="$(resolve_existing_path "$root")" || {
+      echo "BLOCKED: E2E session root cannot be resolved"
+      echo "ROOT: $root"
+      return 1
+    }
+    if [[ "$(dirname "$root_real")" != "$parent_real" ]]; then
+      echo "BLOCKED: resolved E2E session root escaped its temporary area"
+      echo "ROOT: $root_real"
+      return 1
+    fi
+  fi
+}
+
+assert_session_handoff() {
+  local issue="$1"
+  local handoff="$2"
+  local expected="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  if [[ "$handoff" != "$expected" ]]; then
+    echo "BLOCKED: unexpected E2E handoff path"
+    echo "EXPECTED: $expected"
+    echo "ACTUAL:   $handoff"
+    return 1
+  fi
+}
+
+stop_owned_processes() {
+  local root="$1"
+  local launch_pid="$2"
+  local command_line=""
+  local pid=""
+  local -a pids
+  local -a matching_pids
+
+  assert_session_root "$root" || return 1
+  matching_pids=()
+
+  if [[ "$launch_pid" =~ '^[0-9]+$' ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
+    command_line="$(ps -p "$launch_pid" -o command= 2>/dev/null || true)"
+    if [[ "$command_line" != *"$root"* ]]; then
+      echo "BLOCKED: recorded launch PID does not belong to the E2E root"
+      echo "PID: $launch_pid"
+      return 1
+    fi
+    matching_pids+=("$launch_pid")
+  fi
+
+  pids=("${(@f)$(pgrep -f "user-data-dir=$root/user-data" 2>/dev/null || true)}")
+  for pid in "${pids[@]}"; do
+    [[ -z "$pid" ]] && continue
+    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    if [[ "$command_line" == *"$root"* ]] && (( ${matching_pids[(Ie)$pid]} == 0 )); then
+      matching_pids+=("$pid")
+    fi
+  done
+
+  for pid in "${matching_pids[@]}"; do
+    kill -TERM "$pid" >/dev/null 2>&1 || return 1
+  done
+
+  for _ in $(seq 1 10); do
+    local remaining=0
+    for pid in "${matching_pids[@]}"; do
+      if kill -0 "$pid" >/dev/null 2>&1; then
+        remaining=1
+      fi
+    done
+    (( remaining == 0 )) && return 0
+    sleep 0.2
+  done
+
+  for pid in "${matching_pids[@]}"; do
+    if kill -0 "$pid" >/dev/null 2>&1; then
+      kill -KILL "$pid" >/dev/null 2>&1 || return 1
+    fi
+  done
+  return 0
 }
 
 assert_fixture_external() {
@@ -123,7 +235,7 @@ assert_checkout() {
     return 1
   }
 
-  marker="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)/nuinui-slot" || return 1
+  marker="$(marker_path)" || return 1
   [[ -f "$marker" ]] || {
     echo "BLOCKED: e2e marker is missing; run the lane e2e-start helper first"
     echo "MARKER: $marker"
@@ -157,19 +269,13 @@ ensure_dependencies() {
   local e2e_root="$1"
   local npm_cache="$e2e_root/npm-cache"
 
-  if [[ -x "$repo/node_modules/.bin/esbuild" ]]; then
-    assert_no_tracked_mutations "dependency preparation" || return 1
-    echo "DEPENDENCIES: READY"
-    return 0
-  fi
-
   mkdir -p "$npm_cache" || {
     echo "ERROR: could not create isolated npm cache"
     return 1
   }
 
-  echo "DEPENDENCIES: INSTALL"
-  NPM_CONFIG_CACHE="$npm_cache" npm -C "$repo" install --package-lock=false --include=dev || {
+  echo "DEPENDENCIES: INSTALL LOCKED"
+  NPM_CONFIG_CACHE="$npm_cache" npm -C "$repo" ci --include=dev || {
     echo "ERROR: dependency installation failed"
     return 1
   }
@@ -182,6 +288,102 @@ ensure_dependencies() {
   assert_no_tracked_mutations "dependency preparation" || return 1
 
   echo "DEPENDENCIES: READY"
+}
+
+write_session() {
+  local issue="$1"
+  local tested_ref="$2"
+  local root="$3"
+  local handoff="$4"
+  local cdp_port="$5"
+  local launch_pid="$6"
+  local session=""
+  local temporary=""
+
+  session="$(session_path)" || return 1
+  if [[ -e "$session" ]]; then
+    echo "BLOCKED: E2E session metadata already exists"
+    echo "SESSION: $session"
+    return 1
+  fi
+  assert_session_root "$root" || return 1
+  assert_session_handoff "$issue" "$handoff" || return 1
+
+  temporary="$(mktemp "${session}.XXXXXX")" || {
+    echo "ERROR: could not create E2E session metadata"
+    return 1
+  }
+  if ! {
+    printf 'issue=%s\n' "$issue"
+    printf 'ref=%s\n' "$tested_ref"
+    printf 'root=%s\n' "$root"
+    printf 'handoff=%s\n' "$handoff"
+    printf 'cdp_port=%s\n' "$cdp_port"
+    printf 'launch_pid=%s\n' "$launch_pid"
+  } > "$temporary"; then
+    rm -f -- "$temporary"
+    echo "ERROR: could not write E2E session metadata"
+    return 1
+  fi
+  mv "$temporary" "$session" || {
+    rm -f -- "$temporary"
+    echo "ERROR: could not finalize E2E session metadata"
+    return 1
+  }
+}
+
+cleanup() {
+  local session=""
+  local issue=""
+  local tested_ref=""
+  local root=""
+  local handoff=""
+  local cdp_port=""
+  local launch_pid=""
+  local head=""
+  local marker=""
+  local marker_issue=""
+  local marker_ref=""
+
+  session="$(session_path)" || { echo "BLOCKED: cannot resolve E2E session path"; return 1; }
+  if [[ ! -f "$session" ]]; then
+    echo "BLOCKED: E2E session metadata does not exist"
+    return 1
+  fi
+
+  issue="$(sed -n 's/^issue=//p' "$session")"
+  tested_ref="$(sed -n 's/^ref=//p' "$session")"
+  root="$(sed -n 's/^root=//p' "$session")"
+  handoff="$(sed -n 's/^handoff=//p' "$session")"
+  cdp_port="$(sed -n 's/^cdp_port=//p' "$session")"
+  launch_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+
+  [[ "$issue" =~ '^SAY-[0-9]+$' ]] || { echo "BLOCKED: invalid E2E session Issue"; return 1; }
+  [[ "$tested_ref" =~ '^[0-9a-fA-F]{40}$' ]] || { echo "BLOCKED: invalid E2E session ref"; return 1; }
+  [[ "$cdp_port" =~ '^[0-9]+$' ]] || { echo "BLOCKED: invalid E2E session CDP port"; return 1; }
+  [[ "$launch_pid" =~ '^[0-9]+$' ]] || { echo "BLOCKED: invalid E2E session launch PID"; return 1; }
+  assert_session_root "$root" || return 1
+  assert_session_handoff "$issue" "$handoff" || return 1
+
+  assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
+  head="$(git -C "$E2E_WT" rev-parse HEAD)" || return 1
+  [[ "$head" == "$tested_ref" ]] || { echo "BLOCKED: e2e HEAD changed before cleanup"; return 1; }
+  marker="$(marker_path)" || return 1
+  marker_issue="$(sed -n 's/^issue=//p' "$marker")"
+  marker_ref="$(sed -n 's/^ref=//p' "$marker")"
+  [[ "$marker_issue" == "$issue" && "$marker_ref" == "$tested_ref" ]] || {
+    echo "BLOCKED: E2E marker changed before cleanup"
+    return 1
+  }
+
+  stop_owned_processes "$root" "$launch_pid" || return 1
+  [[ ! -e "$root" ]] || rm -rf -- "$root" || { echo "ERROR: could not remove E2E root"; return 1; }
+  [[ ! -e "$handoff" ]] || rm -f -- "$handoff" || { echo "ERROR: could not remove E2E handoff"; return 1; }
+  rm -f -- "$session" || { echo "ERROR: could not remove E2E session metadata"; return 1; }
+
+  echo "E2E CLEANUP COMPLETE"
+  echo "  issue=$issue"
+  echo "  ref=$tested_ref"
 }
 
 assert_no_tracked_mutations() {
@@ -249,19 +451,28 @@ prepare() {
   local prepared_fixture=""
   local rust_bin=""
   local handoff=""
+  local session=""
   local ready=0
   local vscode_pid=""
 
+  cleanup_failed_prepare() {
+    local result="$1"
+    if [[ -n "$vscode_pid" ]]; then
+      stop_owned_processes "$e2e_root" "$vscode_pid" >/dev/null 2>&1 || true
+    fi
+    [[ -z "$handoff" || ! -e "$handoff" ]] || rm -f -- "$handoff"
+    [[ -z "$e2e_root" || ! -e "$e2e_root" ]] || rm -rf -- "$e2e_root"
+    return "$result"
+  }
+
   assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
 
-  e2e_root="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)" || {
-    echo "ERROR: could not create E2E root"
+  session="$(session_path)" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
+  if [[ -e "$session" ]]; then
+    echo "BLOCKED: E2E session cleanup is still required"
+    echo "SESSION: $session"
     return 1
-  }
-  mkdir -p "$e2e_root/user-data/User" "$e2e_root/extensions" "$e2e_root/evidence" || return 1
-
-  ensure_dependencies "$e2e_root" || return 1
-  build_artifacts || return 1
+  fi
 
   code_bin="$(resolve_code_bin)" || {
     echo "BLOCKED: VS Code CLI executable not found"
@@ -274,6 +485,18 @@ prepare() {
     return 1
   fi
 
+  e2e_root="$(mktemp -d "$E2E_TEMP_PARENT/nuinui-vscode-e2e.XXXXXX")" || {
+    echo "ERROR: could not create E2E root"
+    return 1
+  }
+  mkdir -p "$e2e_root/user-data/User" "$e2e_root/extensions" "$e2e_root/evidence" || {
+    cleanup_failed_prepare 1
+    return 1
+  }
+
+  ensure_dependencies "$e2e_root" || { cleanup_failed_prepare 1; return 1; }
+  build_artifacts || { cleanup_failed_prepare 1; return 1; }
+
   cat > "$e2e_root/user-data/User/settings.json" <<'EOF'
 {
   "editor.wordBasedSuggestions": "off",
@@ -283,10 +506,13 @@ prepare() {
 }
 EOF
 
+  [[ -f "$e2e_root/user-data/User/settings.json" ]] || { cleanup_failed_prepare 1; return 1; }
+
   fixture_name="$(basename "$fixture")"
   prepared_fixture="$e2e_root/$fixture_name"
   cp "$fixture" "$prepared_fixture" || {
     echo "ERROR: fixture copy failed"
+    cleanup_failed_prepare 1
     return 1
   }
 
@@ -320,11 +546,11 @@ EOF
   if [[ "$ready" != 1 ]]; then
     echo "ERROR: CDP readiness timeout"
     echo "E2E_ROOT: $e2e_root"
-    kill "$vscode_pid" >/dev/null 2>&1 || true
+    cleanup_failed_prepare 1
     return 1
   fi
 
-  handoff="/tmp/nuinui-${issue}-human-e2e.env"
+  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
   cat > "$handoff" <<EOF
 ISSUE='$issue'
 TESTED_REF='$tested_ref'
@@ -335,6 +561,11 @@ CDP_PORT='$cdp_port'
 RUST_BIN='$rust_bin'
 EOF
 
+  write_session "$issue" "$tested_ref" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
+    cleanup_failed_prepare 1
+    return 1
+  }
+
   echo "E2E SETUP READY"
   echo "  issue=$issue"
   echo "  tested_ref=$tested_ref"
@@ -343,6 +574,7 @@ EOF
   echo "  fixture=$prepared_fixture"
   echo "  cdp_port=$cdp_port"
   echo "  handoff=$handoff"
+  echo "  session=$session"
   echo "READY FOR HUMAN E2E"
 }
 
@@ -359,6 +591,10 @@ case "${1:-}" in
     [[ "$#" -eq 4 || "$#" -eq 5 ]] || { usage; exit 2; }
     assert_inputs "$2" "$3" "$4" || exit $?
     prepare "$2" "$3" "$4" "${5:-$DEFAULT_CDP_PORT}"
+    ;;
+  cleanup)
+    [[ "$#" -eq 1 ]] || { usage; exit 2; }
+    cleanup
     ;;
   *)
     usage

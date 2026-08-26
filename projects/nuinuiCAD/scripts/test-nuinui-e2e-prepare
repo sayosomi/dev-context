@@ -1,0 +1,123 @@
+#!/bin/zsh
+
+set -u
+
+SCRIPT_DIR="${0:A:h}"
+PREPARE_SCRIPT="$SCRIPT_DIR/nuinui-e2e-prepare"
+TEST_ROOT="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-e2e-prepare-test.XXXXXX")" || exit 1
+
+cleanup_test_root() {
+  [[ -d "$TEST_ROOT" ]] && rm -rf -- "$TEST_ROOT"
+}
+trap cleanup_test_root EXIT
+
+fail() {
+  echo "SELFTEST FAIL: $*"
+  exit 1
+}
+
+repo="$TEST_ROOT/repo"
+fixture="$TEST_ROOT/fixture.nui"
+temp_parent="$TEST_ROOT/temp"
+fake_bin="$TEST_ROOT/bin"
+fake_app="$TEST_ROOT/Visual Studio Code.app"
+marker=""
+session=""
+tested_ref=""
+handoff=""
+
+mkdir -p "$temp_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
+git init -q -b main "$repo" || fail "git init"
+git -C "$repo" config user.name "nuinui e2e prepare selftest"
+git -C "$repo" config user.email "nuinui-e2e-prepare-selftest@example.invalid"
+mkdir -p "$repo/rust-evaluator" "$repo/vscode-extension"
+print -r -- "fixture" > "$fixture"
+print -r -- "source" > "$repo/source.txt"
+cat > "$repo/.gitignore" <<'EOF'
+node_modules/
+vscode-extension/dist/
+rust-evaluator/target/
+EOF
+git -C "$repo" add .gitignore source.txt
+git -C "$repo" commit -q -m base || fail "base commit"
+git -C "$repo" remote add origin https://github.com/sayosomi/nuinuiCAD.git
+git -C "$repo" switch --detach -q HEAD || fail "detach checkout"
+tested_ref="$(git -C "$repo" rev-parse HEAD)"
+marker="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-slot"
+session="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-session"
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+
+cat > "$fake_bin/lsof" <<'EOF'
+#!/bin/zsh
+exit 1
+EOF
+cat > "$fake_bin/npm" <<'EOF'
+#!/bin/zsh
+repo=""
+if [[ "${1:-}" == "-C" ]]; then
+  repo="$2"
+  shift 2
+fi
+if [[ "${NUINUI_FAKE_NPM_FAIL:-0}" == "1" ]]; then
+  exit 1
+fi
+if [[ "${1:-}" == "ci" ]]; then
+  mkdir -p "$repo/node_modules/.bin"
+  print -r -- '#!/bin/zsh' > "$repo/node_modules/.bin/esbuild"
+  chmod +x "$repo/node_modules/.bin/esbuild"
+  exit 0
+fi
+if [[ "${1:-}" == "run" && "${2:-}" == "build:vscode" ]]; then
+  mkdir -p "$repo/vscode-extension/dist"
+  print -r -- 'export {}' > "$repo/vscode-extension/dist/extension.js"
+  exit 0
+fi
+exit 1
+EOF
+cat > "$fake_bin/cargo" <<'EOF'
+#!/bin/zsh
+mkdir -p "$NUINUI_FAKE_REPO/rust-evaluator/target/debug"
+print -r -- '#!/bin/zsh' > "$NUINUI_FAKE_REPO/rust-evaluator/target/debug/evaluation_stdio"
+chmod +x "$NUINUI_FAKE_REPO/rust-evaluator/target/debug/evaluation_stdio"
+EOF
+cat > "$fake_bin/curl" <<'EOF'
+#!/bin/zsh
+print -r -- '{}'
+EOF
+cat > "$fake_app/Contents/Resources/app/bin/code" <<'EOF'
+#!/bin/zsh
+sleep 30
+EOF
+chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_app/Contents/Resources/app/bin/code"
+
+common_env=(
+  "NUINUI_E2E_PREPARE_WT=$repo"
+  "NUINUI_E2E_TEMP_PARENT=$temp_parent"
+  "NUINUI_E2E_VSCODE_APP=$fake_app"
+  "NUINUI_FAKE_REPO=$repo"
+  "PATH=$fake_bin:$PATH"
+)
+
+echo "TEST: prepare failure cleans temporary root"
+if env "${common_env[@]}" NUINUI_FAKE_NPM_FAIL=1 zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
+  fail "dependency failure accepted"
+fi
+if find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q .; then
+  fail "failed prepare left an E2E root"
+fi
+[[ ! -e "$session" ]] || fail "failed prepare wrote session metadata"
+
+echo "TEST: prepare records exact session and cleanup removes it"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "prepare"
+[[ -f "$session" ]] || fail "session metadata missing"
+handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+[[ -f "$handoff" ]] || fail "handoff missing"
+find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q . || fail "E2E root missing"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup >/dev/null || fail "cleanup"
+[[ ! -e "$session" ]] || fail "session metadata retained"
+[[ ! -e "$handoff" ]] || fail "handoff retained"
+if find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q .; then
+  fail "cleanup retained an E2E root"
+fi
+
+echo "SELFTEST PASS"
