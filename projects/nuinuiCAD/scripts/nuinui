@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="trial-4"
+VERSION="1.0.0"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 
 if [[ "${NUINUI_SELFTEST:-0}" == "1" ]]; then
@@ -24,7 +24,7 @@ issue_from_branch() {
   if [[ "$branch" =~ '(SAY|say)-([0-9]+)' ]]; then
     echo "SAY-${match[2]}"
   else
-    echo "-"
+    printf '%s\n' '-'
   fi
 }
 
@@ -66,6 +66,18 @@ marker_path() {
   local git_dir=""
   git_dir="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
   echo "$git_dir/nuinui-slot"
+}
+
+session_path() {
+  local repo="$1"
+  local git_dir=""
+  git_dir="$(git -C "$repo" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  echo "$git_dir/nuinui-e2e-session"
+}
+
+canonical_path() {
+  local path="$1"
+  (cd "$path" 2>/dev/null && pwd -P) || return 1
 }
 
 lane_repo() {
@@ -128,19 +140,74 @@ show_lane() {
 }
 
 preflight() {
-  show_lane main "$MAIN_WT"
-  show_lane sub "$SUB_WT"
-  show_lane e2e "$E2E_WT"
-
-  echo "worktrees:"
+  local lane=""
+  local repo=""
   local source_repo=""
-  for source_repo in "$MAIN_WT" "$SUB_WT" "$E2E_WT"; do
-    if git -C "$source_repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      git -C "$source_repo" worktree list | sed 's/^/  /'
-      return
+  local worktree=""
+  local canonical=""
+  local result=0
+  local found_source=0
+  local -a expected_worktrees
+  local -a actual_worktrees
+
+  expected_worktrees=()
+  for worktree in "$MAIN_WT" "$SUB_WT" "$E2E_WT"; do
+    canonical="$(canonical_path "$worktree")" || {
+      echo "BLOCKED: expected lane path cannot be resolved"
+      echo "PATH: $worktree"
+      result=1
+      canonical="$worktree"
+    }
+    expected_worktrees+=("$canonical")
+  done
+
+  for lane in main sub e2e; do
+    repo="$(lane_repo "$lane")"
+    show_lane "$lane" "$repo"
+    if ! assert_git_repo "$repo" >/dev/null 2>&1; then
+      echo "BLOCKED: $lane lane is unavailable"
+      result=1
     fi
   done
-  echo "  ERROR: no usable worktree found"
+
+  echo "worktrees:"
+  for source_repo in "${expected_worktrees[@]}"; do
+    if git -C "$source_repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      actual_worktrees=("${(@f)$(git -C "$source_repo" worktree list --porcelain | sed -n 's/^worktree //p')}")
+      git -C "$source_repo" worktree list | sed 's/^/  /'
+      found_source=1
+      break
+    fi
+  done
+
+  if (( found_source == 0 )); then
+    echo "BLOCKED: no usable worktree found"
+    return 1
+  fi
+
+  for worktree in "${expected_worktrees[@]}"; do
+    if (( ${actual_worktrees[(Ie)$worktree]} == 0 )); then
+      echo "BLOCKED: expected lane worktree is not registered"
+      echo "PATH: $worktree"
+      result=1
+    fi
+  done
+
+  for worktree in "${actual_worktrees[@]}"; do
+    if (( ${expected_worktrees[(Ie)$worktree]} == 0 )); then
+      echo "BLOCKED: unexpected worktree is registered"
+      echo "PATH: $worktree"
+      result=1
+    fi
+  done
+
+  if (( result == 0 )); then
+    echo "PREFLIGHT PASS"
+    return 0
+  fi
+
+  echo "PREFLIGHT BLOCKED"
+  return 1
 }
 
 verify_lane() {
@@ -380,8 +447,10 @@ e2e_start() {
   local branch=""
   local marker=""
   local old_head=""
+  local idle_head=""
   local remote_main=""
   local target_head=""
+  local session=""
 
   if [[ ! "$issue" =~ '^SAY-[0-9]+$' ]]; then
     echo "ERROR: Issue must look like SAY-123"
@@ -407,16 +476,30 @@ e2e_start() {
     echo "MARKER: $marker"
     return 1
   fi
+  session="$(session_path "$repo")" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
+  if [[ -e "$session" ]]; then
+    echo "BLOCKED: E2E session metadata already exists"
+    echo "SESSION: $session"
+    return 1
+  fi
 
   old_head="$(git -C "$repo" rev-parse HEAD)"
   git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; return 1; }
   remote_main="$(git -C "$repo" rev-parse origin/main)" || return 1
 
-  if [[ "$old_head" != "$remote_main" ]]; then
-    echo "BLOCKED: e2e lane is not at idle latest origin/main"
-    echo "HEAD:        $old_head"
-    echo "ORIGIN_MAIN: $remote_main"
-    return 1
+  idle_head="$old_head"
+  if [[ "$idle_head" != "$remote_main" ]]; then
+    if ! git -C "$repo" merge-base --is-ancestor "$idle_head" "$remote_main"; then
+      echo "BLOCKED: e2e lane cannot safely advance to current origin/main"
+      echo "HEAD:        $idle_head"
+      echo "ORIGIN_MAIN: $remote_main"
+      return 1
+    fi
+    git -C "$repo" switch --detach "$remote_main" || {
+      echo "ERROR: safe e2e normalization failed"
+      return 1
+    }
+    idle_head="$remote_main"
   fi
 
   target_head="$(git -C "$repo" rev-parse "${ref}^{commit}" 2>/dev/null)" || {
@@ -428,7 +511,7 @@ e2e_start() {
   git -C "$repo" switch --detach "$target_head" || { echo "ERROR: detached checkout failed"; return 1; }
   if ! printf 'issue=%s\nref=%s\n' "$issue" "$target_head" > "$marker"; then
     echo "ERROR: marker write failed; restoring previous idle HEAD"
-    git -C "$repo" switch --detach "$old_head" >/dev/null 2>&1 || true
+    git -C "$repo" switch --detach "$idle_head" >/dev/null 2>&1 || true
     return 1
   fi
 
@@ -446,9 +529,11 @@ e2e_start_local_main() {
   local branch=""
   local marker=""
   local old_head=""
+  local idle_head=""
   local remote_main=""
   local main_head=""
   local target_head=""
+  local session=""
 
   if [[ ! "$issue" =~ '^SAY-[0-9]+$' ]]; then
     echo "ERROR: Issue must look like SAY-123"
@@ -506,6 +591,12 @@ e2e_start_local_main() {
     echo "MARKER: $marker"
     return 1
   fi
+  session="$(session_path "$repo")" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
+  if [[ -e "$session" ]]; then
+    echo "BLOCKED: E2E session metadata already exists"
+    echo "SESSION: $session"
+    return 1
+  fi
 
   old_head="$(git -C "$repo" rev-parse HEAD)"
   git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; return 1; }
@@ -528,11 +619,12 @@ e2e_start_local_main() {
       return 1
     }
   fi
+  idle_head="$remote_main"
 
   git -C "$repo" switch --detach "$target_head" || { echo "ERROR: detached checkout failed"; return 1; }
   if ! printf 'issue=%s\nref=%s\n' "$issue" "$target_head" > "$marker"; then
     echo "ERROR: marker write failed; restoring previous idle HEAD"
-    git -C "$repo" switch --detach "$old_head" >/dev/null 2>&1 || true
+    git -C "$repo" switch --detach "$idle_head" >/dev/null 2>&1 || true
     return 1
   fi
 
@@ -550,6 +642,7 @@ e2e_release() {
   local marker_ref=""
   local current_head=""
   local remote_main=""
+  local session=""
 
   assert_git_repo "$repo" || return 1
   assert_origin "$repo" "$TARGET_REPO_TOKEN" || return 1
@@ -571,6 +664,13 @@ e2e_release() {
   marker="$(marker_path "$repo")" || return 1
   if [[ ! -f "$marker" ]]; then
     echo "BLOCKED: E2E marker does not exist"
+    return 1
+  fi
+  session="$(session_path "$repo")" || return 1
+  if [[ -e "$session" ]]; then
+    echo "BLOCKED: E2E session cleanup is still required"
+    echo "SESSION: $session"
+    echo "Run nuinui-e2e-prepare cleanup before releasing the e2e lane."
     return 1
   fi
 
@@ -655,7 +755,7 @@ context_sync_repo() {
   echo "  head=$(git -C "$repo" rev-parse HEAD)"
 }
 
-self_test() {
+self_test() (
   local root=""
   local remote=""
   local seed=""
@@ -670,13 +770,14 @@ self_test() {
   local wrong_base=""
   local out=""
   local divergent_head=""
+  local session=""
 
-  root="$(mktemp -d "/Users/yosomi/Code/nuinui-local-tools/integrated-test.XXXXXX")" || {
+  root="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-local-tools.XXXXXX")" || {
     echo "SELFTEST FAIL: mktemp"
     return 1
   }
 
-  cleanup() { rm -rf -- "$root"; }
+  cleanup() { [[ -n "$root" && -d "$root" ]] && rm -rf -- "$root"; }
   trap cleanup EXIT
 
   remote="$root/remote.git"
@@ -717,6 +818,15 @@ self_test() {
   [[ "$wrong_base" == "$base" ]] && wrong_base="${base%?}1"
 
   echo "TEST: preflight"
+  "$SCRIPT_PATH" preflight || return 1
+
+  echo "TEST: preflight blocks unexpected worktree"
+  git -C "$main_repo" worktree add -q --detach "$root/extra" origin/main || return 1
+  if "$SCRIPT_PATH" preflight >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: unexpected worktree accepted"
+    return 1
+  fi
+  git -C "$main_repo" worktree remove "$root/extra" || return 1
   "$SCRIPT_PATH" preflight >/dev/null || return 1
 
   echo "TEST: verify exact base"
@@ -815,6 +925,24 @@ self_test() {
     echo "SELFTEST FAIL: duplicate E2E start accepted"
     return 1
   fi
+  session="$(session_path "$e2e_repo")" || return 1
+  printf 'issue=SAY-992\n' > "$session" || return 1
+  if "$SCRIPT_PATH" e2e-release >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: E2E release accepted an active session"
+    return 1
+  fi
+  rm -- "$session" || return 1
+  "$SCRIPT_PATH" e2e-release >/dev/null || return 1
+
+  echo "TEST: E2E stale idle normalization"
+  base="$(git -C "$e2e_repo" rev-parse origin/main~1)" || return 1
+  advanced_base="$(git -C "$e2e_repo" rev-parse origin/main)" || return 1
+  git -C "$e2e_repo" switch --detach "$base" >/dev/null 2>&1 || return 1
+  "$SCRIPT_PATH" e2e-start SAY-989 "$advanced_base" >/dev/null || return 1
+  [[ "$(git -C "$e2e_repo" rev-parse HEAD)" == "$advanced_base" ]] || {
+    echo "SELFTEST FAIL: stale E2E normalization did not reach tested ref"
+    return 1
+  }
   "$SCRIPT_PATH" e2e-release >/dev/null || return 1
 
   echo "TEST: local-main E2E marker/start/release"
@@ -865,7 +993,7 @@ self_test() {
   }
 
   echo "SELFTEST PASS"
-}
+)
 
 case "${1:-}" in
   version) echo "$VERSION" ;;

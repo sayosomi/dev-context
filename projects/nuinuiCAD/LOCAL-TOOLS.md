@@ -23,7 +23,6 @@ versioned helper paths:
 ```text
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-e2e-prepare
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-integrate
 ```
 
 この`dev-context` cloneはnuinuiCAD repositoryの4th checkoutではない。
@@ -68,21 +67,6 @@ current commands:
 | `nuinui doctor` | helper / lane / local dev-contextのdiagnostic表示 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
 
-## Versioned `nuinui-integrate` helper
-
-`projects/nuinuiCAD/scripts/nuinui-integrate`は、integration checkpointで繰り返すdeterministicなtask-branch safety auditと、GitのEOF blank-line whitespaceだけを対象にした安全なrepairを提供する正式versioned helperである。
-
-current commands:
-
-```text
-nuinui-integrate audit <repo> <expected-base> <branch>
-nuinui-integrate repair-eof <repo> <expected-base> <commit-message>
-```
-
-`audit`はclean worktree、expected baseとのancestor関係、expected task branch、main直接変更禁止を確認する。`repair-eof`はcleanな非-main task branch上で、expected baseからのdiffにGitの`new blank line at EOF`だけが存在する場合に限ってEOF改行を正規化し、semantic content preservationを比較確認したうえでrepair commitを作成する。対象外のwhitespace anomaly、unexpected diff-check failure、semantic change、precondition mismatchは`BLOCKED:`または`ESCALATE:`で停止する。
-
-このhelperはreset / stash / force-switch / force-push / conflict resolution / CI / PR / merge、またはproduct / UX / Linear checkpoint判断を自動化しない。
-
 ## Human Manual E2E preparation helper
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`は、`nuinui e2e-start`またはActive interim workflow中の`nuinui e2e-start-local-main`で固定済みのdedicated e2e laneを使って、Human Manual E2Eのhostを一発で準備するversioned helperである。
@@ -92,17 +76,24 @@ current commands:
 ```text
 nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+nuinui-e2e-prepare cleanup
 ```
 
-`prepare`は、exact tested ref / e2e marker / clean detached checkoutを検証し、必要ならisolated npm cacheでdevDependenciesをmaterializeし、VS Code extensionと`evaluation_stdio`をbuildし、fresh profile / empty extensions / fixture / caller-selected CDP portでExtension Development Hostを起動し、CDP readinessとHuman handoffを確認する。成功時は`READY FOR HUMAN E2E`を出す。
+`prepare`は、exact tested ref / e2e marker / clean detached checkoutを検証し、lockfileに従ってdevDependenciesをmaterializeし、VS Code extensionと`evaluation_stdio`をbuildし、fresh profile / empty extensions / fixture / caller-selected CDP portでExtension Development Hostを起動し、CDP readinessとHuman handoffを確認する。成功時は`READY FOR HUMAN E2E`を出す。
+
+`prepare`は専用session metadataへexact E2E root / handoff / launch PIDを記録する。`cleanup`はそのmetadataとE2E markerを再検証してから、同rootに属するprocessだけを終了し、root・handoff・session metadataを削除する。cleanup未完了の間、E2E laneはreleaseできない。
 
 このhelperはproduct source、tested marker、既存の無関係なVS Code processを自動repairしない。fixtureはdedicated e2e checkoutの外側でなければならず、dependency準備またはbuildによるtracked-file mutationはBLOCKされる。
+
+`projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`は、temporary Git checkoutとfake hostを使ってprepare失敗時のcleanupと、成功したsessionのcleanupを検証するisolated self-testである。実機のVS Code / dependency / CDP lifecycleは別途actual laneで確認する。
 
 Humanへcommandを渡すときは、Issue key、tested ref、fixture path、必要ならCDP port等、確定値を埋めたcopy/paste-ready commandにする。Humanにplaceholder判断を委ねない。
 
 ChatGPTがHumanへhelper commandを渡すときは、path、Issue key、expected base、checkpoint、branch、tested ref等、ChatGPT側で確定できる値を埋めたcopy/paste-ready commandにする。Humanにplaceholder判断を委ねない。
 
 helperはproduct / UX / scope判断、Linear checkpoint判断、implementation、conflict resolution、dirty workの保存判断を自動化しない。helperの責務は`CHECKOUTS.md`でHumanに許されるmechanical / deterministic operationだけである。
+
+helper commandの存在は、current workflowでの利用許可を意味しない。executor / lane / interim commandの利用可否はREADME routerとActive overrideがauthorityであり、helperは許可済みoperationのpreconditionとmechanicsだけを担う。
 
 mutation commandは実行直前にsafety-critical stateを再確認し、precondition mismatchでは`BLOCKED:`で停止する。reset / stash / force-switch / force-push / unrelated work破棄を自動repairとして行わない。
 
@@ -122,6 +113,8 @@ ChatGPTはnuinuiCAD作業中、繰り返し発生するmechanical / deterministi
 
 isolated self-testは、production commandと同じmechanics / safety conditionを実際にexerciseしている場合にsuccess evidenceとして使える。real environmentとの差がmaterialでself-testだけでは保証できない場合は、その差に対応する実機successを追加で確認してから正式化する。
 
+正式promotionするcandidateは、success evidenceを得たexact commit / blobから変更してはならない。trial後に別worktreeや手作業の再実装をformal helperへ写す場合は、target candidateで同じverificationを再実行し、tested candidate identityを確認してからpromotionする。
+
 一度成功したtrialへ、未検証の追加featureを混ぜてそのまま正式化しない。新しいbehaviorを追加するなら、そのbehaviorもsuccess evidenceを得てからpromotion対象にする。
 
 success evidenceが得られたら、ChatGPTは「このoperationをversioned helper / LOCAL-TOOLSへ正式追加すると反復作業を減らせる」とproactiveに提案する。dev-contextへのwriteは[`../../shared/DEVELOPMENT.md`](../../shared/DEVELOPMENT.md)のapproval ruleに従い、target file / purpose / intended changeを提示して明示承認を得てから行う。
@@ -140,6 +133,7 @@ failure evidence
 -> local trial fix
 -> isolated / relevant self-test
 -> SUCCESSするまで修正と再試験
+-> exact tested candidate identityを確認
 -> dev-context fix planを提示して承認
 -> GitHub authoritative helperへ反映
 -> local clone用git sync commandを提示
