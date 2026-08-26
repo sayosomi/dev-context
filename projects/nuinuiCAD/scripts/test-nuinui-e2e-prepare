@@ -25,6 +25,9 @@ marker=""
 session=""
 tested_ref=""
 handoff=""
+root=""
+status_out=""
+marker_contents=""
 
 mkdir -p "$temp_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -98,6 +101,18 @@ common_env=(
   "PATH=$fake_bin:$PATH"
 )
 
+echo "TEST: status reports no session and unmanaged artifact candidates without mutation"
+mkdir -p "$temp_parent/nuinui-vscode-e2e.orphan" || fail "orphan root setup"
+print -r -- orphan > "$temp_parent/nuinui-SAY-888-human-e2e.env"
+status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "status without session"
+print -r -- "$status_out" | grep -Fq 'session=none' || fail "status did not report missing session"
+print -r -- "$status_out" | grep -Fq "root-candidate=$temp_parent/nuinui-vscode-e2e.orphan" || fail "status did not report orphan root"
+print -r -- "$status_out" | grep -Fq "handoff-candidate=$temp_parent/nuinui-SAY-888-human-e2e.env" || fail "status did not report orphan handoff"
+[[ -d "$temp_parent/nuinui-vscode-e2e.orphan" ]] || fail "status mutated orphan root"
+[[ -f "$temp_parent/nuinui-SAY-888-human-e2e.env" ]] || fail "status mutated orphan handoff"
+rm -rf -- "$temp_parent/nuinui-vscode-e2e.orphan"
+rm -f -- "$temp_parent/nuinui-SAY-888-human-e2e.env"
+
 echo "TEST: prepare failure cleans temporary root"
 if env "${common_env[@]}" NUINUI_FAKE_NPM_FAIL=1 zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
   fail "dependency failure accepted"
@@ -112,12 +127,42 @@ env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fix
 [[ -f "$session" ]] || fail "session metadata missing"
 handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
 [[ -f "$handoff" ]] || fail "handoff missing"
-find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q . || fail "E2E root missing"
+root="$(sed -n 's/^root=//p' "$session")"
+[[ -d "$root" ]] || fail "E2E root missing"
+
+echo "TEST: status reports active session and detects marker mismatch"
+status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "status active session"
+print -r -- "$status_out" | grep -Fq 'session=active' || fail "status did not report active session"
+print -r -- "$status_out" | grep -Fq "root=$root (present)" || fail "status did not report active root"
+marker_contents="$(<"$marker")"
+printf 'issue=SAY-998\nref=%s\n' "$tested_ref" > "$marker"
+if status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status 2>&1)"; then
+  fail "status accepted marker mismatch"
+fi
+print -r -- "$status_out" | grep -Fq 'session_marker=INCONSISTENT' || fail "status did not expose marker mismatch"
+print -r -- "$marker_contents" > "$marker"
+
+echo "TEST: status reports missing owned artifacts without deleting them"
+rm -f -- "$handoff"
+rm -rf -- "$root"
+status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "status missing owned artifacts"
+print -r -- "$status_out" | grep -Fq "root=$root (missing)" || fail "status did not report missing root"
+print -r -- "$status_out" | grep -Fq "handoff=$handoff (missing)" || fail "status did not report missing handoff"
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup >/dev/null || fail "cleanup"
 [[ ! -e "$session" ]] || fail "session metadata retained"
 [[ ! -e "$handoff" ]] || fail "handoff retained"
 if find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q .; then
   fail "cleanup retained an E2E root"
 fi
+
+echo "TEST: status blocks malformed session without mutation"
+printf 'issue=SAY-999\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=1\n' \
+  "$tested_ref" "$TEST_ROOT/not-owned" "$temp_parent/nuinui-SAY-999-human-e2e.env" > "$session"
+if status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status 2>&1)"; then
+  fail "status accepted malformed session"
+fi
+print -r -- "$status_out" | grep -Fq 'session=INVALID' || fail "status did not report malformed session"
+[[ -f "$session" ]] || fail "status mutated malformed session"
+rm -f -- "$session"
 
 echo "SELFTEST PASS"
