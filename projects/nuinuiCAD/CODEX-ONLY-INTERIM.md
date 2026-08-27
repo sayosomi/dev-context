@@ -1,10 +1,14 @@
 # nuinuiCAD Codex-only interim workflow
 
-Status: **Active**
+Status: **Inactive**
 
 Activated: 2026-08-25
 
-Deactivation: Humanが明示的にこのinterim workflowの解除を指示したときだけ解除する。日付やChatGPT model availabilityを理由に自動解除しない。
+Deactivated: 2026-08-27 by explicit Human instruction after ChatGPT usage capacity recovered.
+
+Reactivation: Humanが明示的にこのinterim workflowの再有効化を指示したときだけ再有効化する。availability / rate limitの変化だけを理由に自動再有効化しない。
+
+Inactiveな間、このdocumentは将来の再利用用referenceとして保持するが、通常のloading対象でもoverride authorityでもない。
 
 ## Purpose and precedence
 
@@ -138,3 +142,20 @@ CodexがLinear操作を担当し、Humanへmanual updateを要求しない。
 ## Deactivation
 
 Humanがinterim workflowの解除を明示したら、本documentをInactive化または削除し、READMEのAlways-load routeを外す。同じ変更で、long-lived batch、unpublished local checkpoint、Linear lag、active e2e markerを監査し、通常policyへ安全に復帰できるcheckpointを作る。
+
+### 2026-08-27 deactivation checkpoint
+
+- Human explicitly requested deactivation after ChatGPT usage capacity recovered. This document is retained for possible future reactivation.
+- Latest remote `sayosomi/nuinuiCAD` `main` observed during deactivation: `50c99d19f3c96094d74c353aba73628e7f2b8fa0` (merge of PR #571).
+- Remote branch `codex/interim-sequential` is absent. The interim SAY-142 Linear checkpoint still names that branch and a local starting HEAD `65526f8de6b94cdefd35ecec30439c1b99fa0d24`; that SHA is not available from the remote GitHub repository.
+- Linear audit found SAY-142 as the only `In Progress` Issue and found no Issue labeled `Manual E2E: Running` / `Running`.
+- This ChatGPT session cannot directly inspect the three local checkouts, so unpublished local commits / working-tree changes and the local `e2e` marker are not asserted absent. Deactivation performs no destructive local mutation and does not reassign any lane. Before the next implementation start/resume, the normal [`CHECKOUTS.md`](./CHECKOUTS.md) mandatory 3-lane preflight must reconcile actual local state and then synchronize SAY-142's lifecycle checkpoint if needed.
+
+## Reactivation
+
+If Human later explicitly requests this contingency again:
+
+1. audit current remote repository, Linear lifecycle state, and all three local lanes from fresh evidence;
+2. set this document to `Status: Active` and record the new activation date;
+3. restore the README `Active override` Always-load route in the same change;
+4. establish a fresh interim execution checkpoint from current state rather than blindly reusing the historical `codex/interim-sequential` branch or any checkpoint recorded above.
