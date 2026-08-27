@@ -64,20 +64,21 @@ HumanがLuna implementation / integration checkpoint等の結果を返した後�
 ```text
 Luna result
 -> pushed HEAD / latest main freshness
--> fresh CI completion
 -> blocking review
--> merge
--> merged-state verification
--> Linear synchronization
+-> [Auto-merge enabled: exact-head reservation -> task ends without CI wait]
+   or
+   [manual merge: fresh CI completion -> merge -> merged-state verification -> Linear synchronization]
 ```
 
 原則:
 
-- fresh CIが`queued` / `in_progress`でも、それ自体を理由に`CI結果をまた返してください`等のHuman actionへ変換しない。ChatGPTが同じexecution trackでremote stateを追跡し、PASS / FAIL / concrete blockerまで進める。
+- Auto-mergeがcurrent repositoryで有効なら、[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) のpreconditionを満たすexact headへ予約した時点でtaskを終了する。fresh CIが`queued` / `in_progress`でもwait / polling / monitoring subagentを作らず、GitHubとDiscord routeへ委ねる。
+- CI failure Discord通知はHuman明示resumeを要求するterminal stopである。failureから自動でtaskを再開、rerun、cancel、repair、merge、Linear synchronizationしない。resume後のrepair / BLOCKED boundaryは`LINEAR-GITHUB.md`をauthorityとする。
+- Auto-mergeを使わないrepositoryまたはbootstrap PRだけは、fresh CIが`queued` / `in_progress`でも、それ自体を理由に`CI結果をまた返してください`等のHuman actionへ変換しない。ChatGPTが同じexecution trackでremote stateを追跡し、PASS / FAIL / concrete blockerまで進める。
 - progress updateは出してよいが、Humanが何もする必要のないremote-only intermediate stateをconversation handoff boundaryにしない。
 - blocking reviewに必要なGitHub diff / code / review thread / CI evidenceをChatGPTが取得できるならHumanに再取得させない。
 - safe merge authorizationが既にcurrent execution trackへ与えられている場合、通常のmerge confirmationを再要求しない。merge gateは`LINEAR-GITHUB.md`に従う。
-- merge後のGitHub / Linear synchronizationも、Human-only actionがなければ同じcontinuationで完了する。
+- manual merge後のGitHub / Linear synchronizationは、Human-only actionがなければ同じcontinuationで完了する。auto-mergeではHuman明示resumeまでdeferする。
 
 Humanへ戻してよいのは、product / UX / scope decision、unsafe local state、destructive operation、Human-only environment / observation、required approval boundary、またはcurrent toolsでは解消できないconcrete blocker等、**Human actionが実際に必要な場合だけ**。
 

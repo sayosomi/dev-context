@@ -63,7 +63,7 @@ Coordinator chatが別Codex taskをexecutorとして扱う場合、taskの開始
 - child taskは、別のdefault routeへ移り得るwork class境界、またはfailure evidenceからescalationを再判断する境界で、current atomic operationを最初のsafe recovery pointまで終えて停止する。通常checkpointごとの機械的な停止は行わず、同じrouteの作業は継続する。
 - model切替だけを理由にcommit、push、Linear sync、new task作成を行わない。repository / external stateのcheckpointは各ownerの既存ruleが要求する場合だけ作る。
 - 停止時は、完了内容とevidence、current local / Git checkpoint、次のwork class、未解決のfailure / ambiguity、推奨model / reasoningをconciseに返す。
-- Coordinatorはhandoffを評価し、Humanの再指示を待たず、原則として同じchild taskへ選択したmodel / reasoning override付きで次段階を送る。段階開始時のmodel / reasoning明示は維持する。
+- Coordinatorはhandoffを評価し、Humanの再指示を待たず、原則として同じchild taskへ選択したmodel / reasoning override付きで次段階を送る。GitHub Auto-mergeのCI failure Discord通知後だけは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)に従いHuman明示resumeを待つ。段階開始時のmodel / reasoning明示は維持する。
 - normal implementationからunknown root cause investigation、high failureからxhigh再試行、implementation / reviewからfocused verification・Git・Linear等のroutine continuationへ移る場合はmodel-decision checkpointとする。
 - この停止はHuman action待ちではない。Human-only判断やconcrete blockerがなければCoordinatorがcontinuationを再開し、remote-only continuationをHumanへの細かなhandoffへ分割しない。
 
@@ -101,8 +101,8 @@ publish  -> current batchをremoteへ公開・統合する。
 2. 必要なmain integrationを1回行う。remote driftがunexpectedなら自動rebase / resetせず停止する。
 3. batch全体のrequired verificationをまとめて行う。
 4. branchを1回pushする。
-5. 1 PR、1 blocking review、1 mergeでbatchを統合する。
-6. batch内Linear Issuesをまとめて同期する。
+5. 1 PRと1 blocking reviewを行う。GitHub Auto-mergeがcurrent repositoryで有効な場合は、[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) のpreconditionを満たしたexact headにだけauto-mergeを予約し、予約evidenceを返してexecution trackを終了する。CIの完了待機、mergeのpolling、failureからの自動resumeは行わない。
+6. auto-mergeを予約しない場合だけ、1 mergeでbatchを統合し、batch内Linear Issuesをまとめて同期する。予約した場合のmerge後Linear同期は、Discord通知を見たHumanが明示的にresumeした後にfresh remote stateから行う。
 
 Local commitをまだremote保存していないことだけを理由にroutine publishしない。destructive recovery、別machine handoff、remote-only execution等でremote checkpointが実際に必要な場合は、その理由を明示してpublishを提案する。
 
@@ -123,6 +123,7 @@ CodexがLinear操作を担当し、Humanへmanual updateを要求しない。
 - local-only micro-commitやCodex commentaryをLinearへ複製しない。
 - active local batch中はLinear progressがlocal commitより遅れることを許容する。publish時にauthoritative remote stateへ同期する。
 - GitHub Issues public mirrorはexisting sync ownerへ任せ、同内容を手動二重投稿しない。
+- Auto-merge予約後のCI failure Discord通知はimplementationのrestart authorizationではない。Humanの明示resumeまでcode変更、rerun、cancel、merge、Linear updateを行わず、常駐monitor / subagentも作らない。
 
 ## Human Manual E2E
 

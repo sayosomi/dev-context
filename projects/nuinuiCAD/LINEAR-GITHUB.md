@@ -41,7 +41,7 @@ GitHub integration上のlink不足を避けるためだけにintermediate PRへ�
 
 この開始 / 継続許可は、他policyにある`merge when explicitly authorized`や`PR operations when explicitly authorized`等の表現についても、current Issueを安全に実装完了まで進めるためのexplicit authorizationとして扱う。
 
-各implementation mergeでは、intermediate / finalを問わず少なくとも次を満たす。
+各implementation mergeまたはGitHub Auto-merge予約では、intermediate / finalを問わず少なくとも次を満たす。
 
 - [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) のMerge checkpointを満たす。
 - current sliceに必要なautomated verification / CIとblocking reviewが完了している。
@@ -50,9 +50,37 @@ GitHub integration上のlink不足を避けるためだけにintermediate PRへ�
 - intermediate PRでは`Fixes` / `Closes`等のclosing magic wordを付けず、merge後にimplementation checkpointをLinearへ記録する。
 - final completion PRではremaining implementation acceptanceが本当に完了することを確認し、standard closing magic wordを使う。
 
+### GitHub Auto-merge reservation
+
+repository settingでrequired `CI`とGitHub Auto-mergeが有効な場合、blocking review PASS後に次の条件をすべてfresh remote evidenceで確認して、`gh pr merge --auto --merge --match-head-commit <expected-head-sha>`を予約してよい。これはCI waitをagent taskへ残さないためのreservationであり、`--admin`、force、bypassを使わない。
+
+- PRがopenかつnon-draftで、intended baseとexpected head SHAがcurrent contractに一致する。
+- PR identity、head、base、remote drift、mergeability、GitHub authorizationにambiguityがない。
+- required check `CI`がPRをgateする設定であり、現在のrequired failureがない。queued / in_progressはGitHub Auto-mergeに委ねる。
+- current sliceのautomated verificationとblocking reviewがPASSし、product / UX / scope / architecture owner / acceptanceの未解決decisionがない。
+- `--match-head-commit`でreservation直前のheadを固定し、GitHub上でauto-mergeが有効になったことをread-backする。
+
+予約後、agentはCI完了・mergeをwait / pollせずexecution trackを終了する。GitHubのrequired CIがgreenならmergeし、merge Discord通知をexisting routeで送る。CI non-successなら同じDiscord routeのfailure通知が送られ、Humanが必要なら明示的にCodexをresumeする。Discord通知は自動resume、CI rerun、cancel、failure diagnosis、repair、merge、Linear updateを許可しない。
+
+Humanがfailure後に明示resumeした時だけ、fresh PR/head/base/Actions/contract evidenceから再開する。failure evidenceによりapproved contract・scope・current architecture内の次の修正が一意なら継続してよい。複数の妥当なimplementation案、product / UX / contract判断、scope拡大、authority conflict、architecture owner変更、acceptance変更、Manual E2E judgment、destructive / external-state riskではHumanへ再承認を求める。同一failureの反復やflaky / retry-onlyは根拠なくgreenまでretryせず、まずCI incident routeとmodel escalationを使う。PR/head/base identity ambiguity、auth / permission、GitHub outageは実装判断ではなく`BLOCKED`として停止・報告する。
+
+Auto-merge後のLinear syncは、Discord merge通知だけを根拠に実行しない。Humanの明示resume後、authoritative merged commit、remaining acceptance、Manual E2E stateを再確認してからこのdocumentのstatus ruleに従う。
+
+PR前の包括承認は、少なくとも次を値埋めして記録する。
+
+```text
+Issue / objective: <key and authority reference>
+Approved contract and non-goals: <references>
+PR target: <repository>, base <base>, expected head <SHA>
+Permission: create/push this PR; after blocking review PASS, reserve GitHub Auto-merge with --merge and --match-head-commit for this exact head.
+CI failure: Discord notification stops the track. No automatic resume, rerun, cancel, repair, merge, or Linear update; resume only on my explicit instruction.
+Repair after explicit resume: continue only when the evidence makes one contract/scope/current-architecture fix unique; otherwise return for my decision.
+Stop immediately: PR/head/base/auth/GitHub ambiguity, scope or acceptance change, owner/architecture conflict, Manual E2E judgment, destructive/external-state risk.
+```
+
 Issue開始 / 継続許可後は、通常のmerge確認そのものをhuman gateにしない。安全停止が必要なのは、new product / UX / scope decision、Contract readiness喪失、unresolved blocker / required failure、unsafe interference / ownership conflict、destructive operation、またはcurrent execution methodでは完了できないrequired work等、実装を安全に一意継続できない条件が発生した場合。
 
-final implementation merge後は、current Manual E2E stateに従って次まで自動で同期する。
+manual mergeまたはHuman明示resume後に確認したfinal implementation mergeでは、current Manual E2E stateに従って次まで同期する。Auto-merge予約だけではstatusを同期しない。
 
 ```text
 Manual E2E: Not Required
@@ -109,7 +137,8 @@ PR lifecycleだけでIssue statusを決めない。
 - PR open → status変更なし
 - PR review request / activity → status変更なし
 - PR ready for merge → status変更なし
-- PR merge → current Manual E2E / execution ownershipを確認してChatGPTがstatusを同期
+- manual PR merge → current Manual E2E / execution ownershipを確認してChatGPTがstatusを同期
+- auto-merge → Discord通知後のHuman明示resumeでauthoritative merged stateを再確認してから同期
 
 通常、実装開始済みTaskはPR作成・blocking review・merge直前まで`In Progress`のまま。
 
