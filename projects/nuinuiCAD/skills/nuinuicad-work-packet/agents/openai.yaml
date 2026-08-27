@@ -1,0 +1,4 @@
+interface:
+  display_name: "nuinuiCAD Work Packet"
+  short_description: "Generate, refresh, or validate authority-safe handoff packets"
+  default_prompt: "Use $nuinuicad-work-packet to generate, refresh, or validate a nuinuiCAD handoff packet. Read current authority, preserve unknowns, and do not send, resume, select issues, write external state, merge, or decide implementation."
