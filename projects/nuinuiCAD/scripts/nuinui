@@ -445,8 +445,8 @@ release_lane() {
 read_pr_auto_merge_snapshot() {
   local pr="$1"
   "$GH_BIN" pr view "$pr" -R "$PR_TARGET_REPO" \
-    --json state,isDraft,baseRefName,baseRefOid,headRefOid,mergeable,autoMergeRequest,url \
-    --jq '[.state, (.isDraft|tostring), .baseRefName, .baseRefOid, .headRefOid, .mergeable, (if .autoMergeRequest == null then "none" else (.autoMergeRequest.mergeMethod // "present") end), .url] | @tsv' || {
+    --json id,state,isDraft,baseRefName,baseRefOid,headRefOid,mergeable,autoMergeRequest,url \
+    --jq '[.id, .state, (.isDraft|tostring), .baseRefName, .baseRefOid, .headRefOid, .mergeable, (if .autoMergeRequest == null then "none" else (.autoMergeRequest.mergeMethod // "present") end), .url] | @tsv' || {
       echo "BLOCKED: could not read PR state from GitHub" >&2
       return 1
     }
@@ -457,6 +457,7 @@ validate_pr_auto_merge_preconditions() {
   local expected_head="$2"
   local expected_main="$3"
   local snapshot=""
+  local pr_id=""
   local state=""
   local draft=""
   local base=""
@@ -474,8 +475,12 @@ validate_pr_auto_merge_preconditions() {
   local blocked_count=0
 
   snapshot="$(read_pr_auto_merge_snapshot "$pr")" || return 1
-  IFS=$'\t' read -r state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
+  IFS=$'\t' read -r pr_id state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
 
+  if [[ -z "$pr_id" ]]; then
+    echo "BLOCKED: PR GraphQL node id is missing"
+    return 1
+  fi
   if [[ "$state" != "OPEN" ]]; then
     echo "BLOCKED: PR is not open"
     echo "STATE: $state"
@@ -560,14 +565,20 @@ validate_pr_auto_merge_preconditions() {
     echo "BLOCKED: all required checks are already complete; reservation-only helper will not merge immediately"
     return 1
   fi
+
+  print -r -- "$snapshot"
 }
 
 pr_auto_merge() {
   local pr="$1"
   local expected_head="$2"
   local expected_main="$3"
-  local merge_output=""
+  local validation_output=""
+  local validation_status=0
+  local mutation_output=""
   local snapshot=""
+  local pr_id=""
+  local readback_pr_id=""
   local state=""
   local draft=""
   local base=""
@@ -590,21 +601,46 @@ pr_auto_merge() {
     return 2
   fi
 
-  validate_pr_auto_merge_preconditions "$pr" "$expected_head" "$expected_main" || return 1
-  validate_pr_auto_merge_preconditions "$pr" "$expected_head" "$expected_main" || return 1
-
-  merge_output="$("$GH_BIN" pr merge "$pr" -R "$PR_TARGET_REPO" --auto --merge --match-head-commit "$expected_head" 2>&1)" || {
-    echo "BLOCKED: GitHub rejected the Auto-merge reservation"
-    [[ -n "$merge_output" ]] && print -r -- "$merge_output"
+  validation_output="$(validate_pr_auto_merge_preconditions "$pr" "$expected_head" "$expected_main" 2>&1)"
+  validation_status=$?
+  if (( validation_status != 0 )); then
+    print -r -- "$validation_output"
     return 1
-  }
+  fi
+
+  validation_output="$(validate_pr_auto_merge_preconditions "$pr" "$expected_head" "$expected_main" 2>&1)"
+  validation_status=$?
+  if (( validation_status != 0 )); then
+    print -r -- "$validation_output"
+    return 1
+  fi
+  snapshot="$validation_output"
+  IFS=$'\t' read -r pr_id state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
+
+  mutation_output="$("$GH_BIN" api graphql \
+    -f query='mutation EnableAutoMerge($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) { enablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId, mergeMethod: MERGE, expectedHeadOid: $expectedHeadOid}) { clientMutationId } }' \
+    -f pullRequestId="$pr_id" \
+    -f expectedHeadOid="$expected_head" 2>&1)" || {
+      if [[ "$mutation_output" == *"clean status"* ]]; then
+        echo "BLOCKED: required checks completed before reservation; reservation-only helper will not merge"
+      else
+        echo "BLOCKED: GitHub rejected the Auto-merge reservation"
+      fi
+      [[ -n "$mutation_output" ]] && print -r -- "$mutation_output"
+      return 1
+    }
 
   snapshot="$(read_pr_auto_merge_snapshot "$pr")" || {
     echo "BLOCKED: Auto-merge mutation returned but read-back failed"
     return 1
   }
-  IFS=$'\t' read -r state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
+  IFS=$'\t' read -r readback_pr_id state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
 
+  if [[ "$readback_pr_id" != "$pr_id" ]]; then
+    echo "BLOCKED: PR identity changed during Auto-merge reservation"
+    echo "No automatic cancellation or repair was performed."
+    return 1
+  fi
   if [[ "$state" != "OPEN" ]]; then
     echo "BLOCKED: PR state changed during Auto-merge reservation"
     echo "STATE: $state"
@@ -1349,6 +1385,7 @@ if [[ "$cmd" == "pr" && "${1:-}" == "view" ]]; then
   [[ -f "$count_file" ]] && count="$(cat "$count_file")"
   (( count += 1 ))
   printf '%s' "$count" > "$count_file"
+  pr_id="PR_kwDOFAKE"
   state="OPEN"
   draft="false"
   base="main"
@@ -1365,11 +1402,10 @@ if [[ "$cmd" == "pr" && "${1:-}" == "view" ]]; then
     closed) state="CLOSED" ;;
     draft) draft="true" ;;
     readback-missing) (( count >= 3 )) && auto_merge="none" ;;
-    immediate-merge) (( count >= 3 )) && { state="MERGED"; auto_merge="none"; } ;;
     head-drift-before-mutation) (( count >= 2 )) && head="$wrong_head" ;;
     main-drift-before-mutation) (( count >= 2 )) && base_oid="$wrong_main" ;;
   esac
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$state" "$draft" "$base" "$base_oid" "$head" "$mergeable" "$auto_merge" "$url"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pr_id" "$state" "$draft" "$base" "$base_oid" "$head" "$mergeable" "$auto_merge" "$url"
   exit 0
 fi
 if [[ "$cmd" == "pr" && "${1:-}" == "checks" ]]; then
@@ -1381,12 +1417,26 @@ if [[ "$cmd" == "pr" && "${1:-}" == "checks" ]]; then
     *) printf 'CI\tpending\n'; exit 8 ;;
   esac
 fi
-if [[ "$cmd" == "pr" && "${1:-}" == "merge" ]]; then
-  print -r -- "$*" > "$state_dir/merge-args"
-  : > "$state_dir/merge-attempted"
-  [[ "$scenario" == "mutation-failure" ]] && { echo "mutation failed" >&2; exit 1; }
-  : > "$state_dir/merge-called"
+if [[ "$cmd" == "api" && "${1:-}" == "graphql" ]]; then
+  print -r -- "$*" > "$state_dir/mutation-args"
+  : > "$state_dir/mutation-attempted"
+  case "$scenario" in
+    mutation-failure)
+      echo "mutation failed" >&2
+      exit 1
+      ;;
+    clean-at-mutation)
+      echo 'GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)' >&2
+      exit 1
+      ;;
+  esac
+  : > "$state_dir/mutation-called"
   exit 0
+fi
+if [[ "$cmd" == "pr" && "${1:-}" == "merge" ]]; then
+  : > "$state_dir/forbidden-merge-command"
+  echo "direct merge command is forbidden in reservation helper" >&2
+  exit 99
 fi
 echo "unexpected fake gh invocation: $cmd $*" >&2
 exit 2
@@ -1413,14 +1463,17 @@ FAKE_GH
     echo "SELFTEST FAIL: pending Auto-merge reservation did not report success"
     return 1
   }
-  [[ -f "$fake_gh_state/merge-called" ]] || {
-    echo "SELFTEST FAIL: pending Auto-merge reservation did not invoke merge"
+  [[ -f "$fake_gh_state/mutation-called" ]] || {
+    echo "SELFTEST FAIL: pending Auto-merge reservation did not invoke enable mutation"
     return 1
   }
-  grep -q -- '-R sayosomi/nuinuiCAD' "$fake_gh_state/merge-args" || return 1
-  grep -q -- '--auto' "$fake_gh_state/merge-args" || return 1
-  grep -q -- '--merge' "$fake_gh_state/merge-args" || return 1
-  grep -q -- "--match-head-commit $fake_head" "$fake_gh_state/merge-args" || return 1
+  [[ ! -e "$fake_gh_state/forbidden-merge-command" ]] || {
+    echo "SELFTEST FAIL: pending Auto-merge reservation invoked a direct merge command"
+    return 1
+  }
+  grep -q -- 'enablePullRequestAutoMerge' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- 'pullRequestId=PR_kwDOFAKE' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- "expectedHeadOid=$fake_head" "$fake_gh_state/mutation-args" || return 1
 
   for scenario in head-mismatch main-drift wrong-base closed draft checks-missing ci-failure ci-cancelled all-success head-drift-before-mutation main-drift-before-mutation; do
     echo "TEST: pr-auto-merge blocks $scenario"
@@ -1434,13 +1487,17 @@ FAKE_GH
       echo "SELFTEST FAIL: $scenario did not report BLOCKED"
       return 1
     }
-    if [[ -e "$fake_gh_state/merge-attempted" ]]; then
-      echo "SELFTEST FAIL: $scenario reached the merge mutation"
+    if [[ -e "$fake_gh_state/mutation-attempted" ]]; then
+      echo "SELFTEST FAIL: $scenario reached the Auto-merge mutation"
+      return 1
+    fi
+    if [[ -e "$fake_gh_state/forbidden-merge-command" ]]; then
+      echo "SELFTEST FAIL: $scenario invoked a direct merge command"
       return 1
     fi
   done
 
-  for scenario in mutation-failure readback-missing immediate-merge; do
+  for scenario in mutation-failure readback-missing clean-at-mutation; do
     echo "TEST: pr-auto-merge safe-stops $scenario"
     out="$(run_fake_auto_merge_case "$scenario" 2>&1)"
     if [[ "$?" -eq 0 ]]; then
@@ -1452,6 +1509,10 @@ FAKE_GH
       echo "SELFTEST FAIL: $scenario did not report BLOCKED"
       return 1
     }
+    if [[ -e "$fake_gh_state/forbidden-merge-command" ]]; then
+      echo "SELFTEST FAIL: $scenario invoked a direct merge command"
+      return 1
+    fi
   done
 
   echo "TEST: preflight"
