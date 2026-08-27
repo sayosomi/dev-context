@@ -20,6 +20,14 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 候補選定では、current Linear / repository / relevant execution stateから「なぜ今そのWorkか」を判断する。過去chatや古いsummaryだけでcurrent候補を決めない。
 
+### Blocked Issue candidate routing
+
+`Contract: Blocked` Issueは、block理由にmaterialな変化が確認できない限り、通常の「次に進めるWork」「次の調査候補」「Issue Authoring候補」として繰り返し提示しない。
+
+ただし、dependency待ちの連続Workを止めない。`LINEAR-ISSUES.md`のReady Queue synchronizationに該当するblocker relation変更、blocker Done、その他current prerequisiteの成立が確認された場合は、そのdependent Issueを通常どおり再評価し、current stateに応じて候補へ戻す。
+
+Linear relationで表現されない外部platform capabilityや将来foundation等を待つBlocked Issueは、Issueに記録された解除条件へmaterialな変化を示すfresh signalがある場合、またはHumanが明示的に再確認を求めた場合だけ再調査する。単に未完了である、時間が経過した、他の候補が減った、という理由だけでは通常候補へ戻さない。
+
 ## Routing handoff rule
 
 HumanへWork候補やroutingを提案するときは、候補ごとに、適切なchat roleとcurrent external stateに合わせた**そのまま送れる短いhandoff message**を併記する。
