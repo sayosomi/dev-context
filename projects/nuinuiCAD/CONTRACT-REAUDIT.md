@@ -6,7 +6,7 @@
 
 通常のstart-time freshness checkより広く、過去に`Contract: Ready`だったこと自体を前提にせず、current implementation / architecture / product contract / dependency / verification / execution shapeを改めて確認する。
 
-通常のcontract判断は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、status / label / checkpoint同期は [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)、execution routeは [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) と [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) がauthority。
+通常のcontract判断は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、status / label / checkpoint同期は [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)、chat role / handoffは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)、execution sliceは [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) がauthority。
 
 ## Marker
 
@@ -29,7 +29,7 @@ Linear Issue label `contract_reaudit` を一時的なcampaign markerとして使
 - `contract_reaudit`を追加する。
 - `Contract: Ready`を`Contract: Pending`へ戻す。
 - `Todo`なら`Backlog`へ戻す。
-- `only_chatgpt` / `manual_e2e_only`等、Ready contractを前提とするexecution-ownership labelは外す。
+- 廃止済み`only_chatgpt`、およびReady contractを前提とする`manual_e2e_only`等のexecution-state labelは外す。
 - Manual E2E labelは機械的に消去・再分類せず、旧判断として保持し、個別re-audit時に再評価する。
 
 旧description内に`Contract Ready`、古いbaseline、旧owner等が書かれていても、campaign markingだけのために全Issue本文を機械的に書き換えない。`contract_reaudit + Contract: Pending`が「旧contractは現在未承認」を明示する。個別re-audit完了時にcurrent descriptionへ整合させる。
@@ -97,7 +97,7 @@ Issue descriptionには再調査後のcurrent有効contractを置き、調査で
 2. `Contract`を`Ready` / `Pending` / `Blocked`の正しい状態へ同期する。
 3. Manual E2E label / plan、dependency、Issue boundaryを再評価して同期する。
 4. current executable sliceが存在する場合だけimplementation slicing / execution routeを再分類する。
-5. `only_chatgpt`はfreshなroute判定で適格と確認した場合だけ再付与する。
+5. execution ownerは廃止済みlabelではなく、current chat role、fixed lane、Luna policyから再判定する。
 6. `contract_reaudit`を外す。
 7. Issueのcurrent lifecycle phaseを先に判定し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のstatus synchronization precedenceに従ってstatusを同期する。
    - implementationがintended baseへmerge済みでrequired Manual E2Eだけが未完了なら`In Review`。

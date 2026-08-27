@@ -124,7 +124,7 @@ PR merge checkpointでは少なくとも次を確認する。
 - Manual E2Eが`Not Required` → completion条件を確認して`Done`
 - required Manual E2Eがあり、merge後すぐ実行可能 → leafのexecution ownershipを確認し、通常`In Review + Manual E2E: Ready to Run`
 - required Manual E2Eを意図的に後回し → `In Review + Manual E2E: Deferred`
-- `manual_e2e_only` transition条件を満たすleaf → [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) に従い即時handoff
+- `manual_e2e_only` transition条件を満たすleaf → [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のlabel/status条件を確認し、[`CHAT-E2E.md`](./CHAT-E2E.md) / [`MANUAL-E2E.md`](./MANUAL-E2E.md) のexecution ownerへhandoff
 
 merge後Manual E2Eで`FAIL`した場合は、同じIssueのscopeなら通常のfix → automated verification → review → merge → affected Manual E2E rerunへ戻す。post-merge FAILが起こり得ること自体を理由にdefaultをpre-mergeへ変更しない。
 

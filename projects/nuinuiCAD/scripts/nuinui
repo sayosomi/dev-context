@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 
@@ -820,6 +820,245 @@ doctor_full() {
   echo "DOCTOR FULL PASS"
 }
 
+context_check() (
+  local result=0
+  local markdown_file=""
+  local link=""
+  local target=""
+  local local_tools=""
+  local help_output=""
+  local command=""
+  local interim=""
+  local readme=""
+  local -a markdown_files
+
+  echo "nuinui $VERSION"
+  echo "CONTEXT CHECK (read-only)"
+
+  if [[ ! -d "$DEV_CONTEXT_WT" ]]; then
+    echo "BLOCKED: dev-context checkout is unavailable"
+    echo "PATH: $DEV_CONTEXT_WT"
+    return 1
+  fi
+
+  markdown_files=("$DEV_CONTEXT_WT"/**/*.md(.N))
+  if (( ${#markdown_files} == 0 )); then
+    echo "BLOCKED: no Markdown files found"
+    return 1
+  fi
+
+  for markdown_file in "${markdown_files[@]}"; do
+    while IFS= read -r link; do
+      [[ -z "$link" || "$link" == \#* || "$link" == http://* || "$link" == https://* || "$link" == mailto:* ]] && continue
+      link="${link%%#*}"
+      [[ -z "$link" ]] && continue
+      if [[ "$link" == /* ]]; then
+        target="$link"
+      else
+        target="${markdown_file:h}/$link"
+      fi
+      if [[ ! -e "$target" ]]; then
+        echo "BLOCKED: missing Markdown link target"
+        echo "SOURCE: $markdown_file"
+        echo "TARGET: $link"
+        result=1
+      fi
+    done < <(grep -oE '\]\([^)#]+(#[^)]+)?\)' "$markdown_file" 2>/dev/null | sed -E 's/^\]\(([^)#]+).*$/\1/')
+
+    if grep -n 'ONLY-CHATGPT\.md' "$markdown_file" >/dev/null 2>&1; then
+      echo "BLOCKED: deprecated ONLY-CHATGPT.md reference"
+      echo "SOURCE: $markdown_file"
+      result=1
+    fi
+  done
+
+  interim="$DEV_CONTEXT_WT/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md"
+  readme="$DEV_CONTEXT_WT/projects/nuinuiCAD/README.md"
+  if [[ -f "$interim" && -f "$readme" ]] && grep -q 'Status: \*\*Active\*\*' "$interim"; then
+    if ! grep -q 'CODEX-ONLY-INTERIM\.md' "$readme"; then
+      echo "BLOCKED: Active interim is not routed by README"
+      echo "SOURCE: $readme"
+      result=1
+    fi
+  fi
+
+  local_tools="$DEV_CONTEXT_WT/projects/nuinuiCAD/LOCAL-TOOLS.md"
+  help_output="$($SCRIPT_PATH --help 2>&1 || true)"
+  while IFS= read -r command; do
+    [[ -z "$command" ]] && continue
+    if ! grep -q "\`nuinui $command" "$local_tools" 2>/dev/null; then
+      echo "BLOCKED: nuinui command is missing from LOCAL-TOOLS.md"
+      echo "COMMAND: $command"
+      result=1
+    fi
+  done < <(print -r -- "$help_output" | sed -nE 's/^  ([a-z][a-z-]*)( .*)?$/\1/p')
+
+  if (( result == 0 )); then
+    echo "CONTEXT CHECK PASS"
+    return 0
+  fi
+  echo "CONTEXT CHECK BLOCKED"
+  return 1
+)
+
+transition_audit() (
+  local result=0
+  local lane=""
+  local repo=""
+  local branch=""
+  local head=""
+  local remote_main=""
+  local local_remote_main=""
+  local marker=""
+  local session=""
+  local interim_policy=""
+  local source_repo=""
+  local worktree=""
+  local relation=""
+  local branch_ref=""
+  local cherry_line=""
+  local extra_result=0
+  local expected_match=0
+  local -a expected_worktrees
+  local -a actual_worktrees
+  local -a cherry_lines
+
+  echo "nuinui $VERSION"
+  echo "TRANSITION AUDIT (read-only)"
+  echo "policy=CODEX-ONLY-INTERIM Active; no deactivation or route change"
+
+  interim_policy="$DEV_CONTEXT_WT/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md"
+  if [[ ! -f "$interim_policy" ]] || ! grep -q 'Status: \*\*Active\*\*' "$interim_policy"; then
+    echo "BLOCKED: CODEX-ONLY-INTERIM.md is not confirmed Active"
+    echo "PATH: $interim_policy"
+    result=1
+  fi
+
+  assert_git_repo "$MAIN_WT" || result=1
+  assert_origin "$MAIN_WT" "$TARGET_REPO_TOKEN" || result=1
+  if (( result != 0 )); then
+    echo "TRANSITION AUDIT BLOCKED"
+    return 1
+  fi
+
+  remote_main="$(git -C "$MAIN_WT" ls-remote origin refs/heads/main 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  if [[ ! "$remote_main" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "BLOCKED: cannot read authoritative remote main"
+    result=1
+  else
+    local_remote_main="$(git -C "$MAIN_WT" rev-parse origin/main 2>/dev/null || true)"
+    echo "remote_main=$remote_main"
+    if [[ "$local_remote_main" != "$remote_main" ]]; then
+      echo "BLOCKED: local origin/main tracking ref is stale"
+      echo "LOCAL:  ${local_remote_main:-missing}"
+      echo "REMOTE: $remote_main"
+      result=1
+    fi
+  fi
+
+  branch="$(git -C "$MAIN_WT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  head="$(git -C "$MAIN_WT" rev-parse HEAD 2>/dev/null || true)"
+  if [[ "$branch" != "codex/interim-sequential" ]]; then
+    echo "BLOCKED: main lane is not on codex/interim-sequential"
+    echo "BRANCH: ${branch:-DETACHED}"
+    result=1
+  fi
+  if [[ -n "$(git -C "$MAIN_WT" status --porcelain 2>/dev/null)" ]]; then
+    echo "BLOCKED: interim main lane is dirty"
+    result=1
+  fi
+  if [[ -n "$head" && "$head" != "$remote_main" ]]; then
+    cherry_lines=("${(@f)$(git -C "$MAIN_WT" cherry -v "$remote_main" "$head" 2>/dev/null)}")
+    relation="patch-equivalent"
+    for cherry_line in "${cherry_lines[@]}"; do
+      [[ "$cherry_line" == +\ * ]] && relation="divergent"
+    done
+    echo "interim_main_relation=$relation"
+    [[ "$relation" == "patch-equivalent" ]] || result=1
+  else
+    echo "interim_main_relation=contained"
+  fi
+
+  expected_worktrees=()
+  for repo in "$MAIN_WT" "$SUB_WT" "$E2E_WT"; do
+    expected_worktrees+=("$(canonical_path "$repo" 2>/dev/null || echo "$repo")")
+  done
+  actual_worktrees=()
+  source_repo=""
+  for repo in "$MAIN_WT" "$SUB_WT" "$E2E_WT"; do
+    if git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      source_repo="$repo"
+      actual_worktrees=("${(@f)$(git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p')}")
+      break
+    fi
+  done
+  if [[ -z "$source_repo" ]]; then
+    echo "BLOCKED: no usable worktree registry"
+    result=1
+  else
+    for worktree in "${expected_worktrees[@]}"; do
+      expected_match=0
+      for source_repo in "${actual_worktrees[@]}"; do
+        [[ "$source_repo" == "$worktree" ]] && expected_match=1
+      done
+      (( expected_match == 0 )) && { echo "BLOCKED: fixed lane worktree is not registered: $worktree"; result=1; }
+    done
+    for worktree in "${actual_worktrees[@]}"; do
+      expected_match=0
+      for source_repo in "${expected_worktrees[@]}"; do
+        [[ "$source_repo" == "$worktree" ]] && expected_match=1
+      done
+      (( expected_match != 0 )) && continue
+      extra_result=0
+      branch="$(git -C "$worktree" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+      head="$(git -C "$worktree" rev-parse HEAD 2>/dev/null || true)"
+      echo "extra_worktree=$worktree branch=${branch:-DETACHED} head=$head"
+      [[ -n "$(git -C "$worktree" status --porcelain 2>/dev/null)" ]] && { echo "  extra_clean=no"; extra_result=1; } || echo "  extra_clean=yes"
+      if [[ -n "$branch" && -n "$(git -C "$MAIN_WT" ls-remote --heads origin "$branch" 2>/dev/null)" ]]; then
+        echo "  remote_branch=present"; extra_result=1
+      else
+        echo "  remote_branch=gone"
+      fi
+      if git -C "$MAIN_WT" merge-base --is-ancestor "$head" "$remote_main" 2>/dev/null; then
+        relation="contained"
+      else
+        cherry_lines=("${(@f)$(git -C "$MAIN_WT" cherry -v "$remote_main" "$head" 2>/dev/null)}")
+        relation="patch-equivalent"
+        for cherry_line in "${cherry_lines[@]}"; do [[ "$cherry_line" == +\ * ]] && relation="divergent"; done
+      fi
+      echo "  relation=$relation"
+      [[ "$relation" == "divergent" ]] && extra_result=1
+      (( extra_result == 0 )) || result=1
+    done
+  fi
+
+  marker="$(marker_path "$E2E_WT" 2>/dev/null || true)"
+  session="$(session_path "$E2E_WT" 2>/dev/null || true)"
+  if [[ -e "$marker" || -e "$session" ]]; then
+    echo "BLOCKED: E2E marker/session is present"
+    echo "MARKER: ${marker:-unknown}"
+    echo "SESSION: ${session:-unknown}"
+    result=1
+  else
+    echo "e2e_marker=none e2e_session=none"
+  fi
+  if [[ ! -x "$E2E_STATUS_HELPER" ]]; then
+    echo "BLOCKED: E2E status helper is unavailable"
+    echo "PATH: $E2E_STATUS_HELPER"
+    result=1
+  else
+    NUINUI_E2E_PREPARE_WT="$E2E_WT" "$E2E_STATUS_HELPER" status || result=1
+  fi
+
+  if (( result == 0 )); then
+    echo "TRANSITION AUDIT PREPARED"
+    echo "No mutation was performed; Human approval is still required for any later transition."
+    return 0
+  fi
+  echo "TRANSITION AUDIT BLOCKED"
+  return 1
+)
+
 self_test() (
   local root=""
   local remote=""
@@ -1066,6 +1305,61 @@ self_test() (
     return 1
   }
 
+  echo "TEST: context-check normal state"
+  mkdir -p "$context_repo/projects/nuinuiCAD" "$context_repo/shared" || return 1
+  print -r -- '# README
+
+[interim](./CODEX-ONLY-INTERIM.md)
+' > "$context_repo/projects/nuinuiCAD/README.md"
+  print -r -- 'Status: **Active**' > "$context_repo/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md"
+  print -r -- '# Local tools
+
+| `nuinui preflight` | check |
+| `nuinui verify` | check |
+| `nuinui start` | check |
+| `nuinui release` | check |
+| `nuinui e2e-start` | check |
+| `nuinui e2e-start-local-main` | check |
+| `nuinui e2e-release` | check |
+| `nuinui context-sync` | check |
+| `nuinui doctor` | check |
+| `nuinui transition-audit` | check |
+| `nuinui context-check` | check |
+| `nuinui self-test` | check |
+' > "$context_repo/projects/nuinuiCAD/LOCAL-TOOLS.md"
+  NUINUI_DEV_CONTEXT_WT="$context_repo" "$SCRIPT_PATH" context-check >/dev/null || return 1
+
+  echo "TEST: context-check blocks missing target"
+  rm -- "$context_repo/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md" || return 1
+  if NUINUI_DEV_CONTEXT_WT="$context_repo" "$SCRIPT_PATH" context-check >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: context-check accepted missing target"
+    return 1
+  fi
+  print -r -- 'Status: **Active**' > "$context_repo/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md"
+
+  echo "TEST: transition-audit normal state"
+  git -C "$main_repo" fetch origin --prune >/dev/null 2>&1 || return 1
+  git -C "$main_repo" switch codex/interim-sequential >/dev/null 2>&1 || return 1
+  git -C "$main_repo" reset --hard "$(git -C "$main_repo" rev-parse origin/main)" >/dev/null || return 1
+  NUINUI_DEV_CONTEXT_WT="$context_repo" "$SCRIPT_PATH" transition-audit >/dev/null || return 1
+
+  echo "TEST: transition-audit blocks extra worktree"
+  git -C "$main_repo" worktree add -q --detach "$root/transition-extra" origin/main || return 1
+  git -C "$root/transition-extra" switch -c transition-audit-divergent >/dev/null 2>&1 || return 1
+  print -r -- divergent > "$root/transition-extra/transition-audit-divergent.txt" || return 1
+  git -C "$root/transition-extra" add transition-audit-divergent.txt || return 1
+  git -C "$root/transition-extra" commit -q -m transition-audit-divergent || return 1
+  out="$(NUINUI_DEV_CONTEXT_WT="$context_repo" "$SCRIPT_PATH" transition-audit 2>&1)"
+  if [[ "$?" -eq 0 ]]; then
+    print -r -- "$out"
+    echo "SELFTEST FAIL: transition-audit accepted extra worktree"
+    return 1
+  fi
+  git -C "$main_repo" worktree remove "$root/transition-extra" || return 1
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+  git -C "$context_repo" add projects shared || return 1
+  git -C "$context_repo" commit -q -m context-check-fixture || return 1
+
   echo "TEST: doctor --full normal state"
   out="$("$SCRIPT_PATH" doctor --full 2>&1)" || {
     echo "$out"
@@ -1179,6 +1473,8 @@ case "${1:-}" in
       echo "dev-context=not-installed"
     fi
     ;;
+  transition-audit) [[ "$#" -eq 1 ]] || { echo "Usage: $0 transition-audit"; exit 2; }; transition_audit ;;
+  context-check) [[ "$#" -eq 1 ]] || { echo "Usage: $0 context-check"; exit 2; }; context_check ;;
   self-test) self_test ;;
   *)
     echo "nuinui $VERSION"
@@ -1193,6 +1489,8 @@ case "${1:-}" in
     echo "  e2e-release"
     echo "  context-sync"
     echo "  doctor [--full]"
+    echo "  transition-audit"
+    echo "  context-check"
     echo "  self-test"
     exit 2
     ;;

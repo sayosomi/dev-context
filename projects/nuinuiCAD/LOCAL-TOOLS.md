@@ -66,9 +66,14 @@ current commands:
 | `nuinui context-sync` | cleanなlocal dev-context `main`をsafe fast-forward |
 | `nuinui doctor` | helper / lane / local dev-contextのdiagnostic表示 |
 | `nuinui doctor --full` | preflight、E2E session status、local dev-context stateを1回で収集するread-only handoff snapshot |
+| `nuinui verify <main\|sub> <SAY-123> <expected-base-sha> <branch>` | lane start前のbranch / base / clean stateをread-only検証 |
+| `nuinui transition-audit` | Active interimを変更せず、解除準備に必要なremote/local/worktree/E2E条件をread-only監査 |
+| `nuinui context-check` | dev-context全体のMarkdown local link、router、`nuinui` CLI-doc整合をread-only検査 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
 
 `nuinui doctor --full`はfetch、checkout変更、cleanup、process停止を行わない。3 laneまたはlocal dev-contextがdirty、lane構成が不整合、E2E statusがBLOCKED、E2E status helperが欠落している場合は、観測結果を出力してnonzeroで停止する。Issue選択、lane割当、release可否、次のoperationの決定は行わない。
+
+`nuinui transition-audit`と`nuinui context-check`もread-onlyであり、fetch、checkout / branch変更、worktree削除、marker / session操作、process停止、Issue選択、Linear / GitHub更新、merge判断を行わない。`transition-audit`は解除の承認や通常routeへの切替を決定せず、`context-check`はMarkdownの意味内容・外部URL疎通・product実装を判定しない。
 
 ## Human Manual E2E preparation helper
 

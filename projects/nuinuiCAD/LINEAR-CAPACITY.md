@@ -10,7 +10,7 @@ Free planのIssue / Project capacityを、Work管理上の明示的な制約と�
 - 後から参照・Manual E2Eする可能性だけを理由に、auto-archive期間を長くしない。
 - Manual E2Eを後回しにしている実装Issueは`In Review + Manual E2E: Deferred`で未完了として保持する。Deferredのまま`Done`へ進めないため、通常のclosed-item archive対象にもならない。
 - 必要なManual E2Eが`Passed`、または`Not Required`となって`Done`へ進んだ後は通常どおりarchive対象にしてよい。
-- pure tracking parentを長期間維持しない。scope / acceptanceをleaf Issueへ完全に移したtracking shellは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) と [`ONLY-CHATGPT.md`](./ONLY-CHATGPT.md) に従って整理する。
+- pure tracking parentを長期間維持しない。scope / acceptanceをleaf Issueへ完全に移したtracking shellは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のdecomposition / parent-handling ruleに従って整理する。
 
 ## Project capacity
 
