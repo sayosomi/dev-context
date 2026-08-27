@@ -10,7 +10,6 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 
 開発作業では最初に次を読む。
 
-- **Active override:** [Codex-only interim workflow](./CODEX-ONLY-INTERIM.md)
 - [Shared Development Workflow](../../shared/DEVELOPMENT.md)
 - repositoryのcurrent [`AGENTS.md`](https://github.com/sayosomi/nuinuiCAD/blob/main/AGENTS.md)
 
@@ -20,7 +19,7 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 
 | Topic | Owner |
 | --- | --- |
-| active Codex-only executor / token / Git batch / Human E2E override | [Codex-only interim workflow](./CODEX-ONLY-INTERIM.md) |
+| inactive contingency workflow for ChatGPT availability / token constraints | [Codex-only interim workflow](./CODEX-ONLY-INTERIM.md) — **Inactive; load only when reactivation is being considered** |
 | Chat common lifecycle / role routing / rotation / external-state recovery | [Chat workflow](./CHAT-WORKFLOW.md) |
 | Coordinator status / Work selection / routing handoff | [Coordinator chat](./CHAT-COORDINATOR.md) |
 | Issue Authoring / contract investigation chat behavior | [Issue Authoring chat](./CHAT-AUTHORING.md) |
@@ -105,7 +104,7 @@ main/subは互いの途中変更を取り込まない。
 
 毎回すべてのlinked documentを読む必要はない。
 
-1. **Always:** このREADMEを読む。`CODEX-ONLY-INTERIM.md`がActiveなら続けて読み、listed override topicでは同documentを優先する。
+1. **Always:** このREADMEを読む。`CODEX-ONLY-INTERIM.md`はInactiveな間は通常loadしない。Humanが明示的に再有効化を検討・指示した場合だけ読み、Active化された場合はlisted override topicで同documentを優先する。
 2. **Chat role / start / resume / rotation / handoff / recovery:** `CHAT-WORKFLOW.md` + current role owner (`CHAT-COORDINATOR.md` / `CHAT-AUTHORING.md` / `CHAT-IMPLEMENTATION.md` / `CHAT-E2E.md`)。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
