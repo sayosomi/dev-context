@@ -72,9 +72,11 @@ current commands:
 | `nuinui context-check` | dev-context全体のMarkdown local link、router、`nuinui` CLI-doc整合をread-only検査 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
 
-`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。required checksが0件、または全required checksがすでにpassしている場合は`BLOCKED:`で停止する。全pass状態では`gh pr merge --auto`が即時mergeへ進み得るため、このcommandの責務に含めない。
+`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。required checksが0件、または全required checksがすでにpassしている場合は`BLOCKED:`で停止する。
 
-`pr-auto-merge`はmutation直前に同じsafety-critical preconditionを再確認し、`gh pr merge --auto --merge --match-head-commit <expected-head-sha>`を使う。mutation後はPRが同じexact head / expected mainのままOPENで、`autoMergeRequest.mergeMethod=MERGE`になったことをread-backしてから`AUTO-MERGE RESERVED`を返す。head / main / state / read-back mismatch、mutation failure、unexpected immediate mergeでは成功扱いにせず`BLOCKED:`で停止する。Auto-merge cancel、CI rerun、rebase、reset、force、bypass、repairは自動実行しない。
+`pr-auto-merge`はmutation直前に同じsafety-critical preconditionを再確認し、GitHub GraphQLの`enablePullRequestAutoMerge` mutationを直接使う。blocking-review済みheadは`expectedHeadOid`へ渡し、merge methodは`MERGE`へ固定する。reservation pathでは`gh pr merge --auto`や`mergePullRequest`など、即時mergeへ分岐し得るoperationを使わない。precondition確認後にrequired CIが完了したraceではGitHubの`clean status` rejectionをsafe stopとして扱い、direct mergeへfallbackしない。
+
+mutation後はPRが同じexact head / expected mainのままOPENで、`autoMergeRequest.mergeMethod=MERGE`になったことをread-backしてから`AUTO-MERGE RESERVED`を返す。head / main / state / read-back mismatch、mutation failureでは成功扱いにせず`BLOCKED:`で停止する。Auto-merge cancel、CI rerun、rebase、reset、force、bypass、direct merge、repairは自動実行しない。
 
 `nuinui doctor --full`はfetch、checkout変更、cleanup、process停止を行わない。3 laneまたはlocal dev-contextがdirty、lane構成が不整合、E2E statusがBLOCKED、E2E status helperが欠落している場合は、観測結果を出力してnonzeroで停止する。Issue選択、lane割当、release可否、次のoperationの決定は行わない。
 
