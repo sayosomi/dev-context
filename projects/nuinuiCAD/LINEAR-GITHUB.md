@@ -52,13 +52,14 @@ GitHub integration上のlink不足を避けるためだけにintermediate PRへ�
 
 ### GitHub Auto-merge reservation
 
-repository settingでrequired `CI`とGitHub Auto-mergeが有効な場合、blocking review PASS後に次の条件をすべてfresh remote evidenceで確認して、`gh pr merge --auto --merge --match-head-commit <expected-head-sha>`を予約してよい。これはCI waitをagent taskへ残さないためのreservationであり、`--admin`、force、bypassを使わない。
+repository settingでrequired `CI`とGitHub Auto-mergeが有効な場合、blocking review PASS後に次の条件をすべてfresh remote evidenceで確認して、`nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>`でreservationしてよい。helperはGitHub GraphQLの`enablePullRequestAutoMerge` mutationを直接使い、`expectedHeadOid`へblocking-review済みexact headを渡す。reservation pathでは`gh pr merge --auto`、`mergePullRequest`、`--admin`、force、bypass等、即時mergeへ分岐し得るoperationを使わない。
 
 - PRがopenかつnon-draftで、intended baseとexpected head SHAがcurrent contractに一致する。
 - PR identity、head、base、remote drift、mergeability、GitHub authorizationにambiguityがない。
-- required check `CI`がPRをgateする設定であり、現在のrequired failureがない。queued / in_progressはGitHub Auto-mergeに委ねる。
+- required check `CI`がPRをgateする設定であり、現在のrequired failureがなく、少なくとも1件がqueued / in_progressである。required checksがすべて完了済みならreservation helperは`BLOCKED:`で停止し、即時mergeへ切り替えない。
 - current sliceのautomated verificationとblocking reviewがPASSし、product / UX / scope / architecture owner / acceptanceの未解決decisionがない。
-- `--match-head-commit`でreservation直前のheadを固定し、GitHub上でauto-mergeが有効になったことをread-backする。
+- reservation直前にhead / base / expected main / required CI stateを再確認し、`expectedHeadOid`でheadを固定する。GitHub上でauto-mergeが有効になったことをread-backする。
+- precondition確認後にCIが完了したraceでは、`enablePullRequestAutoMerge`の`clean status` rejectionをsafe stopとして扱い、direct mergeへfallbackしない。
 
 予約後、agentはCI完了・mergeをwait / pollせずexecution trackを終了する。GitHubのrequired CIがgreenならmergeし、merge Discord通知をexisting routeで送る。CI non-successなら同じDiscord routeのfailure通知が送られ、Humanが必要なら明示的にCodexをresumeする。Discord通知は自動resume、CI rerun、cancel、failure diagnosis、repair、merge、Linear updateを許可しない。
 
@@ -72,7 +73,7 @@ PR前の包括承認は、少なくとも次を値埋めして記録する。
 Issue / objective: <key and authority reference>
 Approved contract and non-goals: <references>
 PR target: <repository>, base <base>, expected head <SHA>
-Permission: create/push this PR; after blocking review PASS, reserve GitHub Auto-merge with --merge and --match-head-commit for this exact head.
+Permission: create/push this PR; after blocking review PASS, reserve GitHub Auto-merge for this exact head through the reservation-only helper with expectedHeadOid. Do not use a direct merge path.
 CI failure: Discord notification stops the track. No automatic resume, rerun, cancel, repair, merge, or Linear update; resume only on my explicit instruction.
 Repair after explicit resume: continue only when the evidence makes one contract/scope/current-architecture fix unique; otherwise return for my decision.
 Stop immediately: PR/head/base/auth/GitHub ambiguity, scope or acceptance change, owner/architecture conflict, Manual E2E judgment, destructive/external-state risk.
