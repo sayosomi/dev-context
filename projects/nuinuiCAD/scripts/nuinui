@@ -1402,6 +1402,7 @@ if [[ "$cmd" == "pr" && "${1:-}" == "view" ]]; then
     closed) state="CLOSED" ;;
     draft) draft="true" ;;
     readback-missing) (( count >= 3 )) && auto_merge="none" ;;
+    readback-mismatch) (( count >= 3 )) && auto_merge="SQUASH" ;;
     head-drift-before-mutation) (( count >= 2 )) && head="$wrong_head" ;;
     main-drift-before-mutation) (( count >= 2 )) && base_oid="$wrong_main" ;;
   esac
@@ -1472,6 +1473,7 @@ FAKE_GH
     return 1
   }
   grep -q -- 'enablePullRequestAutoMerge' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- 'mergeMethod: MERGE' "$fake_gh_state/mutation-args" || return 1
   grep -q -- 'pullRequestId=PR_kwDOFAKE' "$fake_gh_state/mutation-args" || return 1
   grep -q -- "expectedHeadOid=$fake_head" "$fake_gh_state/mutation-args" || return 1
 
@@ -1497,7 +1499,7 @@ FAKE_GH
     fi
   done
 
-  for scenario in mutation-failure readback-missing clean-at-mutation; do
+  for scenario in mutation-failure readback-missing readback-mismatch clean-at-mutation; do
     echo "TEST: pr-auto-merge safe-stops $scenario"
     out="$(run_fake_auto_merge_case "$scenario" 2>&1)"
     if [[ "$?" -eq 0 ]]; then
