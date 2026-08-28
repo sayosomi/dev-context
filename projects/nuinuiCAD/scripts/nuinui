@@ -395,8 +395,6 @@ resume_lane() {
   local expected_checkpoint="$3"
   local branch="$4"
   local repo=""
-  local issue_num=""
-  local branch_lc=""
   local wt_status=""
   local current_branch=""
   local current_head=""
@@ -432,9 +430,7 @@ resume_lane() {
     return 2
   fi
 
-  issue_num="${issue#SAY-}"
-  branch_lc="$(printf '%s' "$branch" | tr '[:upper:]' '[:lower:]')"
-  if [[ "$branch_lc" != *"say-$issue_num"* ]]; then
+  if [[ "$(issue_from_branch "$branch")" != "$issue" ]]; then
     echo "BLOCKED: branch name does not match Issue"
     echo "ISSUE:  $issue"
     echo "BRANCH: $branch"
@@ -1920,6 +1916,18 @@ FAKE_GH
     return 1
   }
   git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
+  echo "TEST: resume blocks false-positive Issue token"
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-9850-wrong-issue 2>&1)"
+  if [[ "$?" -eq 0 ]]; then
+    print -r -- "$out"
+    echo "SELFTEST FAIL: resume accepted a branch for a different Issue"
+    return 1
+  fi
+  print -r -- "$out" | grep -q 'BLOCKED: branch name does not match Issue' || {
+    echo "SELFTEST FAIL: false-positive Issue token was not rejected"
+    return 1
+  }
 
   echo "TEST: resume blocks dirty lane"
   echo dirty-resume >> "$main_repo/file.txt"
