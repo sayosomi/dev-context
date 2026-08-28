@@ -20,6 +20,20 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 候補選定では、current Linear / repository / relevant execution stateから「なぜ今そのWorkか」を判断する。過去chatや古いsummaryだけでcurrent候補を決めない。
 
+### Implementation occupancy reconciliation before routing
+
+新しいimplementation Workを選択・routingする前にfreshな3-lane stateを利用できる場合、Coordinatorは`main` / `sub`のphysical occupancyとLinear上のcurrent implementation `In Progress` Issueを照合する。
+
+照合は件数だけではなく**Issue identity単位**で行う。
+
+- physical `BUSY` laneから一意に読めるIssueは、Linearでもcurrent implementation `In Progress`であること;
+- Linearでcurrent implementation `In Progress`なIssueは、対応する`BUSY` implementation laneを一意に持つこと;
+- `RELEASE-PENDING`、idle / `FREE` lane、authoring-only Workをcurrent implementation `In Progress`として数えない。
+
+不一致があれば、新しいimplementation startをroutingする前にcurrent remote / Linear checkpoint / fresh lane evidenceからstale stateを解消する。既存authorityだけでは安全に解消できない不一致は`BLOCKED / UNKNOWN`として扱い、新しいstart handoffを出さない。
+
+`In Progress`が2件以下という件数条件だけでは整合確認を満たさない。例えばphysical laneが`main=SAY-101`, `sub=SAY-102`なら、Linearのcurrent implementation `In Progress`集合もその2 Issueと一致していなければならない。
+
 ### Blocked Issue candidate routing
 
 `Contract: Blocked` Issueは、block理由にmaterialな変化が確認できない限り、通常の「次に進めるWork」「次の調査候補」「Issue Authoring候補」として繰り返し提示しない。
