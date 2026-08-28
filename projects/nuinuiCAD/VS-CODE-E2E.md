@@ -5,6 +5,7 @@
 VS Code extensionのuser-facing behaviorをManual E2Eで確認するときの**isolated Extension Development Host baseline**を定義する。
 
 - test unitの`Judgment` / `Executor`分類、PASS / FAIL / BLOCKED、Sol Highの結果判定は [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
+- local versioned helperのavailability / sync / repair / fallbackは [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) がauthority。
 - Lunaを安定して操作させるprompt構成、stable test ref、evidence、known pitfallsは [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) を使う。
 - この文書はVS Code production-hostのisolation / local preparation / launch baselineをownerとする。
 
@@ -107,7 +108,17 @@ Humanはtested stateを設計しない。Human setup scriptはSol Highが固定�
 
 ## Human terminal setup contract
 
-Human向け準備は、可能な限り**1つのcopy/paste block**へまとめる。
+VS Code Human Manual E2Eの標準host-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。
+
+current local dev-context cloneでそのhelperが利用可能でcurrent operationをsupportしている場合:
+
+- ChatGPTは`prepare`のIssue key / tested ref / fixture path / required portを埋めたcopy/paste-ready invocationをHumanへ渡す;
+- 同じbuild / fresh profile / VS Code launch / readiness / session metadata lifecycleを長いinline shellとして再実装しない;
+- helper実行後のsession rootやlaunch PIDはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
+
+helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
+
+fallback inline setupが必要な場合も、Human向け準備は可能な限り**1つのcopy/paste block**へまとめる。
 
 対話shell自体を誤って終了させないため、strict modeをHumanのcurrent shellへ直接設定しない。標準形は子shellに閉じ込める。
 
@@ -214,9 +225,11 @@ fi
 
 counted Luna run開始後はHumanがprocess cleanup / relaunchを行わない。
 
-## Canonical Human launch shape
+## Reference / fallback Human launch shape
 
-Task-specific valueを差し替えて使う。以下はLuna向けhost preparationを含む完全形であり、`Executor: Human`ではLuna専用CDP / observation / handoff要件をtask contractに応じて省略してよい。
+以下はhost-preparation contractのreference implementationであり、versioned `nuinui-e2e-prepare` が利用可能な通常のHuman handoffでChatGPTが再生成するtemplateではない。
+
+`LOCAL-TOOLS.md`のfallback条件が成立した場合、またはhelper自体のrepair / developmentでbaselineを確認する場合にだけ、Task-specific valueを差し替えて使う。以下はLuna向けhost preparationを含む完全形であり、`Executor: Human`ではLuna専用CDP / observation / handoff要件をtask contractに応じて省略してよい。
 
 ```bash
 EXPECTED="<tested commit>"
@@ -279,7 +292,7 @@ NUINUICAD_MCP_OBSERVATION=1 \
   --skip-sessions-welcome \
   --skip-release-notes \
   --disable-workspace-trust \
-  "$FIXTURE"
+  "$FIXTURE" </dev/null
 ```
 
 macOSでshellの`code` commandがunavailableでも、app bundle内のexecutableを直接使う。
@@ -287,6 +300,24 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 `evaluation_stdio`のowner/pathはlatest repositoryをauthorityとする。過去promptの古いRust pathを流用しない。
 
 `--enable-smoke-test-driver`等、通常のVS Code Extension Development Host pathを別test harnessへ変えるflagはTask contractが明示しない限り追加しない。
+
+## Versioned helper failure routing
+
+`nuinui-e2e-prepare prepare`がunexpected error、hang、session/state mismatchで完了しない場合は、次の順序を固定する。
+
+1. product FAILとして扱わない。
+2. `nuinui-e2e-prepare status`でe2e checkout / marker / session metadata / recorded root / handoff / launch PIDをread-only確認する。
+3. valid sessionが残りcleanupが必要なら、`LOCAL-TOOLS.md`とhelper contractに従って`cleanup`する。
+4. helper defect / stale local clone / unsupported operation / environment blockerを分類し、`LOCAL-TOOLS.md`のrepair / fallback ruleへ進む。
+
+失敗したprepareの復旧で次を行わない。
+
+- `/tmp`や他temporary parentを`find`等で走査して「前回のE2E root」を推測する;
+- session metadataを無視してPID / root / fixtureを再構築する;
+- helper failure直後に別のad-hoc VS Code launcherを生成して同じrunを継続する;
+- marker / checkout mismatchを手書きscriptでrepairする。
+
+helper自体が未install、stale / broken、またはcurrent operationをsupportしないと確認された場合だけ、`LOCAL-TOOLS.md`のformal fallback条件へ移る。
 
 ## CDP readiness is Human preparation
 
