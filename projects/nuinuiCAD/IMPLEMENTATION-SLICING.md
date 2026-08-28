@@ -214,6 +214,7 @@ current workをremoteへ保存しsafe checkpointで停止する。slicingで未�
 - intermediate PRはoriginal Issueの一部acceptanceだけを完了してよい;
 - remaining acceptanceがあればIssueは完了しない;
 - previous slice merge後、次sliceはnew lane startとしてlatest remote mainからBase checkpointを固定する;
+- previous slice merge後のnext sliceではprevious branch名を機械的に再利用せず、current sliceを識別できるfresh branchを選ぶ;
 - previous unmerged implementationへの依存があるなら先にmerge checkpointを完了する;
 - accidental stacked PRを作らない。
 

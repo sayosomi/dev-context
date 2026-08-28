@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.3.1"
+VERSION="1.3.2"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 GH_BIN="${NUINUI_GH_BIN:-gh}"
@@ -319,6 +319,20 @@ verify_lane() {
   echo "  action=$action"
 }
 
+
+verify_lane_for_start() {
+  local verify_output=""
+  local verify_rc=0
+
+  verify_output="$(verify_lane "$@")"
+  verify_rc=$?
+  if (( verify_rc != 0 )); then
+    [[ -n "$verify_output" ]] && printf '%s\n' "$verify_output"
+    return "$verify_rc"
+  fi
+  return 0
+}
+
 start_lane() {
   local lane="$1"
   local issue="$2"
@@ -331,7 +345,11 @@ start_lane() {
     return 2
   }
 
-  verify_lane "$lane" "$issue" "$expected_base" "$branch" >/dev/null || return $?
+  echo "CHECKING"
+  echo "  lane=$lane"
+  echo "  issue=$issue"
+
+  verify_lane_for_start "$lane" "$issue" "$expected_base" "$branch" || return $?
 
   local current_head="$(git -C "$repo" rev-parse HEAD)"
   if [[ "$current_head" != "$expected_base" ]]; then
@@ -356,7 +374,7 @@ start_lane() {
     return 1
   fi
 
-  verify_lane "$lane" "$issue" "$expected_base" "$branch" >/dev/null || return $?
+  verify_lane_for_start "$lane" "$issue" "$expected_base" "$branch" || return $?
 
   git -C "$repo" switch -c "$branch" "$expected_base" || {
     echo "ERROR: branch creation failed"
@@ -1587,6 +1605,27 @@ FAKE_GH
   git -C "$main_repo" branch test/say-997-local "$advanced_base"
   if "$SCRIPT_PATH" verify main SAY-997 "$advanced_base" test/say-997-local >/dev/null 2>&1; then
     echo "SELFTEST FAIL: local branch accepted"
+    return 1
+  fi
+
+  echo "TEST: start surfaces local branch blocker"
+  local start_output=""
+  local start_rc=0
+  start_output="$("$SCRIPT_PATH" start main SAY-997 "$advanced_base" test/say-997-local 2>&1)"
+  start_rc=$?
+
+  if (( start_rc == 0 )); then
+    echo "SELFTEST FAIL: start accepted an existing local branch"
+    return 1
+  fi
+  if [[ "$start_output" != *"CHECKING"* ]]; then
+    echo "SELFTEST FAIL: start did not emit progress before verification"
+    printf '%s\n' "$start_output" | sed 's/^/  /'
+    return 1
+  fi
+  if [[ "$start_output" != *"BLOCKED: local branch already exists"* ]]; then
+    echo "SELFTEST FAIL: start hid the local branch blocker"
+    printf '%s\n' "$start_output" | sed 's/^/  /'
     return 1
   fi
 
