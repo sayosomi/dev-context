@@ -1,8 +1,10 @@
 #!/bin/zsh
 
-VERSION="1.2.1"
+VERSION="1.3.1"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
+GH_BIN="${NUINUI_GH_BIN:-gh}"
+PR_TARGET_REPO="sayosomi/nuinuiCAD"
 
 if [[ "${NUINUI_SELFTEST:-0}" == "1" ]]; then
   MAIN_WT="${NUINUI_MAIN_WT}"
@@ -459,6 +461,235 @@ release_lane() {
   echo "  head=$(git -C "$repo" rev-parse HEAD)"
   echo "  branch=$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)"
   echo "  checkpoint=$checkpoint"
+}
+
+read_pr_auto_merge_snapshot() {
+  local pr="$1"
+  "$GH_BIN" pr view "$pr" -R "$PR_TARGET_REPO" \
+    --json id,state,isDraft,baseRefName,baseRefOid,headRefOid,mergeable,autoMergeRequest,url \
+    --jq '[.id, .state, (.isDraft|tostring), .baseRefName, .baseRefOid, .headRefOid, .mergeable, (if .autoMergeRequest == null then "none" else (.autoMergeRequest.mergeMethod // "present") end), .url] | @tsv' || {
+      echo "BLOCKED: could not read PR state from GitHub" >&2
+      return 1
+    }
+}
+
+validate_pr_auto_merge_preconditions() {
+  local pr="$1"
+  local expected_head="$2"
+  local expected_main="$3"
+  local snapshot=""
+  local pr_id=""
+  local state=""
+  local draft=""
+  local base=""
+  local base_oid=""
+  local head=""
+  local mergeable=""
+  local auto_merge=""
+  local url=""
+  local checks=""
+  local check_status=0
+  local check_name=""
+  local bucket=""
+  local check_count=0
+  local pending_count=0
+  local blocked_count=0
+
+  snapshot="$(read_pr_auto_merge_snapshot "$pr")" || return 1
+  IFS=$'\t' read -r pr_id state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
+
+  if [[ -z "$pr_id" ]]; then
+    echo "BLOCKED: PR GraphQL node id is missing"
+    return 1
+  fi
+  if [[ "$state" != "OPEN" ]]; then
+    echo "BLOCKED: PR is not open"
+    echo "STATE: $state"
+    return 1
+  fi
+  if [[ "$draft" != "false" ]]; then
+    echo "BLOCKED: PR is draft"
+    return 1
+  fi
+  if [[ "$base" != "main" ]]; then
+    echo "BLOCKED: PR base is not main"
+    echo "BASE: $base"
+    return 1
+  fi
+  if [[ "$base_oid" != "$expected_main" ]]; then
+    echo "BLOCKED: main has drifted from expected integration base"
+    echo "EXPECTED: $expected_main"
+    echo "ACTUAL:   $base_oid"
+    return 1
+  fi
+  if [[ "$head" != "$expected_head" ]]; then
+    echo "BLOCKED: PR head does not match reviewed exact head"
+    echo "EXPECTED: $expected_head"
+    echo "ACTUAL:   $head"
+    return 1
+  fi
+  if [[ "$mergeable" != "MERGEABLE" ]]; then
+    echo "BLOCKED: PR mergeability is not unambiguous"
+    echo "MERGEABLE: $mergeable"
+    return 1
+  fi
+  if [[ "$auto_merge" != "none" ]]; then
+    echo "BLOCKED: PR already has an Auto-merge request"
+    echo "METHOD: $auto_merge"
+    return 1
+  fi
+
+  checks="$("$GH_BIN" pr checks "$pr" -R "$PR_TARGET_REPO" --required --json name,bucket --jq '.[] | [.name, .bucket] | @tsv' 2>/dev/null)"
+  check_status=$?
+  if (( check_status != 0 && check_status != 1 && check_status != 8 )); then
+    echo "BLOCKED: could not read required PR checks"
+    return 1
+  fi
+  if [[ -z "$checks" ]]; then
+    echo "BLOCKED: no required PR checks were found"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r check_name bucket; do
+    if [[ -z "$check_name" || -z "$bucket" ]]; then
+      echo "BLOCKED: invalid required check data"
+      return 1
+    fi
+    (( check_count += 1 ))
+    case "$bucket" in
+      pending)
+        (( pending_count += 1 ))
+        ;;
+      pass)
+        ;;
+      fail|cancel|skipping)
+        echo "BLOCKED: required check is not pending/pass"
+        echo "CHECK: $check_name"
+        echo "STATE: $bucket"
+        (( blocked_count += 1 ))
+        ;;
+      *)
+        echo "BLOCKED: required check returned an unknown state"
+        echo "CHECK: $check_name"
+        echo "STATE: $bucket"
+        (( blocked_count += 1 ))
+        ;;
+    esac
+  done <<< "$checks"
+
+  if (( check_count == 0 )); then
+    echo "BLOCKED: no required PR checks were found"
+    return 1
+  fi
+  (( blocked_count == 0 )) || return 1
+  if (( pending_count == 0 )); then
+    echo "BLOCKED: all required checks are already complete; reservation-only helper will not merge immediately"
+    return 1
+  fi
+
+  print -r -- "$snapshot"
+}
+
+pr_auto_merge() {
+  local pr="$1"
+  local expected_head="$2"
+  local expected_main="$3"
+  local validation_output=""
+  local validation_status=0
+  local mutation_output=""
+  local snapshot=""
+  local pr_id=""
+  local readback_pr_id=""
+  local state=""
+  local draft=""
+  local base=""
+  local base_oid=""
+  local head=""
+  local mergeable=""
+  local auto_merge=""
+  local url=""
+
+  if [[ ! "$pr" =~ '^[1-9][0-9]*$' ]]; then
+    echo "ERROR: PR number must be a positive integer"
+    return 2
+  fi
+  if [[ ! "$expected_head" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "ERROR: expected head must be a full 40-character commit SHA"
+    return 2
+  fi
+  if [[ ! "$expected_main" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "ERROR: expected main must be a full 40-character commit SHA"
+    return 2
+  fi
+
+  validation_output="$(validate_pr_auto_merge_preconditions "$pr" "$expected_head" "$expected_main" 2>&1)"
+  validation_status=$?
+  if (( validation_status != 0 )); then
+    print -r -- "$validation_output"
+    return 1
+  fi
+
+  validation_output="$(validate_pr_auto_merge_preconditions "$pr" "$expected_head" "$expected_main" 2>&1)"
+  validation_status=$?
+  if (( validation_status != 0 )); then
+    print -r -- "$validation_output"
+    return 1
+  fi
+  snapshot="$validation_output"
+  IFS=$'\t' read -r pr_id state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
+
+  mutation_output="$("$GH_BIN" api graphql \
+    -f query='mutation EnableAutoMerge($pullRequestId: ID!, $expectedHeadOid: GitObjectID!) { enablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId, mergeMethod: MERGE, expectedHeadOid: $expectedHeadOid}) { clientMutationId } }' \
+    -f pullRequestId="$pr_id" \
+    -f expectedHeadOid="$expected_head" 2>&1)" || {
+      if [[ "$mutation_output" == *"clean status"* ]]; then
+        echo "BLOCKED: required checks completed before reservation; reservation-only helper will not merge"
+      else
+        echo "BLOCKED: GitHub rejected the Auto-merge reservation"
+      fi
+      [[ -n "$mutation_output" ]] && print -r -- "$mutation_output"
+      return 1
+    }
+
+  snapshot="$(read_pr_auto_merge_snapshot "$pr")" || {
+    echo "BLOCKED: Auto-merge mutation returned but read-back failed"
+    return 1
+  }
+  IFS=$'\t' read -r readback_pr_id state draft base base_oid head mergeable auto_merge url <<< "$snapshot"
+
+  if [[ "$readback_pr_id" != "$pr_id" ]]; then
+    echo "BLOCKED: PR identity changed during Auto-merge reservation"
+    echo "No automatic cancellation or repair was performed."
+    return 1
+  fi
+  if [[ "$state" != "OPEN" ]]; then
+    echo "BLOCKED: PR state changed during Auto-merge reservation"
+    echo "STATE: $state"
+    echo "No automatic cancellation or repair was performed."
+    return 1
+  fi
+  if [[ "$draft" != "false" || "$base" != "main" || "$head" != "$expected_head" ]]; then
+    echo "BLOCKED: PR identity changed during Auto-merge reservation"
+    echo "No automatic cancellation or repair was performed."
+    return 1
+  fi
+  if [[ "$base_oid" != "$expected_main" ]]; then
+    echo "BLOCKED: main changed during Auto-merge reservation"
+    echo "EXPECTED: $expected_main"
+    echo "ACTUAL:   $base_oid"
+    echo "Auto-merge may already be active; no automatic cancellation was performed."
+    return 1
+  fi
+  if [[ "$auto_merge" != "MERGE" ]]; then
+    echo "BLOCKED: Auto-merge reservation was not confirmed by read-back"
+    echo "No automatic repair was performed."
+    return 1
+  fi
+
+  echo "AUTO-MERGE RESERVED"
+  echo "PR:   $url"
+  echo "HEAD: $head"
+  echo "MAIN: $base_oid"
 }
 
 e2e_start() {
@@ -1102,6 +1333,11 @@ self_test() (
   local e2e_ref=""
   local e2e_root=""
   local e2e_handoff=""
+  local fake_gh=""
+  local fake_gh_state=""
+  local fake_head="1111111111111111111111111111111111111111"
+  local fake_main="2222222222222222222222222222222222222222"
+  local scenario=""
 
   root="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-local-tools.XXXXXX")" || {
     echo "SELFTEST FAIL: mktemp"
@@ -1118,6 +1354,8 @@ self_test() (
   e2e_repo="$root/e2e"
   context_repo="$root/context"
   admin_repo="$root/admin"
+  fake_gh="$root/fake-gh"
+  fake_gh_state="$root/fake-gh-state"
 
   echo "SELFTEST: setup"
   git init --bare -q "$remote" || return 1
@@ -1150,6 +1388,155 @@ self_test() (
   base="$(git -C "$main_repo" rev-parse origin/main)"
   wrong_base="${base%?}0"
   [[ "$wrong_base" == "$base" ]] && wrong_base="${base%?}1"
+
+  cat > "$fake_gh" <<'FAKE_GH'
+#!/bin/zsh
+scenario="${NUINUI_FAKE_GH_SCENARIO:-pending-success}"
+state_dir="${NUINUI_FAKE_GH_STATE:?}"
+expected_head="${NUINUI_FAKE_EXPECTED_HEAD:?}"
+expected_main="${NUINUI_FAKE_EXPECTED_MAIN:?}"
+wrong_head="3333333333333333333333333333333333333333"
+wrong_main="4444444444444444444444444444444444444444"
+mkdir -p "$state_dir"
+cmd="${1:-}"
+shift || true
+if [[ "$cmd" == "pr" && "${1:-}" == "view" ]]; then
+  count_file="$state_dir/view-count"
+  count=0
+  [[ -f "$count_file" ]] && count="$(cat "$count_file")"
+  (( count += 1 ))
+  printf '%s' "$count" > "$count_file"
+  pr_id="PR_kwDOFAKE"
+  state="OPEN"
+  draft="false"
+  base="main"
+  base_oid="$expected_main"
+  head="$expected_head"
+  mergeable="MERGEABLE"
+  auto_merge="none"
+  url="https://github.com/sayosomi/nuinuiCAD/pull/999"
+  (( count >= 3 )) && auto_merge="MERGE"
+  case "$scenario" in
+    head-mismatch) head="$wrong_head" ;;
+    main-drift) base_oid="$wrong_main" ;;
+    wrong-base) base="develop" ;;
+    closed) state="CLOSED" ;;
+    draft) draft="true" ;;
+    readback-missing) (( count >= 3 )) && auto_merge="none" ;;
+    readback-mismatch) (( count >= 3 )) && auto_merge="SQUASH" ;;
+    head-drift-before-mutation) (( count >= 2 )) && head="$wrong_head" ;;
+    main-drift-before-mutation) (( count >= 2 )) && base_oid="$wrong_main" ;;
+  esac
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pr_id" "$state" "$draft" "$base" "$base_oid" "$head" "$mergeable" "$auto_merge" "$url"
+  exit 0
+fi
+if [[ "$cmd" == "pr" && "${1:-}" == "checks" ]]; then
+  case "$scenario" in
+    checks-missing) exit 0 ;;
+    ci-failure) printf 'CI\tfail\n'; exit 1 ;;
+    ci-cancelled) printf 'CI\tcancel\n'; exit 1 ;;
+    all-success) printf 'CI\tpass\n'; exit 0 ;;
+    *) printf 'CI\tpending\n'; exit 8 ;;
+  esac
+fi
+if [[ "$cmd" == "api" && "${1:-}" == "graphql" ]]; then
+  print -r -- "$*" > "$state_dir/mutation-args"
+  : > "$state_dir/mutation-attempted"
+  case "$scenario" in
+    mutation-failure)
+      echo "mutation failed" >&2
+      exit 1
+      ;;
+    clean-at-mutation)
+      echo 'GraphQL: Pull request Pull request is in clean status (enablePullRequestAutoMerge)' >&2
+      exit 1
+      ;;
+  esac
+  : > "$state_dir/mutation-called"
+  exit 0
+fi
+if [[ "$cmd" == "pr" && "${1:-}" == "merge" ]]; then
+  : > "$state_dir/forbidden-merge-command"
+  echo "direct merge command is forbidden in reservation helper" >&2
+  exit 99
+fi
+echo "unexpected fake gh invocation: $cmd $*" >&2
+exit 2
+FAKE_GH
+  chmod +x "$fake_gh" || return 1
+  export NUINUI_GH_BIN="$fake_gh"
+  export NUINUI_FAKE_GH_STATE="$fake_gh_state"
+  export NUINUI_FAKE_EXPECTED_HEAD="$fake_head"
+  export NUINUI_FAKE_EXPECTED_MAIN="$fake_main"
+
+  run_fake_auto_merge_case() {
+    local selected="$1"
+    rm -rf -- "$fake_gh_state"
+    mkdir -p "$fake_gh_state" || return 1
+    NUINUI_FAKE_GH_SCENARIO="$selected" "$SCRIPT_PATH" pr-auto-merge 999 "$fake_head" "$fake_main"
+  }
+
+  echo "TEST: pr-auto-merge pending reservation"
+  out="$(run_fake_auto_merge_case pending-success 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q 'AUTO-MERGE RESERVED' || {
+    echo "SELFTEST FAIL: pending Auto-merge reservation did not report success"
+    return 1
+  }
+  [[ -f "$fake_gh_state/mutation-called" ]] || {
+    echo "SELFTEST FAIL: pending Auto-merge reservation did not invoke enable mutation"
+    return 1
+  }
+  [[ ! -e "$fake_gh_state/forbidden-merge-command" ]] || {
+    echo "SELFTEST FAIL: pending Auto-merge reservation invoked a direct merge command"
+    return 1
+  }
+  grep -q -- 'enablePullRequestAutoMerge' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- 'mergeMethod: MERGE' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- 'pullRequestId=PR_kwDOFAKE' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- "expectedHeadOid=$fake_head" "$fake_gh_state/mutation-args" || return 1
+
+  for scenario in head-mismatch main-drift wrong-base closed draft checks-missing ci-failure ci-cancelled all-success head-drift-before-mutation main-drift-before-mutation; do
+    echo "TEST: pr-auto-merge blocks $scenario"
+    out="$(run_fake_auto_merge_case "$scenario" 2>&1)"
+    if [[ "$?" -eq 0 ]]; then
+      print -r -- "$out"
+      echo "SELFTEST FAIL: $scenario was accepted"
+      return 1
+    fi
+    print -r -- "$out" | grep -q 'BLOCKED:' || {
+      echo "SELFTEST FAIL: $scenario did not report BLOCKED"
+      return 1
+    }
+    if [[ -e "$fake_gh_state/mutation-attempted" ]]; then
+      echo "SELFTEST FAIL: $scenario reached the Auto-merge mutation"
+      return 1
+    fi
+    if [[ -e "$fake_gh_state/forbidden-merge-command" ]]; then
+      echo "SELFTEST FAIL: $scenario invoked a direct merge command"
+      return 1
+    fi
+  done
+
+  for scenario in mutation-failure readback-missing readback-mismatch clean-at-mutation; do
+    echo "TEST: pr-auto-merge safe-stops $scenario"
+    out="$(run_fake_auto_merge_case "$scenario" 2>&1)"
+    if [[ "$?" -eq 0 ]]; then
+      print -r -- "$out"
+      echo "SELFTEST FAIL: $scenario was accepted"
+      return 1
+    fi
+    print -r -- "$out" | grep -q 'BLOCKED:' || {
+      echo "SELFTEST FAIL: $scenario did not report BLOCKED"
+      return 1
+    }
+    if [[ -e "$fake_gh_state/forbidden-merge-command" ]]; then
+      echo "SELFTEST FAIL: $scenario invoked a direct merge command"
+      return 1
+    fi
+  done
 
   echo "TEST: preflight"
   "$SCRIPT_PATH" preflight || return 1
@@ -1376,6 +1763,7 @@ self_test() (
 | `nuinui verify` | check |
 | `nuinui start` | check |
 | `nuinui release` | check |
+| `nuinui pr-auto-merge` | check |
 | `nuinui e2e-start` | check |
 | `nuinui e2e-start-local-main` | check |
 | `nuinui e2e-release` | check |
@@ -1505,6 +1893,10 @@ case "${1:-}" in
     [[ $# -eq 3 ]] || { echo "Usage: $0 release <main|sub> <merged-checkpoint-sha>"; exit 2; }
     release_lane "$2" "$3"
     ;;
+  pr-auto-merge)
+    [[ $# -eq 4 ]] || { echo "Usage: $0 pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>"; exit 2; }
+    pr_auto_merge "$2" "$3" "$4"
+    ;;
   e2e-start)
     [[ $# -eq 3 ]] || { echo "Usage: $0 e2e-start <SAY-123> <tested-ref>"; exit 2; }
     e2e_start "$2" "$3"
@@ -1542,6 +1934,7 @@ case "${1:-}" in
     echo "  verify <main|sub> <SAY-123> <expected-base-sha> <branch>"
     echo "  start <main|sub> <SAY-123> <expected-base-sha> <branch>"
     echo "  release <main|sub> <merged-checkpoint-sha>"
+    echo "  pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>"
     echo "  e2e-start <SAY-123> <tested-ref>"
     echo "  e2e-start-local-main <SAY-123> <tested-ref>"
     echo "  e2e-release"
