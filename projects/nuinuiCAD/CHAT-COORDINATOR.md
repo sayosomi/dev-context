@@ -34,6 +34,47 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 `In Progress`が2件以下という件数条件だけでは整合確認を満たさない。例えばphysical laneが`main=SAY-101`, `sub=SAY-102`なら、Linearのcurrent implementation `In Progress`集合もその2 Issueと一致していなければならない。
 
+### Parallel admission gate
+
+一方のimplementation laneが`BUSY`で、もう一方が`FREE`なとき、CoordinatorはReady Queueの優先順位だけで2本目を開始しない。先に**parallel interference risk**を評価し、相手laneと独立して進められる候補だけをparallel start候補へ入れる。
+
+`FREE` laneはcapacityでありutilization targetではない。安全なparallel candidateがなければ、laneを`FREE`のまま残すことを正常な選択肢とする。
+
+#### Active lane interference envelope
+
+freshなrepository state、current Issue / Linear checkpoint、current slice contractから、現在`BUSY`なlaneについて少なくとも次を整理する。
+
+- primary semantic owner / boundary;
+- current sliceが直接変更する、またはblocking fixで接続し得るshared owner / API / registry / composition root;
+- unfinished prerequisite / downstream dependency;
+- likely changed filesは補助signalとして利用する;
+- merge後に別Taskのcontract refreshを起こし得るintegration surface。
+
+file pathだけをreservationとして扱わない。異なるfileでも同じsemantic owner / shared primitiveを変更するWorkは干渉し得る一方、同じ大きなfileに触れる可能性だけで自動的に干渉確定とはしない。
+
+#### Candidate change envelope
+
+各Ready candidateについて、Issue本文に残った古いimplementation pathをそのまま信用せず、latest remote repositoryとcurrent contractから同じ観点のchange envelopeを作る。
+
+候補は次で分類する。
+
+- `LOW`: primary ownerが別で、shared semantic primitive / unfinished prerequisite / integration surfaceのmaterial overlapが見つからず、相手laneのmergeでcurrent contractが変わる蓋然性も低い。parallel startへadmitしてよい。
+- `MEDIUM`: direct owner overlapは確定していないが、同じshared API / resolver / compiler boundary / central registry / composition rootへ接続する可能性、または相手laneのmergeでcontract refreshが必要になる具体的signalがある。独立性をcurrent authorityから一意に証明できない限りparallel startへadmitしない。
+- `HIGH`: same semantic owner / shared primitiveを直接変更する、unfinished laneが実質prerequisiteである、または片方の未merge変更を前提にしなければ成立しない。parallel start禁止。
+
+priority、blocker解消効果、Issue size等による通常のWork選定は**parallel admission後**に行う。高priorityであることは`MEDIUM` / `HIGH` interferenceを上書きしない。
+
+Ready Queueに`LOW` candidateがなければ、Coordinatorは正式なrouting結果として`NO PARALLEL START`を選んでよい。この場合:
+
+- `FREE` laneを無理に埋めない;
+- 3つ目のbranch / worktreeを作らない;
+- candidateをReadyから外す必要はない;
+- 必要ならIssue Authoring、contract refresh、Research等のlaneを占有しないWorkを進めてよいが、空きcapacityを埋めるためだけにWorkを作らない。
+
+両implementation laneが`FREE`なら最初のTaskは通常のWork選定で開始してよい。2本目を開始する時点では、先に開始したTaskをactive laneとしてこのgateを適用する。
+
+candidateを選定してからactual startするまでにactive laneのscopeがshared ownerへ拡大したsignalがあれば、start handoff前にparallel admissionを再評価する。既に両laneがactiveになった後のscope expansionは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)のre-evaluation triggerとして扱い、unfinished branch同士を同期して解消しない。
+
 ### Blocked Issue candidate routing
 
 `Contract: Blocked` Issueは、block理由にmaterialな変化が確認できない限り、通常の「次に進めるWork」「次の調査候補」「Issue Authoring候補」として繰り返し提示しない。
