@@ -59,6 +59,7 @@ current commands:
 | --- | --- |
 | `nuinui preflight` | fixed main / sub / e2e 3-lane stateのread-only audit |
 | `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | verified FREE laneをexact baseからTask branchへ開始 |
+| `nuinui resume <main\|sub> <SAY-123> <expected-checkpoint-sha> <branch>` | safe idle laneをremote保存済みexisting Task branchのexact checkpointへ復帰 |
 | `nuinui release <main\|sub> <checkpoint-sha>` | merged checkpointを確認してimplementation laneをidleへrelease |
 | `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | blocking-review済みexact headへ、required CI pending時だけGitHub Auto-mergeを予約 |
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
@@ -71,6 +72,10 @@ current commands:
 | `nuinui transition-audit` | Active interimを変更せず、解除準備に必要なremote/local/worktree/E2E条件をread-only監査 |
 | `nuinui context-check` | dev-context全体のMarkdown local link、router、`nuinui` CLI-doc整合をread-only検査 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported mutation safetyをexercise |
+
+`nuinui resume`は、remote保存済みactive implementation branchへfixed laneを再接続するためのnarrow restore commandである。新しいTaskやsliceを開始するcommandではなく、既存branchのlocal / authoritative remote HEADがcaller指定のexact checkpointと一致し、laneがcleanなsafe idle stateで、同branchが別worktreeに占有されていない場合だけ既存branchへswitchする。既に同branch / exact checkpointならidempotent successとする。
+
+`resume`はactive sliceのBaseを更新しない。`origin/main`のmerge / rebase / fast-forward、reset、stash、force-switch、force-push、branch作成、dirty workのrepairを行わない。remoteまたはlocal branchのcheckpoint mismatch、idle state mismatch、worktree occupancy、raceを検出した場合は`BLOCKED:`で停止する。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。required checksが0件、または全required checksがすでにpassしている場合は`BLOCKED:`で停止する。
 
