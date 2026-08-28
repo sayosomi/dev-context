@@ -252,6 +252,10 @@ idle state:
 - `main`: cleanなlocal `main`。release時点で安全ならlatest `origin/main`へfast-forward。
 - `sub`: cleanなlatest `origin/main` detached HEAD。
 
+post-merge release開始時にlane自身がmerge済みcheckpoint上のlocal topic branchをcheckoutしていた場合、そのtopic branchはlaneをidleへ移した後にcleanupしてよい。cleanup前に少なくとも、local branch refが保存済みexact checkpointのままであること、checkpointがcurrent `origin/main`に含まれること、対象branchをcheckoutしているworktreeがないことを再確認し、exact refだけを削除する。
+
+このcleanupはbranch sweepではない。release開始時にlaneがすでにidleだった場合、他のlocal branchを推測して削除しない。未mergeのpause / handoff / resume用branch、別Issue / 別slice、`main`、現在別worktreeで使用中のbranchは保持する。post-merge Manual E2EでFAILしてimplementationへ戻る場合も、旧merge済みbranchを復活させず、通常のfix slicingに従ってlatest intended baseからfresh branchを開始する。
+
 #### Release checkpoint synchronization
 
 `main` / `sub` releaseが成功してactual local laneが`FREE`になったら、そのfresh release evidenceをcurrent IssueのLinear Commentへ`Lane release checkpoint`として同期する。標準recordの内容は[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)をauthorityとする。

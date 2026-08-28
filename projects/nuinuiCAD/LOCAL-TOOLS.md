@@ -60,7 +60,7 @@ current commands:
 | `nuinui preflight` | fixed main / sub / e2e 3-lane stateのread-only audit |
 | `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | verified FREE laneをexact baseからTask branchへ開始 |
 | `nuinui resume <main\|sub> <SAY-123> <expected-checkpoint-sha> <branch>` | safe idle laneをremote保存済みexisting Task branchのexact checkpointへ復帰 |
-| `nuinui release <main\|sub> <checkpoint-sha>` | merged checkpointを確認してimplementation laneをidleへrelease |
+| `nuinui release <main\|sub> <checkpoint-sha>` | merged checkpointを確認してimplementation laneをidleへreleaseし、release開始時にそのexact checkpoint上のlocal topic branchを使用中だった場合だけ安全に削除 |
 | `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | blocking-review済みexact headへ、required CI pending時だけGitHub Auto-mergeを予約 |
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main <SAY-123> <tested-ref>` | Active interim workflow時だけ、cleanな`codex/interim-sequential` main laneのlocal checkpointをe2e laneへ安全に固定しmarker作成 |
@@ -76,6 +76,10 @@ current commands:
 `nuinui resume`は、remote保存済みactive implementation branchへfixed laneを再接続するためのnarrow restore commandである。新しいTaskやsliceを開始するcommandではなく、既存branchのlocal / authoritative remote HEADがcaller指定のexact checkpointと一致し、laneがcleanなsafe idle stateで、同branchが別worktreeに占有されていない場合だけ既存branchへswitchする。既に同branch / exact checkpointならidempotent successとする。
 
 `resume`はactive sliceのBaseを更新しない。authoritative remote main確認のためのfetchは`git fetch origin main`へ限定し、`--prune`や他remote-tracking refのcleanupを行わない。`origin/main`のmerge / rebase / fast-forward、reset、stash、force-switch、force-push、branch作成、dirty workのrepairも行わない。remoteまたはlocal branchのcheckpoint mismatch、idle state mismatch、worktree occupancy、raceを検出した場合は`BLOCKED:`で停止する。
+
+`nuinui release`はmerged checkpoint専用のpost-merge helperである。release開始時にlaneがlocal topic branch上にあり、そのbranch / HEADがcaller指定のexact merged checkpointと一致する場合だけ、そのbranchをpost-merge cleanup candidateとして保持する。laneを`main`またはdetached `origin/main`のidle stateへ移した後、local refがなおexact checkpointであることと、どのworktreeにもcheckoutされていないことを再確認し、expected-old SHA付き`git update-ref -d`でそのlocal topic branchだけを削除する。
+
+すでにidle stateから`release`を再実行した場合、release開始時に使っていなかったlocal branch、`main`、別Issue / 別slice branchを探索・一括削除しない。unmerged pause / handoff checkpointや`nuinui resume`対象branchもこのpost-merge cleanupの対象にしない。branch cleanupでrace / ref mismatch / worktree occupancyを検出した場合はbranchを残して`BLOCKED:`とし、reset / stash / force-switch / broad branch GCへfallbackしない。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。visibleなrequired checkがある通常pathでは`gh pr checks --required`のbucketを使い、pending / passだけを許可する。
 

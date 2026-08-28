@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.3.4"
+VERSION="1.3.5"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 GH_BIN="${NUINUI_GH_BIN:-gh}"
@@ -649,6 +649,9 @@ release_lane() {
   local current_branch=""
   local remote_main=""
   local local_main=""
+  local release_branch=""
+  local release_branch_head=""
+  local occupied_path=""
 
   case "$lane" in
     main) repo="$MAIN_WT" ;;
@@ -674,6 +677,25 @@ release_lane() {
 
   current_head="$(git -C "$repo" rev-parse HEAD)"
   current_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+  if [[ "$current_head" == "$checkpoint" && -n "$current_branch" && "$current_branch" != "main" ]]; then
+    release_branch="$current_branch"
+    release_branch_head="$(git -C "$repo" rev-parse --verify "refs/heads/${release_branch}^{commit}" 2>/dev/null)" || {
+      echo "BLOCKED: current topic branch cannot be resolved"
+      echo "BRANCH: $release_branch"
+      echo "No release mutation was performed."
+      return 1
+    }
+    if [[ "$release_branch_head" != "$checkpoint" ]]; then
+      echo "BLOCKED: current topic branch does not match release checkpoint"
+      echo "BRANCH:     $release_branch"
+      echo "BRANCH HEAD: $release_branch_head"
+      echo "CHECKPOINT:  $checkpoint"
+      echo "No release mutation was performed."
+      return 1
+    fi
+  fi
+
   if [[ "$current_head" != "$checkpoint" ]]; then
     if [[ "$lane" == "main" && "$current_branch" != "main" ]]; then
       echo "BLOCKED: main lane is neither at checkpoint nor on idle branch main"
@@ -693,7 +715,10 @@ release_lane() {
     fi
   fi
 
-  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; return 1; }
+  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || {
+    echo "ERROR: git fetch failed"
+    return 1
+  }
   remote_main="$(git -C "$repo" rev-parse origin/main)" || return 1
 
   if ! git -C "$repo" merge-base --is-ancestor "$checkpoint" "$remote_main"; then
@@ -714,8 +739,14 @@ release_lane() {
       echo "ORIGIN_MAIN: $remote_main"
       return 1
     fi
-    git -C "$repo" switch main || { echo "ERROR: could not switch to main"; return 1; }
-    git -C "$repo" merge --ff-only origin/main || { echo "ERROR: fast-forward to origin/main failed"; return 1; }
+    git -C "$repo" switch main || {
+      echo "ERROR: could not switch to main"
+      return 1
+    }
+    git -C "$repo" merge --ff-only origin/main || {
+      echo "ERROR: fast-forward to origin/main failed"
+      return 1
+    }
   else
     if [[ "$current_head" != "$checkpoint" ]] && ! git -C "$repo" merge-base --is-ancestor "$current_head" "$remote_main"; then
       echo "BLOCKED: detached sub HEAD cannot safely advance to origin/main"
@@ -723,7 +754,58 @@ release_lane() {
       echo "ORIGIN_MAIN: $remote_main"
       return 1
     fi
-    git -C "$repo" switch --detach origin/main || { echo "ERROR: could not detach sub lane at origin/main"; return 1; }
+    git -C "$repo" switch --detach origin/main || {
+      echo "ERROR: could not detach sub lane at origin/main"
+      return 1
+    }
+  fi
+
+  if [[ -n "$release_branch" ]]; then
+    dirty="$(git -C "$repo" status --porcelain)"
+    if [[ -n "$dirty" ]]; then
+      echo "BLOCKED: lane reached idle state but became dirty before local branch cleanup"
+      echo "BRANCH RETAINED: $release_branch"
+      return 1
+    fi
+
+    release_branch_head="$(git -C "$repo" rev-parse --verify "refs/heads/${release_branch}^{commit}" 2>/dev/null || true)"
+    if [[ "$release_branch_head" != "$checkpoint" ]]; then
+      echo "BLOCKED: lane was released but local topic branch changed before cleanup"
+      echo "BRANCH:     $release_branch"
+      echo "EXPECTED:   $checkpoint"
+      echo "ACTUAL:     ${release_branch_head:-ABSENT}"
+      echo "Branch was retained."
+      return 1
+    fi
+
+    occupied_path="$(git -C "$repo" worktree list --porcelain | awk -v target="refs/heads/$release_branch" '
+      /^worktree / { path=substr($0, 10) }
+      /^branch / {
+        if (substr($0, 8) == target) {
+          print path
+          exit
+        }
+      }
+    ')"
+    if [[ -n "$occupied_path" ]]; then
+      echo "BLOCKED: lane was released but local topic branch is checked out in a worktree"
+      echo "BRANCH:   $release_branch"
+      echo "WORKTREE: $occupied_path"
+      echo "Branch was retained."
+      return 1
+    fi
+
+    git -C "$repo" update-ref -d "refs/heads/$release_branch" "$checkpoint" || {
+      echo "ERROR: lane was released but atomic local topic branch cleanup failed"
+      echo "BRANCH: $release_branch"
+      return 1
+    }
+
+    if git -C "$repo" show-ref --verify --quiet "refs/heads/$release_branch"; then
+      echo "ERROR: local topic branch still exists after cleanup"
+      echo "BRANCH: $release_branch"
+      return 1
+    fi
   fi
 
   echo "RELEASED"
@@ -731,6 +813,7 @@ release_lane() {
   echo "  head=$(git -C "$repo" rev-parse HEAD)"
   echo "  branch=$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)"
   echo "  checkpoint=$checkpoint"
+  echo "  deleted_branch=${release_branch:--}"
 }
 
 read_pr_auto_merge_snapshot() {
@@ -2516,6 +2599,10 @@ FAKE_GH
   fi
   git -C "$main_repo" push -q origin HEAD:main || return 1
   "$SCRIPT_PATH" release main "$checkpoint" >/dev/null || return 1
+  if git -C "$main_repo" show-ref --verify --quiet refs/heads/test/say-993-main; then
+    echo "SELFTEST FAIL: merged main topic branch survived release"
+    return 1
+  fi
 
   echo "TEST: main stale idle post-merge release"
   git -C "$main_repo" switch -c selftest-stale-main >/dev/null 2>&1 || return 1
@@ -2528,6 +2615,10 @@ FAKE_GH
   "$SCRIPT_PATH" release main "$checkpoint" >/dev/null || return 1
   [[ "$(git -C "$main_repo" rev-parse HEAD)" == "$checkpoint" ]] || {
     echo "SELFTEST FAIL: stale idle main release did not reach merged checkpoint"
+    return 1
+  }
+  git -C "$main_repo" show-ref --verify --quiet refs/heads/selftest-stale-main || {
+    echo "SELFTEST FAIL: idle main release swept an unrelated local branch"
     return 1
   }
 
@@ -2638,6 +2729,10 @@ FAKE_GH
   fi
   git -C "$sub_repo" restore -- file.txt
   "$SCRIPT_PATH" release sub "$checkpoint" >/dev/null || return 1
+  if git -C "$sub_repo" show-ref --verify --quiet refs/heads/test/say-991-sub; then
+    echo "SELFTEST FAIL: merged sub topic branch survived release"
+    return 1
+  fi
 
   echo "TEST: sub stale detached post-merge release"
   base="$(git -C "$sub_repo" rev-parse HEAD)"
@@ -2651,6 +2746,10 @@ FAKE_GH
   "$SCRIPT_PATH" release sub "$checkpoint" >/dev/null || return 1
   [[ "$(git -C "$sub_repo" rev-parse HEAD)" == "$checkpoint" ]] || {
     echo "SELFTEST FAIL: stale detached sub release did not reach merged checkpoint"
+    return 1
+  }
+  git -C "$sub_repo" show-ref --verify --quiet refs/heads/selftest-stale-sub || {
+    echo "SELFTEST FAIL: idle sub release swept an unrelated local branch"
     return 1
   }
 
