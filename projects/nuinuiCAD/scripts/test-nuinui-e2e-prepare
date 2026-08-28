@@ -19,6 +19,7 @@ fail() {
 repo="$TEST_ROOT/repo"
 fixture="$TEST_ROOT/fixture.nui"
 temp_parent="$TEST_ROOT/temp"
+closure_parent="$TEST_ROOT/closure"
 fake_bin="$TEST_ROOT/bin"
 fake_app="$TEST_ROOT/Visual Studio Code.app"
 marker=""
@@ -29,7 +30,7 @@ root=""
 status_out=""
 marker_contents=""
 
-mkdir -p "$temp_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
+mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
 git -C "$repo" config user.name "nuinui e2e prepare selftest"
 git -C "$repo" config user.email "nuinui-e2e-prepare-selftest@example.invalid"
@@ -96,6 +97,7 @@ chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$f
 common_env=(
   "NUINUI_E2E_PREPARE_WT=$repo"
   "NUINUI_E2E_TEMP_PARENT=$temp_parent"
+  "TMPDIR=$closure_parent/"
   "NUINUI_E2E_VSCODE_APP=$fake_app"
   "NUINUI_FAKE_REPO=$repo"
   "PATH=$fake_bin:$PATH"
@@ -113,11 +115,47 @@ print -r -- "$status_out" | grep -Fq "handoff-candidate=$temp_parent/nuinui-SAY-
 rm -rf -- "$temp_parent/nuinui-vscode-e2e.orphan"
 rm -f -- "$temp_parent/nuinui-SAY-888-human-e2e.env"
 
+
+echo "TEST: closure-check ignores unrelated active marker and blocks only requested Issue artifacts"
+
+# The fixture setup already owns marker=SAY-999.
+# Use SAY-998 here so this section tests artifacts, not same-Issue ownership.
+mkdir -p "$closure_parent/nuinui-say888-e2e.orphan" || fail "unrelated closure root setup"
+
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-998 >/dev/null \
+  || fail "closure-check blocked unrelated marker/root"
+
+mkdir -p "$closure_parent/nuinui-say998-e2e.orphan" || fail "requested closure root setup"
+
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-998 >/dev/null 2>&1; then
+  fail "closure-check accepted requested Issue fallback root"
+fi
+
+[[ -d "$closure_parent/nuinui-say998-e2e.orphan" ]] \
+  || fail "closure-check mutated requested Issue root"
+
+rm -rf -- "$closure_parent/nuinui-say998-e2e.orphan"
+
+print -r -- orphan > "$closure_parent/nuinui-SAY-998-human-e2e.env"
+
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-998 >/dev/null 2>&1; then
+  fail "closure-check accepted requested Issue handoff"
+fi
+
+[[ -f "$closure_parent/nuinui-SAY-998-human-e2e.env" ]] \
+  || fail "closure-check mutated requested Issue handoff"
+
+rm -f -- "$closure_parent/nuinui-SAY-998-human-e2e.env"
+rm -rf -- "$closure_parent/nuinui-say888-e2e.orphan"
+
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-998 >/dev/null \
+  || fail "closure-check did not become clean"
+
 echo "TEST: prepare failure cleans temporary root"
 if env "${common_env[@]}" NUINUI_FAKE_NPM_FAIL=1 zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
   fail "dependency failure accepted"
 fi
-if find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q .; then
+if find "$temp_parent" -type d -name 'nuinui-vscode-e2e.*' -prune -print 2>/dev/null | grep -q .; then
   fail "failed prepare left an E2E root"
 fi
 [[ ! -e "$session" ]] || fail "failed prepare wrote session metadata"
@@ -129,6 +167,16 @@ handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
 [[ -f "$handoff" ]] || fail "handoff missing"
 root="$(sed -n 's/^root=//p' "$session")"
 [[ -d "$root" ]] || fail "E2E root missing"
+
+
+echo "TEST: closure-check blocks same active Issue but ignores another active Issue"
+
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-999 >/dev/null 2>&1; then
+  fail "closure-check accepted same active Issue"
+fi
+
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-998 >/dev/null \
+  || fail "closure-check blocked different active Issue"
 
 echo "TEST: status reports active session and detects marker mismatch"
 status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "status active session"
@@ -151,7 +199,7 @@ print -r -- "$status_out" | grep -Fq "handoff=$handoff (missing)" || fail "statu
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup >/dev/null || fail "cleanup"
 [[ ! -e "$session" ]] || fail "session metadata retained"
 [[ ! -e "$handoff" ]] || fail "handoff retained"
-if find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' | grep -q .; then
+if find "$temp_parent" -type d -name 'nuinui-vscode-e2e.*' -prune -print 2>/dev/null | grep -q .; then
   fail "cleanup retained an E2E root"
 fi
 

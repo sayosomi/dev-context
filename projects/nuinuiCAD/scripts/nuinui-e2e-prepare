@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
@@ -13,6 +13,7 @@ Usage:
   nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
   nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
   nuinui-e2e-prepare status
+  nuinui-e2e-prepare closure-check <SAY-123>
   nuinui-e2e-prepare cleanup
 
 Purpose:
@@ -115,7 +116,7 @@ stop_owned_processes() {
   matching_pids=()
 
   if [[ "$launch_pid" =~ '^[0-9]+$' ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
-    command_line="$(ps -p "$launch_pid" -o command= 2>/dev/null || true)"
+    command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
     if [[ "$command_line" != *"$root"* ]]; then
       echo "BLOCKED: recorded launch PID does not belong to the E2E root"
       echo "PID: $launch_pid"
@@ -127,7 +128,7 @@ stop_owned_processes() {
   pids=("${(@f)$(pgrep -f "user-data-dir=$root/user-data" 2>/dev/null || true)}")
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
-    command_line="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+    command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
     if [[ "$command_line" == *"$root"* ]] && (( ${matching_pids[(Ie)$pid]} == 0 )); then
       matching_pids+=("$pid")
     fi
@@ -422,7 +423,7 @@ status() {
       echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
       echo "  cdp_port=$cdp_port"
       if kill -0 "$launch_pid" >/dev/null 2>&1; then
-        command_line="$(ps -p "$launch_pid" -o command= 2>/dev/null || true)"
+        command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
         if [[ "$command_line" == *"$root"* ]]; then
           echo "  launch_pid=$launch_pid (owned-process-running)"
         else
@@ -462,6 +463,138 @@ status() {
   fi
 
   echo "E2E STATUS COMPLETE"
+}
+
+
+closure_check() {
+  setopt local_options null_glob
+
+  local requested_issue="$1"
+  local issue_number=""
+  local session=""
+  local marker=""
+  local session_issue=""
+  local marker_issue=""
+  local temp_parent=""
+  local candidate=""
+  local processes=""
+  local result=0
+  local -a temp_parents
+  local -a root_candidates
+
+  [[ "$requested_issue" =~ '^SAY-[0-9]+$' ]] || {
+    echo "ERROR: Issue must look like SAY-123"
+    return 2
+  }
+
+  issue_number="${requested_issue#SAY-}"
+
+  session="$(session_path)" || {
+    echo "BLOCKED: cannot resolve E2E session path"
+    return 1
+  }
+  marker="$(marker_path)" || {
+    echo "BLOCKED: cannot resolve E2E marker path"
+    return 1
+  }
+
+  echo "E2E CLOSURE CHECK"
+  echo "  issue=$requested_issue"
+
+  if [[ -f "$session" ]]; then
+    session_issue="$(metadata_value "$session" issue 2>/dev/null || true)"
+    if [[ -z "$session_issue" ]]; then
+      echo "  session=INVALID"
+      result=1
+    elif [[ "$session_issue" == "$requested_issue" ]]; then
+      echo "  session=BLOCKING-SAME-ISSUE"
+      result=1
+    else
+      echo "  session=other-issue:$session_issue"
+    fi
+  elif [[ -e "$session" ]]; then
+    echo "  session=INVALID-NOT-FILE"
+    result=1
+  else
+    echo "  session=none-for-requested-issue"
+  fi
+
+  if [[ -f "$marker" ]]; then
+    marker_issue="$(metadata_value "$marker" issue 2>/dev/null || true)"
+    if [[ -z "$marker_issue" ]]; then
+      echo "  marker=INVALID"
+      result=1
+    elif [[ "$marker_issue" == "$requested_issue" ]]; then
+      echo "  marker=BLOCKING-SAME-ISSUE"
+      result=1
+    else
+      echo "  marker=other-issue:$marker_issue"
+    fi
+  elif [[ -e "$marker" ]]; then
+    echo "  marker=INVALID-NOT-FILE"
+    result=1
+  else
+    echo "  marker=none-for-requested-issue"
+  fi
+
+  temp_parents=("$E2E_TEMP_PARENT")
+  if [[ -n "${TMPDIR:-}" ]]; then
+    temp_parent="${TMPDIR%/}"
+    if [[ -n "$temp_parent" && "$temp_parent" != "$E2E_TEMP_PARENT" ]]; then
+      temp_parents+=("$temp_parent")
+    fi
+  fi
+
+  for temp_parent in "${temp_parents[@]}"; do
+    [[ -d "$temp_parent" ]] || continue
+
+    root_candidates=(
+      "$temp_parent"/nuinui-say${issue_number}-e2e.*(N)
+      "$temp_parent"/nuinui-SAY${issue_number}-e2e.*(N)
+      "$temp_parent"/nuinui-SAY-${issue_number}-e2e.*(N)
+    )
+
+    for candidate in "${root_candidates[@]}"; do
+      [[ -d "$candidate" ]] || continue
+      echo "  fallback-root=BLOCKING:$candidate"
+      result=1
+    done
+
+    candidate="$temp_parent/nuinui-${requested_issue}-human-e2e.env"
+    if [[ -e "$candidate" ]]; then
+      echo "  handoff=BLOCKING:$candidate"
+      result=1
+    fi
+
+    candidate="$temp_parent/nuinui-say${issue_number}-human-e2e.env"
+    if [[ -e "$candidate" ]]; then
+      echo "  handoff=BLOCKING:$candidate"
+      result=1
+    fi
+  done
+
+  processes="$(
+    {
+      pgrep -fal "nuinui-say${issue_number}-e2e\\." 2>/dev/null || true
+      pgrep -fal "nuinui-SAY${issue_number}-e2e\\." 2>/dev/null || true
+      pgrep -fal "nuinui-SAY-${issue_number}-e2e\\." 2>/dev/null || true
+    } | awk '!seen[$0]++'
+  )"
+
+  if [[ -n "$processes" ]]; then
+    echo "  process=BLOCKING"
+    printf '%s\n' "$processes"
+    result=1
+  else
+    echo "  process=none-for-requested-issue"
+  fi
+
+  if (( result != 0 )); then
+    echo "E2E CLOSURE BLOCKED"
+    return 1
+  fi
+
+  echo "E2E CLOSURE CLEAN"
 }
 
 cleanup() {
@@ -727,6 +860,10 @@ case "${1:-}" in
   status)
     [[ "$#" -eq 1 ]] || { usage; exit 2; }
     status
+    ;;
+  closure-check)
+    [[ "$#" -eq 2 ]] || { usage; exit 2; }
+    closure_check "$2"
     ;;
   cleanup)
     [[ "$#" -eq 1 ]] || { usage; exit 2; }

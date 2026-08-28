@@ -105,6 +105,7 @@ current commands:
 nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
 nuinui-e2e-prepare status
+nuinui-e2e-prepare closure-check <SAY-123>
 nuinui-e2e-prepare cleanup
 ```
 
@@ -114,9 +115,11 @@ nuinui-e2e-prepare cleanup
 
 `status`はread-onlyでE2E checkout、marker、active session metadata、記録済みroot / handoff / launch PIDの状態、および同じtemporary parent直下のunmanaged artifact候補を表示する。unmanaged artifactは削除可能と判定しない。`status`はcleanup、process停止、checkout変更、fetchを行わない。
 
+`closure-check <SAY-123>`はIssue終了時のread-only gateである。requested Issueと同じmarker / session、`E2E_TEMP_PARENT`およびmacOS `TMPDIR`直下の既知fallback root / handoff、同Issueのfallback rootを参照するprocessだけをBLOCKする。別Issueのactive E2E stateや残存artifactはrequested IssueのclosureをBLOCKしない。`closure-check`はartifact削除、process停止、checkout変更、fetchを行わない。
+
 このhelperはproduct source、tested marker、既存の無関係なVS Code processを自動repairしない。fixtureはdedicated e2e checkoutの外側でなければならず、dependency準備またはbuildによるtracked-file mutationはBLOCKされる。
 
-`projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`は、temporary Git checkoutとfake hostを使ってprepare失敗時のcleanup、成功したsessionのcleanup、`status`の正常/不整合session・unmanaged artifact表示を検証するisolated self-testである。実機のVS Code / dependency / CDP lifecycleは別途actual laneで確認する。
+`projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`は、temporary Git checkoutとfake hostを使ってprepare失敗時のcleanup、成功したsessionのcleanup、`status`の正常/不整合session・unmanaged artifact表示、`closure-check`のsame-Issue / different-Issue / fallback artifact判定を検証するisolated self-testである。self-test内のfilesystem inspectionはmacOS標準BSD userlandで実行可能な形を維持する。実機のVS Code / dependency / CDP lifecycleは別途actual laneで確認する。
 
 Humanへcommandを渡すときは、Issue key、tested ref、fixture path、必要ならCDP port等、確定値を埋めたcopy/paste-ready commandにする。Humanにplaceholder判断を委ねない。
 
