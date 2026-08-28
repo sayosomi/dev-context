@@ -92,18 +92,37 @@ previous remote branch / PRが存在しても、safe checkpointでlaneをrelease
 
 intermediate merge後にremaining acceptanceがあり、次sliceをまだ実際に開始していない場合も、ReadyならTodoへ同期する。local laneが`RELEASE-PENDING`であることはTodoへのtransitionを妨げない。
 
+## Implementation occupancy reconciliation
+
+新しいimplementation Issueを`In Progress`へ進める前に、fresh 3-lane evidenceとLinearのcurrent implementation `In Progress`集合を**Issue identity単位**で照合する。
+
+正常状態では:
+
+- physical `BUSY`な`main` / `sub` laneから一意に読めるimplementation Issue集合;
+- Linear上のcurrent implementation `In Progress` Issue集合;
+
+が一致する。
+
+`In Progress`件数が2件以下というだけでは十分ではない。physical laneに対応しないorphaned / stale `In Progress`、または`BUSY` laneに対応するIssueのstatus欠落があれば、新しいstart / resumeより先にcurrent remote / checkpoint / lane evidenceからstatusを同期する。既存authorityだけで安全に解消できない不一致は`BLOCKED / UNKNOWN`として扱い、新しいimplementationを開始しない。
+
+`RELEASE-PENDING` lane、idle / `FREE` lane、Issue AuthoringだけのWorkはcurrent implementation `In Progress`集合へ含めない。
+
 ## In Progress startup gate
 
-implementation IssueをIn Progressへ進めるとき、同じstartup checkpointで:
+implementation IssueをIn Progressへ進めるとき:
 
 1. latest remote repository / current Issueを確認;
 2. current sliceを確定;
 3. 3-lane local preflight;
-4. FREEな`main`または`sub`を選択;
-5. Base checkpoint SHAを固定;
-6. Task branchをcheckout;
-7. IssueをIn Progressへ変更;
-8. `Implementation checkpoint`をCommentへ記録。
+4. `Implementation occupancy reconciliation`を満たすことを確認;
+5. FREEな`main`または`sub`を選択;
+6. Base checkpoint SHAを固定;
+7. Task branchのcheckout / resumeを実際に成功させ、lane / Issue / branch / Baseまたはcheckpointがintended stateになったことを確認;
+8. 成功確認後にIssueをIn Progressへ変更;
+9. `Implementation checkpoint`をCommentへ記録;
+10. status / checkpointをread-backして意図したcurrent stateを確認。
+
+Human terminal handoffで`nuinui start`等を使う場合、commandを提示した時点、`CHECKING`、read-only verification、start可能判定の時点ではtarget Issueを`In Progress`へ変更しない。Humanからsuccessful local transition result（新規startでは`STARTED`）が返り、その内容を確認した後に手順8以降を行う。
 
 標準記録:
 
@@ -198,7 +217,7 @@ confirmed implementation failureが出たら`manual_e2e_only`条件を失う。
 1. `manual_e2e_only`を外す;
 2. `Manual E2E: Failed`を維持;
 3. fix contract / sliceを確定;
-4. FREEな`main` / `sub`へ割り当てた時点で`In Progress`;
+4. FREEな`main` / `sub`へのactual local transition成功後に`In Progress`;
 5. Luna fix / merge後、only E2E remainsなら`manual_e2e_only + In Review`へ戻す;
 6. new exact tested commitでaffected E2E unitをrerun。
 
