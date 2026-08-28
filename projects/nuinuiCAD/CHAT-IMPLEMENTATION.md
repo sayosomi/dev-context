@@ -53,6 +53,21 @@ Human action待ちになる場合の原則:
 - versioned local helperがcurrentで利用可能なら、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に従い、長大なinline shellではなく必要値を埋めたhelper invocationをcomplete Human handoffとして使ってよい。helperが未install / stale / broken / unsupportedなら`CHECKOUTS.md`のinline fallbackを同じ応答で提示する。
 - Humanが必要なfresh evidenceをすでに現在の会話で提示している場合は、同じ取得手順を機械的に要求し直さない。
 
+### Local-success-before-In-Progress rule
+
+通常のsource-code implementationを新しくstart / checkpoint-pauseからresumeするとき、Linearの`In Progress`は「開始予定」ではなく**actual implementation laneでexecution開始済み**を表す。
+
+Human terminal handoffで`nuinui start` / `nuinui resume`等を実行する場合:
+
+1. commandをHumanへ渡す前に、fresh 3-lane evidenceとLinearのcurrent implementation `In Progress`集合をIssue identity単位で照合する。stale / orphaned `In Progress`があれば新しいstart / resumeより先に解消する。既存authorityだけで安全に解消できない場合はstart / resumeを行わない。
+2. target Issueはcommand提示、`CHECKING`、read-only verification、start可能判定だけでは`In Progress`へ進めない。新規startなら`Todo`、pause済みresumeならそのcurrent non-running statusを維持する。
+3. Humanからhelperのsuccessful local transition result（新規startでは`STARTED`）が返り、lane / Issue / branch / Baseまたはcheckpointがintended handoffと一致することを確認した後で初めてtarget Issueを`In Progress`へ変更する。
+4. 同じcontinuationで`Implementation checkpoint`を記録し、`LINEAR-ISSUES.md`のPost-write verificationに従ってstatus / checkpointをread-backする。
+
+ChatGPTがactual local transitionを直接かつauthoritatively確認できるexecution routeでは、Human round-trip自体は必須ではない。ただし**actual lane transition成功の確認より先に`In Progress`を書かない**というorderingは同じ。
+
+start / resume後のidentity invariantは、physical `BUSY`な`main` / `sub` laneから読めるimplementation Issue集合とLinear上のcurrent implementation `In Progress`集合が一致すること。単に`In Progress <= 2`であることだけでは成功条件にならない。
+
 product / UX decision、approval-gated dev-context write、unsafe / destructive unknown-state recoveryなど、Human判断そのものが必要なboundaryはこのruleで自動決定しない。その場合も「何を判断 / 実行すれば先へ進めるか」を具体化して返す。
 
 ## Implementation continuation completion rule
