@@ -23,6 +23,7 @@ Hard limits:
 - 4つ目のworktree / clone / CI-repro checkoutを作らない。
 - `e2e`をimplementationへ転用しない。
 - `main` / `sub`が両方BUSYなら、新しいimplementationは開始しない。
+- implementation lane数は**capacity上限**でありutilization targetではない。parallel admissionを満たすWorkがなければ`FREE` laneをidleのまま残す。
 
 ## Human terminal operations
 
@@ -121,6 +122,8 @@ remote `main`が進んだ事実は観測してよい。contract / ownershipを�
 
 integration checkpoint前に相手laneの進行中branchへ依存しない。必要なdependencyがあるなら、依存先がmergeされるまでcurrent sliceをcheckpointで止める。
 
+Routine Integrationを完了して[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)の`Integration Watermark`へ到達した後は、remote `main` advanceだけを理由にroutine integrationへ戻らない。Post-integration Driftが`NON-INTERFERING`ならcurrent branch / Review Headを維持し、`RELEVANT`または`MERGE-GATE`の場合だけ同policyに従ってexception integrationまたはre-evaluationを行う。
+
 ## Occupancy model
 
 current occupancyはdev-contextへ保存しない。actual local checkout stateとLinear checkpointから判断する。
@@ -136,7 +139,7 @@ current occupancyはdev-contextへ保存しない。actual local checkout state�
 
 state:
 
-- `FREE`: cleanでlaneのidle state。新しいexecutionへ割当可能。
+- `FREE`: cleanでlaneのidle state。新しいexecutionへ割当可能。ただしparallel admissionを満たすWorkがなければidleのまま保持してよい。
 - `BUSY`: current Issue / tested refのownershipを一意に確認でき、executionが現在進行中。
 - `RELEASE-PENDING`: implementation自体はremote保存済みまたはmerge済みで終了しているが、cleanなcheckoutをidle stateへ戻すdeterministic local cleanupだけが残る。新しいIssueへはまだ割り当てない。
 - `BLOCKED / UNKNOWN`: dirty、unexpected HEAD、ownership不明、marker mismatch、missing checkout等。
@@ -167,14 +170,14 @@ markerはworking treeへ置かない。E2E releaseの最後に削除する。
 ### main / sub implementation
 
 1. mandatory 3-lane preflightを行う。
-2. `FREE`なimplementation laneを選ぶ。
+2. `FREE`なimplementation laneを選ぶ。もう一方が`BUSY`なら、選定済みIssueが[`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md)のParallel admission gateを満たすことを確認する。
 3. `git fetch origin --prune`でremote stateを確認する。
 4. start時点のintended baseを確定し、Base checkpoint SHAとして記録する。
 5. Task branchを作成 / checkoutする。
 6. Linearへlane / Base checkpoint / branch / current sliceをcheckpointする。
 7. 以降はintegration checkpointまでbaseを固定する。
 
-新しいTask開始時点で`main`と`sub`が両方FREEなら通常`main`を優先する。`main`がBUSYなら`sub`を使う。並列化自体を目的にTaskを増やさない。
+新しいTask開始時点で`main`と`sub`が両方FREEなら通常`main`を優先する。`main`がBUSYなら、parallel admission済みの独立Taskがある場合だけ`sub`を使う。admissibleなTaskがなければ`sub`をFREEのまま残す。並列化自体を目的にTaskを増やさない。
 
 ### implementation resume
 
@@ -287,7 +290,9 @@ local reproductionが必要なら、`FREE`な`main`または`sub` implementation
 - `/Users/yosomi/Code/nuinuiCAD-ci-repro`
 - active slice途中のroutine merge-main / rebase-main
 - unfinished parallel branch同士の取り込み
+- `NON-INTERFERING`なPost-integration Driftだけを理由にroutine integrationを繰り返すこと
+- `FREE` laneを埋めるためだけにinterference riskの高いTaskをparallel startすること
 - E2E checkoutでのproduct fix
 - checkout capacity不足をworktree追加で解消すること
 
-並列性は**main / subの2 implementation lane**で表現する。それ以上の並列ismは作らない。
+並列性は**main / subの2 implementation lane**で表現する。それ以上の並列ismは作らない。2 laneを同時に使うこと自体も目的にしない。
