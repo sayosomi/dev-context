@@ -45,6 +45,10 @@ implementation開始前にwhole current scopeを監査し、次を整理する�
 - broad integration / lifecycle boundaryがどこか;
 - parallel laneで別Taskが同じowner / prerequisiteを持っていないか。
 
+別implementation laneが既に`BUSY`なら、Coordinatorの[`Parallel admission gate`](./CHAT-COORDINATOR.md)を通った候補であることを確認する。Implementation chatから直接start候補を決める場合も同等のinterference auditを行い、`LOW`と判断できない候補を「laneが空いている」という理由だけで開始しない。
+
+candidate選定後からactual startまでに相手laneのscopeがshared ownerへ拡大したsignalがあれば、Baseを固定する前にparallel admissionを再評価する。
+
 自然なboundary例:
 
 ```text
@@ -111,6 +115,7 @@ pushed implementation checkpoint
 -> Luna integrates latest intended base in same lane
 -> resolve conflicts / integration regressions
 -> required broad verification
+-> record Integration Watermark
 -> blocking review
 -> merge
 ```
@@ -118,6 +123,36 @@ pushed implementation checkpoint
 active slice途中のroutine merge-main / rebase-mainは禁止。
 
 remote advanceがcurrent contractをmaterially invalidateした場合は、途中同期せずcurrent workを保存してcheckpointで停止し、contract / sliceを再評価する。
+
+#### Integration Watermark and post-integration drift
+
+Routine Integrationは**1 sliceにつき1回**を原則とする。latest intended `main`を取り込みrequired verificationを完了した時点で、その取り込んだ`main` SHAを`Integration Watermark`として記録し、routine Integration checkpointは到達済みとする。
+
+Integration Watermark到達後にblocking reviewでfixが必要になっても、それだけではIntegration checkpointを未到達へ戻さない。
+
+```text
+Integration Watermark reached
+-> blocking review
+-> blocking fix on the same topic branch
+-> focused / required verification
+-> pushed fix review
+```
+
+blocking fix中やreview中にremote `main`がadvanceした場合、その差分を`Post-integration Drift`として扱う。**mainがadvanceした事実だけではIntegration Watermark、blocking review、Review Headをinvalidateしない。**
+
+`Integration Watermark..current main`を確認し、次で分類する。
+
+- `NON-INTERFERING`: current sliceのsemantic owner / shared API / prerequisite / contract / mergeabilityへmaterialな影響がない。再integrationしない。そのままreview / PR / merge gateへ進む。
+- `RELEVANT`: current sliceのsemantic owner / shared primitive / prerequisite / contractをmaterially変更している、またはcurrent review premiseを一意に維持できない。exception integrationまたはcontract / slice re-evaluationが必要。
+- `MERGE-GATE`: actual conflict / unmergeable state、またはrepositoryのcurrent merge requirementがbranch updateを明示的に要求する。必要なintegrationを行う。
+
+`NON-INTERFERING` driftについて、topic branchがcurrent `main`を含んでいないことだけを理由にroutine integrationを繰り返さない。PR作成後にさらに`main`がadvanceした場合も同じruleを使う。
+
+`RELEVANT`または`MERGE-GATE`でexception integrationを行った場合は、integration / required verification後のmain SHAで`Integration Watermark`を更新し、変更されたpremiseに応じたblocking reviewを行う。単なる最新化目的ではexception integrationを行わない。
+
+同じsliceでexception integrationが繰り返し必要になる場合、最新mainを追い続ける問題として扱わない。同じsemantic owner / shared primitiveをparallel laneが継続的に変更しているcontention signalとして、Coordinatorのparallel admission / lane schedulingを再評価し、必要なら片方を先にmergeするsequential executionへ戻す。
+
+blocking review PASS時にはexact topic SHAを`Review Head`として扱う。PR / auto-merge / merge直前はcurrent `main`と`Post-integration Drift`をfreshに確認するが、`NON-INTERFERING` driftならReview Headを作り直すためのintegrationを要求しない。
 
 ### Verification boundary
 
@@ -137,11 +172,12 @@ shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じ�
 implementation slice開始時に [`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflightを行う。
 
 - `main` FREE →通常第一候補;
-- `main` BUSYかつ`sub` FREE →独立Taskなら`sub`;
+- `main` BUSYかつ`sub` FREE →Coordinatorのparallel admissionで`LOW`と判定できる独立Taskだけを`sub`へ開始してよい;
+- `main` BUSYかつ`sub` FREEでもadmissibleなTaskがない → `sub`をFREEのまま残す;
 - 両方BUSY →新しいimplementationは開始しない;
 - `e2e`はimplementationへ使わない。
 
-2 laneを超えるparallelismをIssue / branch / worktree追加で表現しない。
+2 laneを超えるparallelismをIssue / branch / worktree追加で表現しない。2 laneを常時使用することも目標にしない。
 
 ## Cross-lane dependency rule
 
@@ -173,9 +209,11 @@ stacked PRをdefaultにしない。
 6. current PRが複数の独立semantic changeを抱えた;
 7. Base checkpoint以降のremote main advanceがcontract / ownershipをmaterially変えた;
 8. blocking fix loopが新ownerへ広がる;
-9. Manual E2E FAILでnew failure class / ownerが露出した。
+9. Manual E2E FAILでnew failure class / ownerが露出した;
+10. Integration Watermark以降のPost-integration Driftが`RELEVANT`または`MERGE-GATE`になった;
+11. parallel active laneのscope expansionにより、開始時の`LOW` interference premiseがmaterially崩れた。
 
-file数、diff行数、commit数、経過時間はwarning signalのみ。
+`NON-INTERFERING`なmain advance、file数、diff行数、commit数、経過時間はそれ自体ではre-evaluation triggerにしない。
 
 ## Decision outcomes
 
@@ -234,6 +272,14 @@ Implementation checkpoint
 - Next safe checkpoint: <implementation | integration | merge>
 ```
 
+Integration Watermark到達後は、rotation / handoffで誤ってroutine integrationを再開しないよう、必要に応じて同Issueのcheckpointへ次も記録する。
+
+```text
+- Integration Watermark: <integrated main sha>
+- Review Head: <blocking-review-passed topic sha | pending>
+- Post-integration Drift: <none | NON-INTERFERING through sha | RELEVANT | MERGE-GATE>
+```
+
 細かなcommit logは複製しない。
 
 ## Manual E2E failure
@@ -244,7 +290,7 @@ Manual E2Eでconfirmed implementation failureが出たら`e2e` laneでfixしな�
 2. implementation failureならfailure classとsemantic ownerを特定;
 3. Same Issue vs new leafを判断;
 4. smallest natural fix sliceを決める;
-5. FREEな`main` / `sub` implementation laneへ載せる;
+5. FREEな`main` / `sub` implementation laneへ載せる。ただしもう一方が`BUSY`ならparallel admission gateを満たすこと;
 6. Luna fix / verification / integration / merge;
 7. new exact tested commitでaffected E2E unitをrerun。
 
