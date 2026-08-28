@@ -215,13 +215,14 @@ merge済みでrequired Manual E2Eだけが残るなら、implementation laneが`
 confirmed implementation failureが出たら`manual_e2e_only`条件を失う。
 
 1. `manual_e2e_only`を外す;
-2. `Manual E2E: Failed`を維持;
-3. fix contract / sliceを確定;
-4. FREEな`main` / `sub`へのactual local transition成功後に`In Progress`;
-5. Luna fix / merge後、only E2E remainsなら`manual_e2e_only + In Review`へ戻す;
-6. new exact tested commitでaffected E2E unitをrerun。
+2. `Manual E2E: Failed`をfailure evidenceとして維持する;
+3. [`MANUAL-E2E.md`](./MANUAL-E2E.md) に従い、latest Project Context / current Issue / latest remote `main`でfocused contract re-auditを完了し、Contract state、dependency、fix boundary / slice、affected E2E rerun planを同期する;
+4. re-audit後、`Contract: Ready` + unblockedならimplementation lane未割当中は`Todo`、`Contract: Pending | Blocked`またはunfinished blockerありなら`Backlog`へ同期する;
+5. `Todo`からFREEな`main` / `sub`へのactual local transition成功後だけ`In Progress`へ進める;
+6. Luna fix / merge後、only E2E remainsなら`manual_e2e_only + In Review`へ戻す;
+7. new exact tested commitでaffected E2E unitをrerun。
 
-E2E failureだからという理由で`e2e` checkoutをimplementation laneへ変えない。
+E2E failureやre-audit完了だけを理由に`In Progress`へ進めない。E2E failureだからという理由で`e2e` checkoutをimplementation laneへ変えない。
 
 ## Done
 
