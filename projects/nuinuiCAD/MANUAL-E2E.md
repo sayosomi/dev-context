@@ -314,18 +314,24 @@ First classify the result:
 
 For confirmed implementation failure:
 
-1. identify the concrete failure class and semantic owner;
-2. determine Same Issue vs independent new leaf using [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md);
-3. determine smallest natural fix slice / safe checkpoint using [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md);
-4. return the fix to normal implementation execution under [`CHECKOUTS.md`](./CHECKOUTS.md) and [`CODING-AGENT.md`](./CODING-AGENT.md):
+1. before returning the Work to the implementation queue, perform a focused contract re-audit against the latest Project Context, current Issue record, and latest remote `main`; use the individual re-audit criteria in [`CONTRACT-REAUDIT.md`](./CONTRACT-REAUDIT.md) and do not treat the prior `Contract: Ready` or failed tested commit as current implementation authority;
+2. identify the concrete failure class and semantic owner;
+3. determine Same Issue vs independent new leaf using [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md);
+4. determine smallest natural fix slice / safe checkpoint using [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md);
+5. synchronize the re-audit result before implementation resumes:
+   - current authority uniquely determines the fix contract / acceptance → `Contract: Ready`;
+   - a real product / UX / scope / compatibility decision remains → `Contract: Pending`;
+   - a prerequisite prevents an executable contract → `Contract: Blocked`;
+   - keep `Manual E2E: Failed` as failure evidence until a later rerun passes;
+6. only `Contract: Ready` + unblocked Work returns to normal implementation execution under [`CHECKOUTS.md`](./CHECKOUTS.md) and [`CODING-AGENT.md`](./CODING-AGENT.md):
    - select a `FREE` `main` or `sub` implementation lane;
    - freeze the fix Base checkpoint SHA and record the implementation checkpoint;
    - Codex Luna xhigh performs implementation / blocking fix / verification / git work;
    - never implement or repair the product from the `e2e` checkout;
-5. implement / verify / review / merge;
-6. when only required Manual E2E remains again, return to `manual_e2e_only + In Review`.
+7. implement / verify / review / merge;
+8. when only required Manual E2E remains again, return to `manual_e2e_only + In Review`.
 
-Do not create a direct web-ChatGPT implementation route for an E2E failure. ChatGPT owns failure classification, fix contract, slicing, lane assignment, blocking review, and management; Luna owns the repository implementation/fix execution.
+Do not create a direct web-ChatGPT implementation route for an E2E failure. ChatGPT owns failure classification, focused re-audit, fix contract, slicing, lane assignment, blocking review, and management; Luna owns the repository implementation/fix execution.
 
 Multiple independent failure classes may become separate leaf Issues or sequential slices when natural. Do not create a new Issue mechanically for every Human comment or micro-fix.
 
@@ -378,7 +384,9 @@ manual_e2e_only + Ready to Run
 execute units
   ↓
 FAIL?
-  YES -> classify failure -> FREE main/sub -> Luna fix -> merge -> rerun
+  YES -> classify failure -> focused latest-main re-audit
+         -> Ready + unblocked -> FREE main/sub -> Luna fix -> merge -> rerun
+         -> Pending / Blocked -> Backlog until resolved
   NO
   ↓
 all required units PASS
