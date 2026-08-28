@@ -147,6 +147,30 @@ local checkout cleanupが即時完了せずlaneが`RELEASE-PENDING`になって�
 
 **chat session rotation alone is not a Task pause.** 同じWorkを継続するためにchatだけを交換する場合、rotationだけを理由にstatus、lane ownership、Base checkpoint、branch、current sliceを変更しない。chat-onlyで外部stateから復元できない重要情報だけ必要に応じてcheckpointする。詳細は`CHAT-WORKFLOW.md`。
 
+## Lane release checkpoint
+
+`main` / `sub` implementation laneのrelease成功後は、current IssueのCommentへrelease結果をcheckpointする。Issueが既に`Done`でもこのrecordを追加し、release recordのためにIssueをreopenしない。
+
+標準記録:
+
+```text
+Lane release checkpoint
+- Lane: main | sub
+- Saved checkpoint: <exact pushed / integration checkpoint sha>
+- Release result: RELEASED
+- Idle branch/state: main | DETACHED
+- Idle HEAD: <sha>
+- Lane state: FREE
+```
+
+必要ならrelease helper名やcheckout path等の補助情報を加えてよいが、上記の復元情報を省略しない。
+
+Humanから`nuinui release`等のfresh successful outputが返された場合、それをactual local release evidenceとして利用できる。ChatGPTがLinearを更新できるなら、そのrelease evidenceを受け取ったcontinuationでcheckpointを記録する。
+
+このcheckpointはphysical lane releaseの成立条件そのものではない。actual local laneが安全にidleへ戻った事実は[`CHECKOUTS.md`](./CHECKOUTS.md)がauthorityである。ただしImplementation chatのfinal closure declarationでは、release checkpointの記録と下記Post-write verificationまでを完了条件とする。
+
+checkpointを追加・更新したら、`Post-write verification`に従ってCommentをread-backし、意図したrelease stateがcurrent Issueから復元できることを確認する。
+
 ## In Review
 
 implementationはmerge済みだがrequired Manual E2Eが未完了のWork。

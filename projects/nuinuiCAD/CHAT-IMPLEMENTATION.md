@@ -84,6 +84,23 @@ Humanへ戻してよいのは、product / UX / scope decision、unsafe local sta
 
 local checkoutのdeterministic releaseだけが残る場合は、Work completion / Linear statusと物理lane cleanupを混同しない。lane stateは`CHECKOUTS.md`、Issue statusは`LINEAR-ISSUES.md` / `LINEAR-GITHUB.md`をauthorityとする。
 
+## Final closure declaration rule
+
+Issueの`Done`はWork completionを表し、implementation laneを含むexecution lifecycle全体のcloseとは区別する。
+
+`main` / `sub` implementation laneを使用し、local releaseが必要なWorkについて、ChatGPTが「完全終了」「すべて終了」「追加作業なし」等のfinal closureを宣言してよいのは、次をすべて満たした後だけとする。
+
+1. Work completion / Issue status synchronizationがcurrent policyに従って完了している。
+2. [`CHECKOUTS.md`](./CHECKOUTS.md) に従うlane releaseが成功し、actual local laneが`FREE`になっている。
+3. release結果をcurrent Linear Issueへ`Lane release checkpoint`として記録している。
+4. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のPost-write verificationに従い、そのcheckpointをread-backしてcurrent stateを確認している。
+
+Humanが`nuinui release`等のfresh release成功outputを返した場合、そのoutputをactual local stateのevidenceとして扱う。Linear操作をChatGPT側で実行できるなら、release成功の説明だけで停止せず、同じcontinuationで`Lane release checkpoint`の記録とread-backまで完了する。
+
+Issueが既に`Done`でもlane release、release checkpoint、またはそのread-backが残っている場合は、Work completionとremaining closure stepを分けて報告し、「完全終了」「追加作業なし」とは宣言しない。
+
+release checkpointの記録失敗だけを理由に、既に有効なmerge / Manual E2E / Done判定を巻き戻さない。ただし、その場合はfinal closure未完了として扱い、必要なmanagement synchronizationを残作業として明示する。
+
 ## Startup / execution boundary
 
 Implementation開始・再開では、READMEのloading ruleに従ってcurrent Linear / remote repository / required implementation policiesを確認する。
