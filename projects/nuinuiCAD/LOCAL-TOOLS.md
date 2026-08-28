@@ -77,11 +77,15 @@ current commands:
 
 `resume`はactive sliceのBaseを更新しない。authoritative remote main確認のためのfetchは`git fetch origin main`へ限定し、`--prune`や他remote-tracking refのcleanupを行わない。`origin/main`のmerge / rebase / fast-forward、reset、stash、force-switch、force-push、branch作成、dirty workのrepairも行わない。remoteまたはlocal branchのcheckpoint mismatch、idle state mismatch、worktree occupancy、raceを検出した場合は`BLOCKED:`で停止する。
 
-`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。required checksが0件、または全required checksがすでにpassしている場合は`BLOCKED:`で停止する。
+`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。visibleなrequired checkがある通常pathでは`gh pr checks --required`のbucketを使い、pending / passだけを許可する。
+
+`gh pr checks --required`が空の場合は、それだけで「required checkが0件」と判断しない。current `main` branch protectionの`required_status_checks.contexts[]`とsource-bound `checks[]`を完全照合し、各required checkにpositive numeric `app_id`がある場合だけsecond proofへ進む。exact reviewed headについて`event=pull_request`のActions workflow runとcheck runsを取得し、missing required contextごとに、workflow名がrequired contextと一致するqueued / in-progress run、同じ`check_suite_id`からmaterialize済みのcheck run、required checkと同じGitHub App idを相関できる場合だけ、そのmissing aggregatorをpendingとして扱う。required context自身がmaterialize済みならstatus / conclusionを直接分類する。branch protectionが本当にrequired check 0件、contexts/checks不一致、source-unbound / invalid app id、API failure、pagination ambiguity、workflow/check-suite/app correlation欠落、required failure / cancel / skip / neutral / unknown、または全required checks passの場合はfail-closedで`BLOCKED:`とする。
 
 `pr-auto-merge`はmutation直前に同じsafety-critical preconditionを再確認し、GitHub GraphQLの`enablePullRequestAutoMerge` mutationを直接使う。blocking-review済みheadは`expectedHeadOid`へ渡し、merge methodは`MERGE`へ固定する。reservation pathでは`gh pr merge --auto`や`mergePullRequest`など、即時mergeへ分岐し得るoperationを使わない。precondition確認後にrequired CIが完了したraceではGitHubの`clean status` rejectionをsafe stopとして扱い、direct mergeへfallbackしない。
 
 mutation後はPRが同じexact head / expected mainのままOPENで、`autoMergeRequest.mergeMethod=MERGE`になったことをread-backしてから`AUTO-MERGE RESERVED`を返す。head / main / state / read-back mismatch、mutation failureでは成功扱いにせず`BLOCKED:`で停止する。Auto-merge cancel、CI rerun、rebase、reset、force、bypass、direct merge、repairは自動実行しない。
+
+pre-materialization fallbackのrepair / promotion verificationでは、observed production response shapeを使うdeterministic replayでchanged pathをexerciseし、Human Macからcurrent GitHub branch-protection / workflow-run / check-run API shapeとapp-id correlationをread-only照合する。ephemeralなaggregator未materialize windowを偶然待つこと自体をsuccess条件にしない。GraphQL reservation / read-back、race rejection、failure path、direct-merge禁止はisolated self-testで継続検証する。
 
 `nuinui doctor --full`はfetch、checkout変更、cleanup、process停止を行わない。3 laneまたはlocal dev-contextがdirty、lane構成が不整合、E2E statusがBLOCKED、E2E status helperが欠落している場合は、観測結果を出力してnonzeroで停止する。Issue選択、lane割当、release可否、次のoperationの決定は行わない。
 

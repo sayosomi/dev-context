@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.3.3"
+VERSION="1.3.4"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 GH_BIN="${NUINUI_GH_BIN:-gh}"
@@ -743,6 +743,345 @@ read_pr_auto_merge_snapshot() {
     }
 }
 
+validate_unmaterialized_required_checks_pending() {
+  local expected_head="$1"
+  local configured=""
+  local config_status=0
+  local kind=""
+  local field1=""
+  local field2=""
+  local field3=""
+  local field4=""
+  local field5=""
+  local field6=""
+  local invalid_reason=""
+  local workflows=""
+  local workflow_status=0
+  local workflow_meta_seen=0
+  local workflow_declared=0
+  local workflow_count=0
+  local check_runs=""
+  local check_runs_status=0
+  local check_meta_seen=0
+  local check_declared=0
+  local check_count=0
+  local required_count=0
+  local active_count=0
+  local suite_id=""
+  local suite=""
+  local suite_status=0
+  local suite_kind=""
+  local suite_read_id=""
+  local suite_head=""
+  local suite_app=""
+  local suite_state=""
+  local suite_conclusion=""
+  local materialized=0
+  local i=0
+  local j=0
+  local -a required_contexts
+  local -a required_app_ids
+  local -a workflow_names
+  local -a workflow_states
+  local -a workflow_conclusions
+  local -a workflow_heads
+  local -a workflow_events
+  local -a workflow_suites
+  local -a check_names
+  local -a check_apps
+  local -a check_states
+  local -a check_conclusions
+  local -a check_suites
+
+  configured="$("$GH_BIN" api "repos/$PR_TARGET_REPO/branches/main" --jq '
+    .protection.required_status_checks as $r |
+    if $r == null then
+      ["INVALID", "required-status-checks-missing"] | @tsv
+    else
+      ($r.contexts // []) as $contexts |
+      ($r.checks // []) as $checks |
+      if ($contexts | length) == 0 then
+        ["INVALID", "no-required-contexts"] | @tsv
+      elif any($contexts[]; ((type != "string") or (length == 0))) then
+        ["INVALID", "invalid-required-context"] | @tsv
+      elif ($checks | length) != ($contexts | length) then
+        ["INVALID", "context-check-count-mismatch"] | @tsv
+      elif ($contexts | unique | length) != ($contexts | length) then
+        ["INVALID", "duplicate-required-context"] | @tsv
+      elif any($checks[]; (((.context | type) != "string") or ((.context | length) == 0) or ((.app_id | type) != "number") or (.app_id <= 0))) then
+        ["INVALID", "invalid-required-check-source"] | @tsv
+      elif ($checks | map(.context) | unique | length) != ($checks | length) then
+        ["INVALID", "duplicate-required-check"] | @tsv
+      elif (($checks | map(.context) | sort) != ($contexts | sort)) then
+        ["INVALID", "required-context-source-mismatch"] | @tsv
+      else
+        $checks[] | ["CHECK", .context, (.app_id | tostring)] | @tsv
+      end
+    end
+  ' 2>/dev/null)"
+  config_status=$?
+  if (( config_status != 0 )); then
+    echo "BLOCKED: could not read configured required checks from branch protection"
+    return 1
+  fi
+  if [[ -z "$configured" ]]; then
+    echo "BLOCKED: configured required-check proof was empty"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r kind field1 field2 field3; do
+    case "$kind" in
+      INVALID)
+        invalid_reason="$field1"
+        ;;
+      CHECK)
+        if [[ -z "$field1" || ! "$field2" =~ '^[1-9][0-9]*$' || -n "$field3" ]]; then
+          echo "BLOCKED: configured required check data is malformed"
+          return 1
+        fi
+        required_contexts+=("$field1")
+        required_app_ids+=("$field2")
+        ;;
+      *)
+        echo "BLOCKED: configured required-check proof returned an unknown record"
+        return 1
+        ;;
+    esac
+  done <<< "$configured"
+
+  if [[ -n "$invalid_reason" ]]; then
+    echo "BLOCKED: branch protection does not provide a complete source-bound required-check configuration"
+    echo "REASON: $invalid_reason"
+    return 1
+  fi
+
+  required_count="${#required_contexts[@]}"
+  if (( required_count == 0 || ${#required_app_ids[@]} != required_count )); then
+    echo "BLOCKED: no complete configured required checks could be proven"
+    return 1
+  fi
+
+  workflows="$("$GH_BIN" api -X GET "repos/$PR_TARGET_REPO/actions/runs" \
+    -f head_sha="$expected_head" \
+    -f event=pull_request \
+    -f per_page=100 \
+    --jq '
+      if .total_count > 100 then
+        ["INVALID", "too-many-workflow-runs"] | @tsv
+      else
+        (["META", (.total_count | tostring)] | @tsv),
+        (.workflow_runs[] |
+          ["RUN", (.name // "none"), (.status // "none"), (.conclusion // "none"),
+           (.head_sha // "none"), (.event // "none"), ((.check_suite_id // 0) | tostring)] | @tsv)
+      end
+    ' 2>/dev/null)"
+  workflow_status=$?
+  if (( workflow_status != 0 )); then
+    echo "BLOCKED: could not read exact-head pull-request workflow runs"
+    return 1
+  fi
+  if [[ -z "$workflows" ]]; then
+    echo "BLOCKED: no exact-head pull-request workflow runs were found"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r kind field1 field2 field3 field4 field5 field6; do
+    case "$kind" in
+      INVALID)
+        echo "BLOCKED: exact-head workflow proof is too large or ambiguous"
+        echo "REASON: $field1"
+        return 1
+        ;;
+      META)
+        if (( workflow_meta_seen != 0 )) || [[ ! "$field1" =~ '^[0-9]+$' ]]; then
+          echo "BLOCKED: invalid exact-head workflow metadata"
+          return 1
+        fi
+        workflow_meta_seen=1
+        workflow_declared="$field1"
+        ;;
+      RUN)
+        if [[ -z "$field1" || -z "$field2" || -z "$field3" || -z "$field4" || -z "$field5" ||
+              ! "$field6" =~ '^[0-9]+$' ]]; then
+          echo "BLOCKED: invalid exact-head workflow data"
+          return 1
+        fi
+        workflow_names+=("$field1")
+        workflow_states+=("$field2")
+        workflow_conclusions+=("$field3")
+        workflow_heads+=("$field4")
+        workflow_events+=("$field5")
+        workflow_suites+=("$field6")
+        (( workflow_count += 1 ))
+        ;;
+      *)
+        echo "BLOCKED: exact-head workflow proof returned an unknown record"
+        return 1
+        ;;
+    esac
+  done <<< "$workflows"
+
+  if (( workflow_meta_seen != 1 || workflow_declared != workflow_count )); then
+    echo "BLOCKED: exact-head workflow result was incomplete"
+    echo "DECLARED: $workflow_declared"
+    echo "READ:     $workflow_count"
+    return 1
+  fi
+
+  for (( i=1; i<=required_count; i++ )); do
+    active_count=0
+    suite_id=""
+
+    for (( j=1; j<=workflow_count; j++ )); do
+      if [[ "${workflow_heads[$j]}" != "$expected_head" || "${workflow_events[$j]}" != "pull_request" ]]; then
+        echo "BLOCKED: exact-head workflow API returned a mismatched run"
+        return 1
+      fi
+      [[ "${workflow_names[$j]}" == "${required_contexts[$i]}" ]] || continue
+
+      case "${workflow_states[$j]}" in
+        queued|in_progress)
+          if [[ "${workflow_conclusions[$j]}" != "none" ]]; then
+            echo "BLOCKED: in-flight workflow unexpectedly has a conclusion"
+            echo "CHECK: ${required_contexts[$i]}"
+            return 1
+          fi
+          if [[ ! "${workflow_suites[$j]}" =~ '^[1-9][0-9]*$' ]]; then
+            echo "BLOCKED: in-flight workflow has no usable check suite"
+            echo "CHECK: ${required_contexts[$i]}"
+            return 1
+          fi
+          (( active_count += 1 ))
+          suite_id="${workflow_suites[$j]}"
+          ;;
+      esac
+    done
+
+    if (( active_count != 1 )); then
+      echo "BLOCKED: missing required context could not be tied to exactly one in-flight workflow"
+      echo "CHECK: ${required_contexts[$i]}"
+      echo "ACTIVE_MATCHES: $active_count"
+      return 1
+    fi
+
+    suite="$("$GH_BIN" api "repos/$PR_TARGET_REPO/check-suites/$suite_id" \
+      --jq '["SUITE", (.id | tostring), (.head_sha // "none"), ((.app.id // 0) | tostring), (.status // "none"), (.conclusion // "none")] | @tsv' \
+      2>/dev/null)"
+    suite_status=$?
+    if (( suite_status != 0 )) || [[ -z "$suite" ]]; then
+      echo "BLOCKED: could not read the in-flight workflow check suite"
+      echo "CHECK: ${required_contexts[$i]}"
+      return 1
+    fi
+
+    IFS=$'\t' read -r suite_kind suite_read_id suite_head suite_app suite_state suite_conclusion <<< "$suite"
+    if [[ "$suite_kind" != "SUITE" || "$suite_read_id" != "$suite_id" ||
+          "$suite_head" != "$expected_head" || "$suite_app" != "${required_app_ids[$i]}" ]]; then
+      echo "BLOCKED: in-flight workflow check suite does not match required-check identity"
+      echo "CHECK: ${required_contexts[$i]}"
+      return 1
+    fi
+    if [[ "$suite_state" != "queued" && "$suite_state" != "in_progress" ]]; then
+      echo "BLOCKED: in-flight workflow check suite is not pending"
+      echo "CHECK: ${required_contexts[$i]}"
+      echo "STATE: $suite_state"
+      return 1
+    fi
+    if [[ "$suite_conclusion" != "none" ]]; then
+      echo "BLOCKED: in-flight workflow check suite already has a conclusion"
+      echo "CHECK: ${required_contexts[$i]}"
+      echo "CONCLUSION: $suite_conclusion"
+      return 1
+    fi
+  done
+
+  # Final fallback proof: the configured required check itself must still be
+  # genuinely unmaterialized at the exact reviewed head. This runs after the
+  # workflow/suite correlation to minimize the race window.
+  check_runs="$("$GH_BIN" api -X GET "repos/$PR_TARGET_REPO/commits/$expected_head/check-runs" \
+    -f filter=all \
+    -f per_page=100 \
+    --jq '
+      if .total_count > 100 then
+        ["INVALID", "too-many-check-runs"] | @tsv
+      else
+        (["META", (.total_count | tostring)] | @tsv),
+        (.check_runs[] |
+          ["RUN", (.name // "none"), ((.app.id // 0) | tostring), (.status // "none"),
+           (.conclusion // "none"), ((.check_suite.id // 0) | tostring)] | @tsv)
+      end
+    ' 2>/dev/null)"
+  check_runs_status=$?
+  if (( check_runs_status != 0 )); then
+    echo "BLOCKED: could not read exact-head check runs"
+    return 1
+  fi
+  if [[ -z "$check_runs" ]]; then
+    echo "BLOCKED: exact-head check-run proof was empty"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r kind field1 field2 field3 field4 field5; do
+    case "$kind" in
+      INVALID)
+        echo "BLOCKED: exact-head check-run proof is too large or ambiguous"
+        echo "REASON: $field1"
+        return 1
+        ;;
+      META)
+        if (( check_meta_seen != 0 )) || [[ ! "$field1" =~ '^[0-9]+$' ]]; then
+          echo "BLOCKED: invalid exact-head check-run metadata"
+          return 1
+        fi
+        check_meta_seen=1
+        check_declared="$field1"
+        ;;
+      RUN)
+        if [[ -z "$field1" || ! "$field2" =~ '^[0-9]+$' || -z "$field3" || -z "$field4" ||
+              ! "$field5" =~ '^[0-9]+$' ]]; then
+          echo "BLOCKED: invalid exact-head check-run data"
+          return 1
+        fi
+        check_names+=("$field1")
+        check_apps+=("$field2")
+        check_states+=("$field3")
+        check_conclusions+=("$field4")
+        check_suites+=("$field5")
+        (( check_count += 1 ))
+        ;;
+      *)
+        echo "BLOCKED: exact-head check-run proof returned an unknown record"
+        return 1
+        ;;
+    esac
+  done <<< "$check_runs"
+
+  if (( check_meta_seen != 1 || check_declared != check_count )); then
+    echo "BLOCKED: exact-head check-run result was incomplete"
+    echo "DECLARED: $check_declared"
+    echo "READ:     $check_count"
+    return 1
+  fi
+
+  for (( i=1; i<=required_count; i++ )); do
+    materialized=0
+    for (( j=1; j<=check_count; j++ )); do
+      if [[ "${check_names[$j]}" == "${required_contexts[$i]}" &&
+            "${check_apps[$j]}" == "${required_app_ids[$i]}" ]]; then
+        materialized=1
+        break
+      fi
+    done
+    if (( materialized != 0 )); then
+      echo "BLOCKED: configured required check is already materialized while required-check view is empty"
+      echo "CHECK: ${required_contexts[$i]}"
+      return 1
+    fi
+  done
+
+  return 0
+}
+
 validate_pr_auto_merge_preconditions() {
   local pr="$1"
   local expected_head="$2"
@@ -816,8 +1155,9 @@ validate_pr_auto_merge_preconditions() {
     return 1
   fi
   if [[ -z "$checks" ]]; then
-    echo "BLOCKED: no required PR checks were found"
-    return 1
+    validate_unmaterialized_required_checks_pending "$expected_head" || return 1
+    print -r -- "$snapshot"
+    return 0
   fi
 
   while IFS=$'\t' read -r check_name bucket; do
@@ -929,6 +1269,8 @@ pr_auto_merge() {
 
   if [[ "$readback_pr_id" != "$pr_id" ]]; then
     echo "BLOCKED: PR identity changed during Auto-merge reservation"
+    echo "EXPECTED_PR_ID: $pr_id"
+    echo "ACTUAL_PR_ID:   $readback_pr_id"
     echo "No automatic cancellation or repair was performed."
     return 1
   fi
@@ -940,6 +1282,10 @@ pr_auto_merge() {
   fi
   if [[ "$draft" != "false" || "$base" != "main" || "$head" != "$expected_head" ]]; then
     echo "BLOCKED: PR identity changed during Auto-merge reservation"
+    echo "DRAFT:         $draft"
+    echo "BASE:          $base"
+    echo "EXPECTED_HEAD: $expected_head"
+    echo "ACTUAL_HEAD:   $head"
     echo "No automatic cancellation or repair was performed."
     return 1
   fi
@@ -1685,15 +2031,16 @@ if [[ "$cmd" == "pr" && "${1:-}" == "view" ]]; then
   mergeable="MERGEABLE"
   auto_merge="none"
   url="https://github.com/sayosomi/nuinuiCAD/pull/999"
-  (( count >= 3 )) && auto_merge="MERGE"
+  [[ -f "$state_dir/mutation-called" ]] && auto_merge="MERGE"
   case "$scenario" in
     head-mismatch) head="$wrong_head" ;;
     main-drift) base_oid="$wrong_main" ;;
     wrong-base) base="develop" ;;
     closed) state="CLOSED" ;;
     draft) draft="true" ;;
-    readback-missing) (( count >= 3 )) && auto_merge="none" ;;
-    readback-mismatch) (( count >= 3 )) && auto_merge="SQUASH" ;;
+    existing-auto-merge) auto_merge="MERGE" ;;
+    readback-missing) [[ -f "$state_dir/mutation-called" ]] && auto_merge="none" ;;
+    readback-mismatch) [[ -f "$state_dir/mutation-called" ]] && auto_merge="SQUASH" ;;
     head-drift-before-mutation) (( count >= 2 )) && head="$wrong_head" ;;
     main-drift-before-mutation) (( count >= 2 )) && base_oid="$wrong_main" ;;
   esac
@@ -1702,12 +2049,111 @@ if [[ "$cmd" == "pr" && "${1:-}" == "view" ]]; then
 fi
 if [[ "$cmd" == "pr" && "${1:-}" == "checks" ]]; then
   case "$scenario" in
-    checks-missing) exit 0 ;;
+    checks-missing|branch-config-mismatch|branch-config-unbound|aggregator-unmaterialized|aggregator-materialized|aggregator-no-active-workflow|aggregator-wrong-workflow|aggregator-multiple-active|aggregator-app-mismatch|aggregator-suite-completed|aggregator-suite-head-mismatch) exit 0 ;;
     ci-failure) printf 'CI\tfail\n'; exit 1 ;;
     ci-cancelled) printf 'CI\tcancel\n'; exit 1 ;;
+    ci-skipping) printf 'CI\tskipping\n'; exit 1 ;;
+    ci-unknown) printf 'CI\tmystery\n'; exit 1 ;;
     all-success) printf 'CI\tpass\n'; exit 0 ;;
     *) printf 'CI\tpending\n'; exit 8 ;;
   esac
+fi
+if [[ "$cmd" == "api" && "${1:-}" != "graphql" ]]; then
+  api_args="$*"
+
+  if [[ "$api_args" == *"repos/sayosomi/nuinuiCAD/branches/main"* ]]; then
+    case "$scenario" in
+      checks-missing)
+        printf 'INVALID\tno-required-contexts\n'
+        exit 0
+        ;;
+      branch-config-mismatch)
+        printf 'INVALID\tcontext-check-count-mismatch\n'
+        exit 0
+        ;;
+      branch-config-unbound)
+        printf 'INVALID\tinvalid-required-check-source\n'
+        exit 0
+        ;;
+      aggregator-unmaterialized|aggregator-materialized|aggregator-no-active-workflow|aggregator-wrong-workflow|aggregator-multiple-active|aggregator-app-mismatch|aggregator-suite-completed|aggregator-suite-head-mismatch)
+        printf 'CHECK\tCI\t15368\n'
+        exit 0
+        ;;
+    esac
+  fi
+
+  if [[ "$api_args" == *"repos/sayosomi/nuinuiCAD/actions/runs"* ]]; then
+    case "$scenario" in
+      aggregator-unmaterialized|aggregator-materialized|aggregator-app-mismatch|aggregator-suite-completed|aggregator-suite-head-mismatch)
+        printf 'META\t1\n'
+        printf 'RUN\tCI\tin_progress\tnone\t%s\tpull_request\t555\n' "$expected_head"
+        exit 0
+        ;;
+      aggregator-no-active-workflow)
+        printf 'META\t1\n'
+        printf 'RUN\tCI\tcompleted\tsuccess\t%s\tpull_request\t555\n' "$expected_head"
+        exit 0
+        ;;
+      aggregator-wrong-workflow)
+        printf 'META\t1\n'
+        printf 'RUN\tOther workflow\tin_progress\tnone\t%s\tpull_request\t555\n' "$expected_head"
+        exit 0
+        ;;
+      aggregator-multiple-active)
+        printf 'META\t2\n'
+        printf 'RUN\tCI\tin_progress\tnone\t%s\tpull_request\t555\n' "$expected_head"
+        printf 'RUN\tCI\tqueued\tnone\t%s\tpull_request\t556\n' "$expected_head"
+        exit 0
+        ;;
+    esac
+  fi
+
+  if [[ "$api_args" == *"repos/sayosomi/nuinuiCAD/check-suites/555"* ||
+        "$api_args" == *"repos/sayosomi/nuinuiCAD/check-suites/556"* ]]; then
+    case "$scenario" in
+      aggregator-unmaterialized|aggregator-materialized)
+        printf 'SUITE\t555\t%s\t15368\tin_progress\tnone\n' "$expected_head"
+        exit 0
+        ;;
+      aggregator-app-mismatch)
+        printf 'SUITE\t555\t%s\t999\tin_progress\tnone\n' "$expected_head"
+        exit 0
+        ;;
+      aggregator-suite-completed)
+        printf 'SUITE\t555\t%s\t15368\tcompleted\tsuccess\n' "$expected_head"
+        exit 0
+        ;;
+      aggregator-suite-head-mismatch)
+        printf 'SUITE\t555\t%s\t15368\tin_progress\tnone\n' "$wrong_head"
+        exit 0
+        ;;
+    esac
+  fi
+
+  if [[ "$api_args" == *"repos/sayosomi/nuinuiCAD/commits/$expected_head/check-runs"* ]]; then
+    case "$scenario" in
+      aggregator-unmaterialized)
+        # Mirrors PR #600 / run 33155382243 before the final required CI job
+        # materialized: sibling jobs exist, but no required CI check run exists.
+        printf 'META\t3\n'
+        printf 'RUN\tClassify changes\t15368\tcompleted\tsuccess\t555\n'
+        printf 'RUN\tNode\t15368\tin_progress\tnone\t555\n'
+        printf 'RUN\tRust + parity\t15368\tcompleted\tskipped\t555\n'
+        exit 0
+        ;;
+      aggregator-materialized)
+        printf 'META\t4\n'
+        printf 'RUN\tClassify changes\t15368\tcompleted\tsuccess\t555\n'
+        printf 'RUN\tNode\t15368\tin_progress\tnone\t555\n'
+        printf 'RUN\tRust + parity\t15368\tcompleted\tskipped\t555\n'
+        printf 'RUN\tCI\t15368\tqueued\tnone\t555\n'
+        exit 0
+        ;;
+    esac
+  fi
+
+  echo "unexpected fake gh REST api invocation: $api_args" >&2
+  exit 2
 fi
 if [[ "$cmd" == "api" && "${1:-}" == "graphql" ]]; then
   print -r -- "$*" > "$state_dir/mutation-args"
@@ -1768,7 +2214,28 @@ FAKE_GH
   grep -q -- 'pullRequestId=PR_kwDOFAKE' "$fake_gh_state/mutation-args" || return 1
   grep -q -- "expectedHeadOid=$fake_head" "$fake_gh_state/mutation-args" || return 1
 
-  for scenario in head-mismatch main-drift wrong-base closed draft checks-missing ci-failure ci-cancelled all-success head-drift-before-mutation main-drift-before-mutation; do
+  echo "TEST: pr-auto-merge PR600-shape unmaterialized required aggregator reservation"
+  out="$(run_fake_auto_merge_case aggregator-unmaterialized 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q 'AUTO-MERGE RESERVED' || {
+    echo "SELFTEST FAIL: unmaterialized required aggregator did not reserve Auto-merge"
+    return 1
+  }
+  [[ -f "$fake_gh_state/mutation-called" ]] || {
+    echo "SELFTEST FAIL: unmaterialized required aggregator did not invoke enable mutation"
+    return 1
+  }
+  [[ ! -e "$fake_gh_state/forbidden-merge-command" ]] || {
+    echo "SELFTEST FAIL: unmaterialized required aggregator invoked a direct merge command"
+    return 1
+  }
+  grep -q -- 'enablePullRequestAutoMerge' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- 'mergeMethod: MERGE' "$fake_gh_state/mutation-args" || return 1
+  grep -q -- "expectedHeadOid=$fake_head" "$fake_gh_state/mutation-args" || return 1
+
+  for scenario in head-mismatch main-drift wrong-base closed draft existing-auto-merge checks-missing branch-config-mismatch branch-config-unbound aggregator-materialized aggregator-no-active-workflow aggregator-wrong-workflow aggregator-multiple-active aggregator-app-mismatch aggregator-suite-completed aggregator-suite-head-mismatch ci-failure ci-cancelled ci-skipping ci-unknown all-success head-drift-before-mutation main-drift-before-mutation; do
     echo "TEST: pr-auto-merge blocks $scenario"
     out="$(run_fake_auto_merge_case "$scenario" 2>&1)"
     if [[ "$?" -eq 0 ]]; then
