@@ -75,7 +75,7 @@ current commands:
 
 `nuinui resume`は、remote保存済みactive implementation branchへfixed laneを再接続するためのnarrow restore commandである。新しいTaskやsliceを開始するcommandではなく、既存branchのlocal / authoritative remote HEADがcaller指定のexact checkpointと一致し、laneがcleanなsafe idle stateで、同branchが別worktreeに占有されていない場合だけ既存branchへswitchする。既に同branch / exact checkpointならidempotent successとする。
 
-`resume`はactive sliceのBaseを更新しない。`origin/main`のmerge / rebase / fast-forward、reset、stash、force-switch、force-push、branch作成、dirty workのrepairを行わない。remoteまたはlocal branchのcheckpoint mismatch、idle state mismatch、worktree occupancy、raceを検出した場合は`BLOCKED:`で停止する。
+`resume`はactive sliceのBaseを更新しない。authoritative remote main確認のためのfetchは`git fetch origin main`へ限定し、`--prune`や他remote-tracking refのcleanupを行わない。`origin/main`のmerge / rebase / fast-forward、reset、stash、force-switch、force-push、branch作成、dirty workのrepairも行わない。remoteまたはlocal branchのcheckpoint mismatch、idle state mismatch、worktree occupancy、raceを検出した場合は`BLOCKED:`で停止する。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only mutation commandである。PRがOPEN / non-draft / base=`main` / exact reviewed headであり、PRのcurrent `baseRefOid`が`expected-main-sha`と一致し、mergeabilityがunambiguousで、required checksにfailure / cancel / skip / unknown stateがなく少なくとも1件pendingである場合だけ予約へ進む。required checksが0件、または全required checksがすでにpassしている場合は`BLOCKED:`で停止する。
 

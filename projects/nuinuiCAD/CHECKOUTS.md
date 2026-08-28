@@ -186,7 +186,7 @@ versioned helperがcurrentなら次の形を使う。
 nuinui resume <main|sub> <SAY-123> <expected-checkpoint-sha> <branch>
 ```
 
-resumeで許されるmutationは、安全条件を満たしたexisting branchへのswitchだけである。local / authoritative remote branchがexact checkpointと一致し、laneがcleanなsafe idle stateで、対象branchが他worktreeにcheckoutされていないことを確認する。既に対象branch / exact checkpointならそのstateをそのまま成功として扱う。
+resumeがworking tree / branchへ行うmutationは、安全条件を満たしたexisting branchへのswitchだけである。authoritative remote mainをfreshに確認するため`git fetch origin main`で`origin/main`を更新してよいが、`--prune`や他remote-tracking refのcleanupは行わない。local / authoritative remote branchがexact checkpointと一致し、laneがcleanなsafe idle stateで、対象branchが他worktreeにcheckoutされていないことを確認する。既に対象branch / exact checkpointならそのstateをそのまま成功として扱う。
 
 resume時にlatest `main`を取り込まない。active sliceのBase checkpointはintegration checkpointまで固定したままとし、reset / stash / force-switch / merge / rebaseによるrepairを行わない。条件が一致しなければ`BLOCKED / UNKNOWN`として停止し、状態を推測して復旧しない。
 

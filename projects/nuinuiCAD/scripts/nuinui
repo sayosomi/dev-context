@@ -477,7 +477,7 @@ resume_lane() {
     return 1
   fi
 
-  git -C "$repo" fetch origin --prune >/dev/null 2>&1 || {
+  git -C "$repo" fetch origin main >/dev/null 2>&1 || {
     echo "ERROR: git fetch failed"
     echo "No branch switch was performed."
     return 1
@@ -1913,6 +1913,26 @@ FAKE_GH
   }
   print -r -- "$out" | grep -q '^ALREADY RESUMED$' || {
     echo "SELFTEST FAIL: idempotent main resume did not report ALREADY RESUMED"
+    return 1
+  }
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
+  echo "TEST: resume does not prune unrelated remote-tracking refs"
+  git -C "$main_repo" branch test/stale-resume-tracking "$advanced_base" || return 1
+  git -C "$main_repo" push -q origin test/stale-resume-tracking:refs/heads/test/stale-resume-tracking || return 1
+  git -C "$main_repo" fetch origin >/dev/null 2>&1 || return 1
+  git -C "$main_repo" show-ref --verify --quiet refs/remotes/origin/test/stale-resume-tracking || {
+    echo "SELFTEST FAIL: stale tracking setup missing"
+    return 1
+  }
+  git -C "$remote" update-ref -d refs/heads/test/stale-resume-tracking || return 1
+
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  git -C "$main_repo" show-ref --verify --quiet refs/remotes/origin/test/stale-resume-tracking || {
+    echo "SELFTEST FAIL: resume pruned unrelated remote-tracking ref"
     return 1
   }
   git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
