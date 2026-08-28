@@ -252,6 +252,16 @@ idle state:
 - `main`: cleanなlocal `main`。release時点で安全ならlatest `origin/main`へfast-forward。
 - `sub`: cleanなlatest `origin/main` detached HEAD。
 
+#### Release checkpoint synchronization
+
+`main` / `sub` releaseが成功してactual local laneが`FREE`になったら、そのfresh release evidenceをcurrent IssueのLinear Commentへ`Lane release checkpoint`として同期する。標準recordの内容は[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)をauthorityとする。
+
+少なくとも、release対象lane、release前に保存済みのexact checkpoint、release結果、release後のidle branch / detached state、release後HEAD、lane state `FREE`を復元できるように記録する。
+
+このcheckpointはIssueが既に`Done`でも記録する。physical laneが`FREE`かどうかはactual local checkout stateで決まり、Linear writeの成否によってrelease自体を巻き戻さない。一方、Implementation chatがexecution lifecycle全体をfinal closureとして宣言する条件には、このLinear synchronizationとpost-write read-backを含める。
+
+pause / handoffでreleaseした場合も、current Issueから次のexecutorがlane release済みstateを復元する必要があるため同じcheckpoint semanticsを使う。
+
 ### e2e
 
 host / fixture cleanupを完了し、cleanを確認してlatest `origin/main` detached HEADへ戻し、最後にmarkerを削除する。
