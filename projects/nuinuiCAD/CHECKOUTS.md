@@ -176,6 +176,20 @@ markerはworking treeへ置かない。E2E releaseの最後に削除する。
 
 新しいTask開始時点で`main`と`sub`が両方FREEなら通常`main`を優先する。`main`がBUSYなら`sub`を使う。並列化自体を目的にTaskを増やさない。
 
+### implementation resume
+
+remote保存済みactive implementation branchをfixed laneへ戻して同じsliceを再開する場合は、新しい`start`として扱わない。mandatory 3-lane preflightのfresh evidenceと、再開対象のIssue / branch / exact pushed checkpointを確定してからresumeする。
+
+versioned helperがcurrentなら次の形を使う。
+
+```text
+nuinui resume <main|sub> <SAY-123> <expected-checkpoint-sha> <branch>
+```
+
+resumeがworking tree / branchへ行うmutationは、安全条件を満たしたexisting branchへのswitchだけである。authoritative remote mainをfreshに確認するため`git fetch origin main`で`origin/main`を更新してよいが、`--prune`や他remote-tracking refのcleanupは行わない。local / authoritative remote branchがexact checkpointと一致し、laneがcleanなsafe idle stateで、対象branchが他worktreeにcheckoutされていないことを確認する。既に対象branch / exact checkpointならそのstateをそのまま成功として扱う。
+
+resume時にlatest `main`を取り込まない。active sliceのBase checkpointはintegration checkpointまで固定したままとし、reset / stash / force-switch / merge / rebaseによるrepairを行わない。条件が一致しなければ`BLOCKED / UNKNOWN`として停止し、状態を推測して復旧しない。
+
 ### e2e
 
 1. `e2e`がFREEであることを確認する。

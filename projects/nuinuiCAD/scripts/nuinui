@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.3.2"
+VERSION="1.3.3"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 GH_BIN="${NUINUI_GH_BIN:-gh}"
@@ -386,6 +386,258 @@ start_lane() {
   echo "  issue=$issue"
   echo "  branch=$branch"
   echo "  base=$expected_base"
+}
+
+
+resume_lane() {
+  local lane="$1"
+  local issue="$2"
+  local expected_checkpoint="$3"
+  local branch="$4"
+  local repo=""
+  local wt_status=""
+  local current_branch=""
+  local current_head=""
+  local remote_main=""
+  local local_branch_head=""
+  local authoritative_branch=""
+  local authoritative_main=""
+  local canonical_repo=""
+  local occupied_path=""
+  local pre_switch_branch=""
+  local pre_switch_head=""
+  local restored_branch=""
+  local restored_head=""
+  local restored_status=""
+
+  case "$lane" in
+    main) repo="$MAIN_WT" ;;
+    sub) repo="$SUB_WT" ;;
+    *) echo "ERROR: lane must be main or sub"; return 2 ;;
+  esac
+
+  if [[ ! "$issue" =~ '^SAY-[0-9]+$' ]]; then
+    echo "ERROR: Issue must look like SAY-123"
+    return 2
+  fi
+  if [[ ! "$expected_checkpoint" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "ERROR: expected checkpoint must be a full 40-character commit SHA"
+    return 2
+  fi
+  if ! git check-ref-format --branch "$branch" >/dev/null 2>&1; then
+    echo "ERROR: invalid branch name"
+    echo "BRANCH: $branch"
+    return 2
+  fi
+
+  if [[ "$(issue_from_branch "$branch")" != "$issue" ]]; then
+    echo "BLOCKED: branch name does not match Issue"
+    echo "ISSUE:  $issue"
+    echo "BRANCH: $branch"
+    return 1
+  fi
+
+  assert_git_repo "$repo" || return 1
+  assert_origin "$repo" "$TARGET_REPO_TOKEN" || return 1
+
+  wt_status="$(git -C "$repo" status --porcelain)"
+  if [[ -n "$wt_status" ]]; then
+    echo "BLOCKED: $lane lane is dirty"
+    git -C "$repo" status --short
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  local_branch_head="$(git -C "$repo" rev-parse "refs/heads/${branch}^{commit}" 2>/dev/null)" || {
+    echo "BLOCKED: local resume branch does not exist"
+    echo "BRANCH: $branch"
+    echo "No branch switch was performed."
+    return 1
+  }
+  if [[ "$local_branch_head" != "$expected_checkpoint" ]]; then
+    echo "BLOCKED: local resume branch is not at expected checkpoint"
+    echo "EXPECTED: $expected_checkpoint"
+    echo "ACTUAL:   $local_branch_head"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  authoritative_branch="$(git -C "$repo" ls-remote --heads origin "refs/heads/$branch" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  if [[ ! "$authoritative_branch" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    echo "BLOCKED: remote resume branch does not exist"
+    echo "BRANCH: origin/$branch"
+    echo "No branch switch was performed."
+    return 1
+  fi
+  if [[ "$authoritative_branch" != "$expected_checkpoint" ]]; then
+    echo "BLOCKED: remote resume branch is not at expected checkpoint"
+    echo "EXPECTED: $expected_checkpoint"
+    echo "ACTUAL:   $authoritative_branch"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  git -C "$repo" fetch origin main >/dev/null 2>&1 || {
+    echo "ERROR: git fetch failed"
+    echo "No branch switch was performed."
+    return 1
+  }
+  remote_main="$(git -C "$repo" rev-parse origin/main)" || return 1
+
+  canonical_repo="$(canonical_path "$repo")" || {
+    echo "BLOCKED: lane path cannot be resolved"
+    echo "PATH: $repo"
+    return 1
+  }
+  occupied_path="$(git -C "$repo" worktree list --porcelain | awk -v target="refs/heads/$branch" -v current="$canonical_repo" '
+    /^worktree / { path=substr($0, 10) }
+    /^branch / {
+      ref=substr($0, 8)
+      if (ref == target && path != current) {
+        print path
+        exit
+      }
+    }
+  ')"
+  if [[ -n "$occupied_path" ]]; then
+    echo "BLOCKED: resume branch is checked out in another worktree"
+    echo "BRANCH:   $branch"
+    echo "WORKTREE: $occupied_path"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  current_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  current_head="$(git -C "$repo" rev-parse HEAD)" || return 1
+
+  if [[ "$current_branch" == "$branch" ]]; then
+    if [[ "$current_head" != "$expected_checkpoint" ]]; then
+      echo "BLOCKED: current resume branch HEAD does not match expected checkpoint"
+      echo "EXPECTED: $expected_checkpoint"
+      echo "ACTUAL:   $current_head"
+      return 1
+    fi
+    echo "ALREADY RESUMED"
+    echo "  lane=$lane"
+    echo "  issue=$issue"
+    echo "  branch=$branch"
+    echo "  head=$current_head"
+    echo "  clean=yes"
+    return 0
+  fi
+
+  if [[ "$lane" == "main" ]]; then
+    if [[ "$current_branch" != "main" ]]; then
+      echo "BLOCKED: main lane is not in safe idle state"
+      echo "EXPECTED: main"
+      echo "ACTUAL:   ${current_branch:-DETACHED}"
+      echo "No branch switch was performed."
+      return 1
+    fi
+  else
+    if [[ -n "$current_branch" ]]; then
+      echo "BLOCKED: sub lane is not in safe idle detached state"
+      echo "ACTUAL: $current_branch"
+      echo "No branch switch was performed."
+      return 1
+    fi
+  fi
+
+  if ! git -C "$repo" merge-base --is-ancestor "$current_head" "$remote_main"; then
+    echo "BLOCKED: idle lane HEAD is not safely contained in origin/main"
+    echo "HEAD:        $current_head"
+    echo "ORIGIN_MAIN: $remote_main"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  pre_switch_branch="$current_branch"
+  pre_switch_head="$current_head"
+
+  wt_status="$(git -C "$repo" status --porcelain)"
+  if [[ -n "$wt_status" ]]; then
+    echo "BLOCKED: lane became dirty before resume"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  current_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  current_head="$(git -C "$repo" rev-parse HEAD)" || return 1
+  if [[ "$current_branch" != "$pre_switch_branch" || "$current_head" != "$pre_switch_head" ]]; then
+    echo "BLOCKED: lane state changed during resume verification"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  local_branch_head="$(git -C "$repo" rev-parse "refs/heads/${branch}^{commit}" 2>/dev/null)" || return 1
+  if [[ "$local_branch_head" != "$expected_checkpoint" ]]; then
+    echo "BLOCKED: local resume branch changed during verification"
+    echo "EXPECTED: $expected_checkpoint"
+    echo "ACTUAL:   $local_branch_head"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  authoritative_branch="$(git -C "$repo" ls-remote --heads origin "refs/heads/$branch" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  if [[ "$authoritative_branch" != "$expected_checkpoint" ]]; then
+    echo "BLOCKED: remote resume branch changed during verification"
+    echo "EXPECTED: $expected_checkpoint"
+    echo "ACTUAL:   ${authoritative_branch:-missing}"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  authoritative_main="$(git -C "$repo" ls-remote origin refs/heads/main 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  if [[ "$authoritative_main" != "$remote_main" ]]; then
+    echo "BLOCKED: origin/main changed during resume verification"
+    echo "EXPECTED: $remote_main"
+    echo "ACTUAL:   ${authoritative_main:-unavailable}"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  occupied_path="$(git -C "$repo" worktree list --porcelain | awk -v target="refs/heads/$branch" -v current="$canonical_repo" '
+    /^worktree / { path=substr($0, 10) }
+    /^branch / {
+      ref=substr($0, 8)
+      if (ref == target && path != current) {
+        print path
+        exit
+      }
+    }
+  ')"
+  if [[ -n "$occupied_path" ]]; then
+    echo "BLOCKED: resume branch became occupied by another worktree"
+    echo "BRANCH:   $branch"
+    echo "WORKTREE: $occupied_path"
+    echo "No branch switch was performed."
+    return 1
+  fi
+
+  if ! git -C "$repo" switch "$branch"; then
+    echo "ERROR: git switch failed"
+    echo "No reset, stash, merge, rebase, or force-switch was attempted."
+    return 1
+  fi
+
+  restored_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  restored_head="$(git -C "$repo" rev-parse HEAD)"
+  restored_status="$(git -C "$repo" status --porcelain)"
+
+  if [[ "$restored_branch" != "$branch" || "$restored_head" != "$expected_checkpoint" || -n "$restored_status" ]]; then
+    echo "BLOCKED: post-resume verification failed"
+    echo "BRANCH: ${restored_branch:-DETACHED}"
+    echo "HEAD:   $restored_head"
+    echo "No further mutation was performed."
+    return 1
+  fi
+
+  echo "RESUMED"
+  echo "  lane=$lane"
+  echo "  issue=$issue"
+  echo "  branch=$restored_branch"
+  echo "  head=$restored_head"
+  echo "  clean=yes"
 }
 
 release_lane() {
@@ -1629,6 +1881,128 @@ FAKE_GH
     return 1
   fi
 
+  echo "TEST: main resume + idempotence"
+  git -C "$main_repo" switch -c test/say-985-resume-main "$advanced_base" >/dev/null 2>&1 || return 1
+  echo resume-main >> "$main_repo/file.txt"
+  git -C "$main_repo" add file.txt
+  git -C "$main_repo" commit -q -m resume-main
+  checkpoint="$(git -C "$main_repo" rev-parse HEAD)"
+  git -C "$main_repo" push -q origin HEAD:refs/heads/test/say-985-resume-main || return 1
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q '^RESUMED$' || {
+    echo "SELFTEST FAIL: main resume did not report RESUMED"
+    return 1
+  }
+  [[ "$(git -C "$main_repo" branch --show-current)" == "test/say-985-resume-main" ]] || {
+    echo "SELFTEST FAIL: main resume did not select target branch"
+    return 1
+  }
+  [[ "$(git -C "$main_repo" rev-parse HEAD)" == "$checkpoint" ]] || {
+    echo "SELFTEST FAIL: main resume did not reach expected checkpoint"
+    return 1
+  }
+
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q '^ALREADY RESUMED$' || {
+    echo "SELFTEST FAIL: idempotent main resume did not report ALREADY RESUMED"
+    return 1
+  }
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
+  echo "TEST: resume does not prune unrelated remote-tracking refs"
+  git -C "$main_repo" branch test/stale-resume-tracking "$advanced_base" || return 1
+  git -C "$main_repo" push -q origin test/stale-resume-tracking:refs/heads/test/stale-resume-tracking || return 1
+  git -C "$main_repo" fetch origin >/dev/null 2>&1 || return 1
+  git -C "$main_repo" show-ref --verify --quiet refs/remotes/origin/test/stale-resume-tracking || {
+    echo "SELFTEST FAIL: stale tracking setup missing"
+    return 1
+  }
+  git -C "$remote" update-ref -d refs/heads/test/stale-resume-tracking || return 1
+
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  git -C "$main_repo" show-ref --verify --quiet refs/remotes/origin/test/stale-resume-tracking || {
+    echo "SELFTEST FAIL: resume pruned unrelated remote-tracking ref"
+    return 1
+  }
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
+  echo "TEST: resume blocks false-positive Issue token"
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-9850-wrong-issue 2>&1)"
+  if [[ "$?" -eq 0 ]]; then
+    print -r -- "$out"
+    echo "SELFTEST FAIL: resume accepted a branch for a different Issue"
+    return 1
+  fi
+  print -r -- "$out" | grep -q 'BLOCKED: branch name does not match Issue' || {
+    echo "SELFTEST FAIL: false-positive Issue token was not rejected"
+    return 1
+  }
+
+  echo "TEST: resume blocks dirty lane"
+  echo dirty-resume >> "$main_repo/file.txt"
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)"
+  if [[ "$?" -eq 0 ]]; then
+    print -r -- "$out"
+    echo "SELFTEST FAIL: resume accepted dirty lane"
+    return 1
+  fi
+  print -r -- "$out" | grep -q 'BLOCKED:' || {
+    echo "SELFTEST FAIL: dirty resume did not report BLOCKED"
+    return 1
+  }
+  [[ "$(git -C "$main_repo" branch --show-current)" == "main" ]] || {
+    echo "SELFTEST FAIL: dirty resume changed branch"
+    return 1
+  }
+  git -C "$main_repo" restore -- file.txt
+
+  echo "TEST: resume blocks mismatched local branch checkpoint"
+  git -C "$main_repo" branch -f test/say-985-resume-main "$advanced_base" >/dev/null || return 1
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)"
+  if [[ "$?" -eq 0 ]]; then
+    print -r -- "$out"
+    echo "SELFTEST FAIL: resume accepted mismatched local branch checkpoint"
+    return 1
+  fi
+  print -r -- "$out" | grep -q 'BLOCKED: local resume branch is not at expected checkpoint' || {
+    echo "SELFTEST FAIL: local checkpoint mismatch was not identified"
+    return 1
+  }
+  [[ "$(git -C "$main_repo" branch --show-current)" == "main" ]] || {
+    echo "SELFTEST FAIL: mismatched resume changed branch"
+    return 1
+  }
+  git -C "$main_repo" branch -f test/say-985-resume-main "$checkpoint" >/dev/null || return 1
+
+  echo "TEST: resume blocks branch occupied by another worktree"
+  git -C "$main_repo" worktree add -q "$root/resume-other" test/say-985-resume-main || return 1
+  out="$("$SCRIPT_PATH" resume main SAY-985 "$checkpoint" test/say-985-resume-main 2>&1)"
+  if [[ "$?" -eq 0 ]]; then
+    print -r -- "$out"
+    echo "SELFTEST FAIL: resume accepted branch occupied by another worktree"
+    return 1
+  fi
+  print -r -- "$out" | grep -q 'BLOCKED: resume branch is checked out in another worktree' || {
+    echo "SELFTEST FAIL: occupied resume branch was not identified"
+    return 1
+  }
+  [[ "$(git -C "$main_repo" branch --show-current)" == "main" ]] || {
+    echo "SELFTEST FAIL: occupied resume changed branch"
+    return 1
+  }
+  git -C "$main_repo" worktree remove "$root/resume-other" || return 1
+
   echo "TEST: remote branch already exists blocked"
   git -C "$main_repo" branch test/say-996-remote "$advanced_base"
   git -C "$main_repo" push -q origin test/say-996-remote:refs/heads/test/say-996-remote || return 1
@@ -1741,6 +2115,45 @@ FAKE_GH
   "$SCRIPT_PATH" e2e-release >/dev/null || return 1
   git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
 
+  echo "TEST: sub resume + idempotence"
+  git -C "$sub_repo" fetch origin --prune >/dev/null 2>&1 || return 1
+  git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
+  base="$(git -C "$sub_repo" rev-parse HEAD)"
+  git -C "$sub_repo" switch -c test/say-986-resume-sub "$base" >/dev/null 2>&1 || return 1
+  echo resume-sub >> "$sub_repo/file.txt"
+  git -C "$sub_repo" add file.txt
+  git -C "$sub_repo" commit -q -m resume-sub
+  checkpoint="$(git -C "$sub_repo" rev-parse HEAD)"
+  git -C "$sub_repo" push -q origin HEAD:refs/heads/test/say-986-resume-sub || return 1
+  git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
+
+  out="$("$SCRIPT_PATH" resume sub SAY-986 "$checkpoint" test/say-986-resume-sub 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q '^RESUMED$' || {
+    echo "SELFTEST FAIL: sub resume did not report RESUMED"
+    return 1
+  }
+  [[ "$(git -C "$sub_repo" branch --show-current)" == "test/say-986-resume-sub" ]] || {
+    echo "SELFTEST FAIL: sub resume did not select target branch"
+    return 1
+  }
+  [[ "$(git -C "$sub_repo" rev-parse HEAD)" == "$checkpoint" ]] || {
+    echo "SELFTEST FAIL: sub resume did not reach expected checkpoint"
+    return 1
+  }
+
+  out="$("$SCRIPT_PATH" resume sub SAY-986 "$checkpoint" test/say-986-resume-sub 2>&1)" || {
+    print -r -- "$out"
+    return 1
+  }
+  print -r -- "$out" | grep -q '^ALREADY RESUMED$' || {
+    echo "SELFTEST FAIL: idempotent sub resume did not report ALREADY RESUMED"
+    return 1
+  }
+  git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
+
   echo "TEST: sub start/dirty release/clean release"
   git -C "$sub_repo" fetch origin --prune >/dev/null 2>&1 || return 1
   git -C "$sub_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
@@ -1801,6 +2214,7 @@ FAKE_GH
 | `nuinui preflight` | check |
 | `nuinui verify` | check |
 | `nuinui start` | check |
+| `nuinui resume` | check |
 | `nuinui release` | check |
 | `nuinui pr-auto-merge` | check |
 | `nuinui e2e-start` | check |
@@ -1928,6 +2342,10 @@ case "${1:-}" in
     [[ $# -eq 5 ]] || { echo "Usage: $0 start <main|sub> <SAY-123> <expected-base-sha> <branch>"; exit 2; }
     start_lane "$2" "$3" "$4" "$5"
     ;;
+  resume)
+    [[ $# -eq 5 ]] || { echo "Usage: $0 resume <main|sub> <SAY-123> <expected-checkpoint-sha> <branch>"; exit 2; }
+    resume_lane "$2" "$3" "$4" "$5"
+    ;;
   release)
     [[ $# -eq 3 ]] || { echo "Usage: $0 release <main|sub> <merged-checkpoint-sha>"; exit 2; }
     release_lane "$2" "$3"
@@ -1972,6 +2390,7 @@ case "${1:-}" in
     echo "  preflight"
     echo "  verify <main|sub> <SAY-123> <expected-base-sha> <branch>"
     echo "  start <main|sub> <SAY-123> <expected-base-sha> <branch>"
+    echo "  resume <main|sub> <SAY-123> <expected-checkpoint-sha> <branch>"
     echo "  release <main|sub> <merged-checkpoint-sha>"
     echo "  pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>"
     echo "  e2e-start <SAY-123> <tested-ref>"
