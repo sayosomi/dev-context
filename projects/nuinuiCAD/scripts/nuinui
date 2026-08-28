@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_STATUS_HELPER="${NUINUI_E2E_STATUS_HELPER-${SCRIPT_PATH:A:h}/nuinui-e2e-prepare}"
 
@@ -374,6 +374,7 @@ release_lane() {
   local repo=""
   local dirty=""
   local current_head=""
+  local current_branch=""
   local remote_main=""
   local local_main=""
 
@@ -400,11 +401,24 @@ release_lane() {
   fi
 
   current_head="$(git -C "$repo" rev-parse HEAD)"
+  current_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   if [[ "$current_head" != "$checkpoint" ]]; then
-    echo "BLOCKED: current HEAD does not match checkpoint"
-    echo "HEAD:       $current_head"
-    echo "CHECKPOINT: $checkpoint"
-    return 1
+    if [[ "$lane" == "main" && "$current_branch" != "main" ]]; then
+      echo "BLOCKED: main lane is neither at checkpoint nor on idle branch main"
+      echo "BRANCH:     ${current_branch:-DETACHED}"
+      echo "HEAD:       $current_head"
+      echo "CHECKPOINT: $checkpoint"
+      echo "No release mutation was performed."
+      return 1
+    fi
+    if [[ "$lane" == "sub" && -n "$current_branch" ]]; then
+      echo "BLOCKED: sub lane is neither at checkpoint nor at idle detached HEAD"
+      echo "BRANCH:     $current_branch"
+      echo "HEAD:       $current_head"
+      echo "CHECKPOINT: $checkpoint"
+      echo "No release mutation was performed."
+      return 1
+    fi
   fi
 
   git -C "$repo" fetch origin --prune >/dev/null 2>&1 || { echo "ERROR: git fetch failed"; return 1; }
@@ -431,6 +445,12 @@ release_lane() {
     git -C "$repo" switch main || { echo "ERROR: could not switch to main"; return 1; }
     git -C "$repo" merge --ff-only origin/main || { echo "ERROR: fast-forward to origin/main failed"; return 1; }
   else
+    if [[ "$current_head" != "$checkpoint" ]] && ! git -C "$repo" merge-base --is-ancestor "$current_head" "$remote_main"; then
+      echo "BLOCKED: detached sub HEAD cannot safely advance to origin/main"
+      echo "HEAD:        $current_head"
+      echo "ORIGIN_MAIN: $remote_main"
+      return 1
+    fi
     git -C "$repo" switch --detach origin/main || { echo "ERROR: could not detach sub lane at origin/main"; return 1; }
   fi
 
@@ -438,6 +458,7 @@ release_lane() {
   echo "  lane=$lane"
   echo "  head=$(git -C "$repo" rev-parse HEAD)"
   echo "  branch=$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)"
+  echo "  checkpoint=$checkpoint"
 }
 
 e2e_start() {
@@ -1229,6 +1250,28 @@ self_test() (
   git -C "$main_repo" push -q origin HEAD:main || return 1
   "$SCRIPT_PATH" release main "$checkpoint" >/dev/null || return 1
 
+  echo "TEST: main stale idle post-merge release"
+  git -C "$main_repo" switch -c selftest-stale-main >/dev/null 2>&1 || return 1
+  echo stale-main >> "$main_repo/file.txt"
+  git -C "$main_repo" add file.txt
+  git -C "$main_repo" commit -q -m stale-main
+  checkpoint="$(git -C "$main_repo" rev-parse HEAD)"
+  git -C "$main_repo" push -q origin HEAD:main || return 1
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+  "$SCRIPT_PATH" release main "$checkpoint" >/dev/null || return 1
+  [[ "$(git -C "$main_repo" rev-parse HEAD)" == "$checkpoint" ]] || {
+    echo "SELFTEST FAIL: stale idle main release did not reach merged checkpoint"
+    return 1
+  }
+
+  echo "TEST: main unrelated branch release blocked"
+  git -C "$main_repo" switch -c selftest-unrelated-main "$advanced_base" >/dev/null 2>&1 || return 1
+  if "$SCRIPT_PATH" release main "$checkpoint" >/dev/null 2>&1; then
+    echo "SELFTEST FAIL: unrelated main branch was released"
+    return 1
+  fi
+  git -C "$main_repo" switch main >/dev/null 2>&1 || return 1
+
   echo "TEST: e2e marker/start/release"
   git -C "$e2e_repo" fetch origin --prune >/dev/null 2>&1 || return 1
   git -C "$e2e_repo" switch --detach origin/main >/dev/null 2>&1 || return 1
@@ -1289,6 +1332,21 @@ self_test() (
   fi
   git -C "$sub_repo" restore -- file.txt
   "$SCRIPT_PATH" release sub "$checkpoint" >/dev/null || return 1
+
+  echo "TEST: sub stale detached post-merge release"
+  base="$(git -C "$sub_repo" rev-parse HEAD)"
+  git -C "$sub_repo" switch -c selftest-stale-sub >/dev/null 2>&1 || return 1
+  echo stale-sub >> "$sub_repo/file.txt"
+  git -C "$sub_repo" add file.txt
+  git -C "$sub_repo" commit -q -m stale-sub
+  checkpoint="$(git -C "$sub_repo" rev-parse HEAD)"
+  git -C "$sub_repo" push -q origin HEAD:main || return 1
+  git -C "$sub_repo" switch --detach "$base" >/dev/null 2>&1 || return 1
+  "$SCRIPT_PATH" release sub "$checkpoint" >/dev/null || return 1
+  [[ "$(git -C "$sub_repo" rev-parse HEAD)" == "$checkpoint" ]] || {
+    echo "SELFTEST FAIL: stale detached sub release did not reach merged checkpoint"
+    return 1
+  }
 
   echo "TEST: context-sync"
   git clone -q "$remote" "$context_repo" || return 1
