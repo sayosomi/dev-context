@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.1.1"
+VERSION="1.1.0"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
@@ -662,7 +662,7 @@ EOF
     --skip-sessions-welcome \
     --skip-release-notes \
     --disable-workspace-trust \
-    "$prepared_fixture" </dev/null >/dev/null 2>&1 &
+    "$prepared_fixture" >/dev/null 2>&1 &
   vscode_pid=$!
 
   for _ in $(seq 1 120); do
