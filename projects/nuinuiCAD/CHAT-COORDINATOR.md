@@ -36,6 +36,8 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 ### Parallel admission gate
 
+Humanが特定Issueのlane移動・再配置を明示せず、fresh lane stateとともにimplementation laneが`FREE`になったことを報告した場合、その報告を既存`BUSY` Issueのlane migration要求として解釈しない。既存`BUSY` laneのownershipを維持したまま、このsectionのparallel admission gateに従って`FREE` laneへ開始可能な別Issueを評価する。
+
 一方のimplementation laneが`BUSY`で、もう一方が`FREE`なとき、CoordinatorはReady Queueの優先順位だけで2本目を開始しない。先に**parallel interference risk**を評価し、相手laneと独立して進められる候補だけをparallel start候補へ入れる。
 
 `FREE` laneはcapacityでありutilization targetではない。安全なparallel candidateがなければ、laneを`FREE`のまま残すことを正常な選択肢とする。
