@@ -61,6 +61,8 @@ repository settingでrequired `CI`とGitHub Auto-mergeが有効な場合、block
 - reservation直前にhead / base / expected main / required CI stateを再確認し、`expectedHeadOid`でheadを固定する。GitHub上でauto-mergeが有効になったことをread-backする。
 - precondition確認後にCIが完了したraceでは、`enablePullRequestAutoMerge`の`clean status` rejectionをsafe stopとして扱い、direct mergeへfallbackしない。
 
+reservation helperが`BLOCKED: all required checks are already complete`で停止したことは、reservation-only pathが成立しなかったことだけを意味し、CI failure、implementation pause、lane release、Issueの`Todo` transitionを意味しない。helper自身からdirect mergeへfallbackしてはならないが、Humanがその`BLOCKED`結果を返してcurrent executionを明示resumeした場合は、それを新しいcontinuation boundaryとしてPR / head / base / main / CI / mergeabilityをfreshに確認する。required CIがsuccessで通常のmerge gateを満たすなら、既存のmerge authorizationに基づきordinary manual merge pathを継続し、追加のmerge確認を要求しない。local lane releaseの依頼または成功だけからIssue statusを`Todo`へ変更せず、statusはmerge state / remaining acceptance / Manual E2E stateから独立に決定する。
+
 予約後、agentはCI完了・mergeをwait / pollせずexecution trackを終了する。GitHubのrequired CIがgreenならmergeし、merge Discord通知をexisting routeで送る。CI non-successなら同じDiscord routeのfailure通知が送られ、Humanが必要なら明示的にCodexをresumeする。Discord通知は自動resume、CI rerun、cancel、failure diagnosis、repair、merge、Linear updateを許可しない。
 
 Humanがfailure後に明示resumeした時だけ、fresh PR/head/base/Actions/contract evidenceから再開する。failure evidenceによりapproved contract・scope・current architecture内の次の修正が一意なら継続してよい。複数の妥当なimplementation案、product / UX / contract判断、scope拡大、authority conflict、architecture owner変更、acceptance変更、Manual E2E judgment、destructive / external-state riskではHumanへ再承認を求める。同一failureの反復やflaky / retry-onlyは根拠なくgreenまでretryせず、まずCI incident routeとmodel escalationを使う。PR/head/base identity ambiguity、auth / permission、GitHub outageは実装判断ではなく`BLOCKED`として停止・報告する。
