@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-  echo 'Usage: generate-nuinui <output-path>' >&2
+  echo 'Usage: generate-nuinui-handoff-check <output-path>' >&2
   exit 2
 }
 
@@ -12,43 +12,43 @@ output=$1
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
 ownership_source=$script_dir/nuinui-src/ownership-schema.sh
-body_source=$script_dir/nuinui-src/nuinui-body.sh
-artifact_path=$script_dir/nuinui
+body_source=$script_dir/nuinui-handoff-check-src/handoff-body.sh
+artifact_path=$script_dir/nuinui-handoff-check
 
 [ -f "$ownership_source" ] || {
-  echo "generate-nuinui: ownership source is missing: $ownership_source" >&2
+  echo "generate-nuinui-handoff-check: ownership source is missing: $ownership_source" >&2
   exit 1
 }
 [ -f "$body_source" ] || {
-  echo "generate-nuinui: body source is missing: $body_source" >&2
+  echo "generate-nuinui-handoff-check: body source is missing: $body_source" >&2
   exit 1
 }
 
 output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
-  echo "generate-nuinui: output directory does not exist: $(dirname "$output")" >&2
+  echo "generate-nuinui-handoff-check: output directory does not exist: $(dirname "$output")" >&2
   exit 1
 }
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
   "$ownership_source"|"$body_source"|"$artifact_path")
-    echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
+    echo 'generate-nuinui-handoff-check: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
 esac
 
 [ ! -d "$output_path" ] || {
-  echo "generate-nuinui: output is a directory: $output_path" >&2
+  echo "generate-nuinui-handoff-check: output is a directory: $output_path" >&2
   exit 1
 }
 [ ! -L "$output_path" ] || {
-  echo "generate-nuinui: refusing to overwrite a symbolic link: $output_path" >&2
+  echo "generate-nuinui-handoff-check: refusing to overwrite a symbolic link: $output_path" >&2
   exit 1
 }
 
 temporary_path=$output_path.tmp.$$
 [ ! -e "$temporary_path" ] || {
-  echo "generate-nuinui: temporary output already exists: $temporary_path" >&2
+  echo "generate-nuinui-handoff-check: temporary output already exists: $temporary_path" >&2
   exit 1
 }
 
@@ -60,8 +60,6 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# The source order is explicit and deterministic. The ownership schema must
-# precede every consumer that invokes it.
 umask 077
 cat "$ownership_source" "$body_source" > "$temporary_path"
 chmod 755 "$temporary_path"

@@ -87,6 +87,38 @@ grep -q "^  branch=$BRANCH$" "$ROOT/out" || fail "verified handoff did not use d
 if grep -q "$OLD_BRANCH" "$ROOT/out"; then fail "stale same-Issue branch leaked into verified identity"; fi
 echo "PASS: exact claim ignores unrelated stale same-Issue branch"
 
+cp "$SLOT/state" "$ROOT/valid-state"
+sed 's/^version=1$/version=2/' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot unsupported version" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+sed '/^claim=/d' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot missing key" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+cp "$ROOT/valid-state" "$SLOT/state"
+printf 'claim=duplicate-claim\n' >> "$SLOT/state"
+expect_blocked "active slot duplicate key" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+cp "$ROOT/valid-state" "$SLOT/state"
+printf 'unknown=value\n' >> "$SLOT/state"
+expect_blocked "active slot unknown key" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+sed 's/^issue=SAY-167$/issue=NOT-167/' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot invalid Issue" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+sed 's#^branch=.*#branch=not a branch#' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot invalid branch" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+sed 's#^branch=.*#branch=sayosomi/say-999-other-branch#' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot Issue branch mismatch" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+sed 's/^base=.*/base=not-a-sha/' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot invalid Base" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+sed 's/^claim=.*/claim=bad/' "$ROOT/valid-state" > "$SLOT/state"
+expect_blocked "active slot invalid claim" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+
+cp "$ROOT/valid-state" "$SLOT/state"
+
 expect_blocked "wrong claim" "$HELPER" main "$ISSUE" claim-cp1-12345678 "$CHECKPOINT" "$BASE" exact
 expect_blocked "wrong checkpoint" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
 
