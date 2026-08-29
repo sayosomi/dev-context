@@ -1,0 +1,261 @@
+#!/bin/sh
+set -eu
+
+HELPER="${1:-$(cd "$(dirname "$0")" && pwd -P)/nuinui}"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-lifecycle.XXXXXX")"
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+REMOTE="$ROOT/remote.git"
+SEED="$ROOT/seed"
+MAIN="$ROOT/main"
+SUB="$ROOT/sub"
+E2E="$ROOT/e2e"
+
+fail() { echo "SELFTEST FAIL: $*"; exit 1; }
+assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
+gitdir() { git -C "$1" rev-parse --absolute-git-dir; }
+slot_state() { printf '%s/nuinui-implementation-slot/state\n' "$(gitdir "$1")"; }
+lane_refs() { git -C "$1" for-each-ref --format='%(refname) %(objectname)' | sort; }
+
+expect_begin_blocked() {
+  name="$1"
+  lane="$2"
+  shift 2
+  before_branch="$(git -C "$lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  before_head="$(git -C "$lane" rev-parse HEAD)"
+  before_status="$(git -C "$lane" status --porcelain)"
+  before_refs="$(lane_refs "$MAIN")"
+  before_slot="$(if [ -f "$(slot_state "$lane")" ]; then cat "$(slot_state "$lane")"; else echo absent; fi)"
+  if "$HELPER" begin "$@" >"$ROOT/out" 2>&1; then
+    cat "$ROOT/out"
+    fail "$name unexpectedly succeeded"
+  fi
+  grep -q 'BLOCKED' "$ROOT/out" || { cat "$ROOT/out"; fail "$name did not fail closed"; }
+  after_branch="$(git -C "$lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  after_head="$(git -C "$lane" rev-parse HEAD)"
+  after_status="$(git -C "$lane" status --porcelain)"
+  after_refs="$(lane_refs "$MAIN")"
+  after_slot="$(if [ -f "$(slot_state "$lane")" ]; then cat "$(slot_state "$lane")"; else echo absent; fi)"
+  [ "$before_branch" = "$after_branch" ] || fail "$name changed branch"
+  [ "$before_head" = "$after_head" ] || fail "$name changed HEAD"
+  [ "$before_status" = "$after_status" ] || fail "$name changed working tree"
+  [ "$before_refs" = "$after_refs" ] || fail "$name changed local refs"
+  [ "$before_slot" = "$after_slot" ] || fail "$name changed durable slot"
+  echo "PASS: $name"
+}
+
+expect_old_signature_rejected() {
+  name="$1"
+  shift
+  if "$HELPER" "$@" >"$ROOT/out" 2>&1; then
+    cat "$ROOT/out"
+    fail "$name unexpectedly succeeded"
+  fi
+  echo "PASS: $name"
+}
+
+merge_topic_into_main() {
+  branch="$1"
+  git -C "$MAIN" push -q -u origin "$branch"
+  git -C "$SEED" fetch -q origin "$branch"
+  git -C "$SEED" switch -q main
+  git -C "$SEED" merge -q --ff-only "origin/$branch"
+  git -C "$SEED" push -q origin main
+}
+
+sync_free_lanes() {
+  git -C "$MAIN" fetch -q origin main
+  git -C "$MAIN" switch -q main
+  git -C "$MAIN" merge -q --ff-only origin/main
+  git -C "$SUB" fetch -q origin main
+  git -C "$SUB" switch -q --detach origin/main
+}
+
+release_main() {
+  checkpoint="$1"
+  claim="$2"
+  branch="$3"
+  merge_topic_into_main "$branch"
+  "$HELPER" release main "$checkpoint" "$claim" >"$ROOT/release.out"
+  assert_line "$(cat "$ROOT/release.out")" '^IMPLEMENTATION RELEASED$' 'release did not succeed'
+  assert_line "$(cat "$ROOT/release.out")" '^lane=main$' 'release missing lane'
+  assert_line "$(cat "$ROOT/release.out")" "^saved_checkpoint=$checkpoint$" 'release missing saved checkpoint'
+  assert_line "$(cat "$ROOT/release.out")" "^released_claim=$claim$" 'release missing claim'
+  assert_line "$(cat "$ROOT/release.out")" "^released_branch=$branch$" 'release missing branch'
+  assert_line "$(cat "$ROOT/release.out")" '^idle_branch=main$' 'release missing idle branch'
+  assert_line "$(cat "$ROOT/release.out")" '^idle_head=[0-9a-fA-F]{40}$' 'release missing idle HEAD'
+  assert_line "$(cat "$ROOT/release.out")" '^origin_main=[0-9a-fA-F]{40}$' 'release missing origin main'
+  assert_line "$(cat "$ROOT/release.out")" '^clean=yes$' 'release missing clean state'
+  assert_line "$(cat "$ROOT/release.out")" '^state=FREE$' 'release missing FREE state'
+}
+
+git init -q --bare "$REMOTE"
+git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
+git init -q -b main "$SEED"
+git -C "$SEED" config user.name test
+git -C "$SEED" config user.email test@example.invalid
+printf 'base\n' > "$SEED/a"
+git -C "$SEED" add a
+git -C "$SEED" commit -qm base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -qu origin main
+git clone -q "$REMOTE" "$MAIN"
+git -C "$MAIN" config user.name test
+git -C "$MAIN" config user.email test@example.invalid
+git -C "$MAIN" worktree add -q --detach "$SUB" origin/main
+git -C "$MAIN" worktree add -q --detach "$E2E" origin/main
+
+export NUINUI_SELFTEST=1
+export NUINUI_MAIN_WT="$MAIN"
+export NUINUI_SUB_WT="$SUB"
+export NUINUI_E2E_WT="$E2E"
+
+"$HELPER" lane-init main >/dev/null
+"$HELPER" lane-init sub >/dev/null
+BASE="$(git -C "$MAIN" rev-parse origin/main)"
+
+expect_old_signature_rejected 'old claimless resume signature' resume main SAY-1 "$BASE" old-branch
+expect_old_signature_rejected 'old claimless release signature' release main "$BASE"
+
+BRANCH1=sayosomi/say-201-begin-free
+OUT1=$("$HELPER" begin main SAY-201 "$BASE" "$BRANCH1" FREE)
+assert_line "$OUT1" '^IMPLEMENTATION STARTED$' 'FREE peer begin missing header'
+assert_line "$OUT1" '^lane=main$' 'FREE peer begin missing lane'
+assert_line "$OUT1" '^issue=SAY-201$' 'FREE peer begin missing Issue'
+assert_line "$OUT1" "^branch=$BRANCH1$" 'FREE peer begin missing branch'
+assert_line "$OUT1" "^base=$BASE$" 'FREE peer begin missing base'
+assert_line "$OUT1" '^checkpoint=[0-9a-fA-F]{40}$' 'FREE peer begin missing checkpoint'
+assert_line "$OUT1" '^claim=[0-9A-Za-z][0-9A-Za-z._-]{7,127}$' 'FREE peer begin missing claim'
+assert_line "$OUT1" '^clean=yes$' 'FREE peer begin missing clean state'
+assert_line "$OUT1" '^state=BUSY$' 'FREE peer begin missing BUSY state'
+assert_line "$OUT1" '^peer_lane=sub$' 'FREE peer begin missing peer lane'
+assert_line "$OUT1" '^peer_state=FREE$' 'FREE peer begin wrong peer state'
+assert_line "$OUT1" '^peer_issue=-$' 'FREE peer begin wrong peer Issue'
+assert_line "$OUT1" '^preflight=PASS$' 'FREE peer begin missing preflight proof'
+CLAIM1="$(printf '%s\n' "$OUT1" | sed -n 's/^claim=//p')"
+CHECKPOINT1="$(printf '%s\n' "$OUT1" | sed -n 's/^checkpoint=//p')"
+release_main "$CHECKPOINT1" "$CLAIM1" "$BRANCH1"
+
+sync_free_lanes
+BRANCH2=sayosomi/say-202-busy-peer
+OUT2=$("$HELPER" begin sub SAY-202 "$CHECKPOINT1" "$BRANCH2" FREE)
+assert_line "$OUT2" '^peer_lane=main$' 'BUSY peer setup missing peer lane'
+assert_line "$OUT2" '^peer_state=FREE$' 'BUSY peer setup expected free main'
+CLAIM2="$(printf '%s\n' "$OUT2" | sed -n 's/^claim=//p')"
+CHECKPOINT2="$(printf '%s\n' "$OUT2" | sed -n 's/^checkpoint=//p')"
+
+BRANCH3=sayosomi/say-203-matching-peer
+OUT3=$("$HELPER" begin main SAY-203 "$CHECKPOINT2" "$BRANCH3" SAY-202)
+assert_line "$OUT3" '^peer_lane=sub$' 'matching BUSY peer begin missing peer lane'
+assert_line "$OUT3" '^peer_state=BUSY$' 'matching BUSY peer begin missing BUSY state'
+assert_line "$OUT3" '^peer_issue=SAY-202$' 'matching BUSY peer begin missing exact Issue'
+CLAIM3="$(printf '%s\n' "$OUT3" | sed -n 's/^claim=//p')"
+CHECKPOINT3="$(printf '%s\n' "$OUT3" | sed -n 's/^checkpoint=//p')"
+
+release_main "$CHECKPOINT3" "$CLAIM3" "$BRANCH3"
+expect_begin_blocked 'wrong expected peer Issue' "$MAIN" main SAY-204 "$CHECKPOINT3" sayosomi/say-204-wrong-peer SAY-999
+expect_begin_blocked 'expected FREE but peer is BUSY' "$MAIN" main SAY-204 "$CHECKPOINT3" sayosomi/say-204-expected-free FREE
+
+BRANCH4=sayosomi/say-204-target-busy
+OUT4=$("$HELPER" begin main SAY-204 "$CHECKPOINT3" "$BRANCH4" SAY-202)
+CLAIM4="$(printf '%s\n' "$OUT4" | sed -n 's/^claim=//p')"
+CHECKPOINT4="$(printf '%s\n' "$OUT4" | sed -n 's/^checkpoint=//p')"
+expect_begin_blocked 'target is not FREE' "$MAIN" main SAY-205 "$CHECKPOINT4" sayosomi/say-205-target-busy FREE
+release_main "$CHECKPOINT4" "$CLAIM4" "$BRANCH4"
+sync_free_lanes
+
+printf 'dirty\n' > "$E2E/untracked"
+expect_begin_blocked 'BLOCKED fixed-lane state' "$MAIN" main SAY-206 "$CHECKPOINT4" sayosomi/say-206-blocked-fixed-lane SAY-202
+rm "$E2E/untracked"
+
+git -C "$SUB" push -q -u origin "$BRANCH2"
+"$HELPER" release sub "$CHECKPOINT2" "$CLAIM2" >"$ROOT/sub-release.out"
+assert_line "$(cat "$ROOT/sub-release.out")" '^IMPLEMENTATION RELEASED$' 'sub release did not succeed'
+sync_free_lanes
+
+BRANCH5=sayosomi/say-207-resume
+OUT5=$("$HELPER" begin sub SAY-207 "$CHECKPOINT4" "$BRANCH5" FREE)
+CLAIM5="$(printf '%s\n' "$OUT5" | sed -n 's/^claim=//p')"
+CHECKPOINT5="$(printf '%s\n' "$OUT5" | sed -n 's/^checkpoint=//p')"
+git -C "$SUB" push -q -u origin "$BRANCH5"
+RESUME5=$("$HELPER" resume sub SAY-207 "$CHECKPOINT4" "$CHECKPOINT5" "$BRANCH5" "$CLAIM5")
+assert_line "$RESUME5" '^IMPLEMENTATION RESUMED$' 'resume missing header'
+assert_line "$RESUME5" '^lane=sub$' 'resume missing lane'
+assert_line "$RESUME5" '^issue=SAY-207$' 'resume missing Issue'
+assert_line "$RESUME5" "^branch=$BRANCH5$" 'resume missing branch'
+assert_line "$RESUME5" "^base=$CHECKPOINT4$" 'resume missing base'
+assert_line "$RESUME5" "^checkpoint=$CHECKPOINT5$" 'resume missing checkpoint'
+assert_line "$RESUME5" "^claim=$CLAIM5$" 'resume missing claim'
+assert_line "$RESUME5" '^clean=yes$' 'resume missing clean state'
+assert_line "$RESUME5" '^state=BUSY$' 'resume missing BUSY state'
+"$HELPER" release sub "$CHECKPOINT5" "$CLAIM5" >/dev/null
+sync_free_lanes
+
+BRANCH6=sayosomi/say-208-unmerged
+OUT6=$("$HELPER" begin main SAY-208 "$CHECKPOINT4" "$BRANCH6" FREE)
+CLAIM6="$(printf '%s\n' "$OUT6" | sed -n 's/^claim=//p')"
+printf 'unmerged\n' > "$MAIN/unmerged"
+git -C "$MAIN" add unmerged
+git -C "$MAIN" commit -qm unmerged
+CHECKPOINT6="$(git -C "$MAIN" rev-parse HEAD)"
+git -C "$MAIN" push -q -u origin "$BRANCH6"
+if "$HELPER" release main "$CHECKPOINT6" "$CLAIM6" >"$ROOT/unmerged-release.out" 2>&1; then
+  cat "$ROOT/unmerged-release.out"
+  fail 'unmerged release unexpectedly succeeded'
+fi
+[ -f "$(slot_state "$MAIN")" ] || fail 'failed unmerged release dropped durable ownership'
+echo 'PASS: failed unmerged release retains ownership'
+merge_topic_into_main "$BRANCH6"
+"$HELPER" release main "$CHECKPOINT6" "$CLAIM6" >/dev/null
+sync_free_lanes
+
+BASE7="$(git -C "$MAIN" rev-parse origin/main)"
+BRANCH7=sayosomi/say-209-low-level-start
+START7=$("$HELPER" start main SAY-209 "$BASE7" "$BRANCH7")
+assert_line "$START7" '^IMPLEMENTATION STARTED$' 'low-level start missing header'
+assert_line "$START7" '^checkpoint=[0-9a-fA-F]{40}$' 'low-level start missing checkpoint'
+assert_line "$START7" '^claim=[0-9A-Za-z][0-9A-Za-z._-]{7,127}$' 'low-level start missing claim'
+assert_line "$START7" '^peer_state=FREE$' 'low-level start peer state missing'
+assert_line "$START7" '^peer_issue=-$' 'low-level start peer Issue missing'
+assert_line "$START7" '^preflight=PASS$' 'low-level start preflight proof missing'
+CLAIM7="$(printf '%s\n' "$START7" | sed -n 's/^claim=//p')"
+CHECKPOINT7="$(printf '%s\n' "$START7" | sed -n 's/^checkpoint=//p')"
+merge_topic_into_main "$BRANCH7"
+"$HELPER" release main "$CHECKPOINT7" "$CLAIM7" >/dev/null
+
+sync_free_lanes
+CRASH_BASE="$(git -C "$MAIN" rev-parse origin/main)"
+CRASH_BRANCH=sayosomi/say-211-crash-start
+if NUINUI_SELFTEST_CRASH_AT=start-after-slot "$HELPER" start main SAY-211 "$CRASH_BASE" "$CRASH_BRANCH" >"$ROOT/crash-start.out" 2>&1; then
+  cat "$ROOT/crash-start.out"
+  fail 'interrupted start unexpectedly succeeded'
+fi
+CRASH_CLAIM="$(sed -n 's/^claim=//p' "$(slot_state "$MAIN")")"
+[ -n "$CRASH_CLAIM" ] || fail 'interrupted start did not retain claim'
+[ -e "$(gitdir "$MAIN")/nuinui-implementation-lock" ] || fail 'interrupted start did not retain lock'
+RECOVER_START=$("$HELPER" recover main "$CRASH_CLAIM")
+assert_line "$RECOVER_START" '^RECOVERED operation=start$' 'interrupted start recovery failed'
+merge_topic_into_main "$CRASH_BRANCH"
+"$HELPER" release main "$CRASH_BASE" "$CRASH_CLAIM" >/dev/null
+sync_free_lanes
+
+CRASH_RELEASE_BASE="$(git -C "$MAIN" rev-parse origin/main)"
+CRASH_RELEASE_BRANCH=sayosomi/say-212-crash-release
+OUT_CRASH_RELEASE=$("$HELPER" begin sub SAY-212 "$CRASH_RELEASE_BASE" "$CRASH_RELEASE_BRANCH" FREE)
+CRASH_RELEASE_CLAIM="$(printf '%s\n' "$OUT_CRASH_RELEASE" | sed -n 's/^claim=//p')"
+if NUINUI_SELFTEST_CRASH_AT=release-after-rename "$HELPER" release sub "$CRASH_RELEASE_BASE" "$CRASH_RELEASE_CLAIM" >"$ROOT/crash-release.out" 2>&1; then
+  cat "$ROOT/crash-release.out"
+  fail 'interrupted release unexpectedly succeeded'
+fi
+RECOVER_RELEASE=$("$HELPER" recover sub "$CRASH_RELEASE_CLAIM")
+assert_line "$RECOVER_RELEASE" '^RECOVERED operation=release$' 'interrupted release recovery failed'
+sync_free_lanes
+
+STALE_BASE="$(git -C "$MAIN" rev-parse origin/main)"
+printf 'remote-newer\n' > "$SEED/newer"
+git -C "$SEED" add newer
+git -C "$SEED" commit -qm newer
+git -C "$SEED" push -q origin main
+expect_begin_blocked 'stale clean main is not FREE' "$MAIN" main SAY-210 "$STALE_BASE" sayosomi/say-210-stale-main FREE
+
+echo 'NUINUI LIFECYCLE SELFTEST PASS'

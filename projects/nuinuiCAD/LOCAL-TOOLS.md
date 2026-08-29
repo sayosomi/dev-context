@@ -47,9 +47,9 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.5.1`。
+current standalone helper version: `1.6.0`。
 
-`projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。
+`projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
 current commands:
 
@@ -58,6 +58,7 @@ current commands:
 | `nuinui preflight` | fixed main / sub / e2e 3-lane stateとdurable ownershipのread-only audit |
 | `nuinui verify <main\|sub> <SAY-123> <expected-base-sha> <branch>` | initialized FREE laneのstart preconditionをread-only検証 |
 | `nuinui lane-init <main\|sub>` | proven exact idle fixed laneへpermanent v1 ownership schema markerをbootstrap |
+| `nuinui begin <main\|sub> <SAY-123> <expected-base-sha> <branch> <FREE\|SAY-123>` | full 3-lane audit、target FREE、exact peer occupancy確認とnew generation startを1 Human handoffで実行 |
 | `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始 |
 | `nuinui resume <main\|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
 | `nuinui release <main\|sub> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
@@ -79,17 +80,25 @@ current commands:
 
 ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのままconsumeする。helper versionとmetadata versionは独立している。
 
-`preflight`はread-only。main/sub FREE判定はauthoritative `ls-remote origin main`を使い、cleanでもbehindならFREEにしない。mutation lock、active slot、releasing tombstoneを優先して分類し、strict schema violationはBLOCKする。
+`preflight`はread-only diagnostic / routing command。main/sub FREE判定はauthoritative `ls-remote origin main`を使い、cleanでもbehindならFREEにしない。mutation lock、active slot、releasing tombstoneを優先して分類し、strict schema violationはBLOCKする。known-Issueの通常startでは、ChatGPTが`expected-peer`を構成した`begin`が同じauditを行うため、別preflightを先に実行しない。
 
 `lane-init`はfixed laneを正当に新規 / 再作成した場合のschema bootstrap。slot / lock / release stateがなくexact safe idleを証明できる場合だけmarkerを書く。既存active-looking checkoutからclaimを生成するrepair用途には使わない。
 
-`start`はbranch switchより先にnew claim + lock + slotをdurable化する。成功outputのclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)へcheckpointする。
+`begin`の形式は`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`。targetは必ずphysically FREE、peerは`FREE`またはexact durable owner Issueの`BUSY`でなければ開始しない。full 3-lane audit後、target条件を再検証して`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返す。
+
+`start`はbranch switchより先にnew claim + lock + slotをdurable化する低レベル lifecycle primitiveとして保持する。成功outputのclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)へcheckpointする。通常のHuman handoffは`begin`を使う。
 
 `resume`はcaller-supplied Lane / Issue / Base / exact pushed checkpoint / branch / claimとslotをexact照合する。Base refresh、merge-main、rebase、reset、stash、force-switch、branch generation、claim inferenceを行わない。
 
 `release`はcaller-supplied merged checkpoint + claimを必須とする。remote topic branchがpost-mergeで削除済みでも、saved checkpointがcurrent authoritative mainに含まれることを証明できればrelease可能。release開始時にclaimed local topic branchをcheckoutしていた場合だけ、そのexact branchをsafe cleanup candidateにする。
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
+
+`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、complete lifecycle envelopes、resume、release failure retention、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejectionを検証する。
+
+成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返す。
+
+`start`をexplicit low-level primitiveとして直接使った場合も、full local audit後にlocal transition envelopeを返す。ただしpeerはその時点の観測値であり、ChatGPTが決めたcaller expectationとの一致を証明しない。canonical normal startupでは`begin`のexpected peer照合と`preflight=PASS`をadmission evidenceに使う。
 
 ### Standalone non-lane mechanics
 
@@ -146,21 +155,24 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 
 ## Standalone durable helper promotion evidence
 
-current `nuinui` 1.5.1 exact Git blob:
+current `nuinui` 1.6.0 exact Git blob:
 
 ```text
-c3ce9695ceaaefbf2f5c2144faecd779a88c3ed8
+386a7dcf9448becfba2d740467423fa41aa79bbe
 ```
 
 candidate SHA-256:
 
 ```text
-43807a0fb08b1f55838cd3ea68db796e528300aee8796c18174b4cb6fafc301b
+12ef36b2910ae2b4817e8ebfa601bb61371c03ebb07e0ab371b4617dbf827ae8
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
 
 - initialization gate / exact idle;
+- canonical begin with FREE peer and exact BUSY peer admission;
+- wrong peer, target BUSY, and invalid fixed-lane fail-closed admission;
+- complete start / resume / release envelopes;
 - old resume/release signature rejection;
 - strict v1 unknown/missing/duplicate/unsupported schema failure;
 - tombstone claim/suffix fail-closed;
@@ -178,9 +190,19 @@ result:
 
 ```text
 SELFTEST PASS
-DURABLE EXTENDED PASS
-AUTO-MERGE EXTENDED PASS
+NUINUI LIFECYCLE SELFTEST PASS
+NUINUI HANDOFF CHECK SELFTEST PASS
 CONTEXT CHECK PASS
+```
+
+exact final candidate verification:
+
+```text
+/bin/sh -n projects/nuinuiCAD/scripts/nuinui                  PASS
+/bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-lifecycle    PASS
+projects/nuinuiCAD/scripts/nuinui self-test                   PASS
+projects/nuinuiCAD/scripts/test-nuinui-handoff-check          PASS
+projects/nuinuiCAD/scripts/nuinui context-check                PASS
 ```
 
 1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。
@@ -191,6 +213,6 @@ runtime compatibility backendはcurrent designに存在しない。過去の1.4.
 
 versioned helperが未install、stale / broken、またはcurrent operationをsupportしていない場合は利用を強行しない。
 
-mandatory preflight等でHuman actionが必要なら[`CHECKOUTS.md`](./CHECKOUTS.md)とshared `human-terminal-instructions` skillに従ったcomplete inline commandをfallbackとして提示する。
+diagnostic preflight等でHuman actionが必要なら[`CHECKOUTS.md`](./CHECKOUTS.md)とshared `human-terminal-instructions` skillに従ったcomplete inline commandをfallbackとして提示する。
 
 fallbackで得られた反復可能operationをhelperへ追加する場合も、上記promotion ruleでcandidate verificationとapprovalを行う。

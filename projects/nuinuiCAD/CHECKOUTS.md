@@ -41,11 +41,15 @@ Human向けterminal instructionを生成する場合はshared `human-terminal-in
 
 versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent local clone上で利用可能なら、Human handoffではhelperを優先してよい。helper commandの存在はlane利用許可を意味しない。executor / lane選択はREADME routerとcurrent policyがauthorityである。
 
-### Mandatory preflight handoff rule
+### Preflight diagnostic / routing rule
 
-implementation start / resume等でmandatory 3-lane preflightが必要なのに、ChatGPT側からactual local checkout stateを直接確認できない場合、audit結果待ちとだけ述べて停止しない。
+`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue startは、ChatGPTがfresh remote / Linear occupancy / parallel-admission decisionからtarget laneとpeer expectationを確定した後、次の1 commandへ進む。
 
-current helperが利用可能なら、その応答内でcopy/paste-readyなexact invocationを提示する。
+```bash
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>
+```
+
+ChatGPTがactual local inventoryを知らず、begin / resume / release / handoff-checkがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。
 
 ```bash
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui preflight
@@ -56,6 +60,17 @@ helperが未install、stale / broken、またはunsupportedなら、同じ応答
 preflight evidenceは少なくとも全3 laneのpath、branch/detached HEAD、HEAD SHA、cleanliness、registered worktree state、main/sub durable ownership state、e2e marker stateを一度に確認できること。auditへfetch、checkout、switch、reset、stash、clean、marker mutationを混ぜない。
 
 Humanからfresh audit outputが返ったら、それをcurrent evidenceとして扱う。material state changeのsignalがない限り同じpreflightを機械的に要求し直さない。
+
+Separate preflightを使う条件は次に限定する。
+
+- Coordinatorがcurrent lane occupancyを知らず、Workのselect / route前にinventoryが必要;
+- current execution identityを一意に再構成できない;
+- `begin`、`resume`、`release`、または`nuinui-handoff-check`が`BLOCKED`を返した;
+- crash / interrupted lifecycle operationが疑われる;
+- unexpected checkout、branch、dirty stateが報告された;
+- explicit recovery / diagnosisが必要。
+
+same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側のGitHub checkとLuna handoff-check inputとして別に扱う。
 
 Humanへ任せないもの:
 
@@ -186,17 +201,45 @@ active-looking checkoutやclaimless legacy checkpointからownershipを生成す
 
 ### main / sub implementation
 
-current helper:
+Canonical normal Human handoff:
+
+```text
+nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>
+```
+
+`expected-peer` is supplied by ChatGPT from the current Linear implementation occupancy and parallel-admission decision. `FREE` means the peer lane is physically FREE. `SAY-N` means the peer lane is physically BUSY and its durable owner Issue is exactly `SAY-N`.
+
+`begin` performs the full read-only 3-lane safety audit inside the same Human command, including fixed worktree registration, existing main/sub/e2e safety conditions, target FREE, and exact peer occupancy. It then revalidates target start conditions immediately before delegating to the existing start mutation semantics. An occupancy mismatch never starts the target lane. A successful result includes the complete verified `IMPLEMENTATION STARTED` envelope; ChatGPT can use it to synchronize Linear without another preflight.
+
+成功時のstable envelope:
+
+```text
+IMPLEMENTATION STARTED
+lane=<main|sub>
+issue=<SAY-N>
+branch=<exact branch>
+base=<exact base>
+checkpoint=<actual HEAD>
+claim=<durable generation claim>
+clean=yes
+state=BUSY
+peer_lane=<main|sub>
+peer_state=<FREE|BUSY>
+peer_issue=<SAY-N or ->
+preflight=PASS
+```
+
+Lower-level lifecycle primitive retained for self-test / explicit routing:
 
 ```text
 nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>
 ```
 
-実行前にmandatory 3-lane preflightとLinear occupancy reconciliationを行い、FREE laneを選ぶ。もう一方がBUSYなら[`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md)のParallel admission gateを満たすことを確認する。
+`start` is not the normal separate first half of a known-Issue Human start. It keeps the existing low-level mutation and recovery semantics; its output identifies the local transition and does not replace ChatGPT's external occupancy / parallel-admission decision. Use `begin` for the normal Human handoff.
 
 helperはnew claim generationを作成し、mutation lockとdurable slotをbranch switchより先に取得する。その後fresh remote / exact Base / branch absence / safe idleを再確認し、必要なsafe normalization後にTask branchをcreate/switchする。final checkout / Base / cleanlinessを再確認してlockを削除し、成功outputへclaimを返す。
 
-start成功のclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のImplementation checkpointへ同じcontinuationで保存する。
+`begin` / `start` successはlane、Issue、branch、Base、actual checkpoint、claim、cleanliness、BUSY stateを返す。`begin`はさらにcaller expectationと照合済みのpeer lane / peer state / peer Issueと`preflight=PASS`を返す。`start`もfull audit後のpeer観測値と`preflight=PASS`を返すが、caller-supplied expected peerとのadmission証明は持たない。canonical normal startupでは`begin`を使い、成功した`begin`のclaimを[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のImplementation checkpointへ同じcontinuationで保存する。
 
 branch作成前にcrashしてもslot / lockがlaneを保持する。precondition failureでexact pre-start stateを一意に証明できる場合だけ自分が作ったmetadataをrollbackしてよい。判定不能なら保持してBLOCKする。
 
@@ -213,6 +256,22 @@ callerはcurrent external checkpointからLane / Issue / fixed Base / exact push
 slot identityがexact一致し、working tree、local branch checkpoint、authoritative remote branch、worktree occupancyがsafe-resume条件を満たす場合だけexisting branchへswitchする。authoritative main確認はactive Baseを更新するためではない。latest mainのmerge / rebase / reset / stash / force-switchを行わない。
 
 already target branch / exact checkpointならidempotent successとしてよい。slotがownershipを保持しているのにcheckoutが別branchへ変わっている場合はpreflightのBLOCKEDを維持し、explicit resumeで安全にrestoreできた後だけBUSYへ戻す。
+
+same active durable generationのresume / continuationでは、fresh local preflightを別途要求しない。last verified lifecycle envelopeまたはcurrent Linear checkpointのclaim / checkpointはcaller expectationとして渡してよいが、authorityではない。Lunaの最初の`nuinui-handoff-check`がactual durable slot、checkout、remote topic、remote mainを再検証し、matchなら継続、mismatchなら`BLOCKED / STALE_EXECUTION_CONTEXT`としてdiagnosis / recoveryへ戻す。
+
+resume success envelope:
+
+```text
+IMPLEMENTATION RESUMED
+lane=<main|sub>
+issue=<SAY-N>
+branch=<exact branch>
+base=<exact base>
+checkpoint=<actual HEAD>
+claim=<durable generation claim>
+clean=yes
+state=BUSY
+```
 
 ## Lane release
 
@@ -242,6 +301,22 @@ release開始時にlane自身がclaimed topic branchをcheckoutしていた場�
 slot rename前のknown failureでcheckout / slot不変を証明できる場合はreleaseが取得した自分のlockだけrollbackしてよい。rename後のfailure / crashはtombstoneとlockを保持してexplicit recoveryへ渡す。
 
 release成功後はcurrent Issueへ`Lane release checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従ってread-backする。physical FREEのauthorityはactual local stateであり、Linear write failureでsuccessful releaseを巻き戻さない。
+
+successful release outputはIssue、saved checkpoint、released claim / branch、idle branch、idle HEAD、authoritative origin main、`clean=yes`、`state=FREE`をself-containedに返す。fresh successful release envelopeを得た後、release checkpointのためだけに別preflightを行わない。
+
+```text
+IMPLEMENTATION RELEASED
+lane=<main|sub>
+issue=<released Issue>
+saved_checkpoint=<exact checkpoint>
+released_claim=<claim>
+released_branch=<topic branch>
+idle_branch=<main|DETACHED>
+idle_head=<actual final HEAD>
+origin_main=<authoritative main used for release>
+clean=yes
+state=FREE
+```
 
 ### Explicit recovery
 
