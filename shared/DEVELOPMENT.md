@@ -4,6 +4,9 @@
 
 Project固有のrepository policy、task contract、specification、work-management ruleがある場合はそちらを優先する。
 
+この `dev-context` repository 自身が変更対象の場合は、root [`../DEVELOPMENT.md`](../DEVELOPMENT.md) が self-development lifecycle の canonical owner である。
+checkout / worktree / branch / review / merge / sync lifecycleはroot documentに従い、このshared routerをそのlifecycleの第二の全文コピーにしない。
+
 ## Core responsibility
 
 ChatGPTがrepository調査、architecture把握、actual owner / change location特定、implementation contract決定、blocking reviewを担当する。
@@ -15,6 +18,8 @@ Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT
 ## dev-context write approval
 
 この`dev-context` repositoryへのcreate / update / deleteは、ChatGPTが実際のwriteを行う前にユーザーへ変更planを提示し、明示的な承認を得てから実行する。
+
+これはcross-cuttingなshared safety requirementとして維持する。dev-context自身のself-development lifecycle全体のownerはroot [`../DEVELOPMENT.md`](../DEVELOPMENT.md)であり、このgateを弱めたり、別のapproval ruleへ置き換えたりしない。
 
 変更planには最低限、次を含める。
 
@@ -72,8 +77,8 @@ Manual E2E test operatorなどimplementation以外のexecution roleは、このi
 
 ## Loading rule
 
-1. Development workではこの`DEVELOPMENT.md`を読む。
-2. Git remote state、branch / checkout / worktree、commit / push / reviewが関係する場合は`GIT-WORKFLOW.md`を読む。
+1. Development workではこの`DEVELOPMENT.md`を読む。dev-context自身が変更対象なら、root [`../DEVELOPMENT.md`](../DEVELOPMENT.md)も読み、そのself-development lifecycleを優先する。
+2. Git remote state、branch / checkout / worktree、commit / push / reviewが関係する場合は`GIT-WORKFLOW.md`を読む。dev-context自身のlifecycleの詳細なownerはroot documentである。
 3. Execution agent向けpromptを生成する場合は、roleにかかわらず`AGENT-PROMPT-STYLE.md`を読む。
 4. Implementation / blocking-fix Coding Agent向けprompt、implementation role boundary、implementation handoffが関係する場合だけ`CODING-AGENT-WORKFLOW.md`を読む。
 5. Agent skill選択が必要な場合は`AGENT-SKILLS.md`とproject固有skill policyを読む。Humanがcopy/pasteして実行するterminal command / shell scriptをChatGPTが生成する場合も`AGENT-SKILLS.md`を読み、そこに登録されたHuman terminal instruction skillのactivation ruleに従う。
