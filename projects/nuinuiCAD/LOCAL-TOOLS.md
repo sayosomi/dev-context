@@ -47,7 +47,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.5.0`。
+current standalone helper version: `1.5.1`。
 
 `projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。
 
@@ -146,16 +146,16 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 
 ## Standalone durable helper promotion evidence
 
-current `nuinui` 1.5.0 exact Git blob:
+current `nuinui` 1.5.1 exact Git blob:
 
 ```text
-b59960d6a382f61b81118aab1e499c9ee5c18fcb
+c3ce9695ceaaefbf2f5c2144faecd779a88c3ed8
 ```
 
 candidate SHA-256:
 
 ```text
-c937fe7c28415d5316f475d7e72d3b971ff22ddf3af34b0ad4480808bea2cd29
+43807a0fb08b1f55838cd3ea68db796e528300aee8796c18174b4cb6fafc301b
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
@@ -182,6 +182,8 @@ DURABLE EXTENDED PASS
 AUTO-MERGE EXTENDED PASS
 CONTEXT CHECK PASS
 ```
+
+1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。
 
 runtime compatibility backendはcurrent designに存在しない。過去の1.4.0 wrapper / 1.3.5 backendはGit historyからrollback可能だが、current treeで別authorityやfallbackとして保持しない。
 
