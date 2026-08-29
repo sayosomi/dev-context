@@ -78,7 +78,7 @@ fake_gh() {
         mergeability=MERGEABLE
         auto=none
         ;;
-      failure-*|checks-api-error)
+      failure-*|checks-api-error|empty-actions-pending|empty-actions-complete|empty-none-required|empty-unresolved)
         actual_head=$HEAD
         actual_main=$MAIN
         state=OPEN
@@ -96,7 +96,7 @@ fake_gh() {
       :
     elif [ "$scenario" = mutation-race ] && [ -f "$root/mutation-complete" ]; then
       :
-    elif [ "$scenario" = success ] && [ "$n" -ge 3 ]; then
+    elif { [ "$scenario" = success ] || [ "$scenario" = empty-actions-pending ]; } && [ "$n" -ge 3 ]; then
       auto=MERGE
     elif [ "$scenario" = readback-fails ] && [ "$n" -ge 3 ]; then
       echo 'fake gh: read-back API unavailable' >&2
@@ -136,12 +136,77 @@ fake_gh() {
         echo 'fake gh: required checks API unavailable' >&2
         return 45
         ;;
+      empty-actions-pending|empty-actions-complete|empty-none-required|empty-unresolved)
+        echo "no required checks reported on the 'feature' branch" >&2
+        return 1
+        ;;
       *)
         echo "fake gh: unexpected checks scenario $scenario" >&2
         return 46
         ;;
     esac
     return 0
+  fi
+
+  if [ "$1" = api ]; then
+    api_endpoint=$2
+    if [ "$api_endpoint" = -X ]; then
+      api_endpoint=$4
+    fi
+    case "$scenario:$api_endpoint" in
+      empty-actions-pending:repos/sayosomi/nuinuiCAD/branches/main|empty-actions-complete:repos/sayosomi/nuinuiCAD/branches/main|empty-none-required:repos/sayosomi/nuinuiCAD/branches/main|empty-unresolved:repos/sayosomi/nuinuiCAD/branches/main)
+        printf 'none\n'
+        return 0
+        ;;
+      empty-actions-pending:repos/sayosomi/nuinuiCAD/rules/branches/main|empty-actions-complete:repos/sayosomi/nuinuiCAD/rules/branches/main|empty-none-required:repos/sayosomi/nuinuiCAD/rules/branches/main)
+        printf 'none\n'
+        return 0
+        ;;
+      empty-unresolved:repos/sayosomi/nuinuiCAD/rules/branches/main)
+        printf 'none\n'
+        return 0
+        ;;
+      empty-actions-pending:repos/sayosomi/nuinuiCAD/actions/runs)
+        printf '9001\tCI\tin_progress\tnone\t6001\t%s\tpull_request\n' "$HEAD"
+        return 0
+        ;;
+      empty-actions-complete:repos/sayosomi/nuinuiCAD/actions/runs)
+        printf '9001\tCI\tcompleted\tsuccess\t6001\t%s\tpull_request\n' "$HEAD"
+        return 0
+        ;;
+      empty-none-required:repos/sayosomi/nuinuiCAD/actions/runs)
+        printf 'none\n'
+        return 0
+        ;;
+      empty-unresolved:repos/sayosomi/nuinuiCAD/actions/runs)
+        printf '9001\tOTHER\tcompleted\tsuccess\t6001\t%s\tpull_request\n' "$HEAD"
+        return 0
+        ;;
+      empty-actions-pending:repos/sayosomi/nuinuiCAD/check-suites/6001)
+        printf '%s\t123\tin_progress\tnone\n' "$HEAD"
+        return 0
+        ;;
+      empty-unresolved:repos/sayosomi/nuinuiCAD/check-suites/6001)
+        printf '9999999999999999999999999999999999999999\t123\tcompleted\tsuccess\n'
+        return 0
+        ;;
+      empty-actions-complete:repos/sayosomi/nuinuiCAD/check-suites/6001)
+        printf '%s\t123\tcompleted\tsuccess\n' "$HEAD"
+        return 0
+        ;;
+      empty-actions-pending:repos/sayosomi/nuinuiCAD/commits/$HEAD/check-runs)
+        printf 'CI\t123\tin_progress\tnone\t%s\n' "$HEAD"
+        return 0
+        ;;
+      empty-actions-complete:repos/sayosomi/nuinuiCAD/commits/$HEAD/check-runs)
+        printf 'CI\t123\tcompleted\tsuccess\t%s\n' "$HEAD"
+        return 0
+        ;;
+      empty-none-required:repos/sayosomi/nuinuiCAD/commits/$HEAD/check-runs|empty-unresolved:repos/sayosomi/nuinuiCAD/commits/$HEAD/check-runs)
+        printf 'none\n'
+        return 0
+        ;;
+    esac
   fi
 
   if [ "$1" = api ] && [ "$2" = graphql ]; then
@@ -155,7 +220,7 @@ fake_gh() {
         echo 'fake gh: reservation mutation unavailable' >&2
         return 48
         ;;
-      success|readback-fails)
+      success|readback-fails|empty-actions-pending)
         printf '{"data":{"enablePullRequestAutoMerge":{"clientMutationId":"fake"}}}\n'
         return 0
         ;;
@@ -276,6 +341,29 @@ run_success() {
   printf '%s\n' "$operations"
 }
 
+run_fallback_pending() {
+  name=$1
+  scenario=$2
+  prepare_case "$scenario"
+  if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+    FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
+    rc=0
+  else
+    rc=$?
+    printf '%s\n' "$output"
+    fail "$name unexpectedly failed with exit $rc"
+  fi
+  [ "$rc" -eq 0 ] || fail "$name did not return zero"
+  assert_contains "$output" 'AUTO-MERGE RESERVED' "$name did not report reservation"
+  assert_no_direct_merge "$CASE_ROOT/ops" "$name"
+  [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name did not invoke exactly one GraphQL mutation"
+  printf '%s\n' "--- $name (exit=0) ---"
+  printf '%s\n' "$output"
+  printf '%s\n' 'operations:'
+  cat "$CASE_ROOT/ops"
+}
+
 run_failure 'already complete at command start' complete-start \
   'BLOCKED: all required checks are already complete'
 assert_no_graphql "$ROOT/complete-start/ops" 'already complete at command start'
@@ -318,6 +406,16 @@ run_failure 'GitHub PR lookup failure' api-error \
 
 run_failure 'required-check API failure' checks-api-error \
   'ERROR: required-check lookup/API failure'
+
+run_fallback_pending 'empty required view with exact-head pending Actions' empty-actions-pending
+run_failure 'empty required view with exact-head complete Actions' empty-actions-complete \
+  'BLOCKED: all required checks are already complete'
+assert_contains "$output" 'check_state=pass' 'complete exact-head Actions case did not classify pass'
+assert_no_graphql "$ROOT/empty-actions-complete/ops" 'empty required view with complete Actions'
+run_failure 'no required checks and no PR CI' empty-none-required \
+  'check_state=none-required'
+run_failure 'unresolvable required-check evidence' empty-unresolved \
+  'check_state=required-checks-unresolved'
 
 run_success 'successful reservation' success
 

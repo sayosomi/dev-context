@@ -47,7 +47,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.2`。
+current standalone helper version: `1.6.3`。
 
 `projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
@@ -84,17 +84,17 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `lane-init`はfixed laneを正当に新規 / 再作成した場合のschema bootstrap。slot / lock / release stateがなくexact safe idleを証明できる場合だけmarkerを書く。既存active-looking checkoutからclaimを生成するrepair用途には使わない。
 
-`begin`の形式は`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`。targetは必ずphysically FREE、peerは`FREE`またはexact durable owner Issueの`BUSY`でなければ開始しない。full 3-lane audit後、target条件を再検証して`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返す。
+`begin`の形式は`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`。targetは必ずphysically FREE、peerは`FREE`またはexact durable owner Issueの`BUSY`でなければ開始しない。full 3-lane audit後、target条件を再検証して`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返し、target generationを検証できれば`mutation_state=COMPLETED`とtargetのissue / branch / base / checkpoint / claim / clean / `state=BUSY`を返す。検証不能なら`mutation_state=UNKNOWN`と既知のrequested/new identityを返す。
 
 `start`はbranch switchより先にnew claim + lock + slotをdurable化する低レベル lifecycle primitiveとして保持する。成功outputのclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)へcheckpointする。通常のHuman handoffは`begin`を使う。
 
 `resume`はcaller-supplied Lane / Issue / Base / exact pushed checkpoint / branch / claimとslotをexact照合する。Base refresh、merge-main、rebase、reset、stash、force-switch、branch generation、claim inferenceを行わない。
 
-`release`はcaller-supplied merged checkpoint + claimを必須とする。remote topic branchがpost-mergeで削除済みでも、saved checkpointがcurrent authoritative mainに含まれることを証明できればrelease可能。release開始時にclaimed local topic branchをcheckoutしていた場合だけ、そのexact branchをsafe cleanup candidateにする。
+`release`はcaller-supplied merged checkpoint + claimを必須とする。facadeはmutation前にactive slot、current topic branch checkpoint、durable claim、lock / tombstone / schemaをread-only検証し、checkpoint不一致は`BLOCKED: checkpoint mismatch`と`expected` / `actual`、claim不一致は`BLOCKED: claim mismatch`とdurable `expected` / caller `actual`を返す。rejected releaseはdurable ownershipを保持し、raw mutationが予期せず無診断で失敗してもcontext付きERRORを返す。remote topic branchがpost-mergeで削除済みでも、saved checkpointがcurrent authoritative mainに含まれることを証明できればrelease可能。release開始時にclaimed local topic branchをcheckoutしていた場合だけ、そのexact branchをsafe cleanup candidateにする。
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
 
-`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、dirty valid BUSY lane classification、dirty BUSY peerを期待したbegin、wrong-branch fail-closed、complete lifecycle envelopes、resume、release failure retention、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejectionを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証する。
+`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、dirty valid BUSY lane classification、target start後にdirtyになるvalid BUSY peerを期待したbegin、wrong-branch fail-closed、complete lifecycle envelopes、release checkpoint / claim failure retention、target mutation後のnon-target audit failureと`mutation_state=COMPLETED`、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejection、全public lifecycle failureのnon-empty diagnosticsを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証する。
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返す。
 
@@ -104,9 +104,9 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `pr-auto-merge`, E2E, context-sync, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
-`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。PRがOPEN / non-draft / base=`main` / exact reviewed headで、current base OIDがexpected mainに一致し、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
+`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。PRがOPEN / non-draft / base=`main` / exact reviewed headで、current base OIDがexpected mainに一致し、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
 
-visible required checksは`gh pr checks --required`のpending / passだけを許可する。required check viewが空の場合はbranch protectionのsource-bound checks、exact-head pull_request workflow run、check suite、check runを相関し、complete proofが得られない場合はBLOCKする。
+visible required checksは`gh pr checks --required`のmachine-readable stdoutだけをparseし、stderrの`no required checks reported`等のhuman proseをcheck rowとして扱わない。required check viewが空の場合はbranch protectionのrequired status metadata、ruleset metadata、exact-head pull_request workflow run、check suite、check runを相関する。exact-head Actions runがqueued / in_progressならpending、関連executionがすべてsuccessならpass、evidenceがない場合はnone-required、相関が不完全 / 矛盾 / truncatedならrequired-checks-unresolved、GitHub/API/tool failureならapi-errorとしてfail-closedする。commit-statusのdefault pendingだけではpendingと判定しない。
 
 operationalなnonzero exitはHuman-visibleに分類する。証明できたfail-closed state / precondition mismatchは`BLOCKED:`、GitHub / API / auth / tool execution failureやreservation stateを判定できない場合は`ERROR:`で返す。mutation直前にpreconditionを再確認し、GraphQL `enablePullRequestAutoMerge`へ`mergeMethod=MERGE`と`expectedHeadOid`を渡す。initial check通過後のpre-mutation state transitionは`BLOCKED: Auto-merge reservation precondition changed before mutation`と具体的な現在理由を返してfail-closedし、mutationしない。GraphQL mutation raceはmutationをretryせず、fresh read-only diagnosisを最大1回だけ行い、direct mergeへfallbackしない。mutation後はsame PR / head / expected main / OPEN / `autoMergeRequest.mergeMethod=MERGE`をread-backして成功扱いする。
 
@@ -155,16 +155,16 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 
 ## Standalone durable helper promotion evidence
 
-current `nuinui` 1.6.2 exact Git blob:
+current `nuinui` 1.6.3 exact Git blob:
 
 ```text
-61db9b78c02e3915d57835eb8817ea3d4d6fa772
+1de17a943fbc75e534025bdab4ec02fa4b274317
 ```
 
 candidate SHA-256:
 
 ```text
-d89c272f62c6cb65f6610d218248bddc246e38fd565f3ebb917d166de4939bdb
+7bddef58015ca086aaf8c60a01899a7054e3ac62556ca7196d170ca717e30a40
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
@@ -199,15 +199,15 @@ CONTEXT CHECK PASS
 exact final candidate verification:
 
 ```text
-/bin/sh -n projects/nuinuiCAD/scripts/nuinui                  PASS
-/bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-lifecycle    PASS
-projects/nuinuiCAD/scripts/nuinui self-test                   PASS
-projects/nuinuiCAD/scripts/test-nuinui-handoff-check          PASS
-projects/nuinuiCAD/scripts/nuinui context-check                PASS
+/bin/sh -n projects/nuinuiCAD/scripts/nuinui                    PASS
+/bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-lifecycle      PASS
+projects/nuinuiCAD/scripts/nuinui self-test                     PASS
+projects/nuinuiCAD/scripts/test-nuinui-handoff-check             PASS
+projects/nuinuiCAD/scripts/nuinui context-check                  PASS
 /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge PASS
 projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge           PASS
-git hash-object projects/nuinuiCAD/scripts/nuinui                61db9b78c02e3915d57835eb8817ea3d4d6fa772
-shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  d89c272f62c6cb65f6610d218248bddc246e38fd565f3ebb917d166de4939bdb
+git hash-object projects/nuinuiCAD/scripts/nuinui                  1de17a943fbc75e534025bdab4ec02fa4b274317
+shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  7bddef58015ca086aaf8c60a01899a7054e3ac62556ca7196d170ca717e30a40
 ```
 
 1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。
