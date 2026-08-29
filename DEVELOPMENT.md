@@ -70,20 +70,49 @@ read-only investigationはapproval不要である。approvalは提示したscope
 
 `/Users/yosomi/Code/dev-context` はproduction / cache / toolbox cloneであり、development edit checkoutではない。Markdown-only changeを含め、dev-context tracked fileの変更にこのstandard cloneのworking treeを使わない。
 
-read-only inspectionと、dedicated worktreeを作成・管理するために必要なGit metadata operationはstandard cloneで許可する。編集、validation、commitはdedicated dev-context worktreeで行う。
+read-only inspectionと、canonical persistent worktreeをone-time bootstrapするために必要なGit / worktree metadata operationはstandard cloneで許可する。編集、validation、commitはpersistent dev-context development worktreeで行う。
 
-### Dedicated dev-context worktree
+### Canonical persistent dev-context development worktree
 
-各dev-context development taskは、freshに確認したremote `main`からtask-specific dedicated worktreeとtopic branchを用いる。これは、通常はprimary checkoutを使うというgeneric shared Git defaultに対するdev-context repository-specific overrideである。詳細な共通Git mechanicsは [shared/GIT-WORKFLOW.md](./shared/GIT-WORKFLOW.md)へrouteする。
+通常のdev-context development edit checkoutは、正確に次のpathである。
 
-作成・継続・終了時は次を守る。
+```text
+/Users/yosomi/Code/dev-context-dev
+```
 
-- 既存pathとregistered worktree stateをread-only inspectionしてから作成する。
-- unexpected stateをdelete、overwrite、reset、stash、force-repairしない。
-- blocking review / blocking fixがactiveな間はworktreeを保持する。
-- taskがmergeまたはabandonされ、worktreeがcleanで不要になったことを証明した後だけremoveする。
+これはpersistent development worktreeであり、各Taskごとに作成・削除しない。registered worktreeとして残し、dev-context development Taskをsequentialに再利用する。standard cloneは正確に `/Users/yosomi/Code/dev-context` のままであり、production / cache / toolbox専用で、development edit targetにはしない。
 
-dev-contextのdedicated worktreeはnuinuiCADのfixed product laneではない。
+dev-context developmentはat most one active development trackを許可するsingle-track executionである。parallelなdev-context implementationはnormal workflowに含めない。このpolicyが有効な間はsecond dev-context development worktreeを作成しない。将来parallel dev-context developmentが必要になった場合は、additional development worktreeを作成する前にこのpolicyを明示的に変更する。これはnuinuiCAD product lane capacityには適用しない。
+
+#### Persistent worktree bootstrap
+
+canonical persistent worktreeが存在しない場合に限り、one-time bootstrapで作成する。作成前にregistered worktree一覧とtarget pathをread-only inspectionし、standard cloneでfreshにverifiedした remote `main`からcanonical persistent worktreeを作成する。作成に使うstandard cloneの操作はGit / worktree metadata operationに限る。targetに予期しない既存path、既存登録、またはその他のambiguous stateがある場合はfail closedして`BLOCKED`で停止する。曖昧な状態をdelete、overwrite、reset、stash、force-repairして作成を進めない。
+
+このdurable documentには、current TaskのbranchやSHAをbootstrap ruleとして記録しない。詳細な共通Git mechanicsは [shared/GIT-WORKFLOW.md](./shared/GIT-WORKFLOW.md)へrouteする。
+
+#### Sequential Task transition
+
+各新しいdev-context development Taskでは、次を順に満たす。
+
+- fresh remote bootstrap（remote `main`のfresh verificationを含む）を行う。
+- 他のactive dev-context development Taskが存在しないことを確認する。
+- persistent worktreeをinspectし、cleanであることを必須とする。
+- prior Taskのimplementation / blocking-fix stateがconcludedであることを確認してからrepurposeする。
+- 既存のfreshness rulesに従って、意図したcurrent remote stateをfetchしてre-readする。
+- freshly verified remote `main`を基点にfresh topic branchをcreate / switchする。
+- そのsame persistent worktreeでedit、validation、commit、push、pushed-state blocking review、PR、required verification、mergeを行う。
+
+Task間でworktreeをremove / recreateしない。persistent worktreeをmerge後に`main`へ戻すことは必須ではなく、merged prior topic branchがnormal safe branch transitionまでlocalに残ることも許容する。next Taskを開始するためだけのbranch cleanupも要求しない。
+
+#### Fail-closed reuse
+
+persistent development worktreeがdirty、unexpectedなunresolved Task state、ambiguousなGit state、またはfreshly verifiedなnew Task baseへ安全にtransitionできない状態なら`BLOCKED`として停止する。reuseを成立させるためだけにreset、stash、force-switch、overwrite、delete / recreateを行わない。
+
+#### Blocking review / fix continuity
+
+implementation、validation、pushed-state blocking review、narrow blocking fix、PR lifecycleの全期間で、same persistent worktreeとcurrent topic branchを使い続ける。blocking fixのためにworktreeをrotateしない。
+
+dev-contextのpersistent worktreeはnuinuiCADのfixed product laneではない。
 
 ## Separation from nuinuiCAD fixed lanes
 
@@ -97,7 +126,7 @@ sayosomi/nuinuiCAD product fixed lanes:
 
 sayosomi/dev-context repository:
   /Users/yosomi/Code/dev-context        production/cache/toolbox clone
-  task-specific dedicated development worktree(s)
+  /Users/yosomi/Code/dev-context-dev   persistent single-track development worktree
 ```
 
 明示的な境界は次のとおり。
@@ -105,9 +134,9 @@ sayosomi/dev-context repository:
 - dev-context worktreeはnuinuiCAD `main` / `sub` / `e2e` laneではない。
 - dev-context taskはnuinuiCADのthree-lane capacityを消費しない。
 - nuinuiCAD lane occupancyだけを理由にdev-context developmentをblockしない。
-- dev-context worktreeを作ることは、nuinuiCADのfourth product checkoutを作る許可にならない。
+- dev-context worktreeを使うことは、nuinuiCADのfourth product checkoutを作る許可にならない。
 - nuinuiCADのdurable lane claim / checkpoint semanticsをdev-context worktreeへmechanically適用しない。
-- root `DEVELOPMENT.md`がdev-context worktree lifecycleをownerし、`projects/nuinuiCAD/CHECKOUTS.md`がproduct fixed lanesをownerする。
+- root `DEVELOPMENT.md`がdev-context persistent worktree lifecycleをownerし、`projects/nuinuiCAD/CHECKOUTS.md`がproduct fixed lanesをownerする。
 
 ## Development lifecycle
 
@@ -116,17 +145,18 @@ dev-context repository file changeのnormal pathは次のとおりである。
 ```text
 fresh remote main
   -> approved task contract
-  -> dedicated worktree
-  -> topic branch
-  -> implementation / documentation edit
-  -> responsibility-appropriate validation
+  -> persistent dev-context development worktree
+  -> fresh topic branch
+  -> edit
+  -> validation
   -> commit
   -> push
-  -> blocking review of pushed state
+  -> pushed-state blocking review
   -> PR
   -> required verification
   -> merge
   -> authoritative GitHub read-back
+  -> retain persistent worktree for next Task
 ```
 
 direct `main` file editをnormal pathにしない。Markdown-only changeを理由にこのlifecycleを省略しない。このtaskではemergency bypassを定義しない。
@@ -143,6 +173,8 @@ validationは変更したresponsibilityに合わせる。universalなsingle suit
 ## Merge read-back and standard clone sync
 
 merge後は、最初にauthoritative GitHub `main`をread backし、意図した変更が含まれることを確認する。その後にだけstandard local cloneを同期する。
+
+persistent development worktreeはmerge後もremoveしない。next sequential Taskに利用可能な状態として保持し、次のTask自身がfresh remote/bootstrapとsafe branch transitionを行う。mergeごとに直ちに`main`をcheckoutすることは、後続のsafe operationに必要な場合を除いて要求しない。
 
 通常のsyncは次で行う。
 
