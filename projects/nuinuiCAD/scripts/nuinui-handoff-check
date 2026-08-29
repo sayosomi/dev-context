@@ -109,12 +109,33 @@ validate_slot() {
   valid_claim "$slot_claim"
 }
 
-authoritative_branch() {
-  git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null | awk 'NR==1{print $1}'
+read_remote_topic() {
+  topic_raw="$(git -C "$1" ls-remote --exit-code --heads origin "refs/heads/$2" 2>/dev/null)"
+  topic_rc=$?
+  case "$topic_rc" in
+    0)
+      READ_TOPIC_STATE=present
+      READ_TOPIC_SHA="$(printf '%s\n' "$topic_raw" | awk 'NR==1{print $1}')"
+      valid_sha "$READ_TOPIC_SHA" || { READ_TOPIC_STATE=error; READ_TOPIC_SHA=; return 1; }
+      return 0
+      ;;
+    2)
+      READ_TOPIC_STATE=absent
+      READ_TOPIC_SHA=
+      return 0
+      ;;
+    *)
+      READ_TOPIC_STATE=error
+      READ_TOPIC_SHA=
+      return 1
+      ;;
+  esac
 }
 
-authoritative_main() {
-  git -C "$1" ls-remote origin refs/heads/main 2>/dev/null | awk 'NR==1{print $1}'
+read_remote_main() {
+  main_raw="$(git -C "$1" ls-remote --exit-code origin refs/heads/main 2>/dev/null)" || return 1
+  READ_MAIN_SHA="$(printf '%s\n' "$main_raw" | awk 'NR==1{print $1}')"
+  valid_sha "$READ_MAIN_SHA"
 }
 
 blocked_mismatch() {
@@ -151,6 +172,7 @@ handoff_check() {
   [ -z "$(releasing_dirs "$repo")" ] || { echo "BLOCKED: implementation lane has release-pending state"; return 1; }
   [ -d "$slot" ] || { echo "BLOCKED: active durable lane claim is missing"; return 1; }
   validate_slot "$slot/state" || { echo "BLOCKED: active durable lane claim is invalid"; return 1; }
+  slot_snapshot="$(cat "$slot/state")" || { echo "BLOCKED: unable to read durable lane claim"; return 1; }
 
   slot_issue="$(state_value "$slot/state" issue)"
   slot_branch="$(state_value "$slot/state" branch)"
@@ -169,29 +191,42 @@ handoff_check() {
   [ "$current_head" = "$expected_checkpoint" ] || blocked_mismatch "checkpoint" "$expected_checkpoint" "$current_head" || return 1
   git -C "$repo" merge-base --is-ancestor "$slot_base" "$current_head" >/dev/null 2>&1 || { echo "BLOCKED: checkpoint is not descended from claimed Base"; return 1; }
 
-  remote_topic="$(authoritative_branch "$repo" "$slot_branch")"
+  read_remote_topic "$repo" "$slot_branch" || { echo "BLOCKED: authoritative remote topic state is unavailable"; return 1; }
+  remote_topic_state="$READ_TOPIC_STATE"
+  remote_topic="$READ_TOPIC_SHA"
   case "$remote_mode" in
     absent)
-      [ -z "$remote_topic" ] || {
+      [ "$remote_topic_state" = absent ] || {
         echo "BLOCKED: handoff expected fresh unpushed topic branch"
         echo "CALLER_EXPECTED: remote topic absent"
-        echo "ACTUAL:          $remote_topic"
+        echo "ACTUAL:          ${remote_topic:-present}"
         return 1
       }
       ;;
     exact)
+      [ "$remote_topic_state" = present ] || { echo "BLOCKED: authoritative remote topic is absent"; return 1; }
       [ "$remote_topic" = "$expected_checkpoint" ] || blocked_mismatch "remote topic checkpoint" "$expected_checkpoint" "$remote_topic" || return 1
       ;;
   esac
 
-  remote_main="$(authoritative_main "$repo")"
-  valid_sha "$remote_main" || { echo "BLOCKED: authoritative remote main is unavailable"; return 1; }
+  read_remote_main "$repo" || { echo "BLOCKED: authoritative remote main is unavailable"; return 1; }
+  remote_main="$READ_MAIN_SHA"
   [ "$remote_main" = "$expected_main" ] || blocked_mismatch "remote main" "$expected_main" "$remote_main" || return 1
 
-  remote_topic_after="$(authoritative_branch "$repo" "$slot_branch")"
-  remote_main_after="$(authoritative_main "$repo")"
+  read_remote_topic "$repo" "$slot_branch" || { echo "BLOCKED: authoritative remote topic became unavailable during verification"; return 1; }
+  remote_topic_state_after="$READ_TOPIC_STATE"
+  remote_topic_after="$READ_TOPIC_SHA"
+  read_remote_main "$repo" || { echo "BLOCKED: authoritative remote main became unavailable during verification"; return 1; }
+  remote_main_after="$READ_MAIN_SHA"
+  [ "$remote_topic_state_after" = "$remote_topic_state" ] || { echo "BLOCKED: remote topic presence changed during handoff verification"; return 1; }
   [ "$remote_topic_after" = "$remote_topic" ] || { echo "BLOCKED: remote topic changed during handoff verification"; return 1; }
   [ "$remote_main_after" = "$remote_main" ] || { echo "BLOCKED: remote main changed during handoff verification"; return 1; }
+
+  [ ! -e "$lock" ] || { echo "BLOCKED: implementation lane mutation lock appeared during handoff verification"; return 1; }
+  [ -z "$(releasing_dirs "$repo")" ] || { echo "BLOCKED: release-pending state appeared during handoff verification"; return 1; }
+  validate_slot "$slot/state" || { echo "BLOCKED: durable lane claim became invalid during handoff verification"; return 1; }
+  slot_snapshot_after="$(cat "$slot/state")" || return 1
+  [ "$slot_snapshot_after" = "$slot_snapshot" ] || { echo "BLOCKED: durable lane claim changed during handoff verification"; return 1; }
 
   current_branch_after="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   current_head_after="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || return 1
