@@ -158,13 +158,13 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 current `nuinui` 1.6.3 exact Git blob:
 
 ```text
-a8f43d49265572f40b7e67d1acd5488bd367483e
+1de17a943fbc75e534025bdab4ec02fa4b274317
 ```
 
 candidate SHA-256:
 
 ```text
-5fe58a72ec8cfe1ab810890d892181d2d9c51f3068de770c8328839faa209b64
+7bddef58015ca086aaf8c60a01899a7054e3ac62556ca7196d170ca717e30a40
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
@@ -206,8 +206,8 @@ projects/nuinuiCAD/scripts/test-nuinui-handoff-check             PASS
 projects/nuinuiCAD/scripts/nuinui context-check                  PASS
 /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge PASS
 projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge           PASS
-git hash-object projects/nuinuiCAD/scripts/nuinui                  a8f43d49265572f40b7e67d1acd5488bd367483e
-shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  5fe58a72ec8cfe1ab810890d892181d2d9c51f3068de770c8328839faa209b64
+git hash-object projects/nuinuiCAD/scripts/nuinui                  1de17a943fbc75e534025bdab4ec02fa4b274317
+shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  7bddef58015ca086aaf8c60a01899a7054e3ac62556ca7196d170ca717e30a40
 ```
 
 1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。

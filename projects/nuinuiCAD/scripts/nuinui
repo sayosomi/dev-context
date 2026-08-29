@@ -68,6 +68,49 @@ if [ "${NUINUI_LIFECYCLE_RAW:-0}" != 1 ]; then
     ' "$lifecycle_durable_file"
   }
 
+  lifecycle_valid_slot_file() {
+    lifecycle_slot_metadata_file=$1
+    lifecycle_valid_durable_file "$lifecycle_slot_metadata_file" version,issue,branch,base,claim || return 1
+    [ "$(lifecycle_state_value "$lifecycle_slot_metadata_file" version)" = 1 ] || return 1
+    lifecycle_slot_metadata_issue=$(lifecycle_state_value "$lifecycle_slot_metadata_file" issue)
+    lifecycle_slot_metadata_branch=$(lifecycle_state_value "$lifecycle_slot_metadata_file" branch)
+    lifecycle_slot_metadata_base=$(lifecycle_state_value "$lifecycle_slot_metadata_file" base)
+    lifecycle_slot_metadata_claim=$(lifecycle_state_value "$lifecycle_slot_metadata_file" claim)
+    lifecycle_valid_issue "$lifecycle_slot_metadata_issue" || return 1
+    git check-ref-format --branch "$lifecycle_slot_metadata_branch" >/dev/null 2>&1 || return 1
+    [ "$(printf '%s\n' "$lifecycle_slot_metadata_branch" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p')" = "$lifecycle_slot_metadata_issue" ] || return 1
+    lifecycle_valid_sha "$lifecycle_slot_metadata_base" || return 1
+    lifecycle_valid_claim "$lifecycle_slot_metadata_claim" || return 1
+  }
+
+  lifecycle_valid_lock_file() {
+    lifecycle_lock_metadata_file=$1
+    lifecycle_valid_durable_file "$lifecycle_lock_metadata_file" version,operation,issue,branch,base,checkpoint,claim || return 1
+    [ "$(lifecycle_state_value "$lifecycle_lock_metadata_file" version)" = 1 ] || return 1
+    lifecycle_lock_metadata_operation=$(lifecycle_state_value "$lifecycle_lock_metadata_file" operation)
+    lifecycle_lock_metadata_issue=$(lifecycle_state_value "$lifecycle_lock_metadata_file" issue)
+    lifecycle_lock_metadata_branch=$(lifecycle_state_value "$lifecycle_lock_metadata_file" branch)
+    lifecycle_lock_metadata_base=$(lifecycle_state_value "$lifecycle_lock_metadata_file" base)
+    lifecycle_lock_metadata_checkpoint=$(lifecycle_state_value "$lifecycle_lock_metadata_file" checkpoint)
+    lifecycle_lock_metadata_claim=$(lifecycle_state_value "$lifecycle_lock_metadata_file" claim)
+    case "$lifecycle_lock_metadata_operation" in
+      init|start|resume|release) ;;
+      *) return 1 ;;
+    esac
+    case "$lifecycle_lock_metadata_issue:$lifecycle_lock_metadata_branch" in
+      -:-) ;;
+      -:*|*:-) return 1 ;;
+      *)
+        lifecycle_valid_issue "$lifecycle_lock_metadata_issue" || return 1
+        git check-ref-format --branch "$lifecycle_lock_metadata_branch" >/dev/null 2>&1 || return 1
+        [ "$(printf '%s\n' "$lifecycle_lock_metadata_branch" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p')" = "$lifecycle_lock_metadata_issue" ] || return 1
+        ;;
+    esac
+    [ "$lifecycle_lock_metadata_base" = - ] || lifecycle_valid_sha "$lifecycle_lock_metadata_base" || return 1
+    [ "$lifecycle_lock_metadata_checkpoint" = - ] || lifecycle_valid_sha "$lifecycle_lock_metadata_checkpoint" || return 1
+    lifecycle_valid_claim "$lifecycle_lock_metadata_claim" || return 1
+  }
+
   lifecycle_preflight() {
     NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=$(lifecycle_raw preflight 2>&1)
     NUINUI_LIFECYCLE_PREFLIGHT_RC=$?
@@ -516,7 +559,7 @@ if [ "${NUINUI_LIFECYCLE_RAW:-0}" != 1 ]; then
         return 1
       fi
       if [ -e "$lifecycle_release_lock_dir" ]; then
-        if [ -f "$lifecycle_release_lock_dir/state" ] && lifecycle_valid_durable_file "$lifecycle_release_lock_dir/state" version,operation,issue,branch,base,checkpoint,claim; then
+        if [ -f "$lifecycle_release_lock_dir/state" ] && lifecycle_valid_lock_file "$lifecycle_release_lock_dir/state"; then
           printf 'BLOCKED: mutation lock/state conflict\nlane=%s\noperation=%s\nlock_claim=%s\n' \
             "$lifecycle_release_lane" "$(lifecycle_state_value "$lifecycle_release_lock_dir/state" operation)" \
             "$(lifecycle_state_value "$lifecycle_release_lock_dir/state" claim)"
@@ -531,7 +574,7 @@ if [ "${NUINUI_LIFECYCLE_RAW:-0}" != 1 ]; then
         printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
         return 1
       fi
-      if ! lifecycle_valid_durable_file "$lifecycle_release_slot_dir/state" version,issue,branch,base,claim; then
+      if ! lifecycle_valid_slot_file "$lifecycle_release_slot_dir/state"; then
         echo 'BLOCKED: malformed durable ownership state'
         printf 'lane=%s\nslot=%s\n' "$lifecycle_release_lane" "$lifecycle_release_slot_dir/state"
         return 1

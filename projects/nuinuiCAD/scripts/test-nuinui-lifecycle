@@ -69,6 +69,47 @@ expect_nonempty_failure() {
   echo "PASS: $name"
 }
 
+expect_malformed_release() {
+  name="$1"
+  expected_slot="$2"
+  expected_lock="$3"
+  before_branch="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  before_head="$(git -C "$MAIN" rev-parse HEAD)"
+  before_status="$(git -C "$MAIN" status --porcelain)"
+  before_refs="$(lane_refs "$MAIN")"
+  if output=$("$HELPER" release main "$WRONG_CHECKPOINT" "$CLAIM1" 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    rc=$?
+  fi
+  [ "$rc" -ne 0 ] || fail "$name returned zero"
+  [ "$(printf '%s\n' "$output" | sed -n '1p')" = 'BLOCKED: malformed durable ownership state' ] || fail "$name was not classified first as malformed durable ownership state"
+  assert_line "$output" '^BLOCKED: malformed durable ownership state$' "$name was not classified as malformed durable ownership state"
+  if printf '%s\n' "$output" | grep -Eq '^BLOCKED: (checkpoint|claim) mismatch$'; then
+    fail "$name reported a checkpoint or claim mismatch instead of malformed state"
+  fi
+  [ "$(cat "$SLOT_PATH")" = "$expected_slot" ] || fail "$name changed the durable slot"
+  case "$expected_lock" in
+    absent)
+      [ ! -e "$LOCK_DIR" ] || fail "$name entered a mutation lock state"
+      ;;
+    *)
+      [ "$(cat "$LOCK_DIR/state")" = "$expected_lock" ] || fail "$name changed the durable lock"
+      ;;
+  esac
+  [ -z "$(find "$(gitdir "$MAIN")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)" ] || fail "$name created a release tombstone"
+  after_branch="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  after_head="$(git -C "$MAIN" rev-parse HEAD)"
+  after_status="$(git -C "$MAIN" status --porcelain)"
+  after_refs="$(lane_refs "$MAIN")"
+  [ "$before_branch" = "$after_branch" ] || fail "$name changed branch"
+  [ "$before_head" = "$after_head" ] || fail "$name changed HEAD"
+  [ "$before_status" = "$after_status" ] || fail "$name changed working tree"
+  [ "$before_refs" = "$after_refs" ] || fail "$name changed local refs"
+  echo "PASS: $name"
+}
+
 merge_topic_into_main() {
   branch="$1"
   git -C "$MAIN" push -q -u origin "$branch"
@@ -172,6 +213,26 @@ assert_line "$(cat "$ROOT/wrong-claim-release.out")" "^expected=$CLAIM1$" 'wrong
 assert_line "$(cat "$ROOT/wrong-claim-release.out")" "^actual=$WRONG_CLAIM$" 'wrong claim release omitted caller claim'
 [ "$(cat "$(slot_state "$MAIN")")" = "$SLOT_BEFORE_RELEASE_FAILURE" ] || fail 'wrong claim release changed durable ownership'
 echo 'PASS: wrong claim release retains BUSY ownership'
+
+SLOT_PATH="$(slot_state "$MAIN")"
+LOCK_DIR="$(gitdir "$MAIN")/nuinui-implementation-lock"
+cp "$SLOT_PATH" "$ROOT/valid-release-slot"
+sed 's/^version=1$/version=2/' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot unsupported version' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+mkdir "$LOCK_DIR"
+printf 'version=2\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+LOCK_UNSUPPORTED="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock unsupported version' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_UNSUPPORTED"
+printf 'version=1\noperation=not-an-operation\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+LOCK_INVALID_OPERATION="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock invalid operation' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_OPERATION"
+rm "$LOCK_DIR/state"
+rmdir "$LOCK_DIR"
 
 release_main "$CHECKPOINT1" "$CLAIM1" "$BRANCH1"
 
