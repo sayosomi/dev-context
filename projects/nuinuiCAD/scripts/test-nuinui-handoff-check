@@ -1,0 +1,139 @@
+#!/bin/sh
+set -eu
+
+HELPER="${1:-$(cd "$(dirname "$0")" && pwd -P)/nuinui-handoff-check}"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-handoff-check.XXXXXX")"
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+REMOTE="$ROOT/remote.git"
+SEED="$ROOT/seed"
+MAIN="$ROOT/main"
+SUB="$ROOT/sub"
+
+fail() { echo "SELFTEST FAIL: $*"; exit 1; }
+expect_blocked() {
+  name="$1"; shift
+  before_branch="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  before_head="$(git -C "$MAIN" rev-parse HEAD)"
+  before_status="$(git -C "$MAIN" status --porcelain)"
+  before_refs="$(git -C "$MAIN" for-each-ref --format='%(refname) %(objectname)' | sort)"
+  if "$@" >"$ROOT/out" 2>&1; then
+    cat "$ROOT/out"
+    fail "$name unexpectedly succeeded"
+  fi
+  grep -q '^BLOCKED:' "$ROOT/out" || { cat "$ROOT/out"; fail "$name did not fail closed"; }
+  after_branch="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  after_head="$(git -C "$MAIN" rev-parse HEAD)"
+  after_status="$(git -C "$MAIN" status --porcelain)"
+  after_refs="$(git -C "$MAIN" for-each-ref --format='%(refname) %(objectname)' | sort)"
+  [ "$before_branch" = "$after_branch" ] || fail "$name changed branch"
+  [ "$before_head" = "$after_head" ] || fail "$name changed HEAD"
+  [ "$before_status" = "$after_status" ] || fail "$name changed working tree"
+  [ "$before_refs" = "$after_refs" ] || fail "$name changed local refs"
+  echo "PASS: $name"
+}
+
+
+git init -q --bare "$REMOTE"
+git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
+git init -q -b main "$SEED"
+git -C "$SEED" config user.name test
+git -C "$SEED" config user.email test@example.invalid
+echo base > "$SEED/a"
+git -C "$SEED" add a
+git -C "$SEED" commit -q -m base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -q -u origin main
+
+git clone -q "$REMOTE" "$MAIN"
+git -C "$MAIN" config user.name test
+git -C "$MAIN" config user.email test@example.invalid
+git -C "$MAIN" worktree add -q --detach "$SUB" origin/main
+
+BASE="$(git -C "$MAIN" rev-parse origin/main)"
+ISSUE="SAY-167"
+BRANCH="sayosomi/say-167-inline-singular-geometry-substitution"
+OLD_BRANCH="sayosomi/say-167-inline-planner-core"
+CLAIM="claim-cp4-12345678"
+
+git -C "$MAIN" switch -q -c "$BRANCH" "$BASE"
+echo checkpoint >> "$MAIN/a"
+git -C "$MAIN" add a
+git -C "$MAIN" commit -q -m checkpoint
+CHECKPOINT="$(git -C "$MAIN" rev-parse HEAD)"
+git -C "$MAIN" push -q -u origin "$BRANCH"
+
+git -C "$MAIN" branch "$OLD_BRANCH" "$BASE"
+git -C "$MAIN" push -q origin "$OLD_BRANCH"
+
+GITDIR="$(git -C "$MAIN" rev-parse --absolute-git-dir)"
+SLOT="$GITDIR/nuinui-implementation-slot"
+mkdir "$SLOT"
+cat > "$SLOT/state" <<STATE
+version=1
+issue=$ISSUE
+branch=$BRANCH
+base=$BASE
+claim=$CLAIM
+STATE
+
+export NUINUI_HANDOFF_SELFTEST=1
+export NUINUI_MAIN_WT="$MAIN"
+export NUINUI_SUB_WT="$SUB"
+
+"$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact > "$ROOT/out"
+grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "exact handoff did not verify"; }
+grep -q "^  branch=$BRANCH$" "$ROOT/out" || fail "verified handoff did not use durable claimed branch"
+if grep -q "$OLD_BRANCH" "$ROOT/out"; then fail "stale same-Issue branch leaked into verified identity"; fi
+echo "PASS: exact claim ignores unrelated stale same-Issue branch"
+
+expect_blocked "wrong claim" "$HELPER" main "$ISSUE" claim-cp1-12345678 "$CHECKPOINT" "$BASE" exact
+expect_blocked "wrong checkpoint" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
+
+git -C "$MAIN" switch -q "$OLD_BRANCH"
+expect_blocked "stale same-Issue checkout" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
+git -C "$MAIN" switch -q "$BRANCH"
+
+echo dirty >> "$MAIN/a"
+expect_blocked "dirty lane" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+git -C "$MAIN" checkout -q -- a
+
+git -C "$SEED" fetch -q origin main
+git -C "$SEED" reset -q --hard origin/main
+echo newer > "$SEED/newer"
+git -C "$SEED" add newer
+git -C "$SEED" commit -q -m newer
+git -C "$SEED" push -q origin main
+NEW_MAIN="$(git -C "$SEED" rev-parse HEAD)"
+expect_blocked "stale main" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+"$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$NEW_MAIN" exact > "$ROOT/out"
+grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "fresh main handoff did not verify"; }
+echo "PASS: fresh main verification"
+
+FRESH_BRANCH="sayosomi/say-168-fresh-slice"
+FRESH_ISSUE="SAY-168"
+FRESH_CLAIM="claim-fresh-12345678"
+git -C "$MAIN" switch -q main
+git -C "$MAIN" fetch -q origin main
+git -C "$MAIN" reset -q --hard "$NEW_MAIN"
+git -C "$MAIN" switch -q -c "$FRESH_BRANCH" "$NEW_MAIN"
+cat > "$SLOT/state" <<STATE
+version=1
+issue=$FRESH_ISSUE
+branch=$FRESH_BRANCH
+base=$NEW_MAIN
+claim=$FRESH_CLAIM
+STATE
+"$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent > "$ROOT/out"
+grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "fresh absent-mode handoff did not verify"; }
+echo "PASS: fresh topic absent mode"
+
+ORIGIN_URL="$(git -C "$MAIN" remote get-url origin)"
+git -C "$MAIN" remote set-url origin "$ROOT/missing-remote.git"
+expect_blocked "unavailable remote does not satisfy absent mode" "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
+git -C "$MAIN" remote set-url origin "$ORIGIN_URL"
+
+git -C "$MAIN" push -q -u origin "$FRESH_BRANCH"
+expect_blocked "fresh mode rejects pre-existing remote topic" "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
+
+echo "NUINUI HANDOFF CHECK SELFTEST PASS"

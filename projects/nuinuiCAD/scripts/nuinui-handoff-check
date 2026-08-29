@@ -1,0 +1,259 @@
+#!/bin/sh
+
+VERSION="1.0.0"
+
+if [ "${NUINUI_HANDOFF_SELFTEST:-0}" = "1" ]; then
+  MAIN_WT="${NUINUI_MAIN_WT:?NUINUI_MAIN_WT is required in self-test mode}"
+  SUB_WT="${NUINUI_SUB_WT:?NUINUI_SUB_WT is required in self-test mode}"
+  TARGET_REPO_TOKEN=""
+else
+  MAIN_WT="/Users/yosomi/Code/nuinuiCAD"
+  SUB_WT="/Users/yosomi/Code/nuinuiCAD-sub"
+  TARGET_REPO_TOKEN="sayosomi/nuinuiCAD"
+fi
+
+usage() {
+  echo "Usage: $0 <main|sub> <SAY-123> <expected-claim> <expected-checkpoint-sha> <expected-main-sha> <absent|exact>"
+}
+
+lane_repo() {
+  case "$1" in
+    main) printf '%s\n' "$MAIN_WT" ;;
+    sub) printf '%s\n' "$SUB_WT" ;;
+    *) return 2 ;;
+  esac
+}
+
+valid_issue() { printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'; }
+valid_sha() { printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'; }
+valid_claim() { printf '%s\n' "$1" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z._-]{7,127}$'; }
+
+issue_from_branch() {
+  printf '%s\n' "$1" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p'
+}
+
+assert_git_repo() {
+  [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    echo "BLOCKED: assigned lane is not a Git worktree"
+    echo "PATH: $1"
+    return 1
+  }
+}
+
+assert_origin() {
+  repo="$1"
+  token="$2"
+  [ -z "$token" ] && return 0
+  origin_url="$(git -C "$repo" remote get-url origin 2>/dev/null)" || {
+    echo "BLOCKED: origin remote is missing"
+    echo "PATH: $repo"
+    return 1
+  }
+  case "$origin_url" in
+    *"$token"*) return 0 ;;
+    *)
+      echo "BLOCKED: unexpected repository origin"
+      echo "PATH: $repo"
+      echo "ACTUAL: $origin_url"
+      return 1
+      ;;
+  esac
+}
+
+git_dir() { git -C "$1" rev-parse --absolute-git-dir 2>/dev/null; }
+slot_path() { printf '%s/nuinui-implementation-slot\n' "$(git_dir "$1")"; }
+lock_path() { printf '%s/nuinui-implementation-lock\n' "$(git_dir "$1")"; }
+releasing_dirs() { find "$(git_dir "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort; }
+
+state_value() {
+  awk -v wanted="$2" '
+    index($0,"=")>1 {
+      k=substr($0,1,index($0,"=")-1)
+      if (k==wanted) { print substr($0,index($0,"=")+1); n++ }
+    }
+    END { if (n!=1) exit 1 }
+  ' "$1"
+}
+
+validate_exact_state() {
+  [ -f "$1" ] || return 1
+  awk -v required="$2" '
+    BEGIN { n=split(required,a,","); for(i=1;i<=n;i++) need[a[i]]=1 }
+    {
+      p=index($0,"=")
+      if(p<=1) bad=1
+      else {
+        k=substr($0,1,p-1); v=substr($0,p+1)
+        if(!(k in need) || v=="" || seen[k]++) bad=1
+      }
+    }
+    END {
+      for(k in need) if(seen[k]!=1) bad=1
+      exit bad ? 1 : 0
+    }
+  ' "$1"
+}
+
+validate_slot() {
+  file="$1"
+  validate_exact_state "$file" version,issue,branch,base,claim || return 1
+  [ "$(state_value "$file" version)" = "1" ] || return 1
+  slot_issue="$(state_value "$file" issue)" || return 1
+  slot_branch="$(state_value "$file" branch)" || return 1
+  slot_base="$(state_value "$file" base)" || return 1
+  slot_claim="$(state_value "$file" claim)" || return 1
+  valid_issue "$slot_issue" || return 1
+  git check-ref-format --branch "$slot_branch" >/dev/null 2>&1 || return 1
+  [ "$(issue_from_branch "$slot_branch")" = "$slot_issue" ] || return 1
+  valid_sha "$slot_base" || return 1
+  valid_claim "$slot_claim"
+}
+
+read_remote_topic() {
+  topic_raw="$(git -C "$1" ls-remote --exit-code --heads origin "refs/heads/$2" 2>/dev/null)"
+  topic_rc=$?
+  case "$topic_rc" in
+    0)
+      READ_TOPIC_STATE=present
+      READ_TOPIC_SHA="$(printf '%s\n' "$topic_raw" | awk 'NR==1{print $1}')"
+      valid_sha "$READ_TOPIC_SHA" || { READ_TOPIC_STATE=error; READ_TOPIC_SHA=; return 1; }
+      return 0
+      ;;
+    2)
+      READ_TOPIC_STATE=absent
+      READ_TOPIC_SHA=
+      return 0
+      ;;
+    *)
+      READ_TOPIC_STATE=error
+      READ_TOPIC_SHA=
+      return 1
+      ;;
+  esac
+}
+
+read_remote_main() {
+  main_raw="$(git -C "$1" ls-remote --exit-code origin refs/heads/main 2>/dev/null)" || return 1
+  READ_MAIN_SHA="$(printf '%s\n' "$main_raw" | awk 'NR==1{print $1}')"
+  valid_sha "$READ_MAIN_SHA"
+}
+
+blocked_mismatch() {
+  label="$1"
+  expected="$2"
+  actual="$3"
+  echo "BLOCKED: handoff $label mismatch"
+  echo "CALLER_EXPECTED: $expected"
+  echo "ACTUAL:          ${actual:-missing}"
+  return 1
+}
+
+handoff_check() {
+  lane="$1"
+  issue="$2"
+  expected_claim="$3"
+  expected_checkpoint="$4"
+  expected_main="$5"
+  remote_mode="$6"
+
+  valid_issue "$issue" || { echo "ERROR: Issue must look like SAY-123"; return 2; }
+  valid_claim "$expected_claim" || { echo "ERROR: expected claim is invalid"; return 2; }
+  valid_sha "$expected_checkpoint" || { echo "ERROR: expected checkpoint must be a full 40-character commit SHA"; return 2; }
+  valid_sha "$expected_main" || { echo "ERROR: expected main must be a full 40-character commit SHA"; return 2; }
+  case "$remote_mode" in absent|exact) ;; *) echo "ERROR: remote mode must be absent or exact"; return 2 ;; esac
+
+  repo="$(lane_repo "$lane")" || { echo "ERROR: lane must be main or sub"; return 2; }
+  assert_git_repo "$repo" || return 1
+  assert_origin "$repo" "$TARGET_REPO_TOKEN" || return 1
+
+  slot="$(slot_path "$repo")"
+  lock="$(lock_path "$repo")"
+  [ ! -e "$lock" ] || { echo "BLOCKED: implementation lane mutation lock exists"; return 1; }
+  [ -z "$(releasing_dirs "$repo")" ] || { echo "BLOCKED: implementation lane has release-pending state"; return 1; }
+  [ -d "$slot" ] || { echo "BLOCKED: active durable lane claim is missing"; return 1; }
+  validate_slot "$slot/state" || { echo "BLOCKED: active durable lane claim is invalid"; return 1; }
+  slot_snapshot="$(cat "$slot/state")" || { echo "BLOCKED: unable to read durable lane claim"; return 1; }
+
+  slot_issue="$(state_value "$slot/state" issue)"
+  slot_branch="$(state_value "$slot/state" branch)"
+  slot_base="$(state_value "$slot/state" base)"
+  slot_claim="$(state_value "$slot/state" claim)"
+
+  [ "$slot_issue" = "$issue" ] || blocked_mismatch "Issue" "$issue" "$slot_issue" || return 1
+  [ "$slot_claim" = "$expected_claim" ] || blocked_mismatch "claim" "$expected_claim" "$slot_claim" || return 1
+
+  dirty="$(git -C "$repo" status --porcelain 2>/dev/null)" || { echo "BLOCKED: unable to read working tree state"; return 1; }
+  [ -z "$dirty" ] || { echo "BLOCKED: assigned lane is dirty"; git -C "$repo" status --short; return 1; }
+
+  current_branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  current_head="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || { echo "BLOCKED: unable to read lane HEAD"; return 1; }
+  [ "$current_branch" = "$slot_branch" ] || blocked_mismatch "claimed branch" "$slot_branch" "${current_branch:-DETACHED}" || return 1
+  [ "$current_head" = "$expected_checkpoint" ] || blocked_mismatch "checkpoint" "$expected_checkpoint" "$current_head" || return 1
+  git -C "$repo" merge-base --is-ancestor "$slot_base" "$current_head" >/dev/null 2>&1 || { echo "BLOCKED: checkpoint is not descended from claimed Base"; return 1; }
+
+  read_remote_topic "$repo" "$slot_branch" || { echo "BLOCKED: authoritative remote topic state is unavailable"; return 1; }
+  remote_topic_state="$READ_TOPIC_STATE"
+  remote_topic="$READ_TOPIC_SHA"
+  case "$remote_mode" in
+    absent)
+      [ "$remote_topic_state" = absent ] || {
+        echo "BLOCKED: handoff expected fresh unpushed topic branch"
+        echo "CALLER_EXPECTED: remote topic absent"
+        echo "ACTUAL:          ${remote_topic:-present}"
+        return 1
+      }
+      ;;
+    exact)
+      [ "$remote_topic_state" = present ] || { echo "BLOCKED: authoritative remote topic is absent"; return 1; }
+      [ "$remote_topic" = "$expected_checkpoint" ] || blocked_mismatch "remote topic checkpoint" "$expected_checkpoint" "$remote_topic" || return 1
+      ;;
+  esac
+
+  read_remote_main "$repo" || { echo "BLOCKED: authoritative remote main is unavailable"; return 1; }
+  remote_main="$READ_MAIN_SHA"
+  [ "$remote_main" = "$expected_main" ] || blocked_mismatch "remote main" "$expected_main" "$remote_main" || return 1
+
+  read_remote_topic "$repo" "$slot_branch" || { echo "BLOCKED: authoritative remote topic became unavailable during verification"; return 1; }
+  remote_topic_state_after="$READ_TOPIC_STATE"
+  remote_topic_after="$READ_TOPIC_SHA"
+  read_remote_main "$repo" || { echo "BLOCKED: authoritative remote main became unavailable during verification"; return 1; }
+  remote_main_after="$READ_MAIN_SHA"
+  [ "$remote_topic_state_after" = "$remote_topic_state" ] || { echo "BLOCKED: remote topic presence changed during handoff verification"; return 1; }
+  [ "$remote_topic_after" = "$remote_topic" ] || { echo "BLOCKED: remote topic changed during handoff verification"; return 1; }
+  [ "$remote_main_after" = "$remote_main" ] || { echo "BLOCKED: remote main changed during handoff verification"; return 1; }
+
+  [ ! -e "$lock" ] || { echo "BLOCKED: implementation lane mutation lock appeared during handoff verification"; return 1; }
+  [ -z "$(releasing_dirs "$repo")" ] || { echo "BLOCKED: release-pending state appeared during handoff verification"; return 1; }
+  validate_slot "$slot/state" || { echo "BLOCKED: durable lane claim became invalid during handoff verification"; return 1; }
+  slot_snapshot_after="$(cat "$slot/state")" || return 1
+  [ "$slot_snapshot_after" = "$slot_snapshot" ] || { echo "BLOCKED: durable lane claim changed during handoff verification"; return 1; }
+
+  current_branch_after="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  current_head_after="$(git -C "$repo" rev-parse HEAD 2>/dev/null)" || return 1
+  dirty_after="$(git -C "$repo" status --porcelain 2>/dev/null)" || return 1
+  [ "$current_branch_after" = "$current_branch" ] || { echo "BLOCKED: local branch changed during handoff verification"; return 1; }
+  [ "$current_head_after" = "$current_head" ] || { echo "BLOCKED: local HEAD changed during handoff verification"; return 1; }
+  [ -z "$dirty_after" ] || { echo "BLOCKED: working tree changed during handoff verification"; return 1; }
+
+  echo "HANDOFF VERIFIED"
+  echo "  lane=$lane"
+  echo "  issue=$slot_issue"
+  echo "  claim=$slot_claim"
+  echo "  branch=$slot_branch"
+  echo "  base=$slot_base"
+  echo "  checkpoint=$current_head"
+  echo "  remote_topic_mode=$remote_mode"
+  echo "  origin_main=$remote_main"
+  echo "  clean=yes"
+  echo "  identity=$slot_issue/$slot_claim/$current_head/$remote_main"
+}
+
+case "${1:-}" in
+  version)
+    echo "$VERSION"
+    ;;
+  *)
+    [ "$#" -eq 6 ] || { usage; exit 2; }
+    handoff_check "$1" "$2" "$3" "$4" "$5" "$6"
+    ;;
+esac
