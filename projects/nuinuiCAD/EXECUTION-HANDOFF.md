@@ -17,6 +17,8 @@ Current execution stateは次から再構成する。
 
 Luna session、past prompt、past chat、Issue identifier単独はauthorityではない。
 
+Durable claim自体のauthorityはactual fixed lane metadataである。Linearにclaimを複製していても、そのcopyだけをcurrent claimとして使わない。chat rotation / recovery後はfresh local lane evidenceからclaimを読み直す。
+
 ## Durable claim as execution identity
 
 `nuinui` durable implementation slotの`claim`を、same Issue内のslice / generationを区別するlocal execution identityとして使う。
@@ -30,9 +32,9 @@ base=<fixed Base checkpoint>
 claim=<unique claim>
 ```
 
-Lunaへbranch / Baseを「expected値として再構成」させない。current branch / Baseはdurable claimからmechanically読み、prompt側はclaimをexact execution tokenとして渡す。
+Lunaへbranch / Baseを「expected値として再構成」させない。current branch / Baseはdurable claimからmechanically読み、prompt側はfresh local evidenceから取得したclaimをexact execution tokenとして渡す。
 
-Linear implementation checkpointにはcurrent lane / Base / branch / claim / pushed checkpointを保存する。same Issueのnext sliceではnew startによりnew claimを得る。
+same Issueのnext sliceではnew startによりnew claimを得る。previous sliceのclaimをIssue identityだけから再利用しない。
 
 ## Required execution envelope
 
@@ -45,7 +47,7 @@ Issue: SAY-123
 Slice: <current slice>
 Phase: implementation | integration | blocking-fix
 Lane: main | sub
-Claim: <exact durable claim>
+Claim: <exact durable claim from fresh lane evidence>
 Checkpoint: <exact current lane HEAD expected at handoff>
 Current remote main: <fresh exact SHA>
 Topic remote mode: absent | exact
@@ -56,7 +58,7 @@ Topic remote mode: absent | exact
 - `absent`: `nuinui start`直後のfresh unpushed branch。remote topicが存在したらBLOCKする。
 - `exact`: remote保存済みimplementation / integration / blocking-fix continuation。remote topic HEADがCheckpointとexact一致しなければBLOCKする。
 
-Envelopeへolder slice branch / SHAをhistoryとして併記しない。
+Envelopeへolder slice branch / SHA / claimをhistoryとして併記しない。
 
 ## Mechanical handoff gate
 
@@ -96,7 +98,7 @@ HANDOFF VERIFIED
 
 Helperが`BLOCKED:`を返した場合、Lunaはrepository mutationへ進まない。
 
-Current envelopeと異なるolder branch / SHAをLuna自身がexpectedとして持っていたことが判明した場合は`STALE_EXECUTION_CONTEXT`として報告する。actual checkoutをold expectedへ合わせるrepairはしない。
+Current envelopeと異なるolder branch / SHA / claimをLuna自身がexpectedとして持っていたことが判明した場合は`STALE_EXECUTION_CONTEXT`として報告する。actual checkoutをold expectedへ合わせるrepairはしない。
 
 特にsame Issueのprevious slice branchを理由にcheckout / reset / resumeしない。
 
@@ -108,10 +110,11 @@ New sessionでもReuseでも、current-run Execution Envelopeとmechanical hando
 
 ## Human / ChatGPT ordering
 
-- New slice: `nuinui start`成功 -> claimをLinear checkpointへ記録 / read-back -> `absent` handoffを生成。
-- Existing remote-saved slice resume: `nuinui resume`成功 -> current claim / checkpointをread-back -> `exact` handoffを生成。
-- Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> `exact` handoffを生成。
-- Blocking fix continuation: pushed reviewed/fix checkpoint + fresh remote main確認 -> `exact` handoffを生成。
+- New slice: `nuinui start`成功 -> successful output / durable slotからcurrent claimを取得 -> existing Linear checkpoint ruleを完了 -> `absent` handoffを生成。
+- Existing remote-saved slice resume: mandatory preflight / `nuinui resume`成功からcurrent claimをfreshに取得 -> `exact` handoffを生成。
+- Integration checkpoint: pushed implementation checkpoint + fresh local claim evidence + fresh remote main確認 -> `exact` handoffを生成。
+- Blocking fix continuation: pushed reviewed/fix checkpoint + fresh local claim evidence + fresh remote main確認 -> `exact` handoffを生成。
+- Chat rotation / external-state recovery: past chatのclaimを再利用せず、mandatory local lane evidenceからcurrent durable claimを読み直す。
 
 ChatGPT-side remote freshness gateは各handoff生成直前に行う。
 
