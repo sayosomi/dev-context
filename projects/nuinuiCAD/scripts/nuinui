@@ -1,7 +1,450 @@
 #!/bin/sh
-V=1.5.1;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare};GH=${NUINUI_GH_BIN:-gh};PR=sayosomi/nuinuiCAD
+
+# 1.6 lifecycle façade.  The raw implementation below remains the single
+# owner of durable lane mutation; these functions only compose its existing
+# read-only audit and mutation commands into the public handoff contract.
+if [ "${NUINUI_LIFECYCLE_RAW:-0}" != 1 ]; then
+  NUINUI_LIFECYCLE_SCRIPT=$0
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    NUINUI_LIFECYCLE_MAIN=${NUINUI_MAIN_WT:?NUINUI_MAIN_WT is required in self-test mode}
+    NUINUI_LIFECYCLE_SUB=${NUINUI_SUB_WT:?NUINUI_SUB_WT is required in self-test mode}
+  else
+    NUINUI_LIFECYCLE_MAIN=/Users/yosomi/Code/nuinuiCAD
+    NUINUI_LIFECYCLE_SUB=/Users/yosomi/Code/nuinuiCAD-sub
+  fi
+
+  lifecycle_raw() {
+    NUINUI_LIFECYCLE_RAW=1 "$NUINUI_LIFECYCLE_SCRIPT" "$@"
+  }
+
+  lifecycle_repo() {
+    case "$1" in
+      main) printf '%s\n' "$NUINUI_LIFECYCLE_MAIN" ;;
+      sub) printf '%s\n' "$NUINUI_LIFECYCLE_SUB" ;;
+      *) return 2 ;;
+    esac
+  }
+
+  lifecycle_peer_lane() {
+    case "$1" in
+      main) printf '%s\n' sub ;;
+      sub) printf '%s\n' main ;;
+      *) return 2 ;;
+    esac
+  }
+
+  lifecycle_git_dir() {
+    git -C "$1" rev-parse --absolute-git-dir 2>/dev/null
+  }
+
+  lifecycle_slot_state() {
+    printf '%s/nuinui-implementation-slot/state\n' "$(lifecycle_git_dir "$1")"
+  }
+
+  lifecycle_state_value() {
+    [ -f "$1" ] || return 1
+    awk -F= -v key="$2" '$1==key {print substr($0,index($0,"=")+1); n++} END {exit n==1 ? 0 : 1}' "$1"
+  }
+
+  lifecycle_valid_issue() { printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'; }
+  lifecycle_valid_sha() { printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'; }
+  lifecycle_valid_peer() { [ "$1" = FREE ] || lifecycle_valid_issue "$1"; }
+
+  lifecycle_preflight() {
+    NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=$(lifecycle_raw preflight 2>&1)
+    NUINUI_LIFECYCLE_PREFLIGHT_RC=$?
+    [ "$NUINUI_LIFECYCLE_PREFLIGHT_RC" = 0 ]
+  }
+
+  lifecycle_lane_state() {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
+      $0 ~ ("^" lane " path=") {seen_lane=1; next}
+      seen_lane && $0 ~ /^  state=/ {sub(/^  state=/,""); sub(/ .*/,""); print; exit}
+      seen_lane && $0 !~ /^ / {exit}
+    '
+  }
+
+  lifecycle_lane_issue() {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
+      $0 ~ ("^" lane " path=") {seen_lane=1; next}
+      seen_lane && $0 ~ /^  owner_issue=/ {sub(/^  owner_issue=/,""); sub(/ .*/,""); print; exit}
+      seen_lane && $0 !~ /^ / {exit}
+    '
+  }
+
+  lifecycle_expect_lane() {
+    lifecycle_expected_lane=$1
+    lifecycle_expected_occupancy=$2
+    lifecycle_actual_state=$(lifecycle_lane_state "$lifecycle_expected_lane")
+    lifecycle_actual_issue=$(lifecycle_lane_issue "$lifecycle_expected_lane")
+    case "$lifecycle_expected_occupancy" in
+      FREE)
+        [ "$lifecycle_actual_state" = FREE ] && [ -z "$lifecycle_actual_issue" ]
+        ;;
+      SAY-*)
+        [ "$lifecycle_actual_state" = BUSY ] && [ "$lifecycle_actual_issue" = "$lifecycle_expected_occupancy" ]
+        ;;
+      *) return 2 ;;
+    esac
+  }
+
+  lifecycle_blocked_occupancy() {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+    printf 'BLOCKED: begin %s\n' "$1"
+    printf 'lane=%s\n' "$2"
+    printf 'expected_peer=%s\n' "$3"
+    printf 'peer_lane=%s\n' "$4"
+    printf 'peer_state=%s\n' "${5:--}"
+    printf 'peer_issue=%s\n' "${6:--}"
+  }
+
+  lifecycle_start_envelope() {
+    lifecycle_start_lane=$1
+    lifecycle_start_repo=$(lifecycle_repo "$lifecycle_start_lane") || return 1
+    lifecycle_start_slot=$(lifecycle_slot_state "$lifecycle_start_repo") || return 1
+    set -- $(lifecycle_state_value "$lifecycle_start_slot" issue) \
+      $(lifecycle_state_value "$lifecycle_start_slot" branch) \
+      $(lifecycle_state_value "$lifecycle_start_slot" base) \
+      $(lifecycle_state_value "$lifecycle_start_slot" claim) || return 1
+    [ "$#" = 4 ] || return 1
+    lifecycle_start_issue=$1
+    lifecycle_start_branch=$2
+    lifecycle_start_base=$3
+    lifecycle_start_claim=$4
+    lifecycle_start_checkpoint=$(git -C "$lifecycle_start_repo" rev-parse HEAD 2>/dev/null) || return 1
+    lifecycle_start_clean=$(git -C "$lifecycle_start_repo" status --porcelain 2>/dev/null)
+    lifecycle_start_current_branch=$(git -C "$lifecycle_start_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    [ -z "$lifecycle_start_clean" ] || return 1
+    [ "$lifecycle_start_current_branch" = "$lifecycle_start_branch" ] || return 1
+    lifecycle_valid_issue "$lifecycle_start_issue" || return 1
+    lifecycle_valid_sha "$lifecycle_start_base" || return 1
+    lifecycle_valid_sha "$lifecycle_start_checkpoint" || return 1
+    printf 'IMPLEMENTATION STARTED\n'
+    printf 'lane=%s\n' "$lifecycle_start_lane"
+    printf 'issue=%s\n' "$lifecycle_start_issue"
+    printf 'branch=%s\n' "$lifecycle_start_branch"
+    printf 'base=%s\n' "$lifecycle_start_base"
+    printf 'checkpoint=%s\n' "$lifecycle_start_checkpoint"
+    printf 'claim=%s\n' "$lifecycle_start_claim"
+    printf 'clean=yes\n'
+    printf 'state=BUSY\n'
+  }
+
+  lifecycle_resume_envelope() {
+    lifecycle_resume_lane=$1
+    lifecycle_resume_repo=$(lifecycle_repo "$lifecycle_resume_lane") || return 1
+    lifecycle_resume_slot=$(lifecycle_slot_state "$lifecycle_resume_repo") || return 1
+    set -- $(lifecycle_state_value "$lifecycle_resume_slot" issue) \
+      $(lifecycle_state_value "$lifecycle_resume_slot" branch) \
+      $(lifecycle_state_value "$lifecycle_resume_slot" base) \
+      $(lifecycle_state_value "$lifecycle_resume_slot" claim) || return 1
+    [ "$#" = 4 ] || return 1
+    lifecycle_resume_checkpoint=$(git -C "$lifecycle_resume_repo" rev-parse HEAD 2>/dev/null) || return 1
+    lifecycle_resume_clean=$(git -C "$lifecycle_resume_repo" status --porcelain 2>/dev/null)
+    lifecycle_resume_current_branch=$(git -C "$lifecycle_resume_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    [ -z "$lifecycle_resume_clean" ] || return 1
+    [ "$lifecycle_resume_current_branch" = "$2" ] || return 1
+    printf 'IMPLEMENTATION RESUMED\n'
+    printf 'lane=%s\n' "$lifecycle_resume_lane"
+    printf 'issue=%s\n' "$1"
+    printf 'branch=%s\n' "$2"
+    printf 'base=%s\n' "$3"
+    printf 'checkpoint=%s\n' "$lifecycle_resume_checkpoint"
+    printf 'claim=%s\n' "$4"
+    printf 'clean=yes\n'
+    printf 'state=BUSY\n'
+  }
+
+  lifecycle_release_blocked() {
+    printf 'BLOCKED: release completed without a provable FREE idle state\n'
+    printf 'lane=%s\n' "$1"
+    printf 'issue=%s\n' "$2"
+    printf 'saved_checkpoint=%s\n' "$3"
+    printf 'released_claim=%s\n' "$4"
+    printf 'released_branch=%s\n' "$5"
+    printf 'idle_branch=%s\n' "${6:--}"
+    printf 'idle_head=%s\n' "${7:--}"
+    printf 'origin_main=%s\n' "${8:--}"
+    printf 'clean=%s\n' "${9:-unknown}"
+    printf 'state=%s\n' "${10:-BLOCKED}"
+  }
+
+  lifecycle_release_envelope() {
+    lifecycle_release_lane=$1
+    lifecycle_release_repo=$(lifecycle_repo "$lifecycle_release_lane") || return 1
+    lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo") || return 1
+    [ ! -e "$lifecycle_release_git_dir/nuinui-implementation-slot" ] || return 1
+    [ ! -e "$lifecycle_release_git_dir/nuinui-implementation-lock" ] || return 1
+    [ -z "$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)" ] || return 1
+    lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null) || return 1
+    lifecycle_release_origin=$(git -C "$lifecycle_release_repo" rev-parse origin/main 2>/dev/null) || return 1
+    lifecycle_release_branch=$(git -C "$lifecycle_release_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    lifecycle_release_clean=$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)
+    [ -z "$lifecycle_release_clean" ] || return 1
+    lifecycle_valid_sha "$lifecycle_release_head" || return 1
+    lifecycle_valid_sha "$lifecycle_release_origin" || return 1
+    case "$lifecycle_release_lane" in
+      main) [ "$lifecycle_release_branch" = main ] || return 1 ;;
+      sub) [ -z "$lifecycle_release_branch" ] || return 1 ;;
+    esac
+    [ "$lifecycle_release_head" = "$lifecycle_release_origin" ] || return 1
+    printf 'IMPLEMENTATION RELEASED\n'
+    printf 'lane=%s\n' "$lifecycle_release_lane"
+    printf 'issue=%s\n' "$lifecycle_release_issue"
+    printf 'saved_checkpoint=%s\n' "$lifecycle_release_saved_checkpoint"
+    printf 'released_claim=%s\n' "$lifecycle_release_claim"
+    printf 'released_branch=%s\n' "$lifecycle_release_topic"
+    printf 'idle_branch=%s\n' "${lifecycle_release_branch:-DETACHED}"
+    printf 'idle_head=%s\n' "$lifecycle_release_head"
+    printf 'origin_main=%s\n' "$lifecycle_release_origin"
+    printf 'clean=yes\n'
+    printf 'state=FREE\n'
+  }
+
+  lifecycle_begin() {
+    [ "$#" = 5 ] || { echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>'; return 2; }
+    lifecycle_begin_lane=$1
+    lifecycle_begin_issue=$2
+    lifecycle_begin_base=$3
+    lifecycle_begin_branch=$4
+    lifecycle_begin_expected_peer=$5
+    lifecycle_begin_peer=$(lifecycle_peer_lane "$lifecycle_begin_lane") || { echo 'ERROR: lane must be main or sub'; return 2; }
+    lifecycle_valid_issue "$lifecycle_begin_issue" || { echo 'ERROR: Issue must look like SAY-123'; return 2; }
+    lifecycle_valid_sha "$lifecycle_begin_base" || { echo 'ERROR: expected base must be a full 40-character commit SHA'; return 2; }
+    lifecycle_valid_peer "$lifecycle_begin_expected_peer" || { echo 'ERROR: expected peer must be FREE or SAY-123'; return 2; }
+
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: begin fixed-lane preflight failed'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_lane" FREE || {
+      lifecycle_blocked_occupancy 'target lane is not FREE' "$lifecycle_begin_lane" FREE "$lifecycle_begin_peer" \
+        "$(lifecycle_lane_state "$lifecycle_begin_lane")" "$(lifecycle_lane_issue "$lifecycle_begin_lane")"
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_peer" "$lifecycle_begin_expected_peer" || {
+      lifecycle_blocked_occupancy 'peer occupancy does not match caller expectation' "$lifecycle_begin_lane" \
+        "$lifecycle_begin_expected_peer" "$lifecycle_begin_peer" "$(lifecycle_lane_state "$lifecycle_begin_peer")" \
+        "$(lifecycle_lane_issue "$lifecycle_begin_peer")"
+      return 1
+    }
+
+    # Re-read the complete safety inventory immediately before delegating to
+    # the existing start mutation.  The target start primitive repeats its
+    # own lock-protected target checks immediately before mutation.
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: begin pre-mutation revalidation failed'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_lane" FREE || {
+      lifecycle_blocked_occupancy 'target changed before mutation' "$lifecycle_begin_lane" FREE "$lifecycle_begin_peer" \
+        "$(lifecycle_lane_state "$lifecycle_begin_lane")" "$(lifecycle_lane_issue "$lifecycle_begin_lane")"
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_peer" "$lifecycle_begin_expected_peer" || {
+      lifecycle_blocked_occupancy 'peer changed before mutation' "$lifecycle_begin_lane" "$lifecycle_begin_expected_peer" \
+        "$lifecycle_begin_peer" "$(lifecycle_lane_state "$lifecycle_begin_peer")" "$(lifecycle_lane_issue "$lifecycle_begin_peer")"
+      return 1
+    }
+
+    lifecycle_begin_start_output=$(lifecycle_raw start "$lifecycle_begin_lane" "$lifecycle_begin_issue" \
+      "$lifecycle_begin_base" "$lifecycle_begin_branch" 2>&1)
+    lifecycle_begin_start_rc=$?
+    [ "$lifecycle_begin_start_rc" = 0 ] || {
+      printf '%s\n' "$lifecycle_begin_start_output"
+      echo 'BLOCKED: begin start mutation failed'
+      return "$lifecycle_begin_start_rc"
+    }
+    lifecycle_begin_claim=$(printf '%s\n' "$lifecycle_begin_start_output" | sed -n 's/^  claim=//p')
+    [ -n "$lifecycle_begin_claim" ] || {
+      echo 'BLOCKED: begin start did not return a durable claim'
+      return 1
+    }
+
+    # A post-mutation audit is evidence only; it never triggers destructive
+    # rollback.  If it cannot prove the exact new state, ownership remains
+    # durable and the caller receives BLOCKED for explicit recovery.
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: begin post-mutation consistency check failed'
+      return 1
+    }
+    lifecycle_begin_target_state=$(lifecycle_lane_state "$lifecycle_begin_lane")
+    lifecycle_begin_peer_state=$(lifecycle_lane_state "$lifecycle_begin_peer")
+    lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$lifecycle_begin_peer")
+    [ "$lifecycle_begin_target_state" = BUSY ] || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: begin target did not become BUSY'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_peer" "$lifecycle_begin_expected_peer" || {
+      lifecycle_blocked_occupancy 'peer changed after mutation' "$lifecycle_begin_lane" \
+        "$lifecycle_begin_expected_peer" "$lifecycle_begin_peer" "$lifecycle_begin_peer_state" "$lifecycle_begin_peer_issue"
+      return 1
+    }
+    lifecycle_begin_repo=$(lifecycle_repo "$lifecycle_begin_lane")
+    lifecycle_begin_slot=$(lifecycle_slot_state "$lifecycle_begin_repo")
+    set -- $(lifecycle_state_value "$lifecycle_begin_slot" issue) \
+      $(lifecycle_state_value "$lifecycle_begin_slot" branch) \
+      $(lifecycle_state_value "$lifecycle_begin_slot" base) \
+      $(lifecycle_state_value "$lifecycle_begin_slot" claim) || {
+        echo 'BLOCKED: begin durable state cannot be read after mutation'
+        return 1
+      }
+    [ "$1 $2 $3 $4" = "$lifecycle_begin_issue $lifecycle_begin_branch $lifecycle_begin_base $lifecycle_begin_claim" ] || {
+      echo 'BLOCKED: begin durable state differs from newly-created start state'
+      echo "actual_issue=$1"
+      echo "actual_branch=$2"
+      echo "actual_base=$3"
+      echo "actual_claim=$4"
+      return 1
+    }
+    lifecycle_start_envelope "$lifecycle_begin_lane" || {
+      echo 'BLOCKED: begin checkout state cannot be proven after mutation'
+      return 1
+    }
+    lifecycle_begin_peer_issue=${lifecycle_begin_peer_issue:-}
+    printf 'peer_lane=%s\n' "$lifecycle_begin_peer"
+    printf 'peer_state=%s\n' "$lifecycle_begin_peer_state"
+    printf 'peer_issue=%s\n' "${lifecycle_begin_peer_issue:--}"
+    printf 'preflight=PASS\n'
+  }
+
+  lifecycle_start_command() {
+    lifecycle_start_lane_arg=$1
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: start fixed-lane preflight failed'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_start_lane_arg" FREE || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: start target lane is not FREE'
+      return 1
+    }
+    lifecycle_start_output=$(lifecycle_raw start "$@" 2>&1)
+    lifecycle_start_rc=$?
+    [ "$lifecycle_start_rc" = 0 ] || { printf '%s\n' "$lifecycle_start_output"; return "$lifecycle_start_rc"; }
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: start post-mutation consistency check failed'
+      return 1
+    }
+    lifecycle_start_peer=$(lifecycle_peer_lane "$lifecycle_start_lane_arg")
+    lifecycle_start_peer_state=$(lifecycle_lane_state "$lifecycle_start_peer")
+    lifecycle_start_peer_issue=$(lifecycle_lane_issue "$lifecycle_start_peer")
+    lifecycle_start_envelope "$1" || {
+      echo 'BLOCKED: start succeeded but its local state envelope could not be proven'
+      return 1
+    }
+    printf 'peer_lane=%s\n' "$lifecycle_start_peer"
+    printf 'peer_state=%s\n' "$lifecycle_start_peer_state"
+    printf 'peer_issue=%s\n' "${lifecycle_start_peer_issue:--}"
+    printf 'preflight=PASS\n'
+  }
+
+  lifecycle_resume_command() {
+    lifecycle_resume_output=$(lifecycle_raw resume "$@" 2>&1)
+    lifecycle_resume_rc=$?
+    [ "$lifecycle_resume_rc" = 0 ] || { printf '%s\n' "$lifecycle_resume_output"; return "$lifecycle_resume_rc"; }
+    lifecycle_resume_envelope "$1" || {
+      echo 'BLOCKED: resume succeeded but its local state envelope could not be proven'
+      return 1
+    }
+  }
+
+  lifecycle_release_command() {
+    [ "$#" = 3 ] || { echo 'Usage: nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>'; return 2; }
+    lifecycle_release_lane=$1
+    lifecycle_release_saved_checkpoint=$2
+    lifecycle_release_claim=$3
+    lifecycle_release_repo=$(lifecycle_repo "$lifecycle_release_lane") || { echo 'ERROR: lane must be main or sub'; return 2; }
+    lifecycle_release_slot=$(lifecycle_slot_state "$lifecycle_release_repo")
+    lifecycle_release_issue=$(lifecycle_state_value "$lifecycle_release_slot" issue) || return 1
+    lifecycle_release_topic=$(lifecycle_state_value "$lifecycle_release_slot" branch) || return 1
+    lifecycle_release_output=$(lifecycle_raw release "$@" 2>&1)
+    lifecycle_release_rc=$?
+    [ "$lifecycle_release_rc" = 0 ] || { printf '%s\n' "$lifecycle_release_output"; return "$lifecycle_release_rc"; }
+    lifecycle_release_envelope "$lifecycle_release_lane" || {
+      lifecycle_release_blocked "$lifecycle_release_lane" "$lifecycle_release_issue" \
+        "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim" "$lifecycle_release_topic" \
+        "$(git -C "$lifecycle_release_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)" \
+        "$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || echo -)" \
+        "$(git -C "$lifecycle_release_repo" rev-parse origin/main 2>/dev/null || echo -)" \
+        unknown BLOCKED
+      return 1
+    }
+  }
+
+  lifecycle_usage() {
+    echo 'nuinui 1.6.0'
+    echo 'Commands: preflight verify lane-init begin start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-sync doctor transition-audit context-check self-test'
+  }
+
+  lifecycle_context_check() {
+    lifecycle_context_output=$(lifecycle_raw context-check 2>&1)
+    lifecycle_context_rc=$?
+    printf '%s\n' "$lifecycle_context_output" | sed 's/^nuinui 1\.5\.1$/nuinui 1.6.0/'
+    if [ "$lifecycle_context_rc" = 0 ] && grep -q '\`nuinui begin' "$(dirname "$NUINUI_LIFECYCLE_SCRIPT")/../LOCAL-TOOLS.md"; then
+      return 0
+    fi
+    [ "$lifecycle_context_rc" = 0 ] && echo 'CONTEXT CHECK BLOCKED'
+    return 1
+  }
+
+  case "${1:-}" in
+    version)
+      [ "$#" = 1 ] || exit 2
+      echo 1.6.0
+      exit 0
+      ;;
+    --help|-h|help|'')
+      lifecycle_usage
+      [ -n "${1:-}" ] && exit 0 || exit 2
+      ;;
+    context-check)
+      [ "$#" = 1 ] || exit 2
+      lifecycle_context_check
+      exit $?
+      ;;
+    begin)
+      [ "$#" = 6 ] || exit 2
+      lifecycle_begin "$2" "$3" "$4" "$5" "$6"
+      exit $?
+      ;;
+    start)
+      [ "$#" = 5 ] || exit 2
+      lifecycle_start_command "$2" "$3" "$4" "$5"
+      exit $?
+      ;;
+    resume)
+      [ "$#" = 7 ] || exit 2
+      lifecycle_resume_command "$2" "$3" "$4" "$5" "$6" "$7"
+      exit $?
+      ;;
+    release)
+      [ "$#" = 4 ] || exit 2
+      lifecycle_release_command "$2" "$3" "$4"
+      exit $?
+      ;;
+    self-test)
+      lifecycle_original_selftest_output=$(lifecycle_raw self-test 2>&1)
+      lifecycle_original_selftest_rc=$?
+      printf '%s\n' "$lifecycle_original_selftest_output"
+      [ "$lifecycle_original_selftest_rc" = 0 ] || exit "$lifecycle_original_selftest_rc"
+      lifecycle_extended_selftest=$(dirname "$NUINUI_LIFECYCLE_SCRIPT")/test-nuinui-lifecycle
+      [ -f "$lifecycle_extended_selftest" ] || { echo 'SELFTEST BLOCKED: lifecycle test is missing'; exit 1; }
+      /bin/sh "$lifecycle_extended_selftest" "$NUINUI_LIFECYCLE_SCRIPT"
+      exit $?
+      ;;
+  esac
+fi
+V=1.6.0;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare};GH=${NUINUI_GH_BIN:-gh};PR=sayosomi/nuinuiCAD
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then M=${NUINUI_MAIN_WT:?};S=${NUINUI_SUB_WT:?};E=${NUINUI_E2E_WT:?};C=${NUINUI_DEV_CONTEXT_WT:-};RT=;CT=;else M=/Users/yosomi/Code/nuinuiCAD;S=/Users/yosomi/Code/nuinuiCAD-sub;E=/Users/yosomi/Code/nuinuiCAD-e2e;C=/Users/yosomi/Code/dev-context;RT=sayosomi/nuinuiCAD;CT=sayosomi/dev-context;fi
 K='preflight verify lane-init start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-sync doctor transition-audit context-check self-test'
+K="$K begin"
 u(){ echo "nuinui $V";echo "Commands: $K";};lr(){ case $1 in main)echo "$M";;sub)echo "$S";;e2e)echo "$E";;*)return 2;;esac;};vi(){ echo "$1"|grep -Eq '^SAY-[0-9]+$';};vs(){ echo "$1"|grep -Eq '^[0-9a-fA-F]{40}$';};vc(){ echo "$1"|grep -Eq '^[0-9A-Za-z][0-9A-Za-z._-]{7,127}$';};ib(){ echo "$1"|sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p';};il(){ case $1 in main|sub);;*)return 2;;esac;};gr(){ [ -d "$1" ]&&git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1;};ao(){ [ -z "$2" ]||git -C "$1" remote get-url origin 2>/dev/null|grep -Fq "$2";};cn(){ [ -z "$(git -C "$1" status --porcelain)" ];};bn(){ git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null||true;};hh(){ git -C "$1" rev-parse HEAD;};om(){ git -C "$1" rev-parse origin/main;};fm(){ git -C "$1" fetch origin main >/dev/null 2>&1;};fp(){ git -C "$1" fetch origin --prune >/dev/null 2>&1;};an(){ git -C "$1" merge-base --is-ancestor "$2" "$3";};sd(){ git -C "$1" switch --detach "$2" >/dev/null;};gd(){ git -C "$1" rev-parse --absolute-git-dir 2>/dev/null;};ip(){ echo "$(gd "$1")/nuinui-implementation-v1";};sp(){ echo "$(gd "$1")/nuinui-implementation-slot";};kp(){ echo "$(gd "$1")/nuinui-implementation-lock";};rp(){ echo "$(gd "$1")/nuinui-implementation-slot.releasing.$2";};rds(){ find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null|sort;};mp(){ echo "$(gd "$1")/nuinui-slot";};ep(){ echo "$(gd "$1")/nuinui-e2e-session";}
 rd(){ [ -f "$1" ]||return 1;awk -F= -v k="$2" 'BEGIN{n=split(k,a,",");for(i=1;i<=n;i++)q[a[i]]=1}$0!~/^[^=]+=/ {z=1}{p=index($0,"=");x=substr($0,1,p-1);v=substr($0,p+1);if(!(x in q)||v==""||s[x]++)z=1;d[x]=v}END{for(i=1;i<=n;i++)if(s[a[i]]!=1)z=1;if(z)exit 1;for(i=1;i<=n;i++){printf "%s",d[a[i]];if(i<n)printf " ";else printf "\n"}}' "$1";}
 ini(){ [ "$(rd "$1" version)" = 1 ];};sl(){ set -- $(rd "$1" version,issue,branch,base,claim)||return 1;[ "$1" = 1 ]&&vi "$2"&&git check-ref-format --branch "$3" >/dev/null 2>&1&&[ "$(ib "$3")" = "$2" ]&&vs "$4"&&vc "$5"||return 1;echo "$2 $3 $4 $5";};lk(){ set -- $(rd "$1" version,operation,issue,branch,base,checkpoint,claim)||return 1;[ "$1" = 1 ]||return 1;case $2 in start|resume|release|init);;*)return 1;;esac;vc "$7"||return 1;[ "$3" = - ]||vi "$3"||return 1;[ "$4" = - ]||git check-ref-format --branch "$4" >/dev/null 2>&1||return 1;[ "$3" = - ]&&[ "$4" = - ]||[ "$(ib "$4")" = "$3" ]||return 1;[ "$5" = - ]||vs "$5"||return 1;[ "$6" = - ]||vs "$6"||return 1;echo "$2 $3 $4 $5 $6 $7";};rel(){ d=$1;set -- $(sl "$d/state")||return 1;[ -f "$d/checkpoint" ]||return 1;h=$(cat "$d/checkpoint");vs "$h"&&[ "${d##*/}" = "nuinui-implementation-slot.releasing.$4" ]||return 1;echo "$1 $2 $3 $4 $h";};wa(){  t=${1}.tmp.$$;(umask 077;printf '%b' "$2">"$t")&&mv -- "$t" "$1";};gc(){ command -v uuidgen >/dev/null 2>&1&&uuidgen|tr A-Z a-z||printf '%s:%s:%s\n' $$ "$(date +%s)" "${RANDOM:-0}"|git hash-object --stdin;};lo(){  k=$(kp "$1");mkdir "$k" 2>/dev/null||return 1;wa "$k/state" "version=1\noperation=$2\nissue=$4\nbranch=$5\nbase=$6\ncheckpoint=$7\nclaim=$3\n";};ul(){ r=$1;e=$2;set -- $(lk "$(kp "$r")/state")||return 1;[ "$6" = "$e" ]&&rm "$(kp "$r")/state"&&rmdir "$(kp "$r")";};am(){ git -C "$1" ls-remote origin refs/heads/main 2>/dev/null|awk 'NR==1{print $1}';};ab(){ git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null|awk 'NR==1{print $1}';};id(){ local r a q; r=$2;a=$3;cn "$r"&&[ "$(hh "$r")" = "$a" ]||return 1;q=$(bn "$r");case $1 in main)[ "$q" = main ];;sub)[ -z "$q" ];;esac;};nr(){ [ -z "$(rds "$1")" ];};bo(){  x=$(CDPATH= cd -- "$1"&&pwd -P);git -C "$1" worktree list --porcelain|awk -v b="refs/heads/$2" -v x="$x" '/^worktree /{p=substr($0,10)}/^branch /&&substr($0,8)==b&&p!=x{print p;exit}';}

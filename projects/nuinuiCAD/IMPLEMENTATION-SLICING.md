@@ -169,13 +169,15 @@ shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じ�
 
 ## Lane assignment
 
-implementation slice開始時に [`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflightを行う。
+implementation slice開始時は、ChatGPTがfresh remote state、Linear current implementation occupancy、parallel-admission decisionからlane、Base、branch、peer expectationを決め、known-Issueの通常startupではHumanへ [`nuinui begin`](./LOCAL-TOOLS.md) を1つ渡す。`begin`が [`CHECKOUTS.md`](./CHECKOUTS.md) のfull 3-lane auditを内部実行し、target FREEとpeer occupancyを再検証するため、別Human preflightを先行させない。
 
 - `main` FREE →通常第一候補;
 - `main` BUSYかつ`sub` FREE →Coordinatorのparallel admissionで`LOW`と判定できる独立Taskだけを`sub`へ開始してよい;
 - `main` BUSYかつ`sub` FREEでもadmissibleなTaskがない → `sub`をFREEのまま残す;
 - 両方BUSY →新しいimplementationは開始しない;
 - `e2e`はimplementationへ使わない。
+
+same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけでは3-lane preflightへ戻らない。current claim / checkpointをcaller expectationとしてLunaの [`nuinui-handoff-check`](./EXECUTION-HANDOFF.md) に渡し、actual local stateをそこで機械的に検証する。`begin`、`resume`、`release`、handoff-checkのBLOCKED、crash suspicion、unexpected local state、identity不明、explicit diagnosis / recoveryだけがseparate preflightのrouting conditionである。
 
 2 laneを超えるparallelismをIssue / branch / worktree追加で表現しない。2 laneを常時使用することも目標にしない。
 

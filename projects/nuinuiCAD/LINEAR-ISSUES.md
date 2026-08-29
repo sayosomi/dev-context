@@ -107,16 +107,14 @@ implementation IssueをIn Progressへ進めるとき:
 
 1. latest remote repository / current Issue確認;
 2. current slice確定;
-3. 3-lane local preflight;
-4. occupancy reconciliation;
-5. FREE main/sub選択;
-6. Base checkpoint固定;
-7. `nuinui start`またはvalid durable `resume`をactualに成功させ、lane / Issue / branch / Base / checkpoint / claimを確認;
-8. success確認後にIssueをIn Progressへ変更;
-9. `Implementation checkpoint`をCommentへ記録;
-10. status / checkpointをread-back。
+3. fresh Linear current implementation occupancyとparallel-admission decisionからtarget FREE lane、Base checkpoint、branch、exact peer expectationを選択;
+4. Humanへ1つの`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>` commandを渡す;
+5. `begin`のfull local audit / target FREE proof / exact peer proofと`IMPLEMENTATION STARTED` envelopeを確認;
+6. success確認後にIssueをIn Progressへ変更;
+7. `Implementation checkpoint`をCommentへ記録;
+8. status / checkpointをread-back。
 
-Human terminal handoffではcommand提示、`CHECKING`、read-only verificationだけでIn Progressへ進めない。successful local transition resultを確認してから8以降を行う。
+known-Issueの通常pathでは、別Human `preflight`をstartup前に要求しない。Human terminal handoffではcommand提示、`CHECKING`、read-only verificationだけでIn Progressへ進めない。successful local transition resultが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で6以降を行う。`begin`がoccupancy mismatch / `BLOCKED`を返した場合はstartせず、current local stateとLinearをreconcileする。
 
 標準record:
 
@@ -135,7 +133,7 @@ Implementation checkpoint
 
 physical mutex / ownership authorityはGit-local durable metadata。Linear Claimはrestart / handoff identityを保存するexternal evidenceである。
 
-new `nuinui start`が返したclaimを同じlane assignmentのImplementation checkpointへ必ず保存する。そのgenerationのresume / release / handoffでClaimを維持し、same Issue / branch / Baseの別generationと混同しない。
+new `nuinui begin`が返したclaimを同じlane assignmentのImplementation checkpointへ必ず保存する。そのgenerationのresume / release / handoffでClaimを維持し、same Issue / branch / Baseの別generationと混同しない。低レベル`start`を明示的に使う場合も、返されたlocal envelopeからclaim / checkpointを保存する。
 
 resume restart identityは少なくとも`Lane + Issue + Base checkpoint + exact pushed checkpoint + Branch + Claim`。Baseをancestryだけから再推定した値やlocal slotからその場で読んだclaimをcaller expectationの代わりに使わない。
 
@@ -182,7 +180,11 @@ Lane release checkpoint
 - Lane state: FREE
 ```
 
-Humanからfresh successful `nuinui release` outputが返された場合actual local evidenceとして使える。ChatGPTがLinear更新可能なら同じcontinuationでrecordしread-backする。
+Humanからfresh successful `nuinui release` outputが返された場合actual local evidenceとして使える。ChatGPTがLinear更新可能なら同じcontinuationでrecordしread-backする。successful complete release envelopeの後、release checkpointのためだけに別preflightを要求しない。
+
+release envelopeの`issue`、`saved_checkpoint`、`released_claim`、`released_branch`、`idle_branch`、`idle_head`、`origin_main`、`clean=yes`、`state=FREE`をそのままLane release checkpointの入力として使う。Issue Done（Work completion）とphysical lane FREE（capacity cleanup）は引き続き別の条件である。
+
+final closureは`merge / Work completion -> exact nuinui release -> complete IMPLEMENTATION RELEASED envelope -> Lane release checkpointのrecord / read-back -> closure`の順で行う。successful release envelope後にphysical FREEを再発見するためのHuman preflightは要求しない。
 
 checkpointはphysical release成立条件そのものではない。actual local FREEはCHECKOUTS authority。ただしImplementation chat final closureにはrecord + Post-write verificationを含む。
 

@@ -55,7 +55,7 @@ Topic remote mode: absent | exact
 
 `Topic remote mode`:
 
-- `absent`: `nuinui start`直後のfresh unpushed branch。remote topicが存在したらBLOCKする。
+- `absent`: `nuinui begin`（または低レベル`nuinui start`）直後のfresh unpushed branch。remote topicが存在したらBLOCKする。
 - `exact`: remote保存済みimplementation / integration / blocking-fix continuation。remote topic HEADがCheckpointとexact一致しなければBLOCKする。
 
 Envelopeへolder slice branch / SHA / claimをhistoryとして併記しない。
@@ -110,13 +110,14 @@ New sessionでもReuseでも、current-run Execution Envelopeとmechanical hando
 
 ## Human / ChatGPT ordering
 
-- New slice: `nuinui start`成功 -> successful output / durable slotからcurrent claimを取得 -> existing Linear checkpoint ruleを完了 -> `absent` handoffを生成。
-- Existing remote-saved slice resume: mandatory preflight / `nuinui resume`成功からcurrent claimをfreshに取得 -> `exact` handoffを生成。
-- Integration checkpoint: pushed implementation checkpoint + fresh local claim evidence + fresh remote main確認 -> `exact` handoffを生成。
-- Blocking fix continuation: pushed reviewed/fix checkpoint + fresh local claim evidence + fresh remote main確認 -> `exact` handoffを生成。
-- Chat rotation / external-state recovery: past chatのclaimを再利用せず、mandatory local lane evidenceからcurrent durable claimを読み直す。
+- New slice: ChatGPTがfresh remote / Linear occupancy / parallel-admission decisionからtarget FREE lane、Base、branch、expected peerを決める -> Humanが`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`を1回実行 -> complete `IMPLEMENTATION STARTED` envelopeを確認 -> existing Linear checkpoint ruleを完了 -> `absent` handoffを生成。
+- Same active durable generation continuation: last verified lifecycle envelopeまたはcurrent Linear checkpointからclaim / checkpointをcaller expectationとして渡す -> Human preflightなしでLunaが最初に`nuinui-handoff-check`を実行 -> actual local durable claim / checkout / remote stateとのmatch後に`exact` handoffを続行する。
+- Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。`nuinui-handoff-check`がactual local evidenceを再検証する。
+- Blocking fix continuation: pushed reviewed/fix checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。blocking fixだけを理由にHuman preflightへ戻さない。
+- Chat rotation: rotation aloneではpreflightを要求しない。current Issue / lane / generation / checkpointをdurable external stateから復元できる場合は、caller expectationを構成して`nuinui-handoff-check`へ進む。
+- Crash、BLOCKED、unexpected checkout / branch / dirty state、identity不明、explicit diagnosis / recoveryでは[`CHECKOUTS.md`](./CHECKOUTS.md)のpreflight diagnostic / routing ruleを使う。
 
-ChatGPT-side remote freshness gateは各handoff生成直前に行う。
+ChatGPT-side remote freshness gateは各handoff生成直前に行う。remote main freshnessはこのGitHub-side checkとhandoff-check inputであり、それだけではHuman 3-lane preflightのinvalidationではない。
 
 ## Versioned helper
 
