@@ -34,7 +34,10 @@ candidate_b=$root/candidate-b
 
 cmp -s "$candidate_a" "$candidate_b" || fail 'independent candidates differ'
 cmp -s "$candidate_a" "$artifact_path" || fail 'generated candidate differs from checked-in artifact'
-[ -x "$candidate_a" ] || fail 'generated candidate is not executable'
+candidate_mode=$(stat -f '%Lp' "$candidate_a")
+artifact_mode=$(stat -f '%Lp' "$artifact_path")
+[ "$candidate_mode" = "$artifact_mode" ] || fail "generated mode $candidate_mode differs from production mode $artifact_mode"
+[ "$candidate_mode" = 755 ] || fail "generated candidate mode is $candidate_mode, expected 755"
 
 candidate_version=$("$candidate_a" version)
 [ "$candidate_version" = 1.6.3 ] || fail "generated candidate version is $candidate_version"
