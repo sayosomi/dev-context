@@ -4,150 +4,136 @@
 
 Implementation chatは`Contract: Ready`なIssueのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
 
-実行capacityはchat数ではなく [`CHECKOUTS.md`](./CHECKOUTS.md) のfixed implementation laneで決まる。
+実行capacityはchat数ではなく[`CHECKOUTS.md`](./CHECKOUTS.md)のfixed implementation laneで決まる。
 
 - `main`: at most 1 implementation track
 - `sub`: at most 1 implementation track
 - 合計最大2 implementation track
 
-Implementation chatを新しく作っただけではlaneをclaimしない。実際のstartup gate / lane assignment / Base checkpoint記録が完了した時点でexecutionが開始する。
+chatを新しく作っただけではlaneをclaimしない。actual startup gate / lane assignment / Base checkpoint / durable claimが成立した時点でexecutionが開始する。
 
-通常のrepository implementation / blocking fixは [`CODING-AGENT.md`](./CODING-AGENT.md) に従いLuna xhighが担当する。
+通常のrepository implementation / blocking fixは[`CODING-AGENT.md`](./CODING-AGENT.md)に従いLuna xhighが担当する。
 
 ## Documentation / policy direct execution exception
 
-Repository-owned documentation / specification / policy workは、source-code implementationとは別のexecution classとする。
+Repository-owned documentation / specification / policy workはsource-code implementationとは別execution classとする。
 
-次の条件をすべて満たすTaskは、implementation lane / Lunaを使わずChatGPTが直接実行してよい。
+次をすべて満たすTaskはimplementation lane / Lunaを使わずChatGPTが直接実行してよい。
 
-- 変更対象が`docs/**`、`AGENTS.md`、repository/project `README.md`、`ARCHITECTURE.md`、CHANGELOG等のrepository-owned documentation / specification / policy fileに限定される;
+- targetが`docs/**`、`AGENTS.md`、repository/project `README.md`、`ARCHITECTURE.md`、CHANGELOG等のdocumentation / specification / policy fileに限定される;
 - source code、test code、fixtures、build設定、CI、runtime behavior、generated artifactを変更しない;
-- plan、target file、intended changeをユーザーへ事前提示し、ユーザーの明示的な許可を得ている;
-- 文面修正だけでなく、新しいproduct / UX / architecture / engineering / operational ruleの決定を含んでもよい。ただし、その判断内容はユーザーが許可したplanのscope内であること;
+- plan、target file、intended changeをユーザーへ事前提示し明示許可を得ている;
 - latest remote repositoryとcurrent relevant management/spec stateを確認してから編集する;
-- verificationはdocumentation consistency / policy consistencyを確認するread-only / focused checkで足り、source-code implementation-side test-debug loopを必要としない;
-- scopeがdocumentation / specification / policy changeからsource-code implementationへmaterially拡大しない。
+- verificationはdocumentation / policy consistencyのfocused read-only checkで足りる;
+- scopeがsource-code implementationへmaterially拡大しない。
 
-この例外では固定`main` / `sub` implementation lane、Base checkpoint、Luna sessionをclaimしない。ChatGPTがremote repository上で編集、必要なfocused verification、blocking review、commit / push / merge、Linear synchronizationまで直接担当してよい。
+この例外ではfixed main/sub lane、Base checkpoint、Luna sessionをclaimしない。途中でsource/test/runtime changeが必要になったら停止しplanを更新し、必要なら通常lifecycleへ戻す。
 
-途中でsource code / test / generated outputの変更が必要になった場合、または許可されたplanのscopeを越えるproduct / architecture decisionが必要になった場合は、いったん停止してplanを更新し、必要なら通常のLuna / implementation-lane lifecycleへ戻す。
-
-Manual E2Eが必要な場合は本例外では扱わず、[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md) をauthorityとする。
+Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)をauthorityとする。
 
 ## Implementation start / resume completion rule
 
-Humanがimplementation Issueについて`開始` / `再開` / `続ける` / `進める`等を指示した場合、ChatGPTはremote / Linear / policyの再確認やblocker説明だけで停止しない。
+Humanがimplementation Issueについて開始 / 再開 / 続行を指示した場合、remote / Linear / policyの再確認やblocker説明だけで停止しない。
 
-その応答は、次のどちらかに到達して初めてstart / resume handoffとして完了する。
+その応答は次のどちらかへ到達して完了する。
 
-1. ChatGPT側で次のexecutionを実際に開始できる状態まで進み、必要なlane assignment / checkpoint / Luna handoffを開始する。
-2. Human actionが必要なら、Humanが**その応答から直ちに実行できる最初の完全なhandoff**を同じ応答内に提示する。
+1. ChatGPT側でactual execution開始まで進み、必要なlane assignment / checkpoint / Luna handoffを開始する。
+2. Human actionが必要なら、その応答から直ちに実行できる最初の完全なhandoffを提示する。
 
-Human action待ちになる場合の原則:
+Human action待ちになる場合:
 
-- `Xの出力待ち`、`preflight結果待ち`、`上のaudit結果待ち`等とだけ述べて停止しない。
-- そのXを取得するためのcommand / instructionが必要なら、同じ応答内に完全な形で提示する。
-- 実際には提示していないcommand / blockを`上のcommand`、`先ほどのaudit`等として参照しない。
-- concrete blockerを報告するときは、blockerの説明と**解除するための次のaction**をセットで出す。
-- local lane evidence不足が唯一のblockerなら、[`CHECKOUTS.md`](./CHECKOUTS.md) のmandatory preflight handoff ruleに従い、その場で最初の実行可能なread-only handoffまで出す。
-- versioned local helperがcurrentで利用可能なら、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に従い、長大なinline shellではなく必要値を埋めたhelper invocationをcomplete Human handoffとして使ってよい。helperが未install / stale / broken / unsupportedなら`CHECKOUTS.md`のinline fallbackを同じ応答で提示する。
-- Humanが必要なfresh evidenceをすでに現在の会話で提示している場合は、同じ取得手順を機械的に要求し直さない。
+- `preflight結果待ち`等だけで停止しない;
+- 必要command / instructionを同じ応答に完全な形で出す;
+- concrete blockerには解除のnext actionを添える;
+- local evidence不足が唯一のblockerなら[`CHECKOUTS.md`](./CHECKOUTS.md)のmandatory preflight handoff ruleを使う;
+- current helperが使えるなら[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のexact invocationを使う;
+- Humanがfresh evidenceを現在conversationで提示済みなら機械的に再取得させない。
 
 ### Local-success-before-In-Progress rule
 
-通常のsource-code implementationを新しくstart / checkpoint-pauseからresumeするとき、Linearの`In Progress`は「開始予定」ではなく**actual implementation laneでexecution開始済み**を表す。
+Linear `In Progress`は「開始予定」ではなくactual implementation laneでexecution開始済みを表す。
 
-Human terminal handoffで`nuinui start` / `nuinui resume`等を実行する場合:
+Human terminal handoffで`nuinui start` / `nuinui resume`を使う場合:
 
-1. commandをHumanへ渡す前に、fresh 3-lane evidenceとLinearのcurrent implementation `In Progress`集合をIssue identity単位で照合する。stale / orphaned `In Progress`があれば新しいstart / resumeより先に解消する。既存authorityだけで安全に解消できない場合はstart / resumeを行わない。
-2. target Issueはcommand提示、`CHECKING`、read-only verification、start可能判定だけでは`In Progress`へ進めない。新規startなら`Todo`、pause済みresumeならそのcurrent non-running statusを維持する。
-3. Humanからhelperのsuccessful local transition result（新規startでは`STARTED`）が返り、lane / Issue / branch / Baseまたはcheckpointがintended handoffと一致することを確認した後で初めてtarget Issueを`In Progress`へ変更する。
-4. 同じcontinuationで`Implementation checkpoint`を記録し、`LINEAR-ISSUES.md`のPost-write verificationに従ってstatus / checkpointをread-backする。
+1. fresh 3-lane evidenceとLinear current implementation `In Progress`集合をIssue identity単位で照合する。
+2. command提示、`CHECKING`、read-only verificationだけではtarget Issueを`In Progress`へ進めない。
+3. successful local transition resultが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で`In Progress`へ変更する。
+4. 同じcontinuationで`Implementation checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従いread-backする。
 
-ChatGPTがactual local transitionを直接かつauthoritatively確認できるexecution routeでは、Human round-trip自体は必須ではない。ただし**actual lane transition成功の確認より先に`In Progress`を書かない**というorderingは同じ。
+start / resume後のidentity invariantは、physical BUSYなmain/subから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数<=2だけでは十分ではない。
 
-start / resume後のidentity invariantは、physical `BUSY`な`main` / `sub` laneから読めるimplementation Issue集合とLinear上のcurrent implementation `In Progress`集合が一致すること。単に`In Progress <= 2`であることだけでは成功条件にならない。
-
-product / UX decision、approval-gated dev-context write、unsafe / destructive unknown-state recoveryなど、Human判断そのものが必要なboundaryはこのruleで自動決定しない。その場合も「何を判断 / 実行すれば先へ進めるか」を具体化して返す。
+product / UX decision、approval-gated dev-context write、unsafe/destructive unknown-state recovery等のHuman判断boundaryは自動決定しない。その場合も必要な判断/actionを具体化する。
 
 ## Implementation continuation completion rule
 
-HumanがLuna implementation / integration checkpoint等の結果を返した後、残る作業がChatGPTから直接扱えるremote / management stateだけで完結する場合、その工程をHumanへの細かなhandoffへ分割しない。
+Luna implementation / integration result後、残作業がChatGPTから直接扱えるremote / management stateだけならHumanへの細かなhandoffへ分割しない。
 
-典型的なremote-only continuation:
+典型:
 
 ```text
 Luna result
 -> pushed HEAD / latest main freshness
 -> blocking review
--> [Auto-merge enabled: exact-head reservation -> task ends without CI wait]
+-> [Auto-merge: exact-head reservation -> task ends without CI wait]
    or
-   [manual merge: fresh CI completion -> merge -> merged-state verification -> Linear synchronization]
+   [manual merge: fresh CI -> merge -> merged-state verification -> Linear synchronization]
 ```
 
-原則:
+Auto-mergeのprecondition / CI failure terminal stop / manual merge continuationは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)をauthorityとする。Humanに何もする必要がないremote-only intermediate stateをhandoff boundaryにしない。
 
-- Auto-mergeがcurrent repositoryで有効なら、[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) のpreconditionを満たすexact headへ予約した時点でtaskを終了する。fresh CIが`queued` / `in_progress`でもwait / polling / monitoring subagentを作らず、GitHubとDiscord routeへ委ねる。
-- CI failure Discord通知はHuman明示resumeを要求するterminal stopである。failureから自動でtaskを再開、rerun、cancel、repair、merge、Linear synchronizationしない。resume後のrepair / BLOCKED boundaryは`LINEAR-GITHUB.md`をauthorityとする。
-- Auto-mergeを使わないrepositoryまたはbootstrap PRだけは、fresh CIが`queued` / `in_progress`でも、それ自体を理由に`CI結果をまた返してください`等のHuman actionへ変換しない。ChatGPTが同じexecution trackでremote stateを追跡し、PASS / FAIL / concrete blockerまで進める。
-- progress updateは出してよいが、Humanが何もする必要のないremote-only intermediate stateをconversation handoff boundaryにしない。
-- blocking reviewに必要なGitHub diff / code / review thread / CI evidenceをChatGPTが取得できるならHumanに再取得させない。
-- safe merge authorizationが既にcurrent execution trackへ与えられている場合、通常のmerge confirmationを再要求しない。merge gateは`LINEAR-GITHUB.md`に従う。
-- manual merge後のGitHub / Linear synchronizationは、Human-only actionがなければ同じcontinuationで完了する。auto-mergeではHuman明示resumeまでdeferする。
+Humanへ戻してよいのはproduct / UX / scope decision、unsafe local state、destructive operation、Human-only observation、required approval boundary、またはcurrent toolsで解消できないconcrete blocker等、Human actionが実際に必要な場合だけ。
 
-Humanへ戻してよいのは、product / UX / scope decision、unsafe local state、destructive operation、Human-only environment / observation、required approval boundary、またはcurrent toolsでは解消できないconcrete blocker等、**Human actionが実際に必要な場合だけ**。
-
-local checkoutのdeterministic releaseだけが残る場合は、Work completion / Linear statusと物理lane cleanupを混同しない。lane stateは`CHECKOUTS.md`、Issue statusは`LINEAR-ISSUES.md` / `LINEAR-GITHUB.md`をauthorityとする。
+local deterministic releaseだけが残る場合はWork completion / Linear statusとphysical lane cleanupを混同しない。
 
 ## Final closure declaration rule
 
-Issueの`Done`はWork completionを表し、implementation laneを含むexecution lifecycle全体のcloseとは区別する。
+Issue `Done`とimplementation laneを含むexecution lifecycle final closureを区別する。
 
-`main` / `sub` implementation laneを使用し、local releaseが必要なWorkについて、ChatGPTが「完全終了」「すべて終了」「追加作業なし」等のfinal closureを宣言してよいのは、次をすべて満たした後だけとする。
+main/subを使用したWorkで「完全終了」「追加作業なし」と宣言してよいのは:
 
-1. Work completion / Issue status synchronizationがcurrent policyに従って完了している。
-2. [`CHECKOUTS.md`](./CHECKOUTS.md) に従うlane releaseが成功し、actual local laneが`FREE`になっている。
-3. release結果をcurrent Linear Issueへ`Lane release checkpoint`として記録している。
-4. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のPost-write verificationに従い、そのcheckpointをread-backしてcurrent stateを確認している。
+1. Work completion / Issue status synchronization完了;
+2. [`CHECKOUTS.md`](./CHECKOUTS.md)に従うlane release成功、actual lane FREE;
+3. current Linear Issueへ`Lane release checkpoint`記録;
+4. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のPost-write verification完了。
 
-Humanが`nuinui release`等のfresh release成功outputを返した場合、そのoutputをactual local stateのevidenceとして扱う。Linear操作をChatGPT側で実行できるなら、release成功の説明だけで停止せず、同じcontinuationで`Lane release checkpoint`の記録とread-backまで完了する。
+Humanからfresh successful release outputが返った場合はactual local evidenceとして扱い、Linear操作可能なら同じcontinuationでrelease checkpoint記録とread-backまで進める。
 
-Issueが既に`Done`でもlane release、release checkpoint、またはそのread-backが残っている場合は、Work completionとremaining closure stepを分けて報告し、「完全終了」「追加作業なし」とは宣言しない。
-
-release checkpointの記録失敗だけを理由に、既に有効なmerge / Manual E2E / Done判定を巻き戻さない。ただし、その場合はfinal closure未完了として扱い、必要なmanagement synchronizationを残作業として明示する。
+IssueがDoneでもrelease / release checkpoint / read-backが残る場合はfinal closure未完了として報告する。Linear write失敗でsuccessful physical releaseを巻き戻さない。
 
 ## Startup / execution boundary
 
-Implementation開始・再開では、READMEのloading ruleに従ってcurrent Linear / remote repository / required implementation policiesを確認する。
+Implementation開始・再開ではREADME loading ruleに従いcurrent Linear / remote repository / required implementation policyを確認する。
 
-通常のsource-code implementation local executionが必要なら[`CHECKOUTS.md`](./CHECKOUTS.md)の3-lane preflightとstartup gateを使う。通常のsource-code sliceのslice / Base checkpoint / integration checkpointは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
+source-code implementationは[`CHECKOUTS.md`](./CHECKOUTS.md)の3-lane preflight / startup gate、slice / Base / integrationは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
 
-Documentation / policy direct execution exceptionでは、implementation laneのclaim / Base checkpointは不要。ただしwrite直前にlatest remote target file SHA、current management/spec state、そしてユーザーが許可したplanとのscope一致を確認する。
+Documentation / policy direct execution exceptionではimplementation lane claim / Baseは不要だが、write直前にlatest target file SHA、current relevant state、approved plan scopeを再確認する。
 
-ChatGPT web環境からfixed checkoutへ直接アクセスできないことを理由に、通常のsource-code implementationについて代替clone / fourth worktree / direct-GitHub implementationへ迂回しない。Documentation / policy direct execution exceptionだけは本policyの明示範囲内でGitHub remote editingを許可する。
+web環境からfixed checkoutへ直接accessできないことを理由に代替clone / fourth worktree / direct-GitHub source implementationへ迂回しない。
 
 ## Chat rotation
 
-Implementation chatのrotation自体はTask pauseではない。status、lane ownership、Base checkpoint、branch、current sliceをrotationだけで変更しない。
+Implementation chat rotation自体はTask pauseではない。rotationだけを理由にstatus、lane ownership、Base、branch、claim、current sliceを変更しない。
 
-Work自体をpause / releaseする場合だけ`LINEAR-ISSUES.md` / `CHECKOUTS.md` / `IMPLEMENTATION-SLICING.md`の該当ruleを使う。
+Work自体をpause / releaseする場合だけ[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) / [`CHECKOUTS.md`](./CHECKOUTS.md) / [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)のruleを使う。
 
 ## Loading rule
 
-Implementation chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読み、READMEのimplementation loading ruleに従う。
+Implementation chatでは[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)とこのdocumentを読み、READMEのimplementation loading ruleに従う。
 
-## Durable claim handoff — Stage 1
+## Durable ownership handoff
 
-Stage 1では`main` / `sub` implementation laneのownershipをGit-local durable claimで保持する。checkoutされているbranchだけからlane ownershipを推測しない。詳細なstate machine / recovery semanticsは[`CHECKOUTS.md`](./CHECKOUTS.md)、helper CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)をauthorityとする。
+main/sub ownershipはGit-local durable claimで保持する。checkout branchだけからownershipを推測しない。state machine / recoveryは[`CHECKOUTS.md`](./CHECKOUTS.md)、CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)、Luna handoffのfresh execution identity検証は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)をauthorityとする。
 
-新規`nuinui start`成功outputには`claim=<generation token>`が含まれる。Human terminal handoffでstart成功を確認したら、`In Progress`へのtransitionと同じcontinuationでそのclaimを`Implementation checkpoint`へ保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
+new `nuinui start`成功outputの`claim=<generation token>`を、`In Progress` transitionと同じcontinuationで`Implementation checkpoint`へ保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
 
-`resume` handoffは少なくともlane、Issue、fixed Base checkpoint、exact pushed checkpoint、branch、claimを外部stateから復元してhelperへ渡す。Baseをancestryから推測し直したり、local slotのclaimをcaller expectationの代わりに採用しない。
+`resume` handoffはLane、Issue、fixed Base、exact pushed checkpoint、branch、claimをcurrent external stateから復元してhelperへ渡す。Baseをancestryから推測し直したり、local slot claimをcaller expectationの代わりに採用しない。
 
-`release` handoffはexact saved / integration checkpointとclaimを使う。claim generationを指定できない古い`release <lane> <checkpoint>`形へfallbackしない。
+`release` handoffはexact saved / integration checkpointとclaimを使う。claimless legacy signatureへfallbackしない。
 
-preflightがdurable slot / checkout mismatch、mutation lock、releasing tombstone、migration未完了等を`BLOCKED`として返した場合、laneをFREEと推測しない。安全条件が一意に証明できるcrash stateだけexplicit `nuinui recover`で復旧し、reset / stash / force-switchによる一般repairへ変換しない。
+preflightがslot / checkout mismatch、mutation lock、releasing tombstone、uninitialized ownership schema、malformed metadata等をBLOCKEDとして返した場合、laneをFREEと推測しない。known crash stateだけexplicit `nuinui recover`で復旧し、reset / stash / force-switchによる一般repairへ変換しない。
+
+chat rotation / external-state recovery後にLuna handoffを生成するときはpast chatのclaimをauthorityにせず、fresh local durable evidenceからcurrent claimを読み直す。
 
 ## Maintenance rule
 
-このdocumentはImplementation chat固有のstart / resume / continuation / handoff lifecycleだけをownerする。checkout操作、slice semantics、Coding Agent detail、Linear lifecycleは各owner documentを参照し、ここへ複製しない。
+このdocumentはImplementation chat固有のstart / resume / continuation / handoff lifecycleだけをownerする。checkout state machine、slice semantics、Coding Agent detail、Linear lifecycleは各owner documentへ委譲する。

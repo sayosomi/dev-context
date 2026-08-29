@@ -5,10 +5,10 @@
 Linear Issueのstatus、readiness、execution-lane checkpoint、labels、Done freshnessを定義する。
 
 - chat roles / Issue Authoring / rotation: [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)
-- lane capacity / occupancy: [`CHECKOUTS.md`](./CHECKOUTS.md)
-- Manual E2E semantics: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
+- lane capacity / durable ownership: [`CHECKOUTS.md`](./CHECKOUTS.md)
+- Manual E2E: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
 - contract judgment: [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)
-- implementation slicing / integration checkpoint: [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)
+- implementation slicing: [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)
 - Free plan capacity: [`LINEAR-CAPACITY.md`](./LINEAR-CAPACITY.md)
 
 ## Issue lifecycle
@@ -22,60 +22,54 @@ Backlog -> Todo -> In Progress -> Done
 
 - `Backlog`: contract / plan / prerequisiteが未ready。
 - `Todo`: Ready Queue。実装可能だがimplementation lane未割当、またはsafe checkpointで再開待ち。
-- `In Progress`: `main`または`sub` laneでimplementation / fixを現在実行中。
-- `In Review`: implementationはintended baseへmerge済みでrequired Manual E2Eだけが残る。
-- `Done`: implementation / required E2E / Done freshnessがすべて完了。
+- `In Progress`: main/sub durable laneでimplementation / fixを現在実行中。
+- `In Review`: implementation merge済みでrequired Manual E2Eだけが残る。
+- `Done`: implementation / required E2E / Done freshness完了。
 
 Research / Review等、PRを伴わないIssueはWork自体が完了した時点でDoneへ進めてよい。
 
 ## Status synchronization precedence
 
-statusは次の順で決める。
-
 1. completion gateを満たす → `Done`。
 2. implementation merge済みでrequired Manual E2Eのみ残る → `In Review`。
-3. `main` / `sub` laneでcurrent implementation / fixを実行中 → `In Progress`。
-4. 上記でないunstarted / checkpoint-pause / next-slice待ちWork → readinessにより`Todo`または`Backlog`。
+3. main/sub laneでcurrent implementation / fixを実行中 → `In Progress`。
+4. それ以外のunstarted / checkpoint-pause / next-slice待ち → readinessにより`Todo`または`Backlog`。
 
-Readyであることだけを理由にIn Progressへしない。実lane assignmentとexecution開始が必要。
+Readyだけを理由にIn Progressへしない。actual durable lane assignmentとexecution開始が必要。
 
-[`CHECKOUTS.md`](./CHECKOUTS.md) の`RELEASE-PENDING`はphysical lane cleanup stateであり、current implementation executionではない。local checkoutがTask branchに残っている、latest `origin/main`へのfast-forwardがまだ、等のdeterministic cleanupだけを理由にIssueを`In Progress`へ保持しない。
+[`CHECKOUTS.md`](./CHECKOUTS.md)の`RELEASE-PENDING`はphysical cleanup stateでありcurrent implementation executionではない。cleanupだけを理由にIssueをIn Progressへ保持しない。
 
 ## Fixed implementation capacity
 
-implementation concurrencyは [`CHECKOUTS.md`](./CHECKOUTS.md) の物理laneでhard capする。
-
 ```text
-main lane: max 1 In Progress implementation track
-sub lane:  max 1 In Progress implementation track
+main lane: max 1 implementation track
+sub lane:  max 1 implementation track
 ```
 
-通常、implementationとして`In Progress`になれるIssueは最大2件。
+両implementation laneがBUSYまたは新規割当不能ならReady implementation IssueはTodoに置く。3つ目のbranch / worktree / direct-GitHub source implementationを作らない。RELEASE-PENDING laneもcleanup完了まで新Issueへ割り当てない。
 
-例外はimplementationではないResearch等が同じstatusを使う場合だが、そのWorkを3つ目のrepository implementation trackとして扱ってはならない。
-
-両implementation laneがBUSYまたは新規割当不能なら、新しいReady implementation Issueは`Todo`に置く。3つ目のbranch / worktree / direct-GitHub executionを作らない。`RELEASE-PENDING` laneもcleanup完了まで新Issueへ割り当てない。
+Research等が同じstatusを使っても3つ目のrepository implementation trackとして扱わない。
 
 ## Issue Authoring is not implementation occupancy
 
-[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) のIssue Authoringは、Issue作成 / Bug調査 / product相談 / contract策定 / acceptance整理 / dependency整理等のWork-management activityであり、repository implementation laneのoccupancyではない。
+Issue AuthoringはIssue作成 / Bug調査 / product相談 / contract策定 / acceptance整理 / dependency整理等のwork-management activityでありrepository implementation lane occupancyではない。
 
-- Issue Authoring chatの同時実行数に上限を設けない。
-- Authoringだけを理由に`In Progress`へ進めない。
-- Authoring chatは`main` / `sub` / `e2e` laneをclaimしない。
-- `Contract: Ready`かつrequired Manual E2E plan / blocker条件も満たしたimplementation待ちWorkは原則`Todo`。
-- implementation開始は必ず後述のIn Progress startup gateで実lane assignmentと同時に行う。
+- Authoring chat数にexecution-lane上限を適用しない。
+- AuthoringだけでIn Progressへ進めない。
+- Authoring chatはmain/sub/e2eをclaimしない。
+- Contract Readyでimplementation待ちなら原則Todo。
+- implementation開始はactual lane transitionと同時に行う。
 
-複数Authoring chatが同じIssueを編集し得るため、Linear write前にはcurrent Issue / relevant commentsを再取得し、別chatのcurrent変更を消さない。競合するproduct decision / scope / acceptanceはlast-write-winsで上書きしない。詳細は`CHAT-WORKFLOW.md`。
+複数chatが同じIssueを編集し得るためLinear write前にはcurrent Issue / relevant commentsを再取得し、別chatのcurrent changeを消さない。
 
 ## Backlog
 
-主に次の間はBacklog。
+主に次の間はBacklog:
 
 - `Contract: Pending`または`Contract: Blocked`;
-- required Manual E2E planが未確定;
-- unfinished `blockedBy` relationあり;
-- explicit contract re-auditでcurrent implementation contractをまだ再確定していない。
+- required Manual E2E plan未確定;
+- unfinished `blockedBy`あり;
+- explicit contract re-audit未完了。
 
 ## Todo
 
@@ -84,260 +78,47 @@ implementation開始可能なReady Queue。
 原則:
 
 - `Contract: Ready`;
-- Manual E2E plan確定済みまたは`Not Required`;
+- Manual E2E plan確定または`Not Required`;
 - unfinished blockerなし;
-- 現在implementation laneでexecutionを行っていない。
+- current implementation laneでexecution中ではない。
 
-previous remote branch / PRが存在しても、safe checkpointでlaneをreleaseして再開待ちならTodoにしてよい。その場合はIssue checkpointからremote stateを一意に復元できること。
+remote branch / PRが存在してもsafe checkpointでlane release済みならTodoにしてよい。その場合はIssue checkpointからremote stateとdurable generationを一意に復元できること。
 
-intermediate merge後にremaining acceptanceがあり、次sliceをまだ実際に開始していない場合も、ReadyならTodoへ同期する。local laneが`RELEASE-PENDING`であることはTodoへのtransitionを妨げない。
+intermediate merge後にremaining acceptanceがありnext slice未開始ならReadyでTodo。RELEASE-PENDINGだけを理由にBacklogへ落とさない。
 
 ## Implementation occupancy reconciliation
 
-新しいimplementation Issueを`In Progress`へ進める前に、fresh 3-lane evidenceとLinearのcurrent implementation `In Progress`集合を**Issue identity単位**で照合する。
+new implementation IssueをIn Progressへ進める前に、fresh 3-lane evidenceとLinear current implementation `In Progress`集合をIssue identity単位で照合する。
 
 正常状態では:
 
-- physical `BUSY`な`main` / `sub` laneから一意に読めるimplementation Issue集合;
-- Linear上のcurrent implementation `In Progress` Issue集合;
+- physical BUSYなmain/sub durable slotから一意に読めるIssue集合;
+- Linear current implementation In Progress集合;
 
 が一致する。
 
-`In Progress`件数が2件以下というだけでは十分ではない。physical laneに対応しないorphaned / stale `In Progress`、または`BUSY` laneに対応するIssueのstatus欠落があれば、新しいstart / resumeより先にcurrent remote / checkpoint / lane evidenceからstatusを同期する。既存authorityだけで安全に解消できない不一致は`BLOCKED / UNKNOWN`として扱い、新しいimplementationを開始しない。
+件数<=2だけでは不十分。orphaned / stale In ProgressやBUSY laneに対応するstatus欠落があればnew start/resume前にcurrent remote / checkpoint / lane evidenceから同期する。既存authorityだけで安全に解消できない不一致はBLOCKED / UNKNOWNとしnew implementationを開始しない。
 
-`RELEASE-PENDING` lane、idle / `FREE` lane、Issue AuthoringだけのWorkはcurrent implementation `In Progress`集合へ含めない。
+RELEASE-PENDING、FREE、Issue AuthoringだけのWorkはcurrent implementation In Progress集合へ含めない。
 
 ## In Progress startup gate
 
 implementation IssueをIn Progressへ進めるとき:
 
-1. latest remote repository / current Issueを確認;
-2. current sliceを確定;
+1. latest remote repository / current Issue確認;
+2. current slice確定;
 3. 3-lane local preflight;
-4. `Implementation occupancy reconciliation`を満たすことを確認;
-5. FREEな`main`または`sub`を選択;
-6. Base checkpoint SHAを固定;
-7. Task branchのcheckout / resumeを実際に成功させ、lane / Issue / branch / Baseまたはcheckpointがintended stateになったことを確認;
-8. 成功確認後にIssueをIn Progressへ変更;
+4. occupancy reconciliation;
+5. FREE main/sub選択;
+6. Base checkpoint固定;
+7. `nuinui start`またはvalid durable `resume`をactualに成功させ、lane / Issue / branch / Base / checkpoint / claimを確認;
+8. success確認後にIssueをIn Progressへ変更;
 9. `Implementation checkpoint`をCommentへ記録;
-10. status / checkpointをread-backして意図したcurrent stateを確認。
+10. status / checkpointをread-back。
 
-Human terminal handoffで`nuinui start`等を使う場合、commandを提示した時点、`CHECKING`、read-only verification、start可能判定の時点ではtarget Issueを`In Progress`へ変更しない。Humanからsuccessful local transition result（新規startでは`STARTED`）が返り、その内容を確認した後に手順8以降を行う。
+Human terminal handoffではcommand提示、`CHECKING`、read-only verificationだけでIn Progressへ進めない。successful local transition resultを確認してから8以降を行う。
 
-標準記録:
-
-```text
-Implementation checkpoint
-- Lane: main | sub
-- Base checkpoint: <sha>
-- Branch: <branch>
-- PR / pushed head: <pr or none>
-- Current slice: <semantic boundary>
-- Completed acceptance: <none or summary>
-- Remaining acceptance: <summary>
-- Next safe checkpoint: <implementation | integration | merge>
-```
-
-細かなcommit log、generic policy、過去chatは複製しない。
-
-## Base checkpoint immutability
-
-Issueがactive sliceとしてIn Progressの間、remote mainが進んでもCommentのBase checkpointをroutine refreshしない。
-
-- unrelated main advance → current Base checkpoint維持;
-- material contract invalidation → current workをremote保存しsafe checkpointで停止;
-- integration checkpoint到達 → latest mainを確認し、Lunaがintegrationを行う;
-- integration完了後に必要ならcheckpointへintegrated base / headを追記。
-
-途中同期を前提にLinear recordを書き換えない。
-
-## Pause / release
-
-Taskをpauseするとき、current workがremoteへ保存済みでsafeにlane releaseできるなら:
-
-- Readyで未blocked → `Todo`;
-- contract未ready / blocked → `Backlog`;
-- Implementation checkpointへpushed head / remaining acceptance / next actionを記録;
-- local laneを [`CHECKOUTS.md`](./CHECKOUTS.md) に従ってrelease。
-
-Issueが未完了でもlaneを保持し続ける必要はない。
-
-local checkout cleanupが即時完了せずlaneが`RELEASE-PENDING`になっても、Issue statusは上記Work stateへ先に同期してよい。`RELEASE-PENDING`は新Taskのlane assignmentを止めるが、前Issueのimplementation executionを継続扱いにはしない。
-
-**chat session rotation alone is not a Task pause.** 同じWorkを継続するためにchatだけを交換する場合、rotationだけを理由にstatus、lane ownership、Base checkpoint、branch、current sliceを変更しない。chat-onlyで外部stateから復元できない重要情報だけ必要に応じてcheckpointする。詳細は`CHAT-WORKFLOW.md`。
-
-## Lane release checkpoint
-
-`main` / `sub` implementation laneのrelease成功後は、current IssueのCommentへrelease結果をcheckpointする。Issueが既に`Done`でもこのrecordを追加し、release recordのためにIssueをreopenしない。
-
-標準記録:
-
-```text
-Lane release checkpoint
-- Lane: main | sub
-- Saved checkpoint: <exact pushed / integration checkpoint sha>
-- Release result: RELEASED
-- Idle branch/state: main | DETACHED
-- Idle HEAD: <sha>
-- Lane state: FREE
-```
-
-必要ならrelease helper名やcheckout path等の補助情報を加えてよいが、上記の復元情報を省略しない。
-
-Humanから`nuinui release`等のfresh successful outputが返された場合、それをactual local release evidenceとして利用できる。ChatGPTがLinearを更新できるなら、そのrelease evidenceを受け取ったcontinuationでcheckpointを記録する。
-
-このcheckpointはphysical lane releaseの成立条件そのものではない。actual local laneが安全にidleへ戻った事実は[`CHECKOUTS.md`](./CHECKOUTS.md)がauthorityである。ただしImplementation chatのfinal closure declarationでは、release checkpointの記録と下記Post-write verificationまでを完了条件とする。
-
-checkpointを追加・更新したら、`Post-write verification`に従ってCommentをread-backし、意図したrelease stateがcurrent Issueから復元できることを確認する。
-
-## In Review
-
-implementationはmerge済みだがrequired Manual E2Eが未完了のWork。
-
-典型:
-
-```text
-In Review + manual_e2e_only + Manual E2E: Ready to Run
-In Review + manual_e2e_only + Manual E2E: Running
-In Review + manual_e2e_only + Manual E2E: Deferred
-```
-
-`manual_e2e_only`は**implementation / review / merge / management workがなく、required Manual E2Eだけが残るleaf Issue**にだけ付ける。
-
-PR open / CI / blocking review中をIn Reviewとは呼ばない。
-
-Manual E2Eは`e2e` laneだけを使う。実行開始時はtested commit / stable refを固定し、E2E markerとIssue Commentを同期する。
-
-merge済みでrequired Manual E2Eだけが残るなら、implementation laneが`RELEASE-PENDING`でもIn Reviewへ進める。physical cleanup完了をIn Review transitionのgateにしない。
-
-## Manual E2E failure
-
-confirmed implementation failureが出たら`manual_e2e_only`条件を失う。
-
-1. `manual_e2e_only`を外す;
-2. `Manual E2E: Failed`をfailure evidenceとして維持する;
-3. [`MANUAL-E2E.md`](./MANUAL-E2E.md) に従い、latest Project Context / current Issue / latest remote `main`でfocused contract re-auditを完了し、Contract state、dependency、fix boundary / slice、affected E2E rerun planを同期する;
-4. re-audit後、`Contract: Ready` + unblockedならimplementation lane未割当中は`Todo`、`Contract: Pending | Blocked`またはunfinished blockerありなら`Backlog`へ同期する;
-5. `Todo`からFREEな`main` / `sub`へのactual local transition成功後だけ`In Progress`へ進める;
-6. Luna fix / merge後、only E2E remainsなら`manual_e2e_only + In Review`へ戻す;
-7. new exact tested commitでaffected E2E unitをrerun。
-
-E2E failureやre-audit完了だけを理由に`In Progress`へ進めない。E2E failureだからという理由で`e2e` checkoutをimplementation laneへ変えない。
-
-## Done
-
-実装Issueの原則:
-
-- implementationがintended baseへmerge済み;
-- required Manual E2Eが`Passed`または`Not Required`;
-- unfinished blockerなし;
-- Done-before Ready contract freshness check完了。
-
-`Deferred` / `Running` / `Failed`のままDoneにしない。
-
-local implementation laneが`RELEASE-PENDING`であること自体はDone blockerではない。DoneはWork completionを表し、lane cleanupは`CHECKOUTS.md`のcapacity stateとして別に完了させる。
-
-## Done-before Ready contract freshness check
-
-IssueをDoneへ進める直前に、今回完了するWorkによって前提が変わり得る未完了`Contract: Ready` Issueを確認する。
-
-優先対象:
-
-- direct dependent;
-- same subsystem / surface;
-- same semantic owner / API / command / DSL surface。
-
-latest remote `main`とactual implementationを基準に、owner / API / syntax / behavior / fixture / E2E step等のfact driftを確認する。
-
-fact driftだけで既決定semantics / scope / acceptanceが一意に維持できるならReadyのままrefreshしてよい。product / UX / scope / compatibilityの再選択が必要ならPendingへ戻す。
-
-別chatが担当中のactive Issueをfreshnessだけの理由で勝手にlane移動 / status変更しない。必要ならdriftをそのTaskへ記録する。
-
-## Labels
-
-正式Work Issueにはtype labelとは別に:
-
-- `Contract` groupから1つ: `Pending | Blocked | Ready | N/A`;
-- `Manual E2E` groupから1つ: `Plan Pending | Ready to Run | Running | Deferred | Failed | Passed | Not Required`。
-
-### `manual_e2e_only`
-
-leaf Issueでrequired Manual E2Eだけが残るexecution-state label。In Reviewと組み合わせる。
-
-### `only_chatgpt`
-
-**廃止済み。新規付与しない。**
-
-既存unfinished Issueに残っている場合は、current contract / statusを壊さずlabelだけ除去する。execution ownerはlabelではなくfixed implementation lane + Luna policyで決まる。
-
-Done / archived historical Issueからの一括除去は必要ない。履歴上残っていてもcurrent execution authorityには使わない。
-
-## Parallel footprint / reservation
-
-旧`only_chatgpt`運用のParallel footprint、reservation、race winner、unbounded semantic parallelismは廃止。
-
-current parallel stateは次だけで表現する。
-
-- `main` lane current Issueまたは`RELEASE-PENDING` cleanup state;
-- `sub` lane current Issueまたは`RELEASE-PENDING` cleanup state;
-- `e2e` lane current tested Issue;
-- each active IssueのBase checkpoint / branch / pushed head。
-
-Issue Authoring chatはこのexecution parallel stateへ数えない。
-
-semantic interferenceを発見した場合はdependent laneをsafe checkpointで止め、prerequisite merge後のintegration / restart checkpointで解決する。
-
-## Decomposition and parent handling
-
-Issueを複数leafへ完全分解し、元Issueがremaining acceptanceを持たない場合:
-
-- research / decomposition Work自体が完了 → Done可;
-- feature delivery scopeをleafへ完全移管 → child identifiersを記録してCanceled可;
-- aggregate Manual E2E / final integration等を親が実際にownerする場合だけparentを残す。
-
-tracking parentをimplementation laneへ割り当てない。
-
-## Required metadata on create
-
-正式Issue作成時は最低限:
-
-1. state;
-2. Contract label;
-3. Manual E2E label;
-4. type label;
-5. known dependency relation。
-
-新規Issueはexecution laneを予約しない。実装開始時だけlane assignmentを行う。
-
-## Ready Queue synchronization
-
-次のcheckpointでunstarted / implementation再開待ちIssueのReady判定を同期する。
-
-1. ContractがReadyになった;
-2. Manual E2E planが確定した;
-3. blocker relationが変わった;
-4. blockerがDoneになった;
-5. In Progress executionが終了した / laneをrelease checkpointへ進めた;
-6. IssueをDoneへ進める。
-
-Ready条件を満たすimplementation待ちWorkはTodo。lane不足や`RELEASE-PENDING` cleanupだけを理由にBacklogへ落とさない。
-
-## Idea Inbox
-
-軽い思いつきは常設 `SAY-55 — Idea Inbox — future work / 思いつきメモ`へ追記する。
-
-- まだ独立Workとして着手しない案は新規Issue化しない;
-- formal research / spec / implementation / Bug / Verificationへ進む時点で重複検索してIssue化;
-- 切り出し元は`-> SAY-xx`等で履歴を残す;
-- Inbox自体は`Contract: N/A + Manual E2E: Not Required`。
-
-## Durable implementation claim checkpoint — Stage 1
-
-Stage 1では`main` / `sub` implementation laneのlocal ownership generationを`Claim`としてcheckpointする。physical mutex / occupancy authorityは[`CHECKOUTS.md`](./CHECKOUTS.md)のGit-local durable metadataであり、Linearはrestart / handoff identityを保存する外部evidenceである。
-
-`nuinui start`または`nuinui lane-adopt`成功時にhelperが返す`claim=<generation token>`を、同じlane assignmentの`Implementation checkpoint`へ必ず保存する。以後、そのactive laneをresume / releaseするcheckpointではclaimを維持し、同じIssue / branch / Baseを後から再取得した別generationと混同しない。
-
-Stage 1以降の標準記録は次の形へ拡張する。
+標準record:
 
 ```text
 Implementation checkpoint
@@ -352,9 +133,43 @@ Implementation checkpoint
 - Next safe checkpoint: <implementation | integration | merge>
 ```
 
-resumeに必要なrestart identityは少なくとも`Lane + Issue + Base checkpoint + exact pushed checkpoint + Branch + Claim`。Baseをancestor関係だけから再推定した値や、local slotからその場で読んだclaimをcaller expectationの代わりに使わない。
+physical mutex / ownership authorityはGit-local durable metadata。Linear Claimはrestart / handoff identityを保存するexternal evidenceである。
 
-release成功後の`Lane release checkpoint`にはreleaseに使用したgenerationも残す。
+new `nuinui start`が返したclaimを同じlane assignmentのImplementation checkpointへ必ず保存する。そのgenerationのresume / release / handoffでClaimを維持し、same Issue / branch / Baseの別generationと混同しない。
+
+resume restart identityは少なくとも`Lane + Issue + Base checkpoint + exact pushed checkpoint + Branch + Claim`。Baseをancestryだけから再推定した値やlocal slotからその場で読んだclaimをcaller expectationの代わりに使わない。
+
+古いcheckpointにClaimがなく、current durable generationをindependent evidenceから一意に復元できない場合、そのrecordだけではresume / release authorizationに不十分。checkout appearanceからclaimを生成・補記せずBLOCKEDとしてexplicit reviewする。
+
+細かなcommit log、generic policy、past chatはcheckpointへ複製しない。
+
+## Base checkpoint immutability
+
+Issueがactive sliceとしてIn Progressの間、remote mainが進んでもBase checkpointをroutine refreshしない。
+
+- unrelated main advance → current Base維持;
+- material contract invalidation → workをremote保存しsafe checkpointで停止;
+- integration checkpoint → latest main確認後Luna integration;
+- integration完了後に必要ならintegrated base / headを追記。
+
+途中同期を前提にLinear recordを書き換えない。
+
+## Pause / release
+
+Taskをpauseするときcurrent workがremote保存済みでsafe release可能なら:
+
+- Ready / unblocked → Todo;
+- contract未ready / blocked → Backlog;
+- Implementation checkpointへpushed head / remaining acceptance / next action / current Claimを記録;
+- local laneを[`CHECKOUTS.md`](./CHECKOUTS.md)に従ってrelease。
+
+Issue未完了でもlaneを保持し続ける必要はない。RELEASE-PENDINGになってもIssue statusはWork stateへ先に同期してよい。
+
+**chat session rotation alone is not a Task pause.** rotationだけでstatus、lane ownership、Base、branch、Claim、sliceを変更しない。
+
+## Lane release checkpoint
+
+main/sub release成功後はcurrent Issue Commentへrelease resultをcheckpointする。Issueが既にDoneでもrecordを追加し、release recordのためにreopenしない。
 
 ```text
 Lane release checkpoint
@@ -367,7 +182,117 @@ Lane release checkpoint
 - Lane state: FREE
 ```
 
-Stage 1導入前の古いImplementation checkpointに`Claim`がない場合、そのrecordだけでは新helperのresume / release identityとして不十分。actual checkout、remote branch/checkpoint、fixed Base、Issue identityを明示的に照合して`nuinui lane-adopt`でdurable generationを作成し、返されたclaimを新checkpointとして保存する。推測でclaimを生成・補記しない。
+Humanからfresh successful `nuinui release` outputが返された場合actual local evidenceとして使える。ChatGPTがLinear更新可能なら同じcontinuationでrecordしread-backする。
+
+checkpointはphysical release成立条件そのものではない。actual local FREEはCHECKOUTS authority。ただしImplementation chat final closureにはrecord + Post-write verificationを含む。
+
+## In Review
+
+implementation merge済みでrequired Manual E2Eだけが残るWork。
+
+典型:
+
+```text
+In Review + manual_e2e_only + Manual E2E: Ready to Run
+In Review + manual_e2e_only + Manual E2E: Running
+In Review + manual_e2e_only + Manual E2E: Deferred
+```
+
+`manual_e2e_only`はimplementation / review / merge / management workがなくrequired Manual E2Eだけが残るleaf Issueにだけ付ける。PR open / CI / blocking review中をIn Reviewとは呼ばない。
+
+Manual E2Eはe2e laneだけを使い、tested commit / stable refとmarker / Issue Commentを同期する。implementation lane RELEASE-PENDINGだけをIn Review blockerにしない。
+
+## Manual E2E failure
+
+confirmed implementation failure:
+
+1. `manual_e2e_only`を外す;
+2. `Manual E2E: Failed` evidence維持;
+3. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
+4. Ready + unblockedならlane未割当中Todo、Pending/BlockedならBacklog;
+5. actual main/sub start成功後だけIn Progress;
+6. fix merge後only E2E remainsならmanual_e2e_only + In Review;
+7. new exact tested commitでaffected E2E rerun。
+
+E2E failure / re-auditだけでIn Progressへ進めない。e2e checkoutをimplementationへ変えない。
+
+## Done
+
+実装Issueの原則:
+
+- implementation intended baseへmerge済み;
+- required Manual E2E `Passed`または`Not Required`;
+- unfinished blockerなし;
+- Done-before Ready contract freshness check完了。
+
+Deferred / Running / FailedのままDoneにしない。implementation lane RELEASE-PENDING自体はDone blockerではない。DoneはWork completion、lane cleanupはcapacity stateとして別に完了させる。
+
+## Done-before Ready contract freshness check
+
+Done直前に、今回のWorkで前提が変わり得るunfinished `Contract: Ready` Issueを確認する。優先はdirect dependent、same subsystem/surface、same semantic owner/API/command/DSL surface。
+
+latest remote mainとactual implementationを基準にfact driftを確認する。既決定semantics / acceptanceを一意に維持できるならReadyのままrefresh可。product / UX / scope / compatibility再選択が必要ならPendingへ戻す。
+
+別chat active Issueをfreshnessだけで勝手にlane/status変更しない。
+
+## Labels
+
+正式Work Issueにはtype labelに加え:
+
+- `Contract`: `Pending | Blocked | Ready | N/A`から1つ;
+- `Manual E2E`: `Plan Pending | Ready to Run | Running | Deferred | Failed | Passed | Not Required`から1つ。
+
+### `manual_e2e_only`
+
+required Manual E2Eだけが残るleaf Issue用。In Reviewと組み合わせる。
+
+### `only_chatgpt`
+
+廃止済み。新規付与しない。unfinished Issueに残る場合はcurrent contract/statusを壊さずlabelだけ除去する。execution ownerはfixed implementation lane + Luna policyで決まる。
+
+## Parallel footprint / reservation
+
+旧unbounded reservation modelは使わない。current parallel stateはmain lane ownership/release state、sub lane ownership/release state、e2e tested Issue、active IssueのBase / branch / Claim / pushed headだけで表現する。
+
+Issue Authoring chatはexecution parallel stateへ数えない。semantic interference発見時はdependent laneをsafe checkpointで止め、prerequisite merge後のintegration / restartで解決する。
+
+## Decomposition and parent handling
+
+Issueをleafへ完全分解し元Issueにremaining acceptanceがなければresearch/decomposition完了でDone可、delivery scopeを完全移管した場合はchild identifiersを記録してCanceled可。aggregate E2E / final integration等を親がactualにownerする場合だけparentを残す。tracking parentをimplementation laneへ割り当てない。
+
+## Required metadata on create
+
+正式Issue作成時は最低限:
+
+1. state;
+2. Contract label;
+3. Manual E2E label;
+4. type label;
+5. known dependency relation。
+
+新規Issueはexecution laneを予約しない。actual implementation開始時だけlane assignmentを行う。
+
+## Ready Queue synchronization
+
+次のcheckpointでunstarted / resume待ちIssueのReady判定を同期する。
+
+1. Contract Ready;
+2. Manual E2E plan確定;
+3. blocker relation変更;
+4. blocker Done;
+5. In Progress execution終了 / lane release checkpoint;
+6. Issue Done transition。
+
+Ready implementation待ちはTodo。lane不足やRELEASE-PENDINGだけを理由にBacklogへ落とさない。
+
+## Idea Inbox
+
+軽い思いつきは常設`SAY-55 — Idea Inbox — future work / 思いつきメモ`へ追記する。
+
+- 未着手案は独立Issue化しない;
+- formal research/spec/implementation/Bug/Verificationへ進む時点で重複検索してIssue化;
+- 切り出し元は`-> SAY-xx`等で履歴を残す;
+- Inbox自体は`Contract: N/A + Manual E2E: Not Required`。
 
 ## Post-write verification
 
