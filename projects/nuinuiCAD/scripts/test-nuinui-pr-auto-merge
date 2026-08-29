@@ -305,10 +305,12 @@ done
 
 run_failure 'reviewed head mismatch' head-mismatch \
   "expected_head=$HEAD"
+assert_contains "$output" 'actual_head=9999999999999999999999999999999999999999' 'head mismatch did not expose actual head'
 assert_contains "$(cat "$ROOT/head-mismatch/ops")" 'pr view' 'head mismatch did not inspect the PR'
 
 run_failure 'expected main mismatch' main-mismatch \
   "expected_main=$MAIN"
+assert_contains "$output" 'actual_base_oid=8888888888888888888888888888888888888888' 'main mismatch did not expose actual base OID'
 assert_contains "$(cat "$ROOT/main-mismatch/ops")" 'pr view' 'main mismatch did not inspect the PR'
 
 run_failure 'GitHub PR lookup failure' api-error \
