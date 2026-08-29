@@ -110,6 +110,36 @@ expect_malformed_release() {
   echo "PASS: $name"
 }
 
+expect_release_blocked() {
+  name="$1"
+  before_slot="$(cat "$SLOT_PATH")"
+  before_dirs="$(find "$(gitdir "$MAIN")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)"
+  if "$HELPER" release main "$WRONG_CHECKPOINT" "$CLAIM1" >"$ROOT/release-conflict.out" 2>&1; then
+    cat "$ROOT/release-conflict.out"
+    fail "$name unexpectedly succeeded"
+  fi
+  grep -q '^BLOCKED:' "$ROOT/release-conflict.out" || { cat "$ROOT/release-conflict.out"; fail "$name did not fail closed"; }
+  [ "$(cat "$SLOT_PATH")" = "$before_slot" ] || fail "$name changed the durable slot"
+  after_dirs="$(find "$(gitdir "$MAIN")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)"
+  [ "$after_dirs" = "$before_dirs" ] || fail "$name changed release-pending state"
+  echo "PASS: $name"
+}
+
+expect_invalid_releasing_state() {
+  name="$1"
+  tombstone="$2"
+  if "$HELPER" preflight >"$ROOT/invalid-releasing.out" 2>&1; then
+    cat "$ROOT/invalid-releasing.out"
+    fail "$name unexpectedly succeeded"
+  fi
+  grep -q 'invalid-release-state' "$ROOT/invalid-releasing.out" || {
+    cat "$ROOT/invalid-releasing.out"
+    fail "$name was not classified as invalid release state"
+  }
+  [ -d "$tombstone" ] || fail "$name deleted the malformed release state"
+  echo "PASS: $name"
+}
+
 merge_topic_into_main() {
   branch="$1"
   git -C "$MAIN" push -q -u origin "$branch"
@@ -222,6 +252,46 @@ mv "$ROOT/unsupported-slot" "$SLOT_PATH"
 expect_malformed_release 'active slot unsupported version' "$(cat "$SLOT_PATH")" absent
 cp "$ROOT/valid-release-slot" "$SLOT_PATH"
 
+sed '/^claim=/d' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot missing key' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+printf 'claim=duplicate-claim\n' >> "$SLOT_PATH"
+expect_malformed_release 'active slot duplicate key' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+printf 'unknown=value\n' >> "$SLOT_PATH"
+expect_malformed_release 'active slot unknown key' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+sed 's/^issue=SAY-201$/issue=NOT-201/' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot invalid Issue' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+sed 's#^branch=.*#branch=not a branch#' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot invalid branch' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+sed 's#^branch=.*#branch=sayosomi/say-999-other-branch#' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot Issue branch mismatch' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+sed 's/^base=.*/base=not-a-sha/' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot invalid Base' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+sed 's/^claim=.*/claim=bad/' "$SLOT_PATH" > "$ROOT/unsupported-slot"
+mv "$ROOT/unsupported-slot" "$SLOT_PATH"
+expect_malformed_release 'active slot invalid claim' "$(cat "$SLOT_PATH")" absent
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
+
+printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$ROOT/valid-release-lock"
 mkdir "$LOCK_DIR"
 printf 'version=2\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
   "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
@@ -231,8 +301,86 @@ printf 'version=1\noperation=not-an-operation\nissue=SAY-201\nbranch=%s\nbase=%s
   "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
 LOCK_INVALID_OPERATION="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock invalid operation' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_OPERATION"
+
+printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\n' \
+  "$BRANCH1" "$BASE" "$CHECKPOINT1" > "$LOCK_DIR/state"
+LOCK_MISSING_KEY="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock missing key' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_MISSING_KEY"
+
+cp "$ROOT/valid-release-lock" "$LOCK_DIR/state"
+printf 'claim=duplicate-claim\n' >> "$LOCK_DIR/state"
+LOCK_DUPLICATE_KEY="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock duplicate key' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_DUPLICATE_KEY"
+
+cp "$ROOT/valid-release-lock" "$LOCK_DIR/state"
+printf 'unknown=value\n' >> "$LOCK_DIR/state"
+LOCK_UNKNOWN_KEY="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock unknown key' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_UNKNOWN_KEY"
+
+printf 'version=1\noperation=release\nissue=-\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+LOCK_INVALID_PAIR="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock invalid Issue branch pair' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_PAIR"
+
+printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=not-a-sha\ncheckpoint=%s\nclaim=%s\n' \
+  "$BRANCH1" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+LOCK_INVALID_BASE="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock invalid Base' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_BASE"
+
+printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=not-a-sha\nclaim=%s\n' \
+  "$BRANCH1" "$BASE" "$CLAIM1" > "$LOCK_DIR/state"
+LOCK_INVALID_CHECKPOINT="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock invalid checkpoint' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_CHECKPOINT"
+
+printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=bad\n' \
+  "$BRANCH1" "$BASE" "$CHECKPOINT1" > "$LOCK_DIR/state"
+LOCK_INVALID_CLAIM="$(cat "$LOCK_DIR/state")"
+expect_malformed_release 'mutation lock invalid claim' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_CLAIM"
+
 rm "$LOCK_DIR/state"
 rmdir "$LOCK_DIR"
+
+RELEASE_DIR1="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.claim-conflict-1"
+mkdir "$RELEASE_DIR1"
+cp "$ROOT/valid-release-slot" "$RELEASE_DIR1/state"
+printf '%s\n' "$CHECKPOINT1" > "$RELEASE_DIR1/checkpoint"
+expect_release_blocked 'active and releasing state conflict'
+
+RELEASE_DIR2="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.claim-conflict-2"
+mkdir "$RELEASE_DIR2"
+cp "$ROOT/valid-release-slot" "$RELEASE_DIR2/state"
+printf '%s\n' "$CHECKPOINT1" > "$RELEASE_DIR2/checkpoint"
+expect_release_blocked 'multiple releasing states'
+rm "$RELEASE_DIR1/state" "$RELEASE_DIR1/checkpoint" "$RELEASE_DIR2/state" "$RELEASE_DIR2/checkpoint"
+rmdir "$RELEASE_DIR1" "$RELEASE_DIR2"
+
+ACTIVE_SLOT_DIR="$(dirname "$SLOT_PATH")"
+rm "$SLOT_PATH"
+rmdir "$ACTIVE_SLOT_DIR"
+RELEASE_DIR3="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.claim-release-3"
+mkdir "$RELEASE_DIR3"
+cp "$ROOT/valid-release-slot" "$RELEASE_DIR3/state"
+expect_invalid_releasing_state 'malformed releasing state' "$RELEASE_DIR3"
+rm "$RELEASE_DIR3/state"
+rmdir "$RELEASE_DIR3"
+
+mkdir "$RELEASE_DIR3"
+cp "$ROOT/valid-release-slot" "$RELEASE_DIR3/state"
+printf 'not-a-sha\n' > "$RELEASE_DIR3/checkpoint"
+expect_invalid_releasing_state 'releasing state invalid checkpoint' "$RELEASE_DIR3"
+rm "$RELEASE_DIR3/state" "$RELEASE_DIR3/checkpoint"
+rmdir "$RELEASE_DIR3"
+
+RELEASE_DIR4="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.claim-release-wrong"
+mkdir "$RELEASE_DIR4"
+cp "$ROOT/valid-release-slot" "$RELEASE_DIR4/state"
+printf '%s\n' "$CHECKPOINT1" > "$RELEASE_DIR4/checkpoint"
+expect_invalid_releasing_state 'releasing suffix claim mismatch' "$RELEASE_DIR4"
+rm "$RELEASE_DIR4/state" "$RELEASE_DIR4/checkpoint"
+rmdir "$RELEASE_DIR4"
+
+mkdir "$ACTIVE_SLOT_DIR"
+cp "$ROOT/valid-release-slot" "$SLOT_PATH"
 
 release_main "$CHECKPOINT1" "$CLAIM1" "$BRANCH1"
 
