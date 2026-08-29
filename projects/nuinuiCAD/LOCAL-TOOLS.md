@@ -47,7 +47,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.1`。
+current standalone helper version: `1.6.2`。
 
 `projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
@@ -80,7 +80,7 @@ current commands:
 
 ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのままconsumeする。helper versionとmetadata versionは独立している。
 
-`preflight`はread-only diagnostic / routing command。main/sub FREE判定はauthoritative `ls-remote origin main`を使い、cleanでもbehindならFREEにしない。mutation lock、active slot、releasing tombstoneを優先して分類し、strict schema violationはBLOCKする。known-Issueの通常startでは、ChatGPTが`expected-peer`を構成した`begin`が同じauditを行うため、別preflightを先に実行しない。
+`preflight`はread-only diagnostic / routing command。main/sub FREE判定はauthoritative `ls-remote origin main`を使い、cleanでもbehindならFREEにしない。mutation lock、active slot、releasing tombstoneを優先して分類し、strict schema violationはBLOCKする。validなactive slotのbranch / Base ancestry / claim identityが一致していれば、working treeがdirtyでも`clean=no`と`state=BUSY`を返す。branch / Base / metadata identity mismatchは引き続きBLOCKする。known-Issueの通常startでは、ChatGPTが`expected-peer`を構成した`begin`が同じauditを行うため、別preflightを先に実行しない。
 
 `lane-init`はfixed laneを正当に新規 / 再作成した場合のschema bootstrap。slot / lock / release stateがなくexact safe idleを証明できる場合だけmarkerを書く。既存active-looking checkoutからclaimを生成するrepair用途には使わない。
 
@@ -94,7 +94,7 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
 
-`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、complete lifecycle envelopes、resume、release failure retention、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejectionを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証する。
+`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、dirty valid BUSY lane classification、dirty BUSY peerを期待したbegin、wrong-branch fail-closed、complete lifecycle envelopes、resume、release failure retention、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejectionを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証する。
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返す。
 
@@ -155,16 +155,16 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 
 ## Standalone durable helper promotion evidence
 
-current `nuinui` 1.6.1 exact Git blob:
+current `nuinui` 1.6.2 exact Git blob:
 
 ```text
-0803b37bf913e78ae6a2a5941307a8ee9e1d3c0b
+61db9b78c02e3915d57835eb8817ea3d4d6fa772
 ```
 
 candidate SHA-256:
 
 ```text
-7470032ef22078e0541ae61685471557f5c3b2d853e9d3f0a872d851dd82182f
+d89c272f62c6cb65f6610d218248bddc246e38fd565f3ebb917d166de4939bdb
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
@@ -181,7 +181,7 @@ promotion candidateはseparate legacy/backend fileなしでisolated temporary Gi
 - failed unmerged releaseのslot保持 / own-lock rollback;
 - newer authoritative mainへのmerged release;
 - interrupted start / release recovery;
-- existing v1 BUSY slotの無変換classification;
+- existing v1 BUSY slotの無変換classification（dirty working treeを含むvalid active claimの`clean=no` / `state=BUSY`、wrong branchのBLOCK）;
 - E2E marker lifecycle;
 - standalone Auto-merge reservation path;
 - Auto-merge already-complete, TOCTOU pending-to-complete, mutation-race, required-check failure/API, reviewed-head/main mismatch, successful reservation, and post-mutation read-back failure diagnostics;
@@ -206,8 +206,8 @@ projects/nuinuiCAD/scripts/test-nuinui-handoff-check          PASS
 projects/nuinuiCAD/scripts/nuinui context-check                PASS
 /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge PASS
 projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge           PASS
-git hash-object projects/nuinuiCAD/scripts/nuinui                0803b37bf913e78ae6a2a5941307a8ee9e1d3c0b
-shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  7470032ef22078e0541ae61685471557f5c3b2d853e9d3f0a872d851dd82182f
+git hash-object projects/nuinuiCAD/scripts/nuinui                61db9b78c02e3915d57835eb8817ea3d4d6fa772
+shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  d89c272f62c6cb65f6610d218248bddc246e38fd565f3ebb917d166de4939bdb
 ```
 
 1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。

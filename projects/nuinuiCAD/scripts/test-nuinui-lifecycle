@@ -144,13 +144,31 @@ assert_line "$OUT2" '^peer_state=FREE$' 'BUSY peer setup expected free main'
 CLAIM2="$(printf '%s\n' "$OUT2" | sed -n 's/^claim=//p')"
 CHECKPOINT2="$(printf '%s\n' "$OUT2" | sed -n 's/^checkpoint=//p')"
 
+printf 'dirty-owned-lane\n' > "$SUB/untracked"
+DIRTY_PREFLIGHT=$("$HELPER" preflight)
+assert_line "$DIRTY_PREFLIGHT" '^sub path=' 'dirty BUSY preflight missing sub lane'
+assert_line "$DIRTY_PREFLIGHT" '^  clean=no$' 'dirty BUSY preflight did not report clean=no'
+assert_line "$DIRTY_PREFLIGHT" "^  owner_issue=SAY-202 owner_branch=$BRANCH2 base=$CHECKPOINT1 claim=$CLAIM2$" 'dirty BUSY preflight changed durable ownership identity'
+assert_line "$DIRTY_PREFLIGHT" '^  state=BUSY$' 'dirty owned lane did not remain BUSY'
+
+git -C "$SUB" switch -q --detach "$CHECKPOINT1"
+if "$HELPER" preflight > "$ROOT/wrong-branch-preflight.out" 2>&1; then
+  cat "$ROOT/wrong-branch-preflight.out"
+  fail 'wrong-branch active lane unexpectedly remained valid'
+fi
+assert_line "$(cat "$ROOT/wrong-branch-preflight.out")" '^  state=BLOCKED reason=claim-checkout-mismatch$' 'wrong-branch active lane did not fail closed'
+git -C "$SUB" switch -q "$BRANCH2"
+
 BRANCH3=sayosomi/say-203-matching-peer
 OUT3=$("$HELPER" begin main SAY-203 "$CHECKPOINT2" "$BRANCH3" SAY-202)
 assert_line "$OUT3" '^peer_lane=sub$' 'matching BUSY peer begin missing peer lane'
 assert_line "$OUT3" '^peer_state=BUSY$' 'matching BUSY peer begin missing BUSY state'
 assert_line "$OUT3" '^peer_issue=SAY-202$' 'matching BUSY peer begin missing exact Issue'
+assert_line "$OUT3" '^preflight=PASS$' 'matching dirty BUSY peer begin missing preflight proof'
 CLAIM3="$(printf '%s\n' "$OUT3" | sed -n 's/^claim=//p')"
 CHECKPOINT3="$(printf '%s\n' "$OUT3" | sed -n 's/^checkpoint=//p')"
+
+rm "$SUB/untracked"
 
 release_main "$CHECKPOINT3" "$CLAIM3" "$BRANCH3"
 expect_begin_blocked 'wrong expected peer Issue' "$MAIN" main SAY-204 "$CHECKPOINT3" sayosomi/say-204-wrong-peer SAY-999
