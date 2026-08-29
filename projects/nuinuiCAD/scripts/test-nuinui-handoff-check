@@ -33,6 +33,7 @@ expect_blocked() {
   echo "PASS: $name"
 }
 
+
 git init -q --bare "$REMOTE"
 git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
 git init -q -b main "$SEED"
@@ -126,6 +127,11 @@ STATE
 "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent > "$ROOT/out"
 grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "fresh absent-mode handoff did not verify"; }
 echo "PASS: fresh topic absent mode"
+
+ORIGIN_URL="$(git -C "$MAIN" remote get-url origin)"
+git -C "$MAIN" remote set-url origin "$ROOT/missing-remote.git"
+expect_blocked "unavailable remote does not satisfy absent mode" "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
+git -C "$MAIN" remote set-url origin "$ORIGIN_URL"
 
 git -C "$MAIN" push -q -u origin "$FRESH_BRANCH"
 expect_blocked "fresh mode rejects pre-existing remote topic" "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
