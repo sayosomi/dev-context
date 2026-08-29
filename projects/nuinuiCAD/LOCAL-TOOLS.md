@@ -47,7 +47,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.0`。
+current standalone helper version: `1.6.1`。
 
 `projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
@@ -94,7 +94,7 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
 
-`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、complete lifecycle envelopes、resume、release failure retention、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejectionを検証する。
+`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、complete lifecycle envelopes、resume、release failure retention、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejectionを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証する。
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返す。
 
@@ -104,11 +104,11 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `pr-auto-merge`, E2E, context-sync, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
-`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。PRがOPEN / non-draft / base=`main` / exact reviewed headで、current base OIDがexpected mainに一致し、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。
+`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。PRがOPEN / non-draft / base=`main` / exact reviewed headで、current base OIDがexpected mainに一致し、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
 
 visible required checksは`gh pr checks --required`のpending / passだけを許可する。required check viewが空の場合はbranch protectionのsource-bound checks、exact-head pull_request workflow run、check suite、check runを相関し、complete proofが得られない場合はBLOCKする。
 
-mutation直前にpreconditionを再確認し、GraphQL `enablePullRequestAutoMerge`へ`mergeMethod=MERGE`と`expectedHeadOid`を渡す。reservation pathからdirect mergeへfallbackしない。mutation後はsame PR / head / expected main / OPEN / `autoMergeRequest.mergeMethod=MERGE`をread-backして成功扱いする。
+operationalなnonzero exitはHuman-visibleに分類する。証明できたfail-closed state / precondition mismatchは`BLOCKED:`、GitHub / API / auth / tool execution failureやreservation stateを判定できない場合は`ERROR:`で返す。mutation直前にpreconditionを再確認し、GraphQL `enablePullRequestAutoMerge`へ`mergeMethod=MERGE`と`expectedHeadOid`を渡す。initial check通過後のpre-mutation state transitionは`BLOCKED: Auto-merge reservation precondition changed before mutation`と具体的な現在理由を返してfail-closedし、mutationしない。GraphQL mutation raceはmutationをretryせず、fresh read-only diagnosisを最大1回だけ行い、direct mergeへfallbackしない。mutation後はsame PR / head / expected main / OPEN / `autoMergeRequest.mergeMethod=MERGE`をread-backして成功扱いする。
 
 `nuinui doctor --full`、`transition-audit`、`context-check`はread-only。checkout mutation、cleanup、process stop、Issue selection、Linear/GitHub update、merge判断を行わない。
 
@@ -155,16 +155,16 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 
 ## Standalone durable helper promotion evidence
 
-current `nuinui` 1.6.0 exact Git blob:
+current `nuinui` 1.6.1 exact Git blob:
 
 ```text
-386a7dcf9448becfba2d740467423fa41aa79bbe
+0803b37bf913e78ae6a2a5941307a8ee9e1d3c0b
 ```
 
 candidate SHA-256:
 
 ```text
-12ef36b2910ae2b4817e8ebfa601bb61371c03ebb07e0ab371b4617dbf827ae8
+7470032ef22078e0541ae61685471557f5c3b2d853e9d3f0a872d851dd82182f
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
@@ -184,6 +184,7 @@ promotion candidateはseparate legacy/backend fileなしでisolated temporary Gi
 - existing v1 BUSY slotの無変換classification;
 - E2E marker lifecycle;
 - standalone Auto-merge reservation path;
+- Auto-merge already-complete, TOCTOU pending-to-complete, mutation-race, required-check failure/API, reviewed-head/main mismatch, successful reservation, and post-mutation read-back failure diagnostics;
 - stale clean mainのFREE拒否。
 
 result:
@@ -203,6 +204,10 @@ exact final candidate verification:
 projects/nuinuiCAD/scripts/nuinui self-test                   PASS
 projects/nuinuiCAD/scripts/test-nuinui-handoff-check          PASS
 projects/nuinuiCAD/scripts/nuinui context-check                PASS
+/bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge PASS
+projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge           PASS
+git hash-object projects/nuinuiCAD/scripts/nuinui                0803b37bf913e78ae6a2a5941307a8ee9e1d3c0b
+shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  7470032ef22078e0541ae61685471557f5c3b2d853e9d3f0a872d851dd82182f
 ```
 
 1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。

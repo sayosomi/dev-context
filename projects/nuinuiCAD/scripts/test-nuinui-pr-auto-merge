@@ -1,0 +1,327 @@
+#!/bin/sh
+set -eu
+
+fake_gh() {
+  scenario=${FAKE_GH_SCENARIO:?FAKE_GH_SCENARIO is required}
+  root=${FAKE_GH_ROOT:?FAKE_GH_ROOT is required}
+  log=$root/ops
+  printf '%s\n' "$*" >> "$log"
+
+  next_count() {
+    name=$1
+    file=$root/$name.count
+    n=0
+    [ -f "$file" ] && n=$(sed -n '1p' "$file")
+    n=$((n + 1))
+    printf '%s\n' "$n" > "$file"
+    printf '%s\n' "$n"
+  }
+
+  if [ "$1" = pr ] && [ "$2" = view ]; then
+    n=$(next_count view)
+    case "$scenario" in
+      api-error)
+        echo 'fake gh: pull request API unavailable' >&2
+        return 41
+        ;;
+      head-mismatch)
+        actual_head=9999999999999999999999999999999999999999
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      main-mismatch)
+        actual_head=$HEAD
+        actual_main=8888888888888888888888888888888888888888
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      complete-start)
+        actual_head=$HEAD
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      toctou-complete)
+        actual_head=$HEAD
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      mutation-race)
+        actual_head=$HEAD
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      mutation-error|readback-fails|success)
+        actual_head=$HEAD
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      failure-*|checks-api-error)
+        actual_head=$HEAD
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      *)
+        echo "fake gh: unknown view scenario $scenario" >&2
+        return 42
+        ;;
+    esac
+    if [ "$scenario" = toctou-complete ] && [ "$n" -ge 2 ]; then
+      :
+    elif [ "$scenario" = mutation-race ] && [ -f "$root/mutation-complete" ]; then
+      :
+    elif [ "$scenario" = success ] && [ "$n" -ge 3 ]; then
+      auto=MERGE
+    elif [ "$scenario" = readback-fails ] && [ "$n" -ge 3 ]; then
+      echo 'fake gh: read-back API unavailable' >&2
+      return 43
+    fi
+    printf 'PR_ID\t%s\t%s\t%s\t%s\t%s\t%s\t%s\thttps://github.example/pr/%s\n' \
+      "$state" "$draft" "$base" "$actual_main" "$actual_head" "$mergeability" "$auto" "$PR_NUMBER"
+    return 0
+  fi
+
+  if [ "$1" = pr ] && [ "$2" = checks ]; then
+    case "$scenario" in
+      complete-start)
+        printf 'CI\tpass\n'
+        ;;
+      toctou-complete)
+        if [ "$(sed -n '1p' "$root/view.count")" -ge 2 ]; then
+          printf 'CI\tpass\n'
+        else
+          printf 'CI\tpending\n'
+        fi
+        ;;
+      mutation-race)
+        if [ -f "$root/mutation-complete" ]; then
+          printf 'CI\tpass\n'
+        else
+          printf 'CI\tpending\n'
+        fi
+        ;;
+      mutation-error|success|readback-fails)
+        printf 'CI\tpending\n'
+        ;;
+      failure-failure|failure-cancelled|failure-skipped|failure-unknown)
+        printf 'CI\t%s\n' "${scenario#failure-}"
+        ;;
+      checks-api-error)
+        echo 'fake gh: required checks API unavailable' >&2
+        return 45
+        ;;
+      *)
+        echo "fake gh: unexpected checks scenario $scenario" >&2
+        return 46
+        ;;
+    esac
+    return 0
+  fi
+
+  if [ "$1" = api ] && [ "$2" = graphql ]; then
+    case "$scenario" in
+      mutation-race)
+        printf '%s\n' complete > "$root/mutation-complete"
+        echo 'fake gh: reservation rejected because required checks completed' >&2
+        return 47
+        ;;
+      mutation-error)
+        echo 'fake gh: reservation mutation unavailable' >&2
+        return 48
+        ;;
+      success|readback-fails)
+        printf '{"data":{"enablePullRequestAutoMerge":{"clientMutationId":"fake"}}}\n'
+        return 0
+        ;;
+      *)
+        echo "fake gh: unexpected GraphQL operation for $scenario" >&2
+        return 48
+        ;;
+    esac
+  fi
+
+  echo "fake gh: unexpected operation $*" >&2
+  return 49
+}
+
+if [ "${NUINUI_FAKE_GH:-0}" = 1 ]; then
+  fake_gh "$@"
+  exit $?
+fi
+
+if [ "$#" -gt 0 ]; then
+  case "$1" in
+    /*) HELPER=$1 ;;
+    *) HELPER=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd -P)/$(basename -- "$1") ;;
+  esac
+else
+  HELPER=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui
+fi
+FAKE_GH=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")
+ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-pr-auto-merge.XXXXXX")
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+PR_NUMBER=417
+HEAD=1111111111111111111111111111111111111111
+MAIN=2222222222222222222222222222222222222222
+
+fail() { echo "SELFTEST FAIL: $*" >&2; exit 1; }
+assert_contains() {
+  printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
+}
+assert_first_line_classified() {
+  first=$(printf '%s\n' "$1" | sed -n '1p')
+  case "$first" in
+    BLOCKED:*|ERROR:*) ;;
+    *) fail "$2: first line was not classified: $first" ;;
+  esac
+}
+assert_no_direct_merge() {
+  if grep -Eq '^pr merge([[:space:]]|$)' "$1"; then
+    fail "$2 attempted a direct merge"
+  fi
+}
+assert_no_graphql() {
+  if grep -Eq '^api graphql([[:space:]]|$)' "$1"; then
+    fail "$2 attempted a GraphQL mutation"
+  fi
+}
+graphql_count() { grep -Ec '^api graphql([[:space:]]|$)' "$1" || true; }
+
+prepare_case() {
+  scenario=$1
+  CASE_ROOT=$ROOT/$scenario
+  rm -rf "$CASE_ROOT"
+  mkdir -p "$CASE_ROOT"
+  : > "$CASE_ROOT/ops"
+}
+
+run_failure() {
+  name=$1
+  scenario=$2
+  expected=$3
+  prepare_case "$scenario"
+  if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+    FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    rc=$?
+  fi
+  [ "$rc" -ne 0 ] || fail "$name returned zero"
+  [ -n "$output" ] || fail "$name produced no diagnostic"
+  assert_first_line_classified "$output" "$name"
+  assert_contains "$output" "$expected" "$name did not include expected diagnostic"
+  if printf '%s\n' "$output" | grep -Fq 'AUTO-MERGE RESERVED'; then
+    fail "$name reported reservation despite a nonzero exit"
+  fi
+  assert_no_direct_merge "$CASE_ROOT/ops" "$name"
+  printf '%s\n' "--- $name (exit=$rc) ---"
+  printf '%s\n' "$output"
+  printf '%s\n' 'operations:'
+  cat "$CASE_ROOT/ops"
+}
+
+run_success() {
+  name=$1
+  scenario=$2
+  prepare_case "$scenario"
+  if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+    FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
+    rc=0
+  else
+    rc=$?
+    printf '%s\n' "$output"
+    fail "$name unexpectedly failed with exit $rc"
+  fi
+  [ "$rc" -eq 0 ] || fail "$name did not return zero"
+  assert_contains "$output" 'AUTO-MERGE RESERVED' "$name did not report reservation"
+  assert_no_direct_merge "$CASE_ROOT/ops" "$name"
+  [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name did not invoke exactly one GraphQL mutation"
+  operations=$(cat "$CASE_ROOT/ops")
+  assert_contains "$operations" 'enablePullRequestAutoMerge' "$name did not use enablePullRequestAutoMerge"
+  assert_contains "$operations" 'mergeMethod:MERGE' "$name did not pin MERGE"
+  assert_contains "$operations" "-f h=$HEAD" "$name did not pass expectedHeadOid"
+  printf '%s\n' "--- $name (exit=0) ---"
+  printf '%s\n' "$output"
+  printf '%s\n' 'operations:'
+  printf '%s\n' "$operations"
+}
+
+run_failure 'already complete at command start' complete-start \
+  'BLOCKED: all required checks are already complete'
+assert_no_graphql "$ROOT/complete-start/ops" 'already complete at command start'
+
+run_failure 'TOCTOU pending to complete' toctou-complete \
+  'BLOCKED: Auto-merge reservation precondition changed before mutation'
+assert_contains "$output" 'BLOCKED: all required checks are already complete' 'TOCTOU output did not identify completion'
+assert_contains "$(cat "$ROOT/toctou-complete/ops")" 'pr checks' 'TOCTOU case did not inspect checks'
+assert_contains "$(cat "$ROOT/toctou-complete/ops")" 'pr view' 'TOCTOU case did not perform precondition reads'
+assert_no_graphql "$ROOT/toctou-complete/ops" 'TOCTOU pending to complete'
+
+run_failure 'reservation mutation race' mutation-race \
+  'BLOCKED: all required checks are already complete'
+assert_contains "$(cat "$ROOT/mutation-race/ops")" 'pr checks' 'mutation race did not perform fresh diagnosis'
+[ "$(graphql_count "$ROOT/mutation-race/ops")" = 1 ] || fail 'mutation race retried GraphQL mutation'
+assert_contains "$(cat "$ROOT/mutation-race/ops")" 'pr view' 'mutation race did not read current PR state'
+assert_contains "$(cat "$ROOT/mutation-race/ops")" 'pr checks' 'mutation race did not read current checks'
+
+run_failure 'reservation mutation failure' mutation-error \
+  'ERROR: Auto-merge reservation mutation failed'
+[ "$(graphql_count "$ROOT/mutation-error/ops")" = 1 ] || fail 'mutation failure retried GraphQL mutation'
+
+for bucket in failure cancelled skipped unknown; do
+  run_failure "initial required check $bucket" "failure-$bucket" \
+    'BLOCKED: required check is not pass or pending'
+done
+
+run_failure 'reviewed head mismatch' head-mismatch \
+  "expected_head=$HEAD"
+assert_contains "$(cat "$ROOT/head-mismatch/ops")" 'pr view' 'head mismatch did not inspect the PR'
+
+run_failure 'expected main mismatch' main-mismatch \
+  "expected_main=$MAIN"
+assert_contains "$(cat "$ROOT/main-mismatch/ops")" 'pr view' 'main mismatch did not inspect the PR'
+
+run_failure 'GitHub PR lookup failure' api-error \
+  'ERROR: PR lookup/API failure'
+
+run_failure 'required-check API failure' checks-api-error \
+  'ERROR: required-check lookup/API failure'
+
+run_success 'successful reservation' success
+
+run_failure 'mutation succeeds but read-back fails' readback-fails \
+  'ERROR: Auto-merge reservation state could not be verified'
+[ "$(graphql_count "$ROOT/readback-fails/ops")" = 1 ] || fail 'read-back failure retried GraphQL mutation'
+assert_contains "$(cat "$ROOT/readback-fails/ops")" 'pr view' 'read-back failure did not inspect the PR'
+
+echo 'NUINUI PR AUTO-MERGE SELFTEST PASS'
