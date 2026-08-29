@@ -283,6 +283,169 @@ local reproductionが必要なら、`FREE`な`main`または`sub` implementation
 
 詳細はshared CI incident時だけ [`CI-INCIDENTS.md`](./CI-INCIDENTS.md) を読む。
 
+## Durable implementation ownership — Stage 1
+
+このsectionはStage 1以降の`main` / `sub` implementation lane occupancy、start / resume / release / recoveryについて、上記の旧checkout-derived wordingと競合する場合に優先する。`e2e` laneのmarker semanticsは変更しない。
+
+### Authority and local metadata
+
+implementation laneのownership primary evidenceはcheckout branchではなく、そのworktree固有Git directoryのdurable metadataとする。Linear checkpointはrestart / handoff identity、checkoutはconsistency evidenceとして使う。
+
+metadata root:
+
+```text
+$(git -C <lane> rev-parse --absolute-git-dir)
+```
+
+Stage 1 files:
+
+```text
+nuinui-implementation-v1
+nuinui-implementation-slot/
+  state
+nuinui-implementation-lock/
+  state
+nuinui-implementation-slot.releasing.<claim>/
+  state
+  checkpoint
+```
+
+active slot `state`:
+
+```text
+version=1
+issue=SAY-123
+branch=<exact Task branch>
+base=<exact fixed Base checkpoint SHA>
+claim=<unique generation token>
+```
+
+`claim`はlane取得generationのidentity。同じIssue / branch / Baseを後から再取得しても新しいclaimを使い、旧generationからのstale resume / releaseを区別する。
+
+mutation lockは`version`, `operation`, `issue`, `branch`, `base`, `checkpoint`, `claim`をexactly once保持する。Stage 1 operationは`start | resume | release | init | adopt`。release tombstoneはactive slot identityにexact checkpointを加え、crash後もrelease条件を再証明できるようにする。
+
+version 1 stateはstrict schema。required key missing / duplicate、unknown key、unsupported version、invalid Issue / branch / SHA / claimは`BLOCKED / UNKNOWN`。malformed / incomplete metadataを推測して自動削除しない。
+
+### Classification priority
+
+`preflight`はimplementation laneについて次の優先順位で分類する。
+
+1. mutation lockあり → `BLOCKED`。validならoperation / claimを表示し、invalidならinvalid lockとしてBLOCKする。
+2. active slotあり → slotがvalidで、releasing stateがなく、working tree clean、checkout branchがslot.branchと一致し、slot.baseがcurrent HEADのancestorなら`BUSY`。いずれか不一致なら`BLOCKED`。
+3. releasing tombstoneあり → single valid stateなら`RELEASE-PENDING`。multiple / malformedなら`BLOCKED`。
+4. ownership metadataなし → migration marker validかつexact idle stateなら`FREE`。それ以外は`BLOCKED`。
+
+`clean main`や`slotなし`だけをFREEの根拠にしない。topic branchなのにslotがない状態もFREEではない。
+
+exact idle state:
+
+- `main`: clean、branch=`main`、HEAD=fresh authoritative `origin/main`。
+- `sub`: clean、detached HEAD、HEAD=fresh authoritative `origin/main`。
+
+cleanなlocal `main`でもauthoritative `origin/main`よりbehindならFREEではない。preflightはread-onlyで、分類のためにcheckoutを自動fast-forwardしない。
+
+### Mutation lock and crash safety
+
+start / resume / release / explicit recoveryのlane mutationはper-lane atomic lockで直列化する。lock取得前のreadはmutation authorizationに使わず、lock取得後にsafety-critical factsを再確認する。
+
+lockは時間でexpireしない。「古いから削除」は禁止。crashでlockが残った場合はlaneをBLOCKし、known operation / claim / metadata / checkout状態を一意に証明できるときだけexplicit recoveryを行う。
+
+startではownership slotをTask branch switchより先にdurable化する。したがって外部processが後で`git switch main`してもslotは残り、slot / checkout mismatchとしてBLOCKする。external checkout事故をlane releaseとみなさない。
+
+releaseではactive slotをclaim固有`releasing.<claim>`へatomic renameしてからidle transitionを行う。cleanupはtombstoneを先、mutation lockを最後に削除する。release / new-start raceで古いrelease cleanupが新claimを削除しない。
+
+### Start
+
+Stage 1 helper:
+
+```text
+nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>
+```
+
+実行順序:
+
+1. migration済みでownership / lock / releasing stateがないことを確認。
+2. new claim generationを作成しmutation lockをatomic acquire。
+3. active slotをatomic claimし、Issue / branch / fixed Base / claimをdurable化。
+4. existing verified start mechanicsでfresh remote / exact Base / branch absence / safe idleを再確認し、必要なsafe normalization後にTask branchをcreate/switch。
+5. final checkout / Base / cleanlinessを再確認。
+6. mutation lockを削除。
+7. `STARTED` outputとclaimをcallerへ返す。
+
+start成功のclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のImplementation checkpointへ同じcontinuationで保存する。
+
+branch作成前にcrashしてもslot / lockがlaneを保持する。known precondition failureで、checkoutがexact pre-start idleのまま、branch未作成、slot / lockが自分のclaimと証明できる場合だけ自分が作ったmetadataをrollbackしてよい。判定不能なら保持してBLOCKする。
+
+### Resume
+
+Stage 1 helper:
+
+```text
+nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>
+```
+
+resume callerはLinear restart checkpoint等の独立evidenceからIssue、fixed Base、exact pushed checkpoint、branch、claimを復元する。Baseをancestor関係だけから推定しない。local slotのclaimをexpected claimの代わりに採用しない。
+
+slotのIssue / branch / Base / claimがcaller expectationとexact一致し、working tree / branch checkpoint / authoritative remote branch / worktree occupancyが既存safe-resume条件を満たす場合だけexisting branchへswitchする。latest mainのmerge / rebase / reset / stash / force-switchは行わない。
+
+slotがTask branchを所有しているのにcheckoutが`main`等へ変わっている場合、preflightはBLOCKEDのまま。explicit resumeが安全にbranchをrestoreした後だけBUSYへ戻る。stale lockだけをrepairしてもslot / checkout mismatchをFREE/BUSYへ昇格させない。
+
+### Release
+
+Stage 1 helper:
+
+```text
+nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>
+```
+
+`lane + checkpoint`だけでは古いclaim generationと現在generationを区別できないため、expected claimを必須とする。
+
+releaseはvalid active slotがexpected claimを所有し、claimed topic branchのexact checkpointがcaller指定checkpointであることを確認してからlockを取得する。fresh `origin/main`がcheckpointをancestorとして含むことを再証明した後にslotへcheckpointをpersistし、claim固有releasing tombstoneへrenameしてexisting safe release mechanicsを実行する。
+
+main idle成功はclean local `main` at latest `origin/main`、sub idle成功はclean detached HEAD at latest `origin/main`。checkpointとidle HEADのexact equalityは要求しない。別safe mergeでorigin/mainがadvanceしていてもcheckpointがancestorならlatest origin/mainへreleaseしてよい。
+
+known precondition failureがslot rename前に起き、checkout / slotを変更していない場合はreleaseが取得した自分のlockだけrollbackしてよい。slot rename後のfailure / crashはtombstoneとlockを保持し、explicit recoveryへ渡す。
+
+### Explicit recovery
+
+Stage 1 helper:
+
+```text
+nuinui recover <main|sub> <expected-claim>
+```
+
+recoverは一般repair commandではない。valid lock / tombstoneとexpected claimをexact照合し、operation固有の既知crash stateだけを継続またはlock-only cleanupする。
+
+- interrupted `init`: ownership stateなし + exact safe idleを再証明できる場合だけmigration markerを完成してlockを削除。
+- interrupted `start`: slot identity / claimとcheckoutを照合し、start完了済みならlockだけ削除、branch switch前なら既存safe startを継続できる場合だけ継続。
+- interrupted `resume`: slot identity / claim / exact checkpointを照合し、resume完了済みならlockだけ削除、それ以外はsafe existing branch switchを継続できる場合だけ継続。
+- interrupted `release`: exact claim / checkpoint / tombstone stateを照合し、fresh merge ancestryとidle transition条件を再証明してreleaseをfinish。
+- interrupted `adopt`: Stage 1では自動recoverせずexplicit inspectionへBLOCK。
+
+multiple tombstones、claim mismatch、dirty、malformed state、wrong Base/history、wrong idle branch/HEAD等はrecoverしない。reset / stash / force-switch / broad cleanupへのfallbackは禁止。
+
+### Migration / adoption
+
+Stage 1導入後、migration markerがないlaneをcheckout appearanceだけからFREEにしない。
+
+proven idle laneだけ:
+
+```text
+nuinui lane-init <main|sub>
+```
+
+でmigrationする。fresh origin/mainを取得し、main/subそれぞれのexact safe idleを再証明してからmarkerを書く。
+
+既にactiveなlegacy implementation branchは自動FREE化せず、current Linear / remote evidenceからIssue、fixed Base、exact pushed checkpoint、branchを一意に確定したうえで:
+
+```text
+nuinui lane-adopt <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch>
+```
+
+を使う。adoptはclean checkoutがexact branch / checkpoint、Baseがcheckpointのancestor、authoritative remote branchがexact checkpointであることを確認し、新claimを作成してslotへ保存する。返されたclaimをLinearへcheckpointする。
+
+ownershipを既存authorityから一意に証明できないlaneはmigrationしないで`BLOCKED / UNKNOWN`のまま扱う。
+
 ## Prohibited patterns
 
 - Issueごとのdisposable worktree

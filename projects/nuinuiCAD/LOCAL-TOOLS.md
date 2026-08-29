@@ -178,6 +178,71 @@ repair中もunsafe recoveryは行わない。failureを通すためにsafety che
 
 GitHubへ反映する修正版は、少なくとも1回SUCCESSしたbehaviorに限定する。実機でまだ成功していない推測修正をauthoritative helperへ直接入れない。
 
+## Stage 1 durable implementation lane wrapper
+
+Stage 1のversioned `nuinui`は`1.4.0`。implementation lane ownershipをdurable化するwrapperであり、既存`1.3.5`の非lane mechanicsを一時的なcompatibility backendとして保持する。
+
+paths:
+
+```text
+projects/nuinuiCAD/scripts/nuinui
+projects/nuinuiCAD/scripts/nuinui-legacy-1.3.5
+```
+
+`nuinui-legacy-1.3.5`はStage 1移行用のexact旧helper blobであり独立authorityではない。Humanは通常wrapperの`nuinui`だけを呼ぶ。Auto-merge / E2E / context-sync / transition-audit / context-check等、今回変更対象でないoperationはwrapperからlegacyへ委譲し、Stage 1で既存mechanicsを再実装しない。
+
+Stage 1 implementation lane commands:
+
+| Command | Purpose |
+| --- | --- |
+| `nuinui preflight` | legacy fixed 3-worktree / E2E auditに加え、main/subをdurable metadataでFREE/BUSY/RELEASE-PENDING/BLOCKED分類 |
+| `nuinui verify <main\|sub> <SAY-123> <expected-base-sha> <branch>` | migration済みFREE laneに限定してexisting start verificationを実行 |
+| `nuinui lane-init <main\|sub>` | proven exact idle laneをdurable claim方式へ明示migration |
+| `nuinui lane-adopt <main\|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch>` | 既存active legacy branchをexact remote/checkpoint evidenceでdurable claimへ明示adopt |
+| `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | mutation lock + durable slotをbranch switchより先に取得してTaskを開始し、成功時claimを返す |
+| `nuinui resume <main\|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact fixed Base / checkpoint / claim generationを照合してexisting Task branchへ復帰 |
+| `nuinui release <main\|sub> <merged-checkpoint-sha> <expected-claim>` | exact claim generationを照合し、atomic releasing tombstone経由でmerged laneをrelease |
+| `nuinui recover <main\|sub> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimで明示recovery |
+
+旧`resume <lane> <Issue> <checkpoint> <branch>`と旧`release <lane> <checkpoint>`はStage 1 implementation lane operationとして使用しない。resumeはBase identityとclaim、releaseはclaimを必須とする。
+
+`preflight`自体はread-only。main/subのFREE判定にはauthoritative `ls-remote origin main`を使い、local clean mainがbehindでもFREEにしない。mutation command側は必要なfetchとlock取得後再検証を行う。
+
+`lane-init`はmigration markerがないexact idle lane専用。`lane-adopt`は既存active branch専用で、checkout exact branch/checkpoint、Base ancestry、authoritative remote branch exact checkpointを証明した場合だけnew claimを作る。どちらとも証明できないlaneはBLOCKEDのままにする。
+
+`start`成功時または`lane-adopt`成功時に出るclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)へcheckpointし、そのgenerationのresume/releaseでcaller expectationとして渡す。slot内claimを外部expected identityの代わりに推測採用しない。
+
+`recover`は一般repairではない。lock/tombstoneのage-based expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致状態はfail-closedで停止する。
+
+### Stage 1 promotion evidence
+
+Stage 1 wrapper exact blob:
+
+```text
+79f19a252c5eb698b49f8bdc041f02e1517a2a6e
+```
+
+compatibility backend exact legacy blob:
+
+```text
+0e9e2c8fae00fd1c329244df166467fd6d0b862d
+```
+
+isolated temporary Gitでfailure pathを含むdurable state-machine trialを行った後、Human Mac上でこのexact wrapper + exact legacy blobに対して`nuinui self-test`を実行し:
+
+```text
+DURABLE WRAPPER SELFTEST PASS
+SELFTEST PASS
+```
+
+を確認済み。正式promotionでwrapper blobを変更しない。helper behaviorを変更する場合は新candidateとしてpromotion verificationをやり直す。
+
+### Stage 2 boundary
+
+`nuinui-legacy-1.3.5`削除はStage 1と同時に行わない。Stage 1を実際のmain/sub lifecycleで運用し、start / resume / release / recoveryとdelegated legacy commandsに十分なproduction evidenceが得られた後、legacy依存を除去したcandidateを別途作成・検証・承認してStage 2としてpromotionする。
+
+Stage 2まではlegacy fileを「不要そうだから」という理由で削除、内容変更、wrapperへ手作業copyしない。Git historyがarchiveであっても、Stage 1中はruntime compatibility backendとして意図的に存在する。
+
 ## Fallback
 
 versioned helperが未install、stale / broken、またはcurrent operationをまだsupportしていない場合は、helper利用を強行しない。

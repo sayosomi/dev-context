@@ -331,6 +331,44 @@ Ready条件を満たすimplementation待ちWorkはTodo。lane不足や`RELEASE-P
 - 切り出し元は`-> SAY-xx`等で履歴を残す;
 - Inbox自体は`Contract: N/A + Manual E2E: Not Required`。
 
+## Durable implementation claim checkpoint — Stage 1
+
+Stage 1では`main` / `sub` implementation laneのlocal ownership generationを`Claim`としてcheckpointする。physical mutex / occupancy authorityは[`CHECKOUTS.md`](./CHECKOUTS.md)のGit-local durable metadataであり、Linearはrestart / handoff identityを保存する外部evidenceである。
+
+`nuinui start`または`nuinui lane-adopt`成功時にhelperが返す`claim=<generation token>`を、同じlane assignmentの`Implementation checkpoint`へ必ず保存する。以後、そのactive laneをresume / releaseするcheckpointではclaimを維持し、同じIssue / branch / Baseを後から再取得した別generationと混同しない。
+
+Stage 1以降の標準記録は次の形へ拡張する。
+
+```text
+Implementation checkpoint
+- Lane: main | sub
+- Base checkpoint: <sha>
+- Branch: <branch>
+- Claim: <generation token>
+- PR / pushed head: <pr or none>
+- Current slice: <semantic boundary>
+- Completed acceptance: <none or summary>
+- Remaining acceptance: <summary>
+- Next safe checkpoint: <implementation | integration | merge>
+```
+
+resumeに必要なrestart identityは少なくとも`Lane + Issue + Base checkpoint + exact pushed checkpoint + Branch + Claim`。Baseをancestor関係だけから再推定した値や、local slotからその場で読んだclaimをcaller expectationの代わりに使わない。
+
+release成功後の`Lane release checkpoint`にはreleaseに使用したgenerationも残す。
+
+```text
+Lane release checkpoint
+- Lane: main | sub
+- Saved checkpoint: <exact pushed / integration checkpoint sha>
+- Released claim: <generation token>
+- Release result: RELEASED
+- Idle branch/state: main | DETACHED
+- Idle HEAD: <sha>
+- Lane state: FREE
+```
+
+Stage 1導入前の古いImplementation checkpointに`Claim`がない場合、そのrecordだけでは新helperのresume / release identityとして不十分。actual checkout、remote branch/checkpoint、fixed Base、Issue identityを明示的に照合して`nuinui lane-adopt`でdurable generationを作成し、返されたclaimを新checkpointとして保存する。推測でclaimを生成・補記しない。
+
 ## Post-write verification
 
 status / labels / comments / relationsを更新したcheckpointでは、必要な対象をread-backして意図したcurrent stateになったことを確認する。

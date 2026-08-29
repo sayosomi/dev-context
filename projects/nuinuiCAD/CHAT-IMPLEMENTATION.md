@@ -136,6 +136,18 @@ Work自体をpause / releaseする場合だけ`LINEAR-ISSUES.md` / `CHECKOUTS.md
 
 Implementation chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読み、READMEのimplementation loading ruleに従う。
 
+## Durable claim handoff — Stage 1
+
+Stage 1では`main` / `sub` implementation laneのownershipをGit-local durable claimで保持する。checkoutされているbranchだけからlane ownershipを推測しない。詳細なstate machine / recovery semanticsは[`CHECKOUTS.md`](./CHECKOUTS.md)、helper CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)をauthorityとする。
+
+新規`nuinui start`成功outputには`claim=<generation token>`が含まれる。Human terminal handoffでstart成功を確認したら、`In Progress`へのtransitionと同じcontinuationでそのclaimを`Implementation checkpoint`へ保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
+
+`resume` handoffは少なくともlane、Issue、fixed Base checkpoint、exact pushed checkpoint、branch、claimを外部stateから復元してhelperへ渡す。Baseをancestryから推測し直したり、local slotのclaimをcaller expectationの代わりに採用しない。
+
+`release` handoffはexact saved / integration checkpointとclaimを使う。claim generationを指定できない古い`release <lane> <checkpoint>`形へfallbackしない。
+
+preflightがdurable slot / checkout mismatch、mutation lock、releasing tombstone、migration未完了等を`BLOCKED`として返した場合、laneをFREEと推測しない。安全条件が一意に証明できるcrash stateだけexplicit `nuinui recover`で復旧し、reset / stash / force-switchによる一般repairへ変換しない。
+
 ## Maintenance rule
 
 このdocumentはImplementation chat固有のstart / resume / continuation / handoff lifecycleだけをownerする。checkout操作、slice semantics、Coding Agent detail、Linear lifecycleは各owner documentを参照し、ここへ複製しない。
