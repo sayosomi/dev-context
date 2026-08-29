@@ -160,11 +160,13 @@ v1 stateはstrict schema。required key missing / duplicate、unknown key、unsu
 `nuinui preflight`はmain/subを次の優先順位で分類する。
 
 1. mutation lockあり → `BLOCKED`。validならoperation / claimを表示し、invalidならinvalid lockとしてBLOCK。
-2. active slotあり → releasing stateがなく、slot valid、working tree clean、checkout branch=slot.branch、slot.baseがcurrent HEAD ancestorなら`BUSY`。不一致は`BLOCKED`。
+2. active slotあり → releasing stateがなく、slot valid、checkout branch=slot.branch、slot.baseがcurrent HEAD ancestorなら`BUSY`。working treeのdirtyだけでは`BUSY`を`BLOCKED`にしない。branch / Base / metadata identityの不一致は`BLOCKED`。
 3. releasing tombstoneあり → single valid stateなら`RELEASE-PENDING`。multiple / malformed / suffix-claim mismatchは`BLOCKED`。
 4. ownership stateなし → valid initialization marker + exact idle stateなら`FREE`。それ以外は`BLOCKED`。
 
 `clean main`、`slotなし`、branch名だけをFREE根拠にしない。topic branchなのにslotがない状態もFREEではない。
+
+active implementation laneがvalidなdurable ownershipを保持している場合、working treeのdirtyは診断上`clean=no`として表示するが、ownership identityが有効なら`state=BUSY`である。`FREE`のexact idle stateと`start` / `resume` / `release`のmutation preconditionでは、既存どおりworking tree cleanが必須である。
 
 exact idle state:
 
