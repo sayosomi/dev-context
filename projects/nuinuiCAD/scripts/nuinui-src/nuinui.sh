@@ -1,0 +1,1285 @@
+#!/bin/sh
+
+# 1.6 lifecycle façade.  The raw implementation below remains the single
+# owner of durable lane mutation; these functions only compose its existing
+# read-only audit and mutation commands into the public handoff contract.
+if [ "${NUINUI_LIFECYCLE_RAW:-0}" != 1 ]; then
+  NUINUI_LIFECYCLE_SCRIPT=$0
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    NUINUI_LIFECYCLE_MAIN=${NUINUI_MAIN_WT:?NUINUI_MAIN_WT is required in self-test mode}
+    NUINUI_LIFECYCLE_SUB=${NUINUI_SUB_WT:?NUINUI_SUB_WT is required in self-test mode}
+  else
+    NUINUI_LIFECYCLE_MAIN=/Users/yosomi/Code/nuinuiCAD
+    NUINUI_LIFECYCLE_SUB=/Users/yosomi/Code/nuinuiCAD-sub
+  fi
+
+  lifecycle_raw() {
+    NUINUI_LIFECYCLE_RAW=1 "$NUINUI_LIFECYCLE_SCRIPT" "$@"
+  }
+
+  lifecycle_repo() {
+    case "$1" in
+      main) printf '%s\n' "$NUINUI_LIFECYCLE_MAIN" ;;
+      sub) printf '%s\n' "$NUINUI_LIFECYCLE_SUB" ;;
+      *) return 2 ;;
+    esac
+  }
+
+  lifecycle_peer_lane() {
+    case "$1" in
+      main) printf '%s\n' sub ;;
+      sub) printf '%s\n' main ;;
+      *) return 2 ;;
+    esac
+  }
+
+  lifecycle_git_dir() {
+    git -C "$1" rev-parse --absolute-git-dir 2>/dev/null
+  }
+
+  lifecycle_slot_state() {
+    printf '%s/nuinui-implementation-slot/state\n' "$(lifecycle_git_dir "$1")"
+  }
+
+  lifecycle_state_value() {
+    [ -f "$1" ] || return 1
+    awk -F= -v key="$2" '$1==key {print substr($0,index($0,"=")+1); n++} END {exit n==1 ? 0 : 1}' "$1"
+  }
+
+  lifecycle_valid_issue() { printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'; }
+  lifecycle_valid_sha() { printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'; }
+  lifecycle_valid_claim() { printf '%s\n' "$1" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z._-]{7,127}$'; }
+  lifecycle_valid_peer() { [ "$1" = FREE ] || lifecycle_valid_issue "$1"; }
+
+  lifecycle_valid_durable_file() {
+    lifecycle_durable_file=$1
+    lifecycle_durable_keys=$2
+    awk -F= -v keys="$lifecycle_durable_keys" '
+      BEGIN {
+        n=split(keys, expected, ",")
+        for (i=1; i<=n; i++) allowed[expected[i]]=1
+      }
+      $0 !~ /^[^=]+=./ || !($1 in allowed) || ($1 in seen) { invalid=1; next }
+      { seen[$1]=1 }
+      END {
+        for (i=1; i<=n; i++) if (!(expected[i] in seen)) invalid=1
+        exit invalid ? 1 : 0
+      }
+    ' "$lifecycle_durable_file"
+  }
+
+  lifecycle_valid_slot_file() {
+    lifecycle_slot_metadata_file=$1
+    lifecycle_valid_durable_file "$lifecycle_slot_metadata_file" version,issue,branch,base,claim || return 1
+    [ "$(lifecycle_state_value "$lifecycle_slot_metadata_file" version)" = 1 ] || return 1
+    lifecycle_slot_metadata_issue=$(lifecycle_state_value "$lifecycle_slot_metadata_file" issue)
+    lifecycle_slot_metadata_branch=$(lifecycle_state_value "$lifecycle_slot_metadata_file" branch)
+    lifecycle_slot_metadata_base=$(lifecycle_state_value "$lifecycle_slot_metadata_file" base)
+    lifecycle_slot_metadata_claim=$(lifecycle_state_value "$lifecycle_slot_metadata_file" claim)
+    lifecycle_valid_issue "$lifecycle_slot_metadata_issue" || return 1
+    git check-ref-format --branch "$lifecycle_slot_metadata_branch" >/dev/null 2>&1 || return 1
+    [ "$(printf '%s\n' "$lifecycle_slot_metadata_branch" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p')" = "$lifecycle_slot_metadata_issue" ] || return 1
+    lifecycle_valid_sha "$lifecycle_slot_metadata_base" || return 1
+    lifecycle_valid_claim "$lifecycle_slot_metadata_claim" || return 1
+  }
+
+  lifecycle_valid_lock_file() {
+    lifecycle_lock_metadata_file=$1
+    lifecycle_valid_durable_file "$lifecycle_lock_metadata_file" version,operation,issue,branch,base,checkpoint,claim || return 1
+    [ "$(lifecycle_state_value "$lifecycle_lock_metadata_file" version)" = 1 ] || return 1
+    lifecycle_lock_metadata_operation=$(lifecycle_state_value "$lifecycle_lock_metadata_file" operation)
+    lifecycle_lock_metadata_issue=$(lifecycle_state_value "$lifecycle_lock_metadata_file" issue)
+    lifecycle_lock_metadata_branch=$(lifecycle_state_value "$lifecycle_lock_metadata_file" branch)
+    lifecycle_lock_metadata_base=$(lifecycle_state_value "$lifecycle_lock_metadata_file" base)
+    lifecycle_lock_metadata_checkpoint=$(lifecycle_state_value "$lifecycle_lock_metadata_file" checkpoint)
+    lifecycle_lock_metadata_claim=$(lifecycle_state_value "$lifecycle_lock_metadata_file" claim)
+    case "$lifecycle_lock_metadata_operation" in
+      init|start|resume|release) ;;
+      *) return 1 ;;
+    esac
+    case "$lifecycle_lock_metadata_issue:$lifecycle_lock_metadata_branch" in
+      -:-) ;;
+      -:*|*:-) return 1 ;;
+      *)
+        lifecycle_valid_issue "$lifecycle_lock_metadata_issue" || return 1
+        git check-ref-format --branch "$lifecycle_lock_metadata_branch" >/dev/null 2>&1 || return 1
+        [ "$(printf '%s\n' "$lifecycle_lock_metadata_branch" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p')" = "$lifecycle_lock_metadata_issue" ] || return 1
+        ;;
+    esac
+    [ "$lifecycle_lock_metadata_base" = - ] || lifecycle_valid_sha "$lifecycle_lock_metadata_base" || return 1
+    [ "$lifecycle_lock_metadata_checkpoint" = - ] || lifecycle_valid_sha "$lifecycle_lock_metadata_checkpoint" || return 1
+    lifecycle_valid_claim "$lifecycle_lock_metadata_claim" || return 1
+  }
+
+  lifecycle_preflight() {
+    NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=$(lifecycle_raw preflight 2>&1)
+    NUINUI_LIFECYCLE_PREFLIGHT_RC=$?
+    [ "$NUINUI_LIFECYCLE_PREFLIGHT_RC" = 0 ]
+  }
+
+  lifecycle_lane_state() {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
+      $0 ~ ("^" lane " path=") {seen_lane=1; next}
+      seen_lane && $0 ~ /^  state=/ {sub(/^  state=/,""); sub(/ .*/,""); print; exit}
+      seen_lane && $0 !~ /^ / {exit}
+    '
+  }
+
+  lifecycle_lane_issue() {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
+      $0 ~ ("^" lane " path=") {seen_lane=1; next}
+      seen_lane && $0 ~ /^  owner_issue=/ {sub(/^  owner_issue=/,""); sub(/ .*/,""); print; exit}
+      seen_lane && $0 !~ /^ / {exit}
+    '
+  }
+
+  lifecycle_expect_lane() {
+    lifecycle_expected_lane=$1
+    lifecycle_expected_occupancy=$2
+    lifecycle_actual_state=$(lifecycle_lane_state "$lifecycle_expected_lane")
+    lifecycle_actual_issue=$(lifecycle_lane_issue "$lifecycle_expected_lane")
+    case "$lifecycle_expected_occupancy" in
+      FREE)
+        [ "$lifecycle_actual_state" = FREE ] && [ -z "$lifecycle_actual_issue" ]
+        ;;
+      SAY-*)
+        [ "$lifecycle_actual_state" = BUSY ] && [ "$lifecycle_actual_issue" = "$lifecycle_expected_occupancy" ]
+        ;;
+      *) return 2 ;;
+    esac
+  }
+
+  lifecycle_blocked_occupancy() {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+    printf 'BLOCKED: begin %s\n' "$1"
+    printf 'lane=%s\n' "$2"
+    printf 'expected_peer=%s\n' "$3"
+    printf 'peer_lane=%s\n' "$4"
+    printf 'peer_state=%s\n' "${5:--}"
+    printf 'peer_issue=%s\n' "${6:--}"
+  }
+
+  lifecycle_begin_postmutation_diagnostic() {
+    lifecycle_begin_audit=$1
+    printf 'BLOCKED: begin post-mutation consistency check failed\n'
+    printf 'lane=%s\n' "$lifecycle_begin_lane"
+    printf 'issue=%s\n' "$lifecycle_begin_issue"
+    printf 'branch=%s\n' "$lifecycle_begin_branch"
+    printf 'base=%s\n' "$lifecycle_begin_base"
+    printf 'claim=%s\n' "${lifecycle_begin_claim:--}"
+
+    lifecycle_begin_diag_repo=$(lifecycle_repo "$lifecycle_begin_lane" 2>/dev/null || true)
+    lifecycle_begin_diag_slot=
+    lifecycle_begin_diag_git_dir=
+    lifecycle_begin_diag_state=
+    lifecycle_begin_diag_issue=
+    lifecycle_begin_diag_branch=
+    lifecycle_begin_diag_base=
+    lifecycle_begin_diag_claim=
+    lifecycle_begin_diag_head=
+    lifecycle_begin_diag_current_branch=
+    lifecycle_begin_diag_clean=unknown
+    lifecycle_begin_diag_complete=0
+    if [ -n "$lifecycle_begin_diag_repo" ]; then
+      lifecycle_begin_diag_git_dir=$(lifecycle_git_dir "$lifecycle_begin_diag_repo" 2>/dev/null || true)
+      lifecycle_begin_diag_slot=$(lifecycle_slot_state "$lifecycle_begin_diag_repo" 2>/dev/null || true)
+      if [ -n "$lifecycle_begin_diag_slot" ] && [ -f "$lifecycle_begin_diag_slot" ]; then
+        lifecycle_begin_diag_issue=$(lifecycle_state_value "$lifecycle_begin_diag_slot" issue 2>/dev/null || true)
+        lifecycle_begin_diag_branch=$(lifecycle_state_value "$lifecycle_begin_diag_slot" branch 2>/dev/null || true)
+        lifecycle_begin_diag_base=$(lifecycle_state_value "$lifecycle_begin_diag_slot" base 2>/dev/null || true)
+        lifecycle_begin_diag_claim=$(lifecycle_state_value "$lifecycle_begin_diag_slot" claim 2>/dev/null || true)
+        lifecycle_begin_diag_state=BUSY
+      fi
+      lifecycle_begin_diag_head=$(git -C "$lifecycle_begin_diag_repo" rev-parse HEAD 2>/dev/null || true)
+      lifecycle_begin_diag_current_branch=$(git -C "$lifecycle_begin_diag_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+      if git -C "$lifecycle_begin_diag_repo" status --porcelain >/dev/null 2>&1; then
+        if [ -z "$(git -C "$lifecycle_begin_diag_repo" status --porcelain 2>/dev/null)" ]; then
+          lifecycle_begin_diag_clean=yes
+        else
+          lifecycle_begin_diag_clean=no
+        fi
+      fi
+      if [ "$lifecycle_begin_diag_state" = BUSY ] &&
+        [ "$lifecycle_begin_diag_issue" = "$lifecycle_begin_issue" ] &&
+        [ "$lifecycle_begin_diag_branch" = "$lifecycle_begin_branch" ] &&
+        [ "$lifecycle_begin_diag_base" = "$lifecycle_begin_base" ] &&
+        [ "$lifecycle_begin_diag_claim" = "$lifecycle_begin_claim" ] &&
+        [ "$lifecycle_begin_diag_current_branch" = "$lifecycle_begin_branch" ] &&
+        [ -n "$lifecycle_begin_diag_head" ] &&
+        [ "$(git -C "$lifecycle_begin_diag_repo" rev-parse "refs/heads/$lifecycle_begin_branch^{commit}" 2>/dev/null || true)" = "$lifecycle_begin_diag_head" ]; then
+        lifecycle_begin_diag_complete=1
+      fi
+    fi
+
+    if [ "$lifecycle_begin_diag_complete" = 1 ]; then
+      printf 'mutation_state=COMPLETED\n'
+      printf 'lane=%s\n' "$lifecycle_begin_lane"
+      printf 'issue=%s\n' "$lifecycle_begin_diag_issue"
+      printf 'branch=%s\n' "$lifecycle_begin_diag_branch"
+      printf 'base=%s\n' "$lifecycle_begin_diag_base"
+      printf 'checkpoint=%s\n' "$lifecycle_begin_diag_head"
+      printf 'claim=%s\n' "$lifecycle_begin_diag_claim"
+      printf 'clean=%s\n' "$lifecycle_begin_diag_clean"
+      printf 'state=BUSY\n'
+    else
+      printf 'mutation_state=UNKNOWN\n'
+      printf 'lane=%s\n' "$lifecycle_begin_lane"
+      printf 'issue=%s\n' "$lifecycle_begin_issue"
+      printf 'branch=%s\n' "$lifecycle_begin_branch"
+      printf 'base=%s\n' "$lifecycle_begin_base"
+      printf 'checkpoint=%s\n' "${lifecycle_begin_diag_head:--}"
+      printf 'claim=%s\n' "${lifecycle_begin_claim:--}"
+      printf 'clean=%s\n' "$lifecycle_begin_diag_clean"
+      printf 'state=%s\n' "${lifecycle_begin_diag_state:-UNKNOWN}"
+      [ -z "$lifecycle_begin_diag_issue" ] || printf 'observed_issue=%s\n' "$lifecycle_begin_diag_issue"
+      [ -z "$lifecycle_begin_diag_branch" ] || printf 'observed_branch=%s\n' "$lifecycle_begin_diag_branch"
+      [ -z "$lifecycle_begin_diag_base" ] || printf 'observed_base=%s\n' "$lifecycle_begin_diag_base"
+      [ -z "$lifecycle_begin_diag_claim" ] || printf 'observed_claim=%s\n' "$lifecycle_begin_diag_claim"
+    fi
+    if [ -n "$lifecycle_begin_audit" ]; then
+      printf 'audit_evidence:\n%s\n' "$lifecycle_begin_audit"
+    else
+      printf 'audit_evidence=unavailable\n'
+    fi
+  }
+
+  lifecycle_start_envelope() {
+    lifecycle_start_lane=$1
+    lifecycle_start_repo=$(lifecycle_repo "$lifecycle_start_lane") || return 1
+    lifecycle_start_slot=$(lifecycle_slot_state "$lifecycle_start_repo") || return 1
+    set -- $(lifecycle_state_value "$lifecycle_start_slot" issue) \
+      $(lifecycle_state_value "$lifecycle_start_slot" branch) \
+      $(lifecycle_state_value "$lifecycle_start_slot" base) \
+      $(lifecycle_state_value "$lifecycle_start_slot" claim) || return 1
+    [ "$#" = 4 ] || return 1
+    lifecycle_start_issue=$1
+    lifecycle_start_branch=$2
+    lifecycle_start_base=$3
+    lifecycle_start_claim=$4
+    lifecycle_start_checkpoint=$(git -C "$lifecycle_start_repo" rev-parse HEAD 2>/dev/null) || return 1
+    lifecycle_start_clean=$(git -C "$lifecycle_start_repo" status --porcelain 2>/dev/null)
+    lifecycle_start_current_branch=$(git -C "$lifecycle_start_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    [ -z "$lifecycle_start_clean" ] || return 1
+    [ "$lifecycle_start_current_branch" = "$lifecycle_start_branch" ] || return 1
+    lifecycle_valid_issue "$lifecycle_start_issue" || return 1
+    lifecycle_valid_sha "$lifecycle_start_base" || return 1
+    lifecycle_valid_sha "$lifecycle_start_checkpoint" || return 1
+    printf 'IMPLEMENTATION STARTED\n'
+    printf 'lane=%s\n' "$lifecycle_start_lane"
+    printf 'issue=%s\n' "$lifecycle_start_issue"
+    printf 'branch=%s\n' "$lifecycle_start_branch"
+    printf 'base=%s\n' "$lifecycle_start_base"
+    printf 'checkpoint=%s\n' "$lifecycle_start_checkpoint"
+    printf 'claim=%s\n' "$lifecycle_start_claim"
+    printf 'clean=yes\n'
+    printf 'state=BUSY\n'
+  }
+
+  lifecycle_resume_envelope() {
+    lifecycle_resume_lane=$1
+    lifecycle_resume_repo=$(lifecycle_repo "$lifecycle_resume_lane") || return 1
+    lifecycle_resume_slot=$(lifecycle_slot_state "$lifecycle_resume_repo") || return 1
+    set -- $(lifecycle_state_value "$lifecycle_resume_slot" issue) \
+      $(lifecycle_state_value "$lifecycle_resume_slot" branch) \
+      $(lifecycle_state_value "$lifecycle_resume_slot" base) \
+      $(lifecycle_state_value "$lifecycle_resume_slot" claim) || return 1
+    [ "$#" = 4 ] || return 1
+    lifecycle_resume_checkpoint=$(git -C "$lifecycle_resume_repo" rev-parse HEAD 2>/dev/null) || return 1
+    lifecycle_resume_clean=$(git -C "$lifecycle_resume_repo" status --porcelain 2>/dev/null)
+    lifecycle_resume_current_branch=$(git -C "$lifecycle_resume_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    [ -z "$lifecycle_resume_clean" ] || return 1
+    [ "$lifecycle_resume_current_branch" = "$2" ] || return 1
+    printf 'IMPLEMENTATION RESUMED\n'
+    printf 'lane=%s\n' "$lifecycle_resume_lane"
+    printf 'issue=%s\n' "$1"
+    printf 'branch=%s\n' "$2"
+    printf 'base=%s\n' "$3"
+    printf 'checkpoint=%s\n' "$lifecycle_resume_checkpoint"
+    printf 'claim=%s\n' "$4"
+    printf 'clean=yes\n'
+    printf 'state=BUSY\n'
+  }
+
+  lifecycle_release_blocked() {
+    printf 'BLOCKED: release completed without a provable FREE idle state\n'
+    printf 'lane=%s\n' "$1"
+    printf 'issue=%s\n' "$2"
+    printf 'saved_checkpoint=%s\n' "$3"
+    printf 'released_claim=%s\n' "$4"
+    printf 'released_branch=%s\n' "$5"
+    printf 'idle_branch=%s\n' "${6:--}"
+    printf 'idle_head=%s\n' "${7:--}"
+    printf 'origin_main=%s\n' "${8:--}"
+    printf 'clean=%s\n' "${9:-unknown}"
+    printf 'state=%s\n' "${10:-BLOCKED}"
+  }
+
+  lifecycle_release_envelope() {
+    lifecycle_release_lane=$1
+    lifecycle_release_repo=$(lifecycle_repo "$lifecycle_release_lane") || return 1
+    lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo") || return 1
+    [ ! -e "$lifecycle_release_git_dir/nuinui-implementation-slot" ] || return 1
+    [ ! -e "$lifecycle_release_git_dir/nuinui-implementation-lock" ] || return 1
+    [ -z "$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)" ] || return 1
+    lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null) || return 1
+    lifecycle_release_origin=$(git -C "$lifecycle_release_repo" rev-parse origin/main 2>/dev/null) || return 1
+    lifecycle_release_branch=$(git -C "$lifecycle_release_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+    lifecycle_release_clean=$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)
+    [ -z "$lifecycle_release_clean" ] || return 1
+    lifecycle_valid_sha "$lifecycle_release_head" || return 1
+    lifecycle_valid_sha "$lifecycle_release_origin" || return 1
+    case "$lifecycle_release_lane" in
+      main) [ "$lifecycle_release_branch" = main ] || return 1 ;;
+      sub) [ -z "$lifecycle_release_branch" ] || return 1 ;;
+    esac
+    [ "$lifecycle_release_head" = "$lifecycle_release_origin" ] || return 1
+    printf 'IMPLEMENTATION RELEASED\n'
+    printf 'lane=%s\n' "$lifecycle_release_lane"
+    printf 'issue=%s\n' "$lifecycle_release_issue"
+    printf 'saved_checkpoint=%s\n' "$lifecycle_release_saved_checkpoint"
+    printf 'released_claim=%s\n' "$lifecycle_release_claim"
+    printf 'released_branch=%s\n' "$lifecycle_release_topic"
+    printf 'idle_branch=%s\n' "${lifecycle_release_branch:-DETACHED}"
+    printf 'idle_head=%s\n' "$lifecycle_release_head"
+    printf 'origin_main=%s\n' "$lifecycle_release_origin"
+    printf 'clean=yes\n'
+    printf 'state=FREE\n'
+  }
+
+  lifecycle_begin() {
+    [ "$#" = 5 ] || { echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>'; return 2; }
+    lifecycle_begin_lane=$1
+    lifecycle_begin_issue=$2
+    lifecycle_begin_base=$3
+    lifecycle_begin_branch=$4
+    lifecycle_begin_expected_peer=$5
+    lifecycle_begin_peer=$(lifecycle_peer_lane "$lifecycle_begin_lane") || { echo 'ERROR: lane must be main or sub'; return 2; }
+    lifecycle_valid_issue "$lifecycle_begin_issue" || { echo 'ERROR: Issue must look like SAY-123'; return 2; }
+    lifecycle_valid_sha "$lifecycle_begin_base" || { echo 'ERROR: expected base must be a full 40-character commit SHA'; return 2; }
+    lifecycle_valid_peer "$lifecycle_begin_expected_peer" || { echo 'ERROR: expected peer must be FREE or SAY-123'; return 2; }
+
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: begin fixed-lane preflight failed'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_lane" FREE || {
+      lifecycle_blocked_occupancy 'target lane is not FREE' "$lifecycle_begin_lane" FREE "$lifecycle_begin_peer" \
+        "$(lifecycle_lane_state "$lifecycle_begin_lane")" "$(lifecycle_lane_issue "$lifecycle_begin_lane")"
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_peer" "$lifecycle_begin_expected_peer" || {
+      lifecycle_blocked_occupancy 'peer occupancy does not match caller expectation' "$lifecycle_begin_lane" \
+        "$lifecycle_begin_expected_peer" "$lifecycle_begin_peer" "$(lifecycle_lane_state "$lifecycle_begin_peer")" \
+        "$(lifecycle_lane_issue "$lifecycle_begin_peer")"
+      return 1
+    }
+
+    # Re-read the complete safety inventory immediately before delegating to
+    # the existing start mutation.  The target start primitive repeats its
+    # own lock-protected target checks immediately before mutation.
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: begin pre-mutation revalidation failed'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_lane" FREE || {
+      lifecycle_blocked_occupancy 'target changed before mutation' "$lifecycle_begin_lane" FREE "$lifecycle_begin_peer" \
+        "$(lifecycle_lane_state "$lifecycle_begin_lane")" "$(lifecycle_lane_issue "$lifecycle_begin_lane")"
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_peer" "$lifecycle_begin_expected_peer" || {
+      lifecycle_blocked_occupancy 'peer changed before mutation' "$lifecycle_begin_lane" "$lifecycle_begin_expected_peer" \
+        "$lifecycle_begin_peer" "$(lifecycle_lane_state "$lifecycle_begin_peer")" "$(lifecycle_lane_issue "$lifecycle_begin_peer")"
+      return 1
+    }
+
+    lifecycle_begin_start_output=$(lifecycle_raw start "$lifecycle_begin_lane" "$lifecycle_begin_issue" \
+      "$lifecycle_begin_base" "$lifecycle_begin_branch" 2>&1)
+    lifecycle_begin_start_rc=$?
+    [ "$lifecycle_begin_start_rc" = 0 ] || {
+      if [ -n "$lifecycle_begin_start_output" ]; then
+        printf '%s\n' "$lifecycle_begin_start_output"
+      else
+        printf 'ERROR: begin start mutation failed without a diagnostic\n'
+        printf 'lane=%s\nissue=%s\nbranch=%s\nbase=%s\n' \
+          "$lifecycle_begin_lane" "$lifecycle_begin_issue" "$lifecycle_begin_branch" "$lifecycle_begin_base"
+      fi
+      echo 'BLOCKED: begin start mutation failed'
+      return "$lifecycle_begin_start_rc"
+    }
+    lifecycle_begin_claim=$(printf '%s\n' "$lifecycle_begin_start_output" | sed -n 's/^  claim=//p')
+    [ -n "$lifecycle_begin_claim" ] || {
+      echo 'BLOCKED: begin start did not return a durable claim'
+      return 1
+    }
+
+    if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+      case "${NUINUI_SELFTEST_BEGIN_AFTER_START:-}" in
+        dirty-peer)
+          printf '%s\n' selftest > "$(lifecycle_repo "$lifecycle_begin_peer")/nuinui-selftest-peer-dirty"
+          ;;
+        dirty-e2e)
+          printf '%s\n' selftest > "$NUINUI_E2E_WT/nuinui-selftest-e2e-dirty"
+          ;;
+      esac
+    fi
+
+    # A post-mutation audit is evidence only; it never triggers destructive
+    # rollback.  If it cannot prove the exact new state, ownership remains
+    # durable and the caller receives BLOCKED for explicit recovery.
+    lifecycle_preflight || {
+      lifecycle_begin_postmutation_diagnostic "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      return 1
+    }
+    lifecycle_begin_target_state=$(lifecycle_lane_state "$lifecycle_begin_lane")
+    lifecycle_begin_peer_state=$(lifecycle_lane_state "$lifecycle_begin_peer")
+    lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$lifecycle_begin_peer")
+    [ "$lifecycle_begin_target_state" = BUSY ] || {
+      lifecycle_begin_postmutation_diagnostic "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'target_state=not-BUSY'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_begin_peer" "$lifecycle_begin_expected_peer" || {
+      lifecycle_begin_postmutation_diagnostic "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      lifecycle_blocked_occupancy 'peer changed after mutation' "$lifecycle_begin_lane" \
+        "$lifecycle_begin_expected_peer" "$lifecycle_begin_peer" "$lifecycle_begin_peer_state" "$lifecycle_begin_peer_issue"
+      return 1
+    }
+    lifecycle_begin_repo=$(lifecycle_repo "$lifecycle_begin_lane")
+    lifecycle_begin_slot=$(lifecycle_slot_state "$lifecycle_begin_repo")
+    set -- $(lifecycle_state_value "$lifecycle_begin_slot" issue) \
+      $(lifecycle_state_value "$lifecycle_begin_slot" branch) \
+      $(lifecycle_state_value "$lifecycle_begin_slot" base) \
+      $(lifecycle_state_value "$lifecycle_begin_slot" claim) || {
+        lifecycle_begin_postmutation_diagnostic "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+        echo 'target_durable_state=unreadable'
+        return 1
+      }
+    [ "$1 $2 $3 $4" = "$lifecycle_begin_issue $lifecycle_begin_branch $lifecycle_begin_base $lifecycle_begin_claim" ] || {
+      lifecycle_begin_postmutation_diagnostic "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'target_durable_state=mismatch'
+      echo "actual_issue=$1"
+      echo "actual_branch=$2"
+      echo "actual_base=$3"
+      echo "actual_claim=$4"
+      return 1
+    }
+    lifecycle_start_envelope "$lifecycle_begin_lane" || {
+      lifecycle_begin_postmutation_diagnostic "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'target_checkout_state=unprovable'
+      return 1
+    }
+    lifecycle_begin_peer_issue=${lifecycle_begin_peer_issue:-}
+    printf 'peer_lane=%s\n' "$lifecycle_begin_peer"
+    printf 'peer_state=%s\n' "$lifecycle_begin_peer_state"
+    printf 'peer_issue=%s\n' "${lifecycle_begin_peer_issue:--}"
+    printf 'preflight=PASS\n'
+  }
+
+  lifecycle_start_command() {
+    lifecycle_start_lane_arg=$1
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: start fixed-lane preflight failed'
+      return 1
+    }
+    lifecycle_expect_lane "$lifecycle_start_lane_arg" FREE || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: start target lane is not FREE'
+      return 1
+    }
+    lifecycle_start_output=$(lifecycle_raw start "$@" 2>&1)
+    lifecycle_start_rc=$?
+    [ "$lifecycle_start_rc" = 0 ] || {
+      if [ -n "$lifecycle_start_output" ]; then
+        printf '%s\n' "$lifecycle_start_output"
+      else
+        printf 'ERROR: start mutation failed without a diagnostic\n'
+        printf 'lane=%s\nissue=%s\nbase=%s\nbranch=%s\n' "$@"
+      fi
+      return "$lifecycle_start_rc"
+    }
+    lifecycle_preflight || {
+      printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+      echo 'BLOCKED: start post-mutation consistency check failed'
+      return 1
+    }
+    lifecycle_start_peer=$(lifecycle_peer_lane "$lifecycle_start_lane_arg")
+    lifecycle_start_peer_state=$(lifecycle_lane_state "$lifecycle_start_peer")
+    lifecycle_start_peer_issue=$(lifecycle_lane_issue "$lifecycle_start_peer")
+    lifecycle_start_envelope "$1" || {
+      echo 'BLOCKED: start succeeded but its local state envelope could not be proven'
+      return 1
+    }
+    printf 'peer_lane=%s\n' "$lifecycle_start_peer"
+    printf 'peer_state=%s\n' "$lifecycle_start_peer_state"
+    printf 'peer_issue=%s\n' "${lifecycle_start_peer_issue:--}"
+    printf 'preflight=PASS\n'
+  }
+
+  lifecycle_resume_command() {
+    lifecycle_resume_output=$(lifecycle_raw resume "$@" 2>&1)
+    lifecycle_resume_rc=$?
+    [ "$lifecycle_resume_rc" = 0 ] || {
+      if [ -n "$lifecycle_resume_output" ]; then
+        printf '%s\n' "$lifecycle_resume_output"
+      else
+        printf 'ERROR: resume mutation failed without a diagnostic\n'
+        printf 'lane=%s\nissue=%s\nbase=%s\ncheckpoint=%s\nbranch=%s\nclaim=%s\n' "$@"
+      fi
+      return "$lifecycle_resume_rc"
+    }
+    lifecycle_resume_envelope "$1" || {
+      echo 'BLOCKED: resume succeeded but its local state envelope could not be proven'
+      return 1
+    }
+  }
+
+  lifecycle_release_command() {
+    [ "$#" = 3 ] || { echo 'Usage: nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>'; return 2; }
+    lifecycle_release_lane=$1
+    lifecycle_release_saved_checkpoint=$2
+    lifecycle_release_claim=$3
+    lifecycle_release_repo=$(lifecycle_repo "$lifecycle_release_lane") || { echo 'ERROR: lane must be main or sub'; return 2; }
+    lifecycle_release_slot=$(lifecycle_slot_state "$lifecycle_release_repo")
+    lifecycle_release_validate() {
+      lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo" 2>/dev/null || true)
+      lifecycle_release_slot_dir=${lifecycle_release_git_dir:+$lifecycle_release_git_dir/nuinui-implementation-slot}
+      lifecycle_release_lock_dir=${lifecycle_release_git_dir:+$lifecycle_release_git_dir/nuinui-implementation-lock}
+      lifecycle_release_tombstones=
+      [ -z "$lifecycle_release_git_dir" ] || lifecycle_release_tombstones=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)
+
+      if [ -n "$lifecycle_release_tombstones" ]; then
+        echo 'BLOCKED: mutation lock/state conflict'
+        printf 'lane=%s\n' "$lifecycle_release_lane"
+        printf 'issue=%s\n' '-'
+        printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+        printf 'releasing_state=%s\n' "$lifecycle_release_tombstones"
+        return 1
+      fi
+      if [ -e "$lifecycle_release_lock_dir" ]; then
+        if [ -f "$lifecycle_release_lock_dir/state" ] && lifecycle_valid_lock_file "$lifecycle_release_lock_dir/state"; then
+          printf 'BLOCKED: mutation lock/state conflict\nlane=%s\noperation=%s\nlock_claim=%s\n' \
+            "$lifecycle_release_lane" "$(lifecycle_state_value "$lifecycle_release_lock_dir/state" operation)" \
+            "$(lifecycle_state_value "$lifecycle_release_lock_dir/state" claim)"
+        else
+          echo 'BLOCKED: malformed durable ownership state'
+        fi
+        printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+        return 1
+      fi
+      if [ -z "$lifecycle_release_git_dir" ] || [ ! -d "$lifecycle_release_slot_dir" ] || [ ! -f "$lifecycle_release_slot_dir/state" ]; then
+        echo 'BLOCKED: invalid/missing active slot'
+        printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+        return 1
+      fi
+      if ! lifecycle_valid_slot_file "$lifecycle_release_slot_dir/state"; then
+        echo 'BLOCKED: malformed durable ownership state'
+        printf 'lane=%s\nslot=%s\n' "$lifecycle_release_lane" "$lifecycle_release_slot_dir/state"
+        return 1
+      fi
+      lifecycle_release_issue=$(lifecycle_state_value "$lifecycle_release_slot_dir/state" issue 2>/dev/null || true)
+      lifecycle_release_topic=$(lifecycle_state_value "$lifecycle_release_slot_dir/state" branch 2>/dev/null || true)
+      lifecycle_release_base=$(lifecycle_state_value "$lifecycle_release_slot_dir/state" base 2>/dev/null || true)
+      lifecycle_release_durable_claim=$(lifecycle_state_value "$lifecycle_release_slot_dir/state" claim 2>/dev/null || true)
+      if ! lifecycle_valid_issue "$lifecycle_release_issue" || ! git check-ref-format --branch "$lifecycle_release_topic" >/dev/null 2>&1 || ! lifecycle_valid_sha "$lifecycle_release_base" || ! lifecycle_valid_claim "$lifecycle_release_durable_claim"; then
+        echo 'BLOCKED: malformed durable ownership state'
+        printf 'lane=%s\nissue=%s\nbranch=%s\nbase=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_base" "$lifecycle_release_durable_claim"
+        return 1
+      fi
+      if ! lifecycle_valid_sha "$lifecycle_release_saved_checkpoint"; then
+        echo 'BLOCKED: checkpoint mismatch'
+        printf 'expected=%s\nactual=%s\n' '-' "$lifecycle_release_saved_checkpoint"
+        printf 'lane=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_claim"
+        return 1
+      fi
+      if ! lifecycle_valid_claim "$lifecycle_release_claim"; then
+        echo 'BLOCKED: claim mismatch'
+        printf 'expected=%s\nactual=%s\n' "$lifecycle_release_durable_claim" "$lifecycle_release_claim"
+        printf 'lane=%s\nissue=%s\nbranch=%s\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic"
+        return 1
+      fi
+      if [ "$lifecycle_release_durable_claim" != "$lifecycle_release_claim" ]; then
+        echo 'BLOCKED: claim mismatch'
+        printf 'expected=%s\nactual=%s\n' "$lifecycle_release_durable_claim" "$lifecycle_release_claim"
+        printf 'lane=%s\nissue=%s\nbranch=%s\nbase=%s\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_base"
+        return 1
+      fi
+      lifecycle_release_topic_checkpoint=$(git -C "$lifecycle_release_repo" rev-parse "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
+      if ! lifecycle_valid_sha "$lifecycle_release_topic_checkpoint" || [ "$lifecycle_release_topic_checkpoint" != "$lifecycle_release_saved_checkpoint" ]; then
+        echo 'BLOCKED: checkpoint mismatch'
+        printf 'expected=%s\nactual=%s\n' "${lifecycle_release_topic_checkpoint:--}" "$lifecycle_release_saved_checkpoint"
+        printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+        return 1
+      fi
+      lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || true)
+      if [ "$lifecycle_release_head" != "$lifecycle_release_topic_checkpoint" ]; then
+        echo 'BLOCKED: checkpoint mismatch'
+        printf 'expected=%s\nactual=%s\n' "$lifecycle_release_topic_checkpoint" "${lifecycle_release_head:--}"
+        printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+        return 1
+      fi
+      if [ -n "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ]; then
+        echo 'BLOCKED: mutation lock/state conflict'
+        printf 'lane=%s\nissue=%s\nbranch=%s\ncheckpoint=%s\nclaim=%s\nclean=no\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+        return 1
+      fi
+      return 0
+    }
+    lifecycle_release_validate || return 1
+    lifecycle_release_output=$(lifecycle_raw release "$@" 2>&1)
+    lifecycle_release_rc=$?
+    [ "$lifecycle_release_rc" = 0 ] || {
+      if [ -n "$lifecycle_release_output" ]; then
+        printf '%s\n' "$lifecycle_release_output"
+      else
+        echo 'ERROR: release mutation failed without a diagnostic'
+        printf 'lane=%s\nissue=%s\nbranch=%s\ncheckpoint=%s\nclaim=%s\n' \
+          "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" \
+          "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+      fi
+      return "$lifecycle_release_rc"
+    }
+    lifecycle_release_envelope "$lifecycle_release_lane" || {
+      lifecycle_release_blocked "$lifecycle_release_lane" "$lifecycle_release_issue" \
+        "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim" "$lifecycle_release_topic" \
+        "$(git -C "$lifecycle_release_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || echo DETACHED)" \
+        "$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || echo -)" \
+        "$(git -C "$lifecycle_release_repo" rev-parse origin/main 2>/dev/null || echo -)" \
+        unknown BLOCKED
+      return 1
+    }
+  }
+
+  lifecycle_usage() {
+    echo 'nuinui 1.6.3'
+    echo 'Commands: preflight verify lane-init begin start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-sync doctor transition-audit context-check self-test'
+  }
+
+  lifecycle_context_check() {
+    lifecycle_context_output=$(lifecycle_raw context-check 2>&1)
+    lifecycle_context_rc=$?
+    if [ -n "$lifecycle_context_output" ]; then
+      printf '%s\n' "$lifecycle_context_output" | sed 's/^nuinui 1\.5\.1$/nuinui 1.6.3/'
+    else
+      echo 'ERROR: context check failed without a diagnostic'
+    fi
+    if [ "$lifecycle_context_rc" = 0 ] && grep -q '\`nuinui begin' "$(dirname "$NUINUI_LIFECYCLE_SCRIPT")/../LOCAL-TOOLS.md"; then
+      return 0
+    fi
+    [ "$lifecycle_context_rc" = 0 ] && echo 'CONTEXT CHECK BLOCKED'
+    return 1
+  }
+
+  case "${1:-}" in
+    version)
+      [ "$#" = 1 ] || { echo 'Usage: nuinui version'; exit 2; }
+      echo 1.6.3
+      exit 0
+      ;;
+    --help|-h|help|'')
+      lifecycle_usage
+      [ -n "${1:-}" ] && exit 0 || exit 2
+      ;;
+    context-check)
+      [ "$#" = 1 ] || { lifecycle_usage; exit 2; }
+      lifecycle_context_check
+      exit $?
+      ;;
+    begin)
+      [ "$#" = 6 ] || { echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>'; exit 2; }
+      lifecycle_begin "$2" "$3" "$4" "$5" "$6"
+      exit $?
+      ;;
+    start)
+      [ "$#" = 5 ] || { echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+      lifecycle_start_command "$2" "$3" "$4" "$5"
+      exit $?
+      ;;
+    resume)
+      [ "$#" = 7 ] || { echo 'Usage: nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>'; exit 2; }
+      lifecycle_resume_command "$2" "$3" "$4" "$5" "$6" "$7"
+      exit $?
+      ;;
+    release)
+      [ "$#" = 4 ] || { echo 'Usage: nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>'; exit 2; }
+      lifecycle_release_command "$2" "$3" "$4"
+      exit $?
+      ;;
+    self-test)
+      lifecycle_original_selftest_output=$(lifecycle_raw self-test 2>&1)
+      lifecycle_original_selftest_rc=$?
+      printf '%s\n' "$lifecycle_original_selftest_output"
+      [ "$lifecycle_original_selftest_rc" = 0 ] || exit "$lifecycle_original_selftest_rc"
+      lifecycle_extended_selftest=$(dirname "$NUINUI_LIFECYCLE_SCRIPT")/test-nuinui-lifecycle
+      [ -f "$lifecycle_extended_selftest" ] || { echo 'SELFTEST BLOCKED: lifecycle test is missing'; exit 1; }
+      /bin/sh "$lifecycle_extended_selftest" "$NUINUI_LIFECYCLE_SCRIPT"
+      lifecycle_extended_selftest_rc=$?
+      [ "$lifecycle_extended_selftest_rc" = 0 ] || exit "$lifecycle_extended_selftest_rc"
+      lifecycle_pr_auto_merge_selftest=$(dirname "$NUINUI_LIFECYCLE_SCRIPT")/test-nuinui-pr-auto-merge
+      [ -x "$lifecycle_pr_auto_merge_selftest" ] || { echo 'SELFTEST BLOCKED: pr-auto-merge test is missing or not executable'; exit 1; }
+      /bin/sh "$lifecycle_pr_auto_merge_selftest" "$NUINUI_LIFECYCLE_SCRIPT"
+      exit $?
+      ;;
+  esac
+fi
+V=1.6.3;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare};GH=${NUINUI_GH_BIN:-gh};PR=sayosomi/nuinuiCAD
+if [ "${NUINUI_SELFTEST:-0}" = 1 ];then M=${NUINUI_MAIN_WT:?};S=${NUINUI_SUB_WT:?};E=${NUINUI_E2E_WT:?};C=${NUINUI_DEV_CONTEXT_WT:-};RT=;CT=;else M=/Users/yosomi/Code/nuinuiCAD;S=/Users/yosomi/Code/nuinuiCAD-sub;E=/Users/yosomi/Code/nuinuiCAD-e2e;C=/Users/yosomi/Code/dev-context;RT=sayosomi/nuinuiCAD;CT=sayosomi/dev-context;fi
+K='preflight verify lane-init start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-sync doctor transition-audit context-check self-test'
+K="$K begin"
+u(){ echo "nuinui $V";echo "Commands: $K";};lr(){ case $1 in main)echo "$M";;sub)echo "$S";;e2e)echo "$E";;*)return 2;;esac;};vi(){ echo "$1"|grep -Eq '^SAY-[0-9]+$';};vs(){ echo "$1"|grep -Eq '^[0-9a-fA-F]{40}$';};vc(){ echo "$1"|grep -Eq '^[0-9A-Za-z][0-9A-Za-z._-]{7,127}$';};ib(){ echo "$1"|sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p';};il(){ case $1 in main|sub);;*)return 2;;esac;};gr(){ [ -d "$1" ]&&git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1;};ao(){ [ -z "$2" ]||git -C "$1" remote get-url origin 2>/dev/null|grep -Fq "$2";};cn(){ [ -z "$(git -C "$1" status --porcelain)" ];};bn(){ git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null||true;};hh(){ git -C "$1" rev-parse HEAD;};om(){ git -C "$1" rev-parse origin/main;};fm(){ git -C "$1" fetch origin main >/dev/null 2>&1;};fp(){ git -C "$1" fetch origin --prune >/dev/null 2>&1;};an(){ git -C "$1" merge-base --is-ancestor "$2" "$3";};sd(){ git -C "$1" switch --detach "$2" >/dev/null;};gd(){ git -C "$1" rev-parse --absolute-git-dir 2>/dev/null;};ip(){ echo "$(gd "$1")/nuinui-implementation-v1";};sp(){ echo "$(gd "$1")/nuinui-implementation-slot";};kp(){ echo "$(gd "$1")/nuinui-implementation-lock";};rp(){ echo "$(gd "$1")/nuinui-implementation-slot.releasing.$2";};rds(){ find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null|sort;};mp(){ echo "$(gd "$1")/nuinui-slot";};ep(){ echo "$(gd "$1")/nuinui-e2e-session";}
+rd(){ [ -f "$1" ]||return 1;awk -F= -v k="$2" 'BEGIN{n=split(k,a,",");for(i=1;i<=n;i++)q[a[i]]=1}$0!~/^[^=]+=/ {z=1}{p=index($0,"=");x=substr($0,1,p-1);v=substr($0,p+1);if(!(x in q)||v==""||s[x]++)z=1;d[x]=v}END{for(i=1;i<=n;i++)if(s[a[i]]!=1)z=1;if(z)exit 1;for(i=1;i<=n;i++){printf "%s",d[a[i]];if(i<n)printf " ";else printf "\n"}}' "$1";}
+ini(){ [ "$(rd "$1" version)" = 1 ];};sl(){ set -- $(rd "$1" version,issue,branch,base,claim)||return 1;[ "$1" = 1 ]&&vi "$2"&&git check-ref-format --branch "$3" >/dev/null 2>&1&&[ "$(ib "$3")" = "$2" ]&&vs "$4"&&vc "$5"||return 1;echo "$2 $3 $4 $5";};lk(){ set -- $(rd "$1" version,operation,issue,branch,base,checkpoint,claim)||return 1;[ "$1" = 1 ]||return 1;case $2 in start|resume|release|init);;*)return 1;;esac;vc "$7"||return 1;[ "$3" = - ]||vi "$3"||return 1;[ "$4" = - ]||git check-ref-format --branch "$4" >/dev/null 2>&1||return 1;[ "$3" = - ]&&[ "$4" = - ]||[ "$(ib "$4")" = "$3" ]||return 1;[ "$5" = - ]||vs "$5"||return 1;[ "$6" = - ]||vs "$6"||return 1;echo "$2 $3 $4 $5 $6 $7";};rel(){ d=$1;set -- $(sl "$d/state")||return 1;[ -f "$d/checkpoint" ]||return 1;h=$(cat "$d/checkpoint");vs "$h"&&[ "${d##*/}" = "nuinui-implementation-slot.releasing.$4" ]||return 1;echo "$1 $2 $3 $4 $h";};wa(){  t=${1}.tmp.$$;(umask 077;printf '%b' "$2">"$t")&&mv -- "$t" "$1";};gc(){ command -v uuidgen >/dev/null 2>&1&&uuidgen|tr A-Z a-z||printf '%s:%s:%s\n' $$ "$(date +%s)" "${RANDOM:-0}"|git hash-object --stdin;};lo(){  k=$(kp "$1");mkdir "$k" 2>/dev/null||return 1;wa "$k/state" "version=1\noperation=$2\nissue=$4\nbranch=$5\nbase=$6\ncheckpoint=$7\nclaim=$3\n";};ul(){ r=$1;e=$2;set -- $(lk "$(kp "$r")/state")||return 1;[ "$6" = "$e" ]&&rm "$(kp "$r")/state"&&rmdir "$(kp "$r")";};am(){ git -C "$1" ls-remote origin refs/heads/main 2>/dev/null|awk 'NR==1{print $1}';};ab(){ git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null|awk 'NR==1{print $1}';};id(){ local r a q; r=$2;a=$3;cn "$r"&&[ "$(hh "$r")" = "$a" ]||return 1;q=$(bn "$r");case $1 in main)[ "$q" = main ];;sub)[ -z "$q" ];;esac;};nr(){ [ -z "$(rds "$1")" ];};bo(){  x=$(CDPATH= cd -- "$1"&&pwd -P);git -C "$1" worktree list --porcelain|awk -v b="refs/heads/$2" -v x="$x" '/^worktree /{p=substr($0,10)}/^branch /&&substr($0,8)==b&&p!=x{print p;exit}';}
+cl(){ local l r i s k q h d z n a;l=$1;r=$2;i=$(ip "$r");s=$(sp "$r");k=$(kp "$r");q=$(bn "$r");h=$(git -C "$r" rev-parse HEAD 2>/dev/null||true);d=$(git -C "$r" status --porcelain 2>/dev/null);echo "$l path=$r";echo "  branch=${q:-DETACHED}";echo "  head=$h";echo "  clean=$([ -z "$d" ]&&echo yes||echo no)";if [ -e "$k" ];then set -- $(lk "$k/state");[ $# = 6 ]&&echo "  state=BLOCKED reason=mutation-in-progress operation=$1 claim=$6"||echo '  state=BLOCKED reason=invalid-mutation-lock';return 1;fi;z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ -e "$s" ];then [ "$n" = 0 ]||{ echo '  state=BLOCKED reason=active-and-releasing-state-coexist';return 1;};set -- $(sl "$s/state");[ $# = 4 ]||{ echo '  state=BLOCKED reason=invalid-active-slot';return 1;};echo "  owner_issue=$1 owner_branch=$2 base=$3 claim=$4";[ "$q" = "$2" ]&&an "$r" "$3" "$h" 2>/dev/null||{ echo '  state=BLOCKED reason=claim-checkout-mismatch';return 1;};echo '  state=BUSY';return 0;fi;if [ "$n" != 0 ];then [ "$n" = 1 ]||{ echo '  state=BLOCKED reason=multiple-release-states';return 1;};set -- $(rel "$z");[ $# = 5 ]||{ echo '  state=BLOCKED reason=invalid-release-state';return 1;};echo "  state=RELEASE-PENDING claim=$4 checkpoint=$5";return 0;fi;ini "$i"||{ echo '  state=BLOCKED reason=durable-ownership-initialization-required';return 1;};a=$(am "$r");vs "$a"&&id "$l" "$r" "$a"||{ echo "  state=BLOCKED reason=invalid-idle-state origin_main=$a";return 1;};echo "  state=FREE origin_main=$a";}
+wt(){ a=$(printf "%s\n" "$(CDPATH= cd -- "$M"&&pwd -P)" "$(CDPATH= cd -- "$S"&&pwd -P)" "$(CDPATH= cd -- "$E"&&pwd -P)"|sort)||return 1;t=$(git -C "$M" worktree list --porcelain|sed -n "s/^worktree //p"|sort);echo worktrees:;git -C "$M" worktree list|sed "s/^/  /";[ "$a" = "$t" ];};pf(){  z=0;gr "$M"&&cl main "$M"||z=1;gr "$S"&&cl sub "$S"||z=1;echo "e2e path=$E";gr "$E"||z=1;if [ "$z" = 0 ];then q=$(bn "$E");d=$(git -C "$E" status --porcelain);echo "  branch=${q:-DETACHED}";echo "  head=$(hh "$E")";echo "  clean=$([ -z "$d" ]&&echo yes||echo no) marker=$([ -f "$(mp "$E")" ]&&echo present||echo none)";[ ! -f "$(mp "$E")" ]||sed "s/^/    /" "$(mp "$E")";[ -z "$d" ]||z=1;fi;wt||z=1;[ "$z" = 0 ]&&{ echo 'PREFLIGHT PASS';return 0;};echo 'PREFLIGHT BLOCKED';return 1;}
+cv(){ local l i a q r z h; l=$1;i=$2;a=$3;q=$4;il "$l"&&vi "$i"&&vs "$a"&&git check-ref-format --branch "$q" >/dev/null 2>&1&&[ "$(ib "$q")" = "$i" ]||return 2;r=$(lr "$l");gr "$r"&&ao "$r" "$RT"&&cn "$r"||return 1;z=$(bn "$r");case $l in main)[ "$z" = main ];;sub)[ -z "$z" ];;esac||return 1;fm "$r"&&[ "$(om "$r")" = "$a" ]||return 1;git -C "$r" show-ref --verify --quiet "refs/heads/$q"&&return 1;[ -z "$(ab "$r" "$q")" ]||return 1;h=$(hh "$r");[ "$h" = "$a" ]||an "$r" "$h" "$a"||return 1;echo VERIFIED;};vr(){  r=$(lr "$1")||return 2;ini "$(ip "$r")"&&[ ! -e "$(sp "$r")" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;cv "$@";};li(){  l=$1;il "$l"||return;r=$(lr "$l");gr "$r"&&ao "$r" "$RT"||return 1;i=$(ip "$r");if [ -e "$i" ];then ini "$i"&&{ echo 'ALREADY INITIALIZED';return 0;};return 1;fi;[ ! -e "$(sp "$r")" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;c=$(gc);lo "$r" init "$c" - - - -||return 1;fm "$r"||return 1;a=$(om "$r");id "$l" "$r" "$a"||return 1;wa "$i" 'version=1\n'&&ul "$r" "$c"||return 1;echo 'LANE INITIALIZED';}
+cs(){  l=$1;i=$2;a=$3;q=$4;r=$(lr "$l");cv "$@" >/dev/null||return $?;fm "$r"||return 1;[ "$(om "$r")" = "$a" ]||return 1;h=$(hh "$r");if [ "$h" != "$a" ];then if [ "$l" = main ];then git -C "$r" merge --ff-only origin/main >/dev/null;else sd "$r" "$a";fi||return 1;fi;git -C "$r" switch -c "$q" "$a" >/dev/null||return 1;echo STARTED;};st(){ local l i a q r c s; l=$1;i=$2;a=$3;q=$4;vr "$@" >/dev/null||return $?;r=$(lr "$l");c=$(gc);lo "$r" start "$c" "$i" "$q" "$a" -||return 1;s=$(sp "$r");mkdir "$s"||return 1;wa "$s/state" "version=1\nissue=$i\nbranch=$q\nbase=$a\nclaim=$c\n"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = start-after-slot ]&&return 97;cs "$@"||{ id "$l" "$r" "$a"&&! git -C "$r" show-ref --verify --quiet "refs/heads/$q"&&{ rm -rf "$s";ul "$r" "$c" >/dev/null 2>&1;};return 1;};ul "$r" "$c"||return 1;echo "  claim=$c";}
+cr(){ local l i a h q c r m z x; l=$1;i=$2;a=$3;h=$4;q=$5;c=$6;r=$(lr "$l");set -- $(sl "$(sp "$r")/state")||return 1;[ "$1" = "$i" ]&&[ "$2" = "$q" ]&&[ "$3" = "$a" ]&&[ "$4" = "$c" ]||return 1;cn "$r"&&[ "$(git -C "$r" rev-parse "refs/heads/$q^{commit}" 2>/dev/null)" = "$h" ]&&[ "$(ab "$r" "$q")" = "$h" ]&&an "$r" "$a" "$h"&&[ -z "$(bo "$r" "$q")" ]||return 1;fm "$r"||return 1;m=$(om "$r");z=$(bn "$r");x=$(hh "$r");if [ "$z" != "$q" ]||[ "$x" != "$h" ];then case $l in main)[ "$z" = main ];;sub)[ -z "$z" ];;esac&&an "$r" "$x" "$m"&&[ "$(ab "$r" "$q")" = "$h" ]&&[ "$(am "$r")" = "$m" ]||return 1;git -C "$r" switch "$q" >/dev/null||return 1;fi;[ "$(hh "$r")" = "$h" ]&&cn "$r"||return 1;echo RESUMED;};rs(){ local l i a h q c r z x; l=$1;i=$2;a=$3;h=$4;q=$5;c=$6;il "$l"&&vi "$i"&&vs "$a"&&vs "$h"&&vc "$c"||return 2;r=$(lr "$l");set -- $(sl "$(sp "$r")/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;z=$(bn "$r");x=$(hh "$r");lo "$r" resume "$c" "$i" "$q" "$a" "$h"||return 1;cr "$l" "$i" "$a" "$h" "$q" "$c"||{ [ "$(bn "$r")" = "$z" ]&&[ "$(hh "$r")" = "$x" ]&&ul "$r" "$c" >/dev/null 2>&1;return 1;};ul "$r" "$c"||return 1;echo "  base=$a";echo "  claim=$c";}
+pd(){ printf '%s\n' "$*" >&2; }
+pdetail(){ [ -n "$1" ] && printf 'detail=%s\n' "$1" >&2; }
+ps(){ "$GH" pr view "$1" -R "$PR" --json id,state,isDraft,baseRefName,baseRefOid,headRefOid,mergeable,autoMergeRequest,url --jq '[.id,.state,(.isDraft|tostring),.baseRefName,.baseRefOid,.headRefOid,.mergeable,(.autoMergeRequest.mergeMethod//"none"),.url]|@tsv'; }
+
+fb_parse_machine_rows() {
+  fb_rows=$1
+  fb_seen=0
+  fb_pending=0
+  fb_failure=
+  fb_parse_error=
+  while IFS="$(printf '\t')" read -r fb_name fb_bucket fb_extra; do
+    [ -z "$fb_name" ] && continue
+    fb_seen=1
+    if [ -n "$fb_extra" ] || [ -z "$fb_bucket" ]; then
+      fb_parse_error='malformed required check row'
+      continue
+    fi
+    case "$fb_bucket" in
+      pending) fb_pending=1 ;;
+      pass) ;;
+      failure|fail|cancelled|cancel|skipped|skipping|unknown|neutral|*)
+        fb_failure="$fb_name	$fb_bucket"
+        ;;
+    esac
+  done < "$fb_rows"
+  if [ -n "$fb_parse_error" ]; then
+    CHECK_STATE=required-checks-unresolved
+    CHECK_DETAIL=$fb_parse_error
+  elif [ "$fb_seen" != 1 ]; then
+    return 1
+  elif [ -n "$fb_failure" ]; then
+    CHECK_STATE=fail
+    CHECK_DETAIL="required_check=$fb_failure"
+  elif [ "$fb_pending" = 1 ]; then
+    CHECK_STATE=pending
+    CHECK_DETAIL='machine-readable required checks include pending work'
+  else
+    CHECK_STATE=pass
+    CHECK_DETAIL='all machine-readable required checks passed'
+  fi
+  return 0
+}
+
+fb_validate_requirements() {
+  fb_input=$1
+  fb_output=$2
+  : > "$fb_output"
+  fb_requirement_count=0
+  fb_requirement_error=
+  while IFS="$(printf '\t')" read -r fb_kind fb_context fb_app fb_extra; do
+    [ -z "$fb_kind" ] && continue
+    case "$fb_kind" in
+      none)
+        [ -z "$fb_context$fb_app$fb_extra" ] || fb_requirement_error='malformed required-check metadata'
+        ;;
+      required)
+        if [ -z "$fb_context" ] || [ -n "$fb_extra" ]; then
+          fb_requirement_error='malformed required-check metadata'
+          continue
+        fi
+        case "$fb_app" in
+          ''|-) fb_app=- ;;
+          *[!0-9]*) fb_requirement_error='malformed required-check metadata'; continue ;;
+          0) fb_app=- ;;
+        esac
+        printf 'required\t%s\t%s\n' "$fb_context" "$fb_app" >> "$fb_output"
+        fb_requirement_count=$((fb_requirement_count + 1))
+        ;;
+      invalid)
+        fb_requirement_error='contradictory or incomplete required-check metadata'
+        ;;
+      *) fb_requirement_error='malformed required-check metadata' ;;
+    esac
+  done < "$fb_input"
+  if [ -n "$fb_requirement_error" ]; then
+    CHECK_STATE=required-checks-unresolved
+    CHECK_DETAIL=$fb_requirement_error
+  fi
+}
+
+fb_classify_status() {
+  case "$1:$2" in
+    queued:none|in_progress:none|queued:''|in_progress:'') echo pending ;;
+    completed:success) echo pass ;;
+    completed:*) echo fail ;;
+    *) echo unresolved ;;
+  esac
+}
+
+fb() {
+  local h fb_dir fb_branch_out fb_branch_err fb_rules_out fb_rules_err
+  local fb_runs_out fb_runs_err fb_checks_out fb_checks_err fb_detail
+  h=$1
+  CHECK_STATE=
+  CHECK_DETAIL=
+  fb_dir=$(mktemp -d /tmp/nuinui-checks.XXXXXX) || {
+    CHECK_STATE=api-error
+    CHECK_DETAIL='unable to allocate check-discovery workspace'
+    return 0
+  }
+  fb_branch_out=$fb_dir/branch.out
+  fb_branch_err=$fb_dir/branch.err
+  if "$GH" api "repos/$PR/branches/main" --jq 'if (.protection.required_status_checks? // null) == null then "none" elif ((.protection.required_status_checks.contexts // [])|length == 0) and ((.protection.required_status_checks.checks // [])|length == 0) then "none" elif ((.protection.required_status_checks.contexts // [])|sort) == ((.protection.required_status_checks.checks // [])|map(.context)|sort) and all((.protection.required_status_checks.checks // [])[]; (.app_id|type)=="number" and .app_id > 0) then .protection.required_status_checks.checks[]|["required",.context,(.app_id|tostring)]|@tsv else "invalid" end' >"$fb_branch_out" 2>"$fb_branch_err"; then
+    :
+  else
+    fb_detail=$(cat "$fb_branch_err" 2>/dev/null)
+    CHECK_STATE=api-error
+    CHECK_DETAIL='branch-protection lookup failed'
+    [ -z "$fb_detail" ] || CHECK_DETAIL="$CHECK_DETAIL: $fb_detail"
+    rm -rf "$fb_dir"
+    return 0
+  fi
+  fb_rules_out=$fb_dir/rules.out
+  fb_rules_err=$fb_dir/rules.err
+  if "$GH" api "repos/$PR/rules/branches/main" --jq '[.[]? | select(.type=="required_status_checks") | .parameters.required_status_checks[]? | ["required",.context,((.integration_id // 0)|tostring)]|@tsv] | if length == 0 then "none" else .[] end' >"$fb_rules_out" 2>"$fb_rules_err"; then
+    :
+  else
+    fb_detail=$(cat "$fb_rules_err" 2>/dev/null)
+    CHECK_STATE=api-error
+    CHECK_DETAIL='ruleset lookup failed'
+    [ -z "$fb_detail" ] || CHECK_DETAIL="$CHECK_DETAIL: $fb_detail"
+    rm -rf "$fb_dir"
+    return 0
+  fi
+  cat "$fb_branch_out" "$fb_rules_out" > "$fb_dir/requirements.raw"
+  fb_validate_requirements "$fb_dir/requirements.raw" "$fb_dir/requirements"
+  if [ "$CHECK_STATE" = required-checks-unresolved ]; then
+    rm -rf "$fb_dir"
+    return 0
+  fi
+
+  fb_runs_out=$fb_dir/runs.out
+  fb_runs_err=$fb_dir/runs.err
+  if "$GH" api -X GET "repos/$PR/actions/runs" -f head_sha="$h" -f event=pull_request -f per_page=100 --jq 'if (.total_count // 0) > 100 then "truncated" elif ([.workflow_runs[]? | select(.event=="pull_request")]|length) == 0 then "none" else .workflow_runs[] | select(.event=="pull_request") | [.id,.name,.status,(.conclusion // "none"),(.check_suite_id // 0),(.head_sha // ""),.event]|@tsv end' >"$fb_runs_out" 2>"$fb_runs_err"; then
+    :
+  else
+    fb_detail=$(cat "$fb_runs_err" 2>/dev/null)
+    CHECK_STATE=api-error
+    CHECK_DETAIL='Actions workflow lookup failed'
+    [ -z "$fb_detail" ] || CHECK_DETAIL="$CHECK_DETAIL: $fb_detail"
+    rm -rf "$fb_dir"
+    return 0
+  fi
+  if grep -qx truncated "$fb_runs_out"; then
+    CHECK_STATE=required-checks-unresolved
+    CHECK_DETAIL='exact-head Actions workflow evidence is truncated'
+    rm -rf "$fb_dir"
+    return 0
+  fi
+
+  fb_checks_out=$fb_dir/checks.out
+  fb_checks_err=$fb_dir/checks.err
+  if "$GH" api "repos/$PR/commits/$h/check-runs" --jq 'if (.total_count // 0) > 100 then "truncated" elif ([.check_runs[]?]|length) == 0 then "none" else .check_runs[] | [.name,((.app.id // 0)|tostring),.status,(.conclusion // "none"),(.head_sha // "")]|@tsv end' >"$fb_checks_out" 2>"$fb_checks_err"; then
+    :
+  else
+    fb_detail=$(cat "$fb_checks_err" 2>/dev/null)
+    CHECK_STATE=api-error
+    CHECK_DETAIL='check-run lookup failed'
+    [ -z "$fb_detail" ] || CHECK_DETAIL="$CHECK_DETAIL: $fb_detail"
+    rm -rf "$fb_dir"
+    return 0
+  fi
+  if grep -qx truncated "$fb_checks_out"; then
+    CHECK_STATE=required-checks-unresolved
+    CHECK_DETAIL='exact-head check-run evidence is truncated'
+    rm -rf "$fb_dir"
+    return 0
+  fi
+
+  fb_bad_evidence=
+  fb_run_count=0
+  fb_pending=0
+  fb_failure=0
+  fb_all_pass=1
+  : > "$fb_dir/suites"
+  while IFS="$(printf '\t')" read -r fb_run_id fb_run_name fb_run_status fb_run_conclusion fb_suite_id fb_run_head fb_run_event fb_extra; do
+    [ -z "$fb_run_id" ] && continue
+    [ "$fb_run_id" = none ] && continue
+    if [ -n "$fb_extra" ] || [ "$fb_run_head" != "$h" ] || [ "$fb_run_event" != pull_request ] || ! printf '%s\n' "$fb_suite_id" | grep -Eq '^[1-9][0-9]*$'; then
+      fb_bad_evidence='workflow run is not safely correlated to exact head'
+      continue
+    fi
+    fb_run_count=$((fb_run_count + 1))
+    fb_suite_out=$fb_dir/suite.out
+    fb_suite_err=$fb_dir/suite.err
+    if "$GH" api "repos/$PR/check-suites/$fb_suite_id" --jq '[.head_sha,((.app.id // 0)|tostring),.status,(.conclusion // "none")]|@tsv' >"$fb_suite_out" 2>"$fb_suite_err"; then
+      :
+    else
+      fb_detail=$(cat "$fb_suite_err" 2>/dev/null)
+      CHECK_STATE=api-error
+      CHECK_DETAIL='check-suite lookup failed'
+      [ -z "$fb_detail" ] || CHECK_DETAIL="$CHECK_DETAIL: $fb_detail"
+      rm -rf "$fb_dir"
+      return 0
+    fi
+    IFS="$(printf '\t')" read -r fb_suite_head fb_suite_app fb_suite_status fb_suite_conclusion fb_suite_extra < "$fb_suite_out"
+    if [ -n "$fb_suite_extra" ] || [ "$fb_suite_head" != "$h" ] || ! printf '%s\n' "$fb_suite_app" | grep -Eq '^[0-9]+$'; then
+      fb_bad_evidence='check-suite does not prove the exact PR head'
+      continue
+    fi
+    printf '%s\t%s\n' "$fb_run_id" "$fb_suite_app" >> "$fb_dir/suites"
+    fb_run_state=$(fb_classify_status "$fb_run_status" "$fb_run_conclusion")
+    fb_suite_state=$(fb_classify_status "$fb_suite_status" "$fb_suite_conclusion")
+    case "$fb_run_state:$fb_suite_state" in
+      pending:pending|pass:pass|fail:fail) ;;
+      *)
+        fb_bad_evidence='workflow run and check-suite status disagree'
+        fb_all_pass=0
+        continue
+        ;;
+    esac
+    if [ "$fb_run_status" = completed ] && [ "$fb_suite_status" = completed ] && [ "$fb_run_conclusion" != "$fb_suite_conclusion" ]; then
+      fb_bad_evidence='workflow run and check-suite conclusions disagree'
+      fb_all_pass=0
+      continue
+    fi
+    case "$fb_suite_status:$fb_suite_conclusion" in
+      queued:none|in_progress:none|queued:''|in_progress:'') fb_pending=1; fb_all_pass=0 ;;
+      completed:success) ;;
+      completed:*) fb_failure=1; fb_all_pass=0 ;;
+      *) fb_bad_evidence='check-suite has an unresolved status/conclusion'; fb_all_pass=0 ;;
+    esac
+  done < "$fb_runs_out"
+  if [ "$fb_run_count" = 0 ] && ! grep -qx none "$fb_runs_out"; then
+    if [ -z "$fb_bad_evidence" ]; then
+      fb_bad_evidence='exact-head workflow evidence could not be parsed'
+    fi
+  fi
+
+  if [ "$fb_requirement_count" -gt 0 ]; then
+    fb_requirement_pending=0
+    fb_requirement_failure=0
+    fb_requirement_unresolved=
+    while IFS="$(printf '\t')" read -r fb_kind fb_context fb_app fb_extra; do
+      fb_match_count=0
+      fb_match_state=
+      while IFS="$(printf '\t')" read -r fb_check_name fb_check_app fb_check_status fb_check_conclusion fb_check_head fb_check_extra; do
+        if [ -z "$fb_check_name" ] || [ "$fb_check_name" = none ]; then
+          continue
+        fi
+        if [ -n "$fb_check_extra" ] || [ "$fb_check_head" != "$h" ]; then
+          fb_requirement_unresolved="check-run head mismatch for $fb_context"
+          continue
+        fi
+        [ "$fb_check_name" = "$fb_context" ] || continue
+        case "$fb_app" in -|'') : ;; *) [ "$fb_check_app" = "$fb_app" ] || continue ;; esac
+        fb_match_count=$((fb_match_count + 1))
+        fb_match_state=$(fb_classify_status "$fb_check_status" "$fb_check_conclusion")
+      done < "$fb_checks_out"
+      if [ "$fb_match_count" = 0 ]; then
+        while IFS="$(printf '\t')" read -r fb_run_id fb_run_name fb_run_status fb_run_conclusion fb_suite_id fb_run_head fb_run_event fb_extra; do
+          if [ -z "$fb_run_id" ] || [ "$fb_run_id" = none ]; then
+            continue
+          fi
+          [ "$fb_run_name" = "$fb_context" ] || continue
+          [ "$fb_run_head" = "$h" ] || continue
+          case "$fb_app" in
+            -|'') ;;
+            *)
+              if ! awk -F '\t' -v id="$fb_run_id" -v app="$fb_app" '$1==id && $2==app {found=1} END {exit found ? 0 : 1}' "$fb_dir/suites"; then
+                continue
+              fi
+              ;;
+          esac
+          fb_match_count=$((fb_match_count + 1))
+          fb_match_state=$(fb_classify_status "$fb_run_status" "$fb_run_conclusion")
+        done < "$fb_runs_out"
+      fi
+      if [ "$fb_match_count" != 1 ]; then
+        if [ -z "$fb_requirement_unresolved" ]; then
+          fb_requirement_unresolved="required context cannot be correlated: $fb_context"
+        fi
+      else
+        case "$fb_match_state" in
+          pending) fb_requirement_pending=1 ;;
+          fail) fb_requirement_failure=1 ;;
+          pass) ;;
+          *) if [ -z "$fb_requirement_unresolved" ]; then fb_requirement_unresolved="required context has unresolved evidence: $fb_context"; fi ;;
+        esac
+      fi
+    done < "$fb_dir/requirements"
+    if [ -n "$fb_bad_evidence" ] || [ -n "$fb_requirement_unresolved" ]; then
+      CHECK_STATE=required-checks-unresolved
+      if [ -n "$fb_bad_evidence" ]; then CHECK_DETAIL=$fb_bad_evidence; else CHECK_DETAIL=$fb_requirement_unresolved; fi
+    elif [ "$fb_requirement_failure" = 1 ]; then
+      CHECK_STATE=fail
+      CHECK_DETAIL='a proven required context failed'
+    elif [ "$fb_requirement_pending" = 1 ]; then
+      CHECK_STATE=pending
+      CHECK_DETAIL='a proven required context is still pending'
+    else
+      CHECK_STATE=pass
+      CHECK_DETAIL='all configured required contexts passed'
+    fi
+  elif grep -qx none "$fb_runs_out"; then
+    CHECK_STATE=none-required
+    CHECK_DETAIL='no required-check configuration or exact-head pull_request Actions workflow'
+  elif [ -n "$fb_bad_evidence" ]; then
+    CHECK_STATE=required-checks-unresolved
+    CHECK_DETAIL=$fb_bad_evidence
+  elif [ "$fb_failure" = 1 ]; then
+    CHECK_STATE=fail
+    CHECK_DETAIL='an exact-head pull_request Actions workflow failed'
+  elif [ "$fb_pending" = 1 ]; then
+    CHECK_STATE=pending
+    CHECK_DETAIL='an exact-head pull_request Actions workflow is still pending'
+  elif [ "$fb_all_pass" = 1 ]; then
+    CHECK_STATE=pass
+    CHECK_DETAIL='all exact-head pull_request Actions workflows passed'
+  else
+    CHECK_STATE=required-checks-unresolved
+    CHECK_DETAIL='exact-head pull_request Actions workflow evidence is incomplete'
+  fi
+  rm -rf "$fb_dir"
+}
+
+pa(){ local p h m s c z b q check_out check_err check_rc;
+p=$1;h=$2;m=$3
+echo "$p"|grep -Eq '^[1-9][0-9]*$'&&vs "$h"&&vs "$m"||return 2
+s=$(ps "$p" 2>&1);z=$?
+if [ "$z" != 0 ];then pd 'ERROR: PR lookup/API failure';[ -n "$s" ]&&pdetail "$s";return 1;fi
+set -- $s
+if [ "$#" != 9 ];then pd 'ERROR: PR lookup returned invalid data';pdetail "$s";return 1;fi
+[ -n "$1" ]||{ pd 'ERROR: PR lookup returned no pull request identity';return 1; }
+if [ "$2" != OPEN ];then pd 'BLOCKED: PR is not OPEN';printf 'state=%s\n' "$2" >&2;return 1;fi
+if [ "$3" != false ];then pd 'BLOCKED: PR is a draft';return 1;fi
+if [ "$4" != main ];then pd 'BLOCKED: PR base branch mismatch';printf 'expected_base=main\nactual_base=%s\n' "$4" >&2;return 1;fi
+if [ "$5" != "$m" ];then pd 'BLOCKED: expected main mismatch';printf 'expected_main=%s\nactual_base_oid=%s\n' "$m" "$5" >&2;return 1;fi
+if [ "$6" != "$h" ];then pd 'BLOCKED: reviewed head mismatch';printf 'expected_head=%s\nactual_head=%s\n' "$h" "$6" >&2;return 1;fi
+if [ "$7" != MERGEABLE ];then pd 'BLOCKED: PR mergeability is not acceptable or is ambiguous';printf 'mergeability=%s\n' "$7" >&2;return 1;fi
+if [ "$8" != none ];then pd 'BLOCKED: Auto-merge already configured';printf 'method=%s\n' "$8" >&2;return 1;fi
+check_out=$(mktemp /tmp/nuinui-pr-checks.XXXXXX 2>&1);z=$?
+if [ "$z" != 0 ];then
+  pd 'ERROR: unable to capture required-check output'
+  [ -n "$check_out" ] && pdetail "$check_out"
+  return 1
+fi
+check_err=$(mktemp /tmp/nuinui-pr-checks.XXXXXX 2>&1);check_rc=$?
+if [ "$check_rc" != 0 ];then
+  rm -f "$check_out"
+  pd 'ERROR: unable to capture required-check diagnostics'
+  [ -n "$check_err" ] && pdetail "$check_err"
+  return 1
+fi
+"$GH" pr checks "$p" -R "$PR" --required --json name,bucket --jq '.[]|[.name,.bucket]|@tsv' >"$check_out" 2>"$check_err"
+z=$?
+case $z in
+  0|1|8) ;;
+  *)
+    pd 'ERROR: required-check lookup/API failure'
+    [ -s "$check_err" ] && pdetail "$(cat "$check_err")"
+    rm -f "$check_out" "$check_err"
+    return 1
+    ;;
+esac
+if fb_parse_machine_rows "$check_out"; then
+  rm -f "$check_out" "$check_err"
+else
+  fb "$h"
+  rm -f "$check_out" "$check_err"
+fi
+case "$CHECK_STATE" in
+  pending)
+    echo "$s"
+    return 0
+    ;;
+  pass)
+    pd 'BLOCKED: all required checks are already complete'
+    printf 'check_state=pass\n' >&2
+    [ -z "$CHECK_DETAIL" ] || pdetail "$CHECK_DETAIL"
+    return 1
+    ;;
+  fail)
+    pd 'BLOCKED: required check is not pass or pending'
+    printf 'check_state=fail\n' >&2
+    [ -z "$CHECK_DETAIL" ] || pdetail "$CHECK_DETAIL"
+    return 1
+    ;;
+  none-required)
+    pd 'BLOCKED: no required checks are configured or active'
+    printf 'check_state=none-required\n' >&2
+    [ -z "$CHECK_DETAIL" ] || pdetail "$CHECK_DETAIL"
+    return 1
+    ;;
+  required-checks-unresolved)
+    pd 'BLOCKED: required-check evidence could not be resolved'
+    printf 'check_state=required-checks-unresolved\n' >&2
+    [ -z "$CHECK_DETAIL" ] || pdetail "$CHECK_DETAIL"
+    return 1
+    ;;
+  api-error|*)
+    pd 'ERROR: required-check lookup/API failure'
+    printf 'check_state=api-error\n' >&2
+    [ -z "$CHECK_DETAIL" ] || pdetail "$CHECK_DETAIL"
+    return 1
+    ;;
+esac
+}
+pam(){ local p h m s i o z d a ar;
+p=$1;h=$2;m=$3
+d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);z=$?
+if [ "$z" != 0 ];then pd 'ERROR: unable to capture Auto-merge precondition diagnostics';[ -n "$d" ]&&pdetail "$d";return 1;fi
+s=$(pa "$p" "$h" "$m" 2>"$d");z=$?
+if [ "$z" != 0 ];then
+if [ "$z" = 2 ];then rm -f "$d";return 2;fi
+if [ -s "$d" ];then cat "$d" >&2;else pd 'ERROR: Auto-merge precondition check failed without a diagnostic';fi
+rm -f "$d";return 1
+fi
+rm -f "$d"
+d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);z=$?
+if [ "$z" != 0 ];then pd 'ERROR: unable to capture Auto-merge precondition diagnostics';[ -n "$d" ]&&pdetail "$d";return 1;fi
+s=$(pa "$p" "$h" "$m" 2>"$d");z=$?
+if [ "$z" != 0 ];then
+pd 'BLOCKED: Auto-merge reservation precondition changed before mutation'
+if [ "$z" = 2 ];then pd 'ERROR: Auto-merge precondition validator rejected the command arguments';elif [ -s "$d" ];then cat "$d" >&2;else pd 'ERROR: current precondition reason could not be determined';fi
+rm -f "$d";return 1
+fi
+rm -f "$d"
+set -- $s;i=$1
+o=$("$GH" api graphql -f query='mutation($id:ID!,$h:GitObjectID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE,expectedHeadOid:$h}){clientMutationId}}' -f id="$i" -f h="$h" 2>&1);z=$?
+if [ "$z" != 0 ];then
+d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);ar=$?
+if [ "$ar" = 0 ];then
+a=$(pa "$p" "$h" "$m" 2>"$d");ar=$?
+if [ "$ar" != 0 ]&&grep -q '^BLOCKED:' "$d";then cat "$d" >&2;rm -f "$d";return 1;fi
+else
+a=;pd 'ERROR: unable to capture fresh Auto-merge failure diagnosis';[ -n "$d" ]&&pdetail "$d"
+fi
+pd 'ERROR: Auto-merge reservation mutation failed';[ -n "$o" ]&&pdetail "$o"
+if [ -s "$d" ];then pd 'fresh_diagnosis:';cat "$d" >&2;fi
+rm -f "$d";return 1
+fi
+d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);z=$?
+if [ "$z" != 0 ];then pd 'ERROR: unable to capture Auto-merge read-back diagnostics';[ -n "$d" ]&&pdetail "$d";return 1;fi
+s=$(ps "$p" 2>"$d");z=$?
+if [ "$z" != 0 ];then pd 'ERROR: Auto-merge reservation state could not be verified';[ -s "$d" ]&&{ pd 'read_back_detail:';cat "$d" >&2;};rm -f "$d";return 1;fi
+set -- $s
+if [ "$#" != 9 ];then pd 'ERROR: Auto-merge reservation read-back returned invalid PR data';pdetail "$s";rm -f "$d";return 1;fi
+if [ "$1" != "$i" ]||[ "$2" != OPEN ]||[ "$3" != false ]||[ "$4" != main ]||[ "$5" != "$m" ]||[ "$6" != "$h" ]||[ "$8" != MERGE ];then
+pd 'BLOCKED: Auto-merge reservation read-back mismatch'
+printf 'expected_pr_id=%s\nexpected_state=OPEN\nexpected_draft=false\nexpected_base=main\nexpected_main=%s\nexpected_head=%s\nexpected_merge_method=MERGE\n' "$i" "$m" "$h" >&2
+printf 'observed_pr_id=%s\nobserved_state=%s\nobserved_draft=%s\nobserved_base=%s\nobserved_base_oid=%s\nobserved_head=%s\nobserved_merge_method=%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$8" >&2
+rm -f "$d";return 1
+fi
+rm -f "$d";echo 'AUTO-MERGE RESERVED'
+}
+dl(){ local l h q r z x d; l=$1;h=$2;q=$3;r=$(lr "$l");cn "$r"||return 1;z=$(bn "$r");x=$(hh "$r");d=;[ "$z" = "$q" ]&&[ "$x" = "$h" ]&&d=$q;if [ "$l" = main ];then [ "$z" = "$q" ]||[ "$z" = main ]||return 1;git -C "$r" switch main >/dev/null&&git -C "$r" merge --ff-only origin/main >/dev/null||return 1;else [ "$z" = "$q" ]||[ -z "$z" ]||return 1;[ "$x" = "$h" ]||git -C "$r" merge-base --is-ancestor "$x" origin/main||return 1;sd "$r" origin/main||return 1;fi;if [ -n "$d" ];then [ "$(git -C "$r" rev-parse "refs/heads/$d^{commit}" 2>/dev/null)" = "$h" ]&&[ -z "$(bo "$r" "$d")" ]&&git -C "$r" update-ref -d "refs/heads/$d" "$h"||return 1;fi;echo RELEASED;}
+rl(){ local l h c r s i q a t; l=$1;h=$2;c=$3;il "$l"&&vs "$h"&&vc "$c"||return 2;r=$(lr "$l");s=$(sp "$r");set -- $(sl "$s/state")||return 1;i=$1;q=$2;a=$3;[ "$4" = "$c" ]&&[ "$(git -C "$r" rev-parse "refs/heads/$q^{commit}" 2>/dev/null)" = "$h" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;lo "$r" release "$c" "$i" "$q" "$a" "$h"||return 1;fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main||{ ul "$r" "$c";return 1;};wa "$s/checkpoint" "$h\n"||return 1;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = release-after-rename ]&&return 97;dl "$l" "$h" "$q"||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c"||return 1;echo "  claim=$c";}
+rc(){ local l c r k s z n o i q a h m t; l=$1;c=$2;il "$l"&&vc "$c"||return 2;r=$(lr "$l");k=$(kp "$r");s=$(sp "$r");z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ ! -e "$k" ];then [ "$n" = 1 ]&&set -- $(rel "$z")&&[ "$4" = "$c" ]||return 1;lo "$r" release "$c" "$1" "$2" "$3" "$5"||return 1;fi;set -- $(lk "$k/state")||return 1;o=$1;i=$2;q=$3;a=$4;h=$5;[ "$6" = "$c" ]||return 1;case $o in init)fm "$r"||return 1;m=$(om "$r");id "$l" "$r" "$m"||return 1;[ -e "$(ip "$r")" ]||wa "$(ip "$r")" 'version=1\n';ini "$(ip "$r")"&&ul "$r" "$c";;start)set -- $(sl "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ "$(bn "$r")" = "$q" ]&&[ "$(hh "$r")" = "$a" ]&&cn "$r";then ul "$r" "$c";else cs "$l" "$i" "$a" "$q" >/dev/null&&ul "$r" "$c";fi;;resume)cr "$l" "$i" "$a" "$h" "$q" "$c" >/dev/null&&ul "$r" "$c";;release)if [ "$n" = 0 ]&&[ -e "$s" ];then set -- $(sl "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ -f "$s/checkpoint" ];then [ "$(cat "$s/checkpoint")" = "$h" ]||return 1;else wa "$s/checkpoint" "$h\n"||return 1;fi;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;elif [ "$n" = 1 ];then t=$z;else return 1;fi;set -- $(rel "$t")||return 1;[ "$1 $2 $3 $4 $5" = "$i $q $a $c $h" ]||return 1;fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main&&dl "$l" "$h" "$q" >/dev/null||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c";;esac||return 1;echo "RECOVERED operation=$o";}
+es(){  i=$1;f=$2;r=$E;vi "$i"&&gr "$r"&&ao "$r" "$RT"&&cn "$r"&&[ -z "$(bn "$r")" ]&&[ ! -e "$(mp "$r")" ]&&[ ! -e "$(ep "$r")" ]||return 1;fp "$r"||return 1;m=$(om "$r");x=$(hh "$r");[ "$x" = "$m" ]||{ an "$r" "$x" "$m"&&sd "$r" "$m";}||return 1;h=$(git -C "$r" rev-parse "$f^{commit}" 2>/dev/null)||return 1;sd "$r" "$h"&&printf 'issue=%s\nref=%s\n' "$i" "$h">"$(mp "$r")"||return 1;echo 'E2E STARTED';};el(){ i=$1;f=$2;vi "$i"&&vs "$f"&&fm "$M"&&[ "$(git -C "$M" branch --show-current)" = codex/interim-sequential ]&&cn "$M"&&[ "$(hh "$M")" = "$f" ]&&an "$M" "$(om "$M")" "$f"||return 1;es "$i" "$f";};ee(){  r=$E;k=$(mp "$r");[ -f "$k" ]&&[ ! -e "$(ep "$r")" ]&&cn "$r"&&[ -z "$(bn "$r")" ]||return 1;i=$(sed -n 's/^issue=//p' "$k");h=$(sed -n 's/^ref=//p' "$k");vi "$i"&&vs "$h"&&[ "$(hh "$r")" = "$h" ]||return 1;fp "$r"&&sd "$r" origin/main&&rm "$k"||return 1;echo 'E2E RELEASED';}
+sy(){ gr "$C"&&ao "$C" "$CT"&&cn "$C"&&[ "$(bn "$C")" = main ]&&fp "$C"||return 1;an "$C" "$(hh "$C")" "$(om "$C")"&&git -C "$C" merge --ff-only origin/main >/dev/null||return 1;echo 'CONTEXT SYNCED';};dc(){ [ -d "$C" ]||{ echo 'dev-context=not-installed';return;};gr "$C"||return 1;echo "dev-context=$C branch=$(bn "$C") head=$(hh "$C") clean=$([ cn "$C" ]&&echo yes||echo no)";cn "$C";};doctor(){ [ $# = 0 ]||[ "$1" = --full ]||return 2;z=0;pf||z=1;[ "${1:-}" != --full ]||{ [ -x "$EH" ]&&NUINUI_E2E_PREPARE_WT="$E" "$EH" status||z=1;};dc||z=1;[ "$z" = 0 ];};cc(){ [ -d "$C" ]||return 1;z=0;find "$C" -type f -name '*.md'|while read -r f;do grep -oE '\]\([^)]+\)' "$f" 2>/dev/null|sed -E 's/^\]\(([^)#]+).*$/\1/'|while read -r x;do case $x in ''|'#'*|http://*|https://*|mailto:*)continue;;/*)t=$x;;*)t=$(dirname "$f")/$x;;esac;[ -e "$t" ]||exit 17;done||exit 17;grep -q 'ONLY-CHATGPT\.md' "$f"&&exit 17||:;done||z=1;for x in $K;do grep -q "\`nuinui $x" "$C/projects/nuinuiCAD/LOCAL-TOOLS.md"||z=1;done;echo "nuinui $V";[ "$z" = 0 ]&&{ echo 'CONTEXT CHECK PASS';return;};echo 'CONTEXT CHECK BLOCKED';return 1;};ta(){ p=$C/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md;echo 'TRANSITION AUDIT (read-only)';grep -q 'Status: \*\*Active\*\*' "$p" 2>/dev/null||return 1;m=$(am "$M");vs "$m"&&[ "$(om "$M" 2>/dev/null)" = "$m" ]&&[ "$(bn "$M")" = codex/interim-sequential ]&&cn "$M"||return 1;h=$(hh "$M");an "$M" "$h" "$m" 2>/dev/null||[ -z "$(git -C "$M" cherry "$m" "$h"|grep '^+'||true)" ]||return 1;wt&&[ ! -e "$(mp "$E")" ]&&[ ! -e "$(ep "$E")" ]&&[ -x "$EH" ]&&NUINUI_E2E_PREPARE_WT="$E" "$EH" status||return 1;echo 'TRANSITION AUDIT PREPARED';}
+T(){ local R O a f o c h;R=$(mktemp -d "${TMPDIR:-/tmp}/nui.XXXXXX")||return 1;trap 'rm -rf "$R"' EXIT;O=$R/o;M=$R/m;S=$R/s;E=$R/e;RT=;export GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b;git init -q --bare "$O";git init -q -b main "$M";echo a>$M/a;git -C "$M" add a;git -C "$M" commit -qm a;git -C "$M" remote add origin "$O";git -C "$M" push -qu origin main;git -C "$M" worktree add -q --detach "$S" origin/main;git -C "$M" worktree add -q --detach "$E" origin/main;a=$(om "$M");pf >/dev/null 2>&1&&return 1;li main >/dev/null&&li sub >/dev/null||return 1;f=$R/x;printf 'version=2\n'>$f;ini "$f"&&return 1;o=$(st main SAY-9 "$a" x/say-9-a)||return 1;c=$(echo "$o"|sed -n 's/^  claim=//p');echo b>>$M/a;git -C "$M" add a;git -C "$M" commit -qm b;h=$(hh "$M");rl main "$h" "$c" >/dev/null 2>&1&&return 1;git -C "$M" push -q origin HEAD:main;rl main "$h" "$c" >/dev/null||return 1;echo 'SELFTEST PASS';}
+run_raw_public() {
+  run_raw_name=$1
+  shift
+  run_raw_output=$( "$@" 2>&1 )
+  run_raw_rc=$?
+  if [ -n "$run_raw_output" ]; then
+    printf '%s\n' "$run_raw_output"
+  else
+    printf 'ERROR: lifecycle command %s failed without a diagnostic\n' "$run_raw_name"
+  fi
+  return "$run_raw_rc"
+}
+
+case ${1:-} in
+  preflight)
+    [ "$#" = 1 ] || { echo 'Usage: nuinui preflight'; exit 2; }
+    run_raw_public preflight pf
+    exit $?
+    ;;
+  verify)
+    [ "$#" = 5 ] || { echo 'Usage: nuinui verify <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    run_raw_public verify vr "$2" "$3" "$4" "$5"
+    exit $?
+    ;;
+  lane-init)
+    [ "$#" = 2 ] || { echo 'Usage: nuinui lane-init <main|sub>'; exit 2; }
+    run_raw_public lane-init li "$2"
+    exit $?
+    ;;
+  recover)
+    [ "$#" = 3 ] || { echo 'Usage: nuinui recover <main|sub> <expected-claim>'; exit 2; }
+    run_raw_public recover rc "$2" "$3"
+    exit $?
+    ;;
+  pr-auto-merge)
+    [ "$#" = 4 ] || { echo 'Usage: nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>'; exit 2; }
+    run_raw_public pr-auto-merge pam "$2" "$3" "$4"
+    exit $?
+    ;;
+  e2e-start)
+    [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-start <SAY-123> <tested-ref>'; exit 2; }
+    run_raw_public e2e-start es "$2" "$3"
+    exit $?
+    ;;
+  e2e-start-local-main)
+    [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-start-local-main <SAY-123> <tested-ref>'; exit 2; }
+    run_raw_public e2e-start-local-main el "$2" "$3"
+    exit $?
+    ;;
+  e2e-release)
+    [ "$#" = 1 ] || { echo 'Usage: nuinui e2e-release'; exit 2; }
+    run_raw_public e2e-release ee
+    exit $?
+    ;;
+  context-sync)
+    [ "$#" = 1 ] || { echo 'Usage: nuinui context-sync'; exit 2; }
+    run_raw_public context-sync sy
+    exit $?
+    ;;
+  doctor)
+    shift
+    run_raw_public doctor doctor "$@"
+    exit $?
+    ;;
+  transition-audit)
+    [ "$#" = 1 ] || { echo 'Usage: nuinui transition-audit'; exit 2; }
+    run_raw_public transition-audit ta
+    exit $?
+    ;;
+esac
+
+case ${1:-} in
+  start)
+    [ "$#" = 5 ] || { echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    st "$2" "$3" "$4" "$5"
+    exit $?
+    ;;
+  resume)
+    [ "$#" = 7 ] || { echo 'Usage: nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>'; exit 2; }
+    rs "$2" "$3" "$4" "$5" "$6" "$7"
+    exit $?
+    ;;
+  release)
+    [ "$#" = 4 ] || { echo 'Usage: nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>'; exit 2; }
+    rl "$2" "$3" "$4"
+    exit $?
+    ;;
+  context-check)
+    [ "$#" = 1 ] || { echo 'Usage: nuinui context-check'; exit 2; }
+    cc
+    exit $?
+    ;;
+esac
+
+case ${1:-} in version)[ $# = 1 ]||{ echo 'Usage: nuinui version'; exit 2; };echo $V;;preflight)[ $# = 1 ]||exit 2;pf;;verify)[ $# = 5 ]||exit 2;vr "$2" "$3" "$4" "$5";;lane-init)[ $# = 2 ]||exit 2;li "$2";;start)[ $# = 5 ]||exit 2;st "$2" "$3" "$4" "$5";;resume)[ $# = 7 ]||exit 2;rs "$2" "$3" "$4" "$5" "$6" "$7";;release)[ $# = 4 ]||exit 2;rl "$2" "$3" "$4";;recover)[ $# = 3 ]||exit 2;rc "$2" "$3";;pr-auto-merge)[ $# = 4 ]||exit 2;pam "$2" "$3" "$4";;e2e-start)[ $# = 3 ]||exit 2;es "$2" "$3";;e2e-start-local-main)[ $# = 3 ]||exit 2;el "$2" "$3";;e2e-release)[ $# = 1 ]||exit 2;ee;;context-sync)[ $# = 1 ]||exit 2;sy;;doctor)shift;doctor "$@";;transition-audit)[ $# = 1 ]||exit 2;ta;;context-check)[ $# = 1 ]||exit 2;cc;;self-test)[ $# = 1 ]||exit 2;T;;--help|-h|help|'')u;[ -n "${1:-}" ]&&exit 0||exit 2;;*)u;exit 2;;esac

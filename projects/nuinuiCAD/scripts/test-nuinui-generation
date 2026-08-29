@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
+generator=$script_dir/generate-nuinui
+source_path=$script_dir/nuinui-src/nuinui.sh
+artifact_path=$script_dir/nuinui
+
+fail() {
+  echo "GENERATION TEST FAIL: $*" >&2
+  exit 1
+}
+
+root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-generation.XXXXXX") || exit 1
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$root"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+[ -x "$generator" ] || fail 'generator is missing or not executable'
+[ -f "$source_path" ] || fail 'canonical source is missing'
+[ -f "$artifact_path" ] || fail 'checked-in production artifact is missing'
+
+cmp -s "$source_path" "$artifact_path" || fail 'canonical source and checked-in artifact are stale'
+
+candidate_a=$root/candidate-a
+candidate_b=$root/candidate-b
+"$generator" "$candidate_a"
+"$generator" "$candidate_b"
+
+cmp -s "$candidate_a" "$candidate_b" || fail 'independent candidates differ'
+cmp -s "$candidate_a" "$artifact_path" || fail 'generated candidate differs from checked-in artifact'
+candidate_mode=$(stat -f '%Lp' "$candidate_a")
+artifact_mode=$(stat -f '%Lp' "$artifact_path")
+[ "$candidate_mode" = "$artifact_mode" ] || fail "generated mode $candidate_mode differs from production mode $artifact_mode"
+[ "$candidate_mode" = 755 ] || fail "generated candidate mode is $candidate_mode, expected 755"
+
+candidate_version=$("$candidate_a" version)
+[ "$candidate_version" = 1.6.3 ] || fail "generated candidate version is $candidate_version"
+
+artifact_before=$(shasum -a 256 "$artifact_path" | awk 'NR == 1 {print $1}')
+if "$generator" "$artifact_path" >"$root/protected-output.log" 2>&1; then
+  fail 'generator accepted the checked-in production artifact as output'
+fi
+artifact_after=$(shasum -a 256 "$artifact_path" | awk 'NR == 1 {print $1}')
+[ "$artifact_before" = "$artifact_after" ] || fail 'protected production artifact changed'
+
+manual_mismatch=$root/manual-generated-artifact
+cp "$artifact_path" "$manual_mismatch"
+printf '\nmanual generated-artifact mismatch\n' >> "$manual_mismatch"
+if cmp -s "$candidate_a" "$manual_mismatch"; then
+  fail 'exact comparison did not detect a manual generated-artifact mismatch'
+fi
+
+candidate_sha256=$(shasum -a 256 "$candidate_a" | awk 'NR == 1 {print $1}')
+candidate_git_blob=$(git -C "$repo_root" hash-object "$candidate_a")
+echo 'GENERATION PASS'
+echo "candidate_sha256=$candidate_sha256"
+echo "candidate_git_blob=$candidate_git_blob"
+echo 'candidate_matches_production=yes'
