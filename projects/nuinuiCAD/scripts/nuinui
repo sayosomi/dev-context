@@ -141,7 +141,7 @@ nuinui_ownership_parse_releasing() {
   [ "${nuinui_ownership_releasing_dir##*/}" = "nuinui-implementation-slot.releasing.$4" ] || return 1
   printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$nuinui_ownership_releasing_checkpoint"
 }
-V=1.6.10;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
+V=1.6.11;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then M=${NUINUI_MAIN_WT:?};S=${NUINUI_SUB_WT:?};E=${NUINUI_E2E_WT:?};C=${NUINUI_DEV_CONTEXT_WT:-};RT=;CT=;else M=/Users/yosomi/Code/nuinuiCAD;S=/Users/yosomi/Code/nuinuiCAD-sub;E=/Users/yosomi/Code/nuinuiCAD-e2e;C=/Users/yosomi/Code/dev-context;RT=sayosomi/nuinuiCAD;CT=sayosomi/dev-context;fi
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then CD=${NUINUI_DEV_CONTEXT_DEV_WT:-};[ -z "${NUINUI_SELFTEST_EXPECTED_ORIGIN:-}" ]||CT=$NUINUI_SELFTEST_EXPECTED_ORIGIN;else CD=/Users/yosomi/Code/dev-context-dev;fi
 lr(){ case $1 in main)echo "$M";;sub)echo "$S";;e2e)echo "$E";;*)return 2;;esac;};il(){ case $1 in main|sub);;*)return 2;;esac;};gr(){ [ -d "$1" ]&&git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1;};ao(){ [ -z "$2" ]||git -C "$1" remote get-url origin 2>/dev/null|grep -Fq "$2";};cn(){ [ -z "$(git -C "$1" status --porcelain)" ];};bn(){ git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null||true;};hh(){ git -C "$1" rev-parse HEAD;};om(){ git -C "$1" rev-parse origin/main;};fm(){ git -C "$1" fetch origin main >/dev/null 2>&1;};fp(){ git -C "$1" fetch origin --prune >/dev/null 2>&1;};an(){ git -C "$1" merge-base --is-ancestor "$2" "$3";};sd(){ git -C "$1" switch --detach "$2" >/dev/null;};gd(){ git -C "$1" rev-parse --absolute-git-dir 2>/dev/null;};ip(){ echo "$(gd "$1")/nuinui-implementation-v1";};sp(){ echo "$(gd "$1")/nuinui-implementation-slot";};kp(){ echo "$(gd "$1")/nuinui-implementation-lock";};rp(){ echo "$(gd "$1")/nuinui-implementation-slot.releasing.$2";};rds(){ find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null|sort;};mp(){ echo "$(gd "$1")/nuinui-slot";};ep(){ echo "$(gd "$1")/nuinui-e2e-session";}
@@ -2186,10 +2186,15 @@ nuinui_self_test() {
     echo 'SELFTEST BLOCKED: context-sync test is missing or not executable'
     return 1
   }
+  [ -x "$nuinui_selftest_dir/test-nuinui-source-budget" ] || {
+    echo 'SELFTEST BLOCKED: source-budget test is missing or not executable'
+    return 1
+  }
   /bin/sh "$nuinui_selftest_dir/test-nuinui-lifecycle" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-integration-clean" "$P" || return $?
-  /bin/sh "$nuinui_selftest_dir/test-nuinui-context-sync" "$P"
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-context-sync" "$P" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-source-budget"
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.

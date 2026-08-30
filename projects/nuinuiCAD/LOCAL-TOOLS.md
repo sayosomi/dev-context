@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.10`。
+current standalone helper version: `1.6.11`。
 
 `nuinui preflight`のHuman copy boundaryは、`===== NUINUI PREFLIGHT RESULT =====`からコピーを開始し、`PREFLIGHT PASS`または`PREFLIGHT BLOCKED`の直後で停止する。ヘッダはplain-textの出力境界だけを示し、lane / preflight semanticsは変更しない。
 
@@ -125,6 +125,19 @@ cli-dispatch.sh
 ```
 
 これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
+
+### Source-size architecture budget
+
+`projects/nuinuiCAD/scripts/test-nuinui-source-budget` is the dedicated architecture-budget owner. It deterministically classifies and measures every regular file recursively under:
+
+```text
+projects/nuinuiCAD/scripts/nuinui-src/
+projects/nuinuiCAD/scripts/nuinui-handoff-check-src/
+```
+
+It also guards every regular file directly under `projects/nuinuiCAD/scripts/` as a standalone implementation source. This includes `nuinui-e2e-prepare`; future standalone helpers are included automatically. Top-level discovery is sorted with `LC_ALL=C` and excludes only the generated artifacts `nuinui` and `nuinui-handoff-check`, generators named `generate-*`, and focused regression scripts named `test-*`.
+
+The hard limit is exactly `32768` bytes per guarded source, measured with `wc -c`; a source is over budget only when its actual byte count is greater than the limit. There is no current exception. Future exceptions require an exact tracked path and non-empty rationale. Threshold and exception changes must remain review-visible tracked changes. `nuinui self-test` aggregates this source-budget regression.
 
 current commands:
 

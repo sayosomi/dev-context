@@ -1,0 +1,177 @@
+#!/bin/sh
+set -eu
+
+budget=32768
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+
+source_budget_check() {
+  source_budget_script_dir=$1
+  for source_root in \
+    "$source_budget_script_dir/nuinui-src" \
+    "$source_budget_script_dir/nuinui-handoff-check-src"; do
+    [ -d "$source_root" ] || {
+      echo "SOURCE BUDGET BLOCKED: missing guarded source root path=$source_root" >&2
+      return 1
+    }
+  done
+
+  source_budget_list=$(mktemp "${TMPDIR:-/tmp}/nuinui-source-budget.XXXXXX")
+  {
+    find "$source_budget_script_dir/nuinui-src" -type f -print
+    find "$source_budget_script_dir/nuinui-handoff-check-src" -type f -print
+    find "$source_budget_script_dir" -maxdepth 1 -type f -print | while IFS= read -r source_path; do
+      source_name=${source_path##*/}
+      case "$source_name" in
+        nuinui|nuinui-handoff-check|generate-*|test-*)
+          continue
+          ;;
+      esac
+      printf '%s\n' "$source_path"
+    done
+  } | LC_ALL=C sort > "$source_budget_list"
+
+  source_budget_rc=0
+  source_count=0
+  largest_source=
+  largest_bytes=0
+  while IFS= read -r source_path || [ -n "$source_path" ]; do
+    [ -n "$source_path" ] || continue
+    actual=$(wc -c < "$source_path" | tr -d '[:space:]')
+    source_count=$((source_count + 1))
+    if [ "$actual" -gt "$largest_bytes" ]; then
+      largest_source=$source_path
+      largest_bytes=$actual
+    fi
+    if [ "$actual" -gt "$budget" ]; then
+      echo "SOURCE BUDGET FAIL: path=$source_path actual=$actual budget=$budget" >&2
+      source_budget_rc=1
+    fi
+  done < "$source_budget_list"
+  rm -f "$source_budget_list"
+
+  [ "$source_budget_rc" = 0 ] || return "$source_budget_rc"
+  echo "SOURCE BUDGET PASS: sources=$source_count largest=$largest_source actual=$largest_bytes budget=$budget"
+}
+
+if [ "$#" -gt 0 ]; then
+  case "$1" in
+    --check)
+      [ "$#" = 1 ] || { echo 'Usage: test-nuinui-source-budget [--check]' >&2; exit 2; }
+      source_budget_check "$script_dir"
+      exit $?
+      ;;
+    *)
+      echo 'Usage: test-nuinui-source-budget [--check]' >&2
+      exit 2
+      ;;
+  esac
+fi
+
+fail() {
+  echo "SOURCE BUDGET TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  case "$1" in
+    *"$2"*) ;;
+    *) fail "$3 missing=$2 output=$1" ;;
+  esac
+}
+
+make_bytes() {
+  source_budget_count=$1
+  source_budget_path=$2
+  awk -v byte_count="$source_budget_count" 'BEGIN { for (i = 0; i < byte_count; i++) printf "x" }' > "$source_budget_path"
+  [ "$(wc -c < "$source_budget_path" | tr -d '[:space:]')" = "$source_budget_count" ] ||
+    fail "fixture size is not $source_budget_count: $source_budget_path"
+}
+
+make_fixture() {
+  source_budget_fixture=$source_budget_test_root/$1
+  mkdir -p \
+    "$source_budget_fixture/scripts/nuinui-src" \
+    "$source_budget_fixture/scripts/nuinui-handoff-check-src"
+  cp "$budget_script" "$source_budget_fixture/scripts/test-nuinui-source-budget"
+  chmod 755 "$source_budget_fixture/scripts/test-nuinui-source-budget"
+  printf '%s\n' "$source_budget_fixture"
+}
+
+run_expected_failure() {
+  source_budget_label=$1
+  source_budget_runner=$2
+  source_budget_expected_path=$3
+  if source_budget_output=$("$source_budget_runner" --check 2>&1); then
+    printf '%s\n' "$source_budget_output"
+    fail "$source_budget_label unexpectedly passed"
+  fi
+  assert_contains "$source_budget_output" "path=$source_budget_expected_path" "$source_budget_label missing offending path"
+  assert_contains "$source_budget_output" 'actual=32769' "$source_budget_label missing actual byte count"
+  assert_contains "$source_budget_output" 'budget=32768' "$source_budget_label missing budget"
+  echo "PASS: $source_budget_label"
+}
+
+run_expected_pass() {
+  source_budget_label=$1
+  source_budget_runner=$2
+  if source_budget_output=$("$source_budget_runner" --check 2>&1); then
+    :
+  else
+    printf '%s\n' "$source_budget_output"
+    fail "$source_budget_label unexpectedly failed"
+  fi
+  assert_contains "$source_budget_output" 'SOURCE BUDGET PASS:' "$source_budget_label missing pass result"
+  echo "PASS: $source_budget_label"
+}
+
+budget_script=$script_dir/test-nuinui-source-budget
+[ -x "$budget_script" ] || fail 'source-budget owner is missing or not executable'
+
+if baseline_output=$(source_budget_check "$script_dir" 2>&1); then
+  :
+else
+  printf '%s\n' "$baseline_output"
+  fail 'current repository source baseline failed'
+fi
+assert_contains "$baseline_output" "largest=$script_dir/nuinui-e2e-prepare" 'baseline omitted standalone nuinui-e2e-prepare'
+echo "$baseline_output"
+
+source_budget_test_root=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-source-budget-test.XXXXXX")" && pwd -P)
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$source_budget_test_root"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+source_fixture=$(make_fixture source-root)
+source_path=$source_fixture/scripts/nuinui-src/nested/new-source.sh
+mkdir -p "$(dirname "$source_path")"
+make_bytes 32769 "$source_path"
+run_expected_failure 'nuinui-src over-budget source' "$source_fixture/scripts/test-nuinui-source-budget" "$source_path"
+
+handoff_fixture=$(make_fixture handoff-root)
+handoff_path=$handoff_fixture/scripts/nuinui-handoff-check-src/nested/new-handoff-source.sh
+mkdir -p "$(dirname "$handoff_path")"
+make_bytes 32769 "$handoff_path"
+run_expected_failure 'nuinui-handoff-check-src over-budget source' "$handoff_fixture/scripts/test-nuinui-source-budget" "$handoff_path"
+
+standalone_fixture=$(make_fixture standalone)
+standalone_path=$standalone_fixture/scripts/new-standalone-helper
+make_bytes 32769 "$standalone_path"
+run_expected_failure 'top-level standalone helper over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$standalone_path"
+
+exclusion_fixture=$(make_fixture exclusions)
+for excluded_name in nuinui nuinui-handoff-check generate-synthetic test-synthetic; do
+  make_bytes 32769 "$exclusion_fixture/scripts/$excluded_name"
+done
+run_expected_pass 'generated artifacts, generators, and focused tests excluded' "$exclusion_fixture/scripts/test-nuinui-source-budget"
+
+boundary_fixture=$(make_fixture boundary)
+make_bytes 32768 "$boundary_fixture/scripts/nuinui-src/exact-source.sh"
+make_bytes 32768 "$boundary_fixture/scripts/nuinui-handoff-check-src/exact-handoff-source.sh"
+make_bytes 32768 "$boundary_fixture/scripts/exact-standalone-helper"
+run_expected_pass 'exact budget boundary accepted' "$boundary_fixture/scripts/test-nuinui-source-budget"
+
+echo 'SOURCE BUDGET TEST PASS'
