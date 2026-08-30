@@ -14,20 +14,18 @@ chatを新しく作っただけではlaneをclaimしない。actual startup gate
 
 通常のrepository implementation / blocking fixは[`CODING-AGENT.md`](./CODING-AGENT.md)に従いLuna xhighが担当する。
 
-## Documentation / policy direct execution exception
+## Direct execution exceptions
 
-Repository-owned documentation / specification / policy workはsource-code implementationとは別execution classとする。
+Direct executionの詳細なeligibility、禁止境界、executor routingは[`CODING-AGENT.md`](./CODING-AGENT.md)がcanonical ownerであり、このdocumentではcontractを二重定義しない。
 
-次をすべて満たすTaskはimplementation lane / Lunaを使わずChatGPTが直接実行してよい。
+Implementation chatでは次の2種類のdirect execution exceptionを認識する。
 
-- targetが`docs/**`、`AGENTS.md`、repository/project `README.md`、`ARCHITECTURE.md`、CHANGELOG等のdocumentation / specification / policy fileに限定される;
-- source code、test code、fixtures、build設定、CI、runtime behavior、generated artifactを変更しない;
-- plan、target file、intended changeをユーザーへ事前提示し明示許可を得ている;
-- latest remote repositoryとcurrent relevant management/spec stateを確認してから編集する;
-- verificationはdocumentation / policy consistencyのfocused read-only checkで足りる;
-- scopeがsource-code implementationへmaterially拡大しない。
+- **Documentation / policy direct execution exception** — repository-owned documentation / specification / policyに限定された変更。
+- **Narrow CI/tooling direct execution exception** — product implementationから独立し、scope・intended change・focused verificationが一意なCI / repository tooling / automation-only変更。
 
-この例外ではfixed main/sub lane、Base checkpoint、Luna sessionをclaimしない。途中でsource/test/runtime changeが必要になったら停止しplanを更新し、必要なら通常lifecycleへ戻す。
+いずれも`CODING-AGENT.md`の全条件を満たし、Humanがplan / target / intended changeを明示承認した場合だけ使う。該当時はfixed main/sub/e2e lane、Base checkpoint、Luna sessionをclaimせず、write直前にrequired remote / target freshnessを確認する。
+
+どちらのexceptionにも一意に該当しないTask、または途中でsource/runtime/DSL semantics、broad debugging、conflict resolution、integration-heavy work等へscopeが拡大したTaskはdirect executionを停止し、`CODING-AGENT.md`の通常Luna xhigh lifecycleへ戻す。
 
 Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)をauthorityとする。
 
@@ -118,7 +116,7 @@ Implementation開始・再開ではREADME loading ruleに従いcurrent Linear / 
 
 source-code implementationは[`CHECKOUTS.md`](./CHECKOUTS.md)の`begin` full-audit startup gateとdiagnostic preflight rule、slice / Base / integrationは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
 
-Documentation / policy direct execution exceptionではimplementation lane claim / Baseは不要だが、write直前にlatest target file SHA、current relevant state、approved plan scopeを再確認する。
+Direct execution exceptionではimplementation lane claim / Baseは不要だが、[`CODING-AGENT.md`](./CODING-AGENT.md)に従いwrite直前にrequired remote / target freshness、current relevant state、approved plan scopeを再確認する。
 
 web環境からfixed checkoutへ直接accessできないことを理由に代替clone / fourth worktree / direct-GitHub source implementationへ迂回しない。
 
