@@ -258,7 +258,7 @@ remote保存済みactive branchをsame durable generationへ戻す場合はnew s
 nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>
 ```
 
-callerはcurrent external checkpointからLane / Issue / fixed Base / exact pushed checkpoint / branch / claimを復元する。Baseをancestryだけから再推定したり、local slotのclaimをcaller expectationの代わりに採用しない。
+callerはcurrent external checkpointからLane / Issue / fixed Base / exact checkpoint / branch / claimを復元する。通常のpushed checkpointではremote topicも同じcheckpointであることを要求する。`begin`直後の初回push前に限り、remote topicの成功したabsence、local topic = Base = expected checkpoint、cleanな既存topic、safeなidle identityをすべて証明できた場合だけ、そのlocal topicへ復帰できる。Baseをancestryだけから再推定したり、local slotのclaimをcaller expectationの代わりに採用しない。
 
 slot identityがexact一致し、working tree、local branch checkpoint、authoritative remote branch、worktree occupancyがsafe-resume条件を満たす場合だけexisting branchへswitchする。authoritative main確認はactive Baseを更新するためではない。latest mainのmerge / rebase / reset / stash / force-switchを行わない。
 

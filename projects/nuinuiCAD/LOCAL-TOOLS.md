@@ -151,7 +151,7 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `start`はbranch switchより先にnew claim + lock + slotをdurable化する低レベル lifecycle primitiveとして保持する。成功outputのclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)へcheckpointする。通常のHuman handoffは`begin`を使う。
 
-`resume`はcaller-supplied Lane / Issue / Base / exact pushed checkpoint / branch / claimとslotをexact照合する。Base refresh、merge-main、rebase、reset、stash、force-switch、branch generation、claim inferenceを行わない。
+`resume`はcaller-supplied Lane / Issue / Base / exact checkpoint / branch / claimとslotをexact照合する。通常のpushed checkpointではremote topicも同じcheckpointであることを要求する。`begin`直後の初回push前に限り、remote topicの成功したabsence、local topic = Base = expected checkpoint、cleanな既存topic、safeなidle identityをすべて証明できた場合だけ、そのlocal topicへ復帰できる。Base refresh、merge-main、rebase、reset、stash、force-switch、branch generation、claim inferenceを行わない。
 
 `release`はcaller-supplied merged checkpoint + claimを必須とする。facadeはmutation前にactive slot、current topic branch checkpoint、durable claim、lock / tombstone / schemaをread-only検証し、checkpoint不一致は`BLOCKED: checkpoint mismatch`と`expected` / `actual`、claim不一致は`BLOCKED: claim mismatch`とdurable `expected` / caller `actual`を返す。rejected releaseはdurable ownershipを保持し、raw mutationが予期せず無診断で失敗してもcontext付きERRORを返す。remote topic branchがpost-mergeで削除済みでも、saved checkpointがcurrent authoritative mainに含まれることを証明できればrelease可能。release開始時にclaimed local topic branchをcheckoutしていた場合だけ、そのexact branchをsafe cleanup candidateにする。
 
