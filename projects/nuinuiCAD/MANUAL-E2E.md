@@ -65,6 +65,60 @@ Pre-merge Manual E2E is an explicit Task-contract exception only when unusual me
 
 A post-merge FAIL returns the Work to normal implementation decomposition / fix / review / merge / rerun flow. Do not make pre-merge E2E the default merely to avoid post-merge fixes.
 
+## Post-merge implementation-backed reverse-map re-audit
+
+For Required Manual E2E whose timing is post-merge, do not finalize `Manual E2E: Ready to Run`, or synchronize it to `Ready to Run` after merge, until Sol High has freshly checked the latest merged tested ref and completed a focused reverse-map re-audit against the relevant current implementation.
+
+The authority order is:
+
+```text
+Issue / normative product contract
+    defines required behavior
+
+current tested implementation
+    defines the concrete production path that Manual E2E must exercise
+
+Manual E2E plan
+    proves the contract through that current production path
+```
+
+The current implementation is not the product-contract owner. If the implementation and the normative contract disagree, do not weaken or rewrite the E2E oracle to match the implementation. Treat the discrepancy as an implementation defect or contract mismatch and resolve it through the normal contract / implementation path.
+
+For each required post-merge Manual E2E unit, complete and retain a focused mapping equivalent to:
+
+```text
+current implementation owner / production entrypoint
+    -> actual host path / state transition / failure branch
+    -> user-observable behavior
+    -> fixture / action / expected observation / evidence
+```
+
+The re-audit follows only relevant implementation owners and paths; it does not require reading the entire source tree. When acceptance depends on them, check:
+
+- the actual production entrypoint, command, menu, context, and host wiring;
+- the relevant state guard, lifecycle path, and error branch;
+- the exact user-facing label, message, or result when objectively derivable;
+- the exact source transformation or output shape when objectively derivable;
+- native-host boundaries such as Undo / Redo transactions, QuickPick, focus, and session behavior;
+- whether deterministic semantics are already sufficiently proven by automated tests and should therefore not be duplicated as Manual E2E units.
+
+The current Manual E2E plan must connect each unit's fixture, action, oracle, and evidence to this actual production owner / path. Reading an implementation path does not by itself make a deterministic MCP / script check Manual E2E; preserve the deterministic-verification exclusion above.
+
+### Concrete drift examples
+
+The following SAY-224 examples describe the reverse-map failure mode; they are methodology examples, not SAY-224-specific permanent product requirements:
+
+- **Qualified / scoped rewrite:** when automated or current-implementation evidence objectively establishes a concrete result such as `@Outer::A -> @Other::B`, the Human oracle must name and check that concrete expected rewrite. A generic instruction such as “resolves correctly” leaves the tester to invent qualification semantics.
+- **Stale QuickPick guard:** when the implementation's stale path depends on a pending QuickPick observing a document-version or text change, the action must actually exercise that pending-QuickPick path and observe its specific stale result. An instruction that merely says “change Source while QuickPick is open” is insufficient if normal GUI focus behavior can dismiss the QuickPick before the guard is reached.
+
+### Tested-ref drift after mapping
+
+After an implementation-backed mapping has been established, a tested-ref change caused by a fix merge or other relevant implementation update makes the affected owner / path mappings stale until they are re-audited. Sol High must fresh-read the affected production owner / path and revalidate the affected units' fixture, action, oracle, and evidence mapping. Do not mechanically redesign unaffected units.
+
+If the tested ref changes but the relevant owners and paths do not drift, revalidate that the existing mapping remains valid; a full plan redesign is not required solely because the commit identity changed.
+
+This re-audit does not change Judgment / Executor selection or Human / Luna semantics. Issue #92 separately owns FAIL-time runtime control and Human stop / pause precedence; those semantics are outside this change and must not be reorganized here.
+
 ## Plan-time classification
 
 Before `Manual E2E: Ready to Run`, each unit states:
@@ -73,6 +127,7 @@ Before `Manual E2E: Ready to Run`, each unit states:
 - action;
 - expected observation;
 - evidence;
+- for required post-merge Manual E2E, the current tested implementation owner / production-path mapping, including the relevant state transition or failure branch;
 - `Judgment: Objective | Human`;
 - `Executor: Luna | Human`;
 - for Human when useful: `Reason: human judgment | Luna capability`.
@@ -194,11 +249,14 @@ Immediately before Luna prompt generation or Human instructions, Sol High re-che
 
 1. latest Project Context;
 2. current Issue contract / Manual E2E plan;
-3. intended remote repository state / tested commit;
-4. initial state / fixture / actions / expected observations;
-5. whether proposed Luna units still require production-host action rather than deterministic MCP/script verification;
-6. whether the required Luna operation / observation / evidence family remains in the proven baseline without material drift;
-7. whether Human judgment has accidentally moved into agent execution.
+3. intended remote repository state / tested commit and whether the tested ref or relevant implementation owners / paths have drifted;
+4. initial state / fixture / actions / expected observations and each unit's implementation-backed mapping;
+5. whether each planned unit still exercises the current tested implementation's actual production path and can observe the contract-defined oracle;
+6. whether proposed Luna units still require production-host action rather than deterministic MCP/script verification;
+7. whether the required Luna operation / observation / evidence family remains in the proven baseline without material drift;
+8. whether Human judgment has accidentally moved into agent execution.
+
+When the implementation-backed mapping was completed at `Ready to Run` time and the tested ref and relevant owners / paths have not drifted, this check only needs to prove that the mapping remains valid; it does not require a full plan redesign.
 
 Safe reclassification:
 
