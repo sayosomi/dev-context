@@ -29,8 +29,13 @@ nuinui_self_test() {
     echo 'SELFTEST BLOCKED: context-sync test is missing or not executable'
     return 1
   }
+  [ -x "$nuinui_selftest_dir/test-nuinui-source-budget" ] || {
+    echo 'SELFTEST BLOCKED: source-budget test is missing or not executable'
+    return 1
+  }
   /bin/sh "$nuinui_selftest_dir/test-nuinui-lifecycle" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-integration-clean" "$P" || return $?
-  /bin/sh "$nuinui_selftest_dir/test-nuinui-context-sync" "$P"
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-context-sync" "$P" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-source-budget"
 }
