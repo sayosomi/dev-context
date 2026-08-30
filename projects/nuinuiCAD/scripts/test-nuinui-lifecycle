@@ -18,8 +18,93 @@ fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
 gitdir() { git -C "$1" rev-parse --absolute-git-dir; }
 slot_state() { printf '%s/nuinui-implementation-slot/state\n' "$(gitdir "$1")"; }
+read_optional_file() { if [ -e "$1" ]; then cat "$1"; else echo absent; fi; }
+tombstone_state() { find "$(gitdir "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort; }
 lane_refs() { git -C "$1" for-each-ref --format='%(refname) %(objectname)' | sort; }
 local_lane_refs() { git -C "$1" for-each-ref refs/heads --format='%(refname) %(objectname)' | sort; }
+begin_state() {
+  begin_state_target=$1
+  begin_state_peer=$2
+  printf 'target-branch=%s\n' "$(git -C "$begin_state_target" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  printf 'target-head=%s\n' "$(git -C "$begin_state_target" rev-parse HEAD)"
+  printf 'target-status=%s\n' "$(git -C "$begin_state_target" status --porcelain)"
+  printf 'target-refs=%s\n' "$(lane_refs "$MAIN")"
+  printf 'target-slot=%s\n' "$(read_optional_file "$(slot_state "$begin_state_target")")"
+  printf 'target-lock=%s\n' "$(read_optional_file "$(gitdir "$begin_state_target")/nuinui-implementation-lock/state")"
+  printf 'target-tombstones=%s\n' "$(tombstone_state "$begin_state_target")"
+  printf 'peer-branch=%s\n' "$(git -C "$begin_state_peer" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  printf 'peer-head=%s\n' "$(git -C "$begin_state_peer" rev-parse HEAD)"
+  printf 'peer-status=%s\n' "$(git -C "$begin_state_peer" status --porcelain)"
+  printf 'peer-refs=%s\n' "$(lane_refs "$begin_state_peer")"
+  printf 'peer-slot=%s\n' "$(read_optional_file "$(slot_state "$begin_state_peer")")"
+  printf 'peer-lock=%s\n' "$(read_optional_file "$(gitdir "$begin_state_peer")/nuinui-implementation-lock/state")"
+  printf 'peer-tombstones=%s\n' "$(tombstone_state "$begin_state_peer")"
+}
+expect_begin_duplicate() {
+  begin_duplicate_name=$1
+  begin_duplicate_target=$2
+  begin_duplicate_peer=$3
+  begin_duplicate_lane=$4
+  begin_duplicate_issue=$5
+  begin_duplicate_base=$6
+  begin_duplicate_branch=$7
+  begin_duplicate_expected_peer=$8
+  begin_duplicate_claim=$9
+  begin_duplicate_peer_state=${10}
+  begin_duplicate_peer_issue=${11}
+  begin_duplicate_peer_lane=${12}
+  begin_duplicate_before=$(begin_state "$begin_duplicate_target" "$begin_duplicate_peer")
+  if begin_duplicate_output=$("$HELPER" begin "$begin_duplicate_lane" "$begin_duplicate_issue" "$begin_duplicate_base" "$begin_duplicate_branch" "$begin_duplicate_expected_peer" 2>&1); then
+    :
+  else
+    printf '%s\n' "$begin_duplicate_output"
+    fail "$begin_duplicate_name unexpectedly failed"
+  fi
+  [ "$(printf '%s\n' "$begin_duplicate_output" | sed -n '1p')" = 'IMPLEMENTATION ALREADY STARTED' ] || {
+    printf '%s\n' "$begin_duplicate_output"
+    fail "$begin_duplicate_name missing duplicate marker"
+  }
+  assert_line "$begin_duplicate_output" "^lane=$begin_duplicate_lane$" "$begin_duplicate_name missing lane"
+  assert_line "$begin_duplicate_output" "^issue=$begin_duplicate_issue$" "$begin_duplicate_name missing Issue"
+  assert_line "$begin_duplicate_output" "^branch=$begin_duplicate_branch$" "$begin_duplicate_name missing branch"
+  assert_line "$begin_duplicate_output" "^base=$begin_duplicate_base$" "$begin_duplicate_name missing base"
+  assert_line "$begin_duplicate_output" "^checkpoint=$begin_duplicate_base$" "$begin_duplicate_name checkpoint is not Base"
+  assert_line "$begin_duplicate_output" "^claim=$begin_duplicate_claim$" "$begin_duplicate_name changed claim"
+  assert_line "$begin_duplicate_output" '^clean=yes$' "$begin_duplicate_name missing clean state"
+  assert_line "$begin_duplicate_output" '^state=BUSY$' "$begin_duplicate_name missing BUSY state"
+  assert_line "$begin_duplicate_output" "^peer_lane=$begin_duplicate_peer_lane$" "$begin_duplicate_name missing peer lane"
+  assert_line "$begin_duplicate_output" "^peer_state=$begin_duplicate_peer_state$" "$begin_duplicate_name wrong peer state"
+  assert_line "$begin_duplicate_output" "^peer_issue=$begin_duplicate_peer_issue$" "$begin_duplicate_name wrong peer Issue"
+  assert_line "$begin_duplicate_output" '^mutation=no-op$' "$begin_duplicate_name missing no-op marker"
+  assert_line "$begin_duplicate_output" '^preflight=PASS$' "$begin_duplicate_name missing preflight proof"
+  begin_duplicate_after=$(begin_state "$begin_duplicate_target" "$begin_duplicate_peer")
+  [ "$begin_duplicate_before" = "$begin_duplicate_after" ] || fail "$begin_duplicate_name changed lifecycle state"
+  echo "PASS: $begin_duplicate_name"
+}
+expect_begin_conflict() {
+  begin_conflict_name=$1
+  begin_conflict_target=$2
+  begin_conflict_peer=$3
+  shift 3
+  begin_conflict_before=$(begin_state "$begin_conflict_target" "$begin_conflict_peer")
+  if begin_conflict_output=$("$HELPER" begin "$@" 2>&1); then
+    printf '%s\n' "$begin_conflict_output"
+    fail "$begin_conflict_name unexpectedly succeeded"
+  else
+    begin_conflict_rc=$?
+  fi
+  [ "$begin_conflict_rc" -ne 0 ] || fail "$begin_conflict_name returned zero"
+  printf '%s\n' "$begin_conflict_output" | grep -q '^BLOCKED:' || {
+    printf '%s\n' "$begin_conflict_output"
+    fail "$begin_conflict_name did not fail closed"
+  }
+  if printf '%s\n' "$begin_conflict_output" | grep -q '^IMPLEMENTATION ALREADY STARTED$'; then
+    fail "$begin_conflict_name was classified as a duplicate"
+  fi
+  begin_conflict_after=$(begin_state "$begin_conflict_target" "$begin_conflict_peer")
+  [ "$begin_conflict_before" = "$begin_conflict_after" ] || fail "$begin_conflict_name changed lifecycle state"
+  echo "PASS: $begin_conflict_name"
+}
 e2e_closure_check() {
   env \
     NUINUI_E2E_PREPARE_WT="$E2E" \
@@ -371,6 +456,7 @@ export NUINUI_E2E_WT="$E2E"
 "$HELPER" lane-init main >/dev/null
 "$HELPER" lane-init sub >/dev/null
 BASE="$(git -C "$MAIN" rev-parse origin/main)"
+ALTERNATE_BASE="$(git -C "$SEED" commit-tree "$(git -C "$SEED" rev-parse HEAD^{tree})" -p "$BASE" -m 'alternate begin base')"
 
 E2E_MARKER="$(gitdir "$E2E")/nuinui-slot"
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'E2E setup is not detached'
@@ -432,6 +518,17 @@ assert_line "$OUT1" '^preflight=PASS$' 'FREE peer begin missing preflight proof'
 CLAIM1="$(printf '%s\n' "$OUT1" | sed -n 's/^claim=//p')"
 CHECKPOINT1="$(printf '%s\n' "$OUT1" | sed -n 's/^checkpoint=//p')"
 
+expect_begin_duplicate 'exact duplicate with FREE peer' "$MAIN" "$SUB" main SAY-201 "$BASE" "$BRANCH1" FREE "$CLAIM1" FREE - sub
+expect_begin_conflict 'duplicate different Issue' "$MAIN" "$SUB" main SAY-999 "$BASE" "$BRANCH1" FREE
+expect_begin_conflict 'duplicate different branch' "$MAIN" "$SUB" main SAY-201 "$BASE" sayosomi/say-201-other-branch FREE
+expect_begin_conflict 'duplicate different Base' "$MAIN" "$SUB" main SAY-201 "$ALTERNATE_BASE" "$BRANCH1" FREE
+expect_begin_conflict 'duplicate different peer expectation' "$MAIN" "$SUB" main SAY-201 "$BASE" "$BRANCH1" SAY-999
+printf 'begin advanced checkpoint\n' > "$MAIN/begin-advanced"
+git -C "$MAIN" add begin-advanced
+git -C "$MAIN" commit -qm 'advance begin duplicate checkpoint'
+ADVANCED_CHECKPOINT="$(git -C "$MAIN" rev-parse HEAD)"
+expect_begin_conflict 'duplicate progressed beyond Base' "$MAIN" "$SUB" main SAY-201 "$BASE" "$BRANCH1" FREE
+
 SLOT_BEFORE_RELEASE_FAILURE="$(cat "$(slot_state "$MAIN")")"
 WRONG_CHECKPOINT=0000000000000000000000000000000000000000
 if "$HELPER" release main "$WRONG_CHECKPOINT" "$CLAIM1" >"$ROOT/wrong-checkpoint-release.out" 2>&1; then
@@ -439,13 +536,13 @@ if "$HELPER" release main "$WRONG_CHECKPOINT" "$CLAIM1" >"$ROOT/wrong-checkpoint
   fail 'wrong checkpoint release unexpectedly succeeded'
 fi
 assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" '^BLOCKED: checkpoint mismatch$' 'wrong checkpoint release was not classified'
-assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" "^expected=$CHECKPOINT1$" 'wrong checkpoint release omitted expected checkpoint'
+assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" "^expected=$ADVANCED_CHECKPOINT$" 'wrong checkpoint release omitted expected checkpoint'
 assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" "^actual=$WRONG_CHECKPOINT$" 'wrong checkpoint release omitted actual checkpoint'
 [ "$(cat "$(slot_state "$MAIN")")" = "$SLOT_BEFORE_RELEASE_FAILURE" ] || fail 'wrong checkpoint release changed durable ownership'
 echo 'PASS: wrong checkpoint release retains BUSY ownership'
 
 WRONG_CLAIM=wrong-claim-201
-if "$HELPER" release main "$CHECKPOINT1" "$WRONG_CLAIM" >"$ROOT/wrong-claim-release.out" 2>&1; then
+if "$HELPER" release main "$ADVANCED_CHECKPOINT" "$WRONG_CLAIM" >"$ROOT/wrong-claim-release.out" 2>&1; then
   cat "$ROOT/wrong-claim-release.out"
   fail 'wrong claim release unexpectedly succeeded'
 fi
@@ -502,19 +599,19 @@ expect_malformed_release 'active slot invalid claim' "$(cat "$SLOT_PATH")" absen
 cp "$ROOT/valid-release-slot" "$SLOT_PATH"
 
 printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
-  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$ROOT/valid-release-lock"
+  "$BRANCH1" "$BASE" "$ADVANCED_CHECKPOINT" "$CLAIM1" > "$ROOT/valid-release-lock"
 mkdir "$LOCK_DIR"
 printf 'version=2\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
-  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+  "$BRANCH1" "$BASE" "$ADVANCED_CHECKPOINT" "$CLAIM1" > "$LOCK_DIR/state"
 LOCK_UNSUPPORTED="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock unsupported version' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_UNSUPPORTED"
 printf 'version=1\noperation=not-an-operation\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
-  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+  "$BRANCH1" "$BASE" "$ADVANCED_CHECKPOINT" "$CLAIM1" > "$LOCK_DIR/state"
 LOCK_INVALID_OPERATION="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock invalid operation' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_OPERATION"
 
 printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\n' \
-  "$BRANCH1" "$BASE" "$CHECKPOINT1" > "$LOCK_DIR/state"
+  "$BRANCH1" "$BASE" "$ADVANCED_CHECKPOINT" > "$LOCK_DIR/state"
 LOCK_MISSING_KEY="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock missing key' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_MISSING_KEY"
 
@@ -529,12 +626,12 @@ LOCK_UNKNOWN_KEY="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock unknown key' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_UNKNOWN_KEY"
 
 printf 'version=1\noperation=release\nissue=-\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
-  "$BRANCH1" "$BASE" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+  "$BRANCH1" "$BASE" "$ADVANCED_CHECKPOINT" "$CLAIM1" > "$LOCK_DIR/state"
 LOCK_INVALID_PAIR="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock invalid Issue branch pair' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_PAIR"
 
 printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=not-a-sha\ncheckpoint=%s\nclaim=%s\n' \
-  "$BRANCH1" "$CHECKPOINT1" "$CLAIM1" > "$LOCK_DIR/state"
+  "$BRANCH1" "$ADVANCED_CHECKPOINT" "$CLAIM1" > "$LOCK_DIR/state"
 LOCK_INVALID_BASE="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock invalid Base' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_BASE"
 
@@ -544,7 +641,7 @@ LOCK_INVALID_CHECKPOINT="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock invalid checkpoint' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_CHECKPOINT"
 
 printf 'version=1\noperation=release\nissue=SAY-201\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=bad\n' \
-  "$BRANCH1" "$BASE" "$CHECKPOINT1" > "$LOCK_DIR/state"
+  "$BRANCH1" "$BASE" "$ADVANCED_CHECKPOINT" > "$LOCK_DIR/state"
 LOCK_INVALID_CLAIM="$(cat "$LOCK_DIR/state")"
 expect_malformed_release 'mutation lock invalid claim' "$SLOT_BEFORE_RELEASE_FAILURE" "$LOCK_INVALID_CLAIM"
 
@@ -593,7 +690,7 @@ rmdir "$RELEASE_DIR4"
 mkdir "$ACTIVE_SLOT_DIR"
 cp "$ROOT/valid-release-slot" "$SLOT_PATH"
 
-release_main "$CHECKPOINT1" "$CLAIM1" "$BRANCH1"
+release_main "$ADVANCED_CHECKPOINT" "$CLAIM1" "$BRANCH1"
 
 sync_free_lanes
 setup_main_drift SAY-301 sayosomi/say-301-release-main-drift
@@ -764,6 +861,15 @@ assert_line "$OUT2" '^peer_state=FREE$' 'BUSY peer setup expected free main'
 CLAIM2="$(printf '%s\n' "$OUT2" | sed -n 's/^claim=//p')"
 CHECKPOINT2="$(printf '%s\n' "$OUT2" | sed -n 's/^checkpoint=//p')"
 
+BRANCH_BUSY_DUP=sayosomi/say-218-busy-peer-duplicate
+OUT_BUSY_DUP=$("$HELPER" begin main SAY-218 "$CHECKPOINT2" "$BRANCH_BUSY_DUP" SAY-202)
+CLAIM_BUSY_DUP="$(printf '%s\n' "$OUT_BUSY_DUP" | sed -n 's/^claim=//p')"
+assert_line "$OUT_BUSY_DUP" '^IMPLEMENTATION STARTED$' 'BUSY peer duplicate setup missing header'
+assert_line "$OUT_BUSY_DUP" '^peer_state=BUSY$' 'BUSY peer duplicate setup missing BUSY peer'
+assert_line "$OUT_BUSY_DUP" '^peer_issue=SAY-202$' 'BUSY peer duplicate setup missing peer Issue'
+expect_begin_duplicate 'exact duplicate with BUSY peer' "$MAIN" "$SUB" main SAY-218 "$CHECKPOINT2" "$BRANCH_BUSY_DUP" SAY-202 "$CLAIM_BUSY_DUP" BUSY SAY-202 sub
+release_main "$CHECKPOINT2" "$CLAIM_BUSY_DUP" "$BRANCH_BUSY_DUP"
+
 BRANCH_RACE=sayosomi/say-213-dirty-peer-race
 OUT_RACE=$(NUINUI_SELFTEST_BEGIN_AFTER_START=dirty-peer "$HELPER" begin main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202)
 assert_line "$OUT_RACE" '^IMPLEMENTATION STARTED$' 'dirty peer race begin did not succeed'
@@ -777,6 +883,39 @@ RACE_CHECKPOINT="$(printf '%s\n' "$OUT_RACE" | sed -n 's/^checkpoint=//p')"
 RACE_PREFLIGHT=$("$HELPER" preflight)
 assert_line "$RACE_PREFLIGHT" '^  state=BUSY$' 'dirty peer race did not leave peer BUSY'
 assert_line "$RACE_PREFLIGHT" "^  owner_issue=SAY-202 owner_branch=$BRANCH2 base=$CHECKPOINT1 claim=$CLAIM2$" 'dirty peer race changed peer identity'
+
+printf 'dirty target\n' > "$MAIN/begin-dirty"
+expect_begin_conflict 'duplicate dirty target' "$MAIN" "$SUB" main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202
+rm "$MAIN/begin-dirty"
+
+UNSAFE_LOCK_DIR="$(gitdir "$MAIN")/nuinui-implementation-lock"
+mkdir "$UNSAFE_LOCK_DIR"
+printf 'version=1\noperation=start\nissue=SAY-213\nbranch=%s\nbase=%s\ncheckpoint=-\nclaim=%s\n' \
+  "$BRANCH_RACE" "$CHECKPOINT2" "$RACE_CLAIM" > "$UNSAFE_LOCK_DIR/state"
+expect_begin_conflict 'duplicate active mutation lock' "$MAIN" "$SUB" main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202
+rm "$UNSAFE_LOCK_DIR/state"
+rmdir "$UNSAFE_LOCK_DIR"
+
+UNSAFE_TOMBSTONE="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.$RACE_CLAIM"
+mkdir "$UNSAFE_TOMBSTONE"
+cp "$(slot_state "$MAIN")" "$UNSAFE_TOMBSTONE/state"
+printf '%s\n' "$RACE_CHECKPOINT" > "$UNSAFE_TOMBSTONE/checkpoint"
+expect_begin_conflict 'duplicate release tombstone' "$MAIN" "$SUB" main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202
+rm "$UNSAFE_TOMBSTONE/state" "$UNSAFE_TOMBSTONE/checkpoint"
+rmdir "$UNSAFE_TOMBSTONE"
+
+RACE_SLOT_PATH="$(slot_state "$MAIN")"
+cp "$RACE_SLOT_PATH" "$ROOT/valid-race-slot"
+sed 's/^version=1$/version=2/' "$RACE_SLOT_PATH" > "$ROOT/malformed-race-slot"
+mv "$ROOT/malformed-race-slot" "$RACE_SLOT_PATH"
+expect_begin_conflict 'duplicate malformed active slot' "$MAIN" "$SUB" main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202
+cp "$ROOT/valid-race-slot" "$RACE_SLOT_PATH"
+
+sed 's#^branch=.*#branch=sayosomi/say-213-other-branch#' "$RACE_SLOT_PATH" > "$ROOT/mismatched-race-slot"
+mv "$ROOT/mismatched-race-slot" "$RACE_SLOT_PATH"
+expect_begin_conflict 'duplicate claim checkout identity mismatch' "$MAIN" "$SUB" main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202
+cp "$ROOT/valid-race-slot" "$RACE_SLOT_PATH"
+
 echo 'PASS: dirty peer race preserves durable BUSY peer identity'
 release_main "$RACE_CHECKPOINT" "$RACE_CLAIM" "$BRANCH_RACE"
 

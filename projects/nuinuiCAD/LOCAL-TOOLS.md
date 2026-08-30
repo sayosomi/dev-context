@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.7`。
+current standalone helper version: `1.6.8`。
 
 `nuinui release <main|sub> <merged-checkpoint> <claim>`は、post-mergeにlane checkoutだけがdriftした場合も、`CHECKOUTS.md`の狭いproof setをrelease中に満たすときだけ既存local claimed topicへ通常の`git switch`で復旧する。branch生成やforce系操作はせず、再検証に失敗した場合はactive ownershipを保持して`BLOCKED:`で停止する。このrelease-only recoveryは`resume` / `recover`のclaim-checkout mismatchを変更しない。
 
@@ -128,7 +128,7 @@ current commands:
 | `nuinui preflight` | fixed main / sub / e2e 3-lane stateとdurable ownershipのread-only audit |
 | `nuinui verify <main\|sub> <SAY-123> <expected-base-sha> <branch>` | initialized FREE laneのstart preconditionをread-only検証 |
 | `nuinui lane-init <main\|sub>` | proven exact idle fixed laneへpermanent v1 ownership schema markerをbootstrap |
-| `nuinui begin <main\|sub> <SAY-123> <expected-base-sha> <branch> <FREE\|SAY-123>` | full 3-lane audit、target FREE、exact peer occupancy確認とnew generation startを1 Human handoffで実行 |
+| `nuinui begin <main\|sub> <SAY-123> <expected-base-sha> <branch> <FREE\|SAY-123>` | full 3-lane audit、target FREE、exact peer occupancy確認とnew generation startを1 Human handoffで実行。直後の同一requestだけはexact duplicateとしてread-only認識 |
 | `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始 |
 | `nuinui resume <main\|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
 | `nuinui release <main\|sub> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
@@ -158,6 +158,10 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 `lane-init`はfixed laneを正当に新規 / 再作成した場合のschema bootstrap。slot / lock / release stateがなくexact safe idleを証明できる場合だけmarkerを書く。既存active-looking checkoutからclaimを生成するrepair用途には使わない。
 
 `begin`の形式は`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`。targetは必ずphysically FREE、peerは`FREE`またはexact durable owner Issueの`BUSY`でなければ開始しない。full 3-lane audit後、target条件を再検証して`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返し、target generationを検証できれば`mutation_state=COMPLETED`とtargetのissue / branch / base / checkpoint / claim / clean / `state=BUSY`を返す。検証不能なら`mutation_state=UNKNOWN`と既知のrequested/new identityを返す。
+
+同じ`begin` commandを直後に誤って再実行した場合、最初のfull preflightがPASSでtargetがBUSYなら、targetのdurable Issue / branch / Base、validな既存claim、slot / checkout identity、cleanなcheckout、checkout `HEAD == Base`、no lock / tombstone、callerのexact peer expectation、およびfull preflight PASSをすべてread-onlyで再証明できたときだけduplicateとして扱う。進行後のgenerationでcheckout `HEAD != Base`ならduplicate successにしない。再証明中にstateが変化した場合、または証明できない場合は既存のBLOCKEDへfail-closedする。
+
+duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / base / `checkpoint=<Base>` / existing `claim` / `clean=yes` / `state=BUSY` / exact peer fields / `mutation=no-op` / `preflight=PASS`を返す。既存のdurable claimをそのまま再利用し、slot、claim、lock、tombstone、branch、checkout、peer stateを変更しない。これは新しい`start`ではなく、`resume`や`recover`を内部で代用するものでもない。
 
 `start`はbranch switchより先にnew claim + lock + slotをdurable化する低レベル lifecycle primitiveとして保持する。成功outputのclaimは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)へcheckpointする。通常のHuman handoffは`begin`を使う。
 
