@@ -194,6 +194,19 @@ Use screenshot evidence efficiently:
 
 For `Judgment: Human`, Human PASS / FAIL remains the final quality judgment. ChatGPT may inspect submitted screenshots to confirm objective visible facts, summarize evidence, and help diagnose anomalies, but must not silently replace the required Human aesthetic / experiential judgment with its own screenshot interpretation.
 
+## Common runtime control after a unit result
+
+This runtime rule applies to the whole Manual E2E execution regardless of whether the executor is Human or Luna. Human explicit stop / pause / abort / discontinue instructions have the highest priority:
+
+- stop requesting or initiating further E2E operations, even when independent units remain executable;
+- retain and summarize evidence already collected;
+- record remaining units as unexecuted where relevant, without inferring PASS or FAIL;
+- treat the instruction as execution control, not as product `FAIL` or `BLOCKED`.
+
+When no Human stop / pause instruction exists, a product `FAIL` is not a whole-run abort. For each remaining unit, inspect whether the failed unit invalidates its declared initial state, required fixture, production lifecycle path, action feasibility, expected observation / oracle, or evidence meaning. Stop only invalidated dependent units. Continue independent remaining units against the same tested ref and collect their available `PASS` / `FAIL` / `BLOCKED` evidence.
+
+Do not begin implementation-failure decomposition immediately when safely executable independent units remain. After the runnable independent units are complete, or execution has stopped by explicit Human instruction, aggregate the collected evidence and apply the existing result-handling rules below; enter implementation-failure decomposition only when that handling confirms it is required.
+
 ## Executor selection
 
 Apply after judgment classification and removal of MCP/script-only checks.
@@ -347,8 +360,6 @@ A Luna `BLOCKED` is not product failure.
 - actual capability / evidence limitation → reclassify Objective unit to Human;
 - ambiguous oracle → resolve contract, not Human-judgment fallback.
 
-If a failed unit invalidates the initial state or meaning of later units, stop those dependent units. Otherwise continue independent units so one failure does not hide unrelated evidence.
-
 Screenshots may be evidence for Objective state but do not authorize aesthetic judgment.
 
 Luna never modifies repository files during Manual E2E.
@@ -441,8 +452,18 @@ manual_e2e_only + Ready to Run
   ↓
 execute units
   ↓
-FAIL?
-  YES -> classify failure -> focused latest-main re-audit
+unit FAIL?
+  YES -> common runtime control:
+         stop dependent units; continue independent units
+         unless Human explicitly stops / pauses
+         -> collect available evidence
+  ↓
+runnable units complete or Human stops / pauses
+  ↓
+aggregate PASS / FAIL / BLOCKED evidence
+  ↓
+confirmed implementation FAIL?
+  YES -> existing result handling / focused latest-main re-audit
          -> Ready + unblocked -> FREE main/sub -> Luna fix -> merge -> rerun
          -> Pending / Blocked -> Backlog until resolved
   NO
