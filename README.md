@@ -12,6 +12,7 @@ Project 固有 README から、必要な shared / project-specific 文書へ辿�
 
 この `sayosomi/dev-context` repository 自体を変更するときは、まず [root DEVELOPMENT.md](./DEVELOPMENT.md) を読む。
 root `DEVELOPMENT.md` が dev-context 自身の開発 lifecycle の canonical owner である。
+dev-context GitHub Issue の authoring、current contract、contract lifecycle、re-audit は [root ISSUES.md](./ISSUES.md) が canonical owner である。
 各 external / project repository の開発では、引き続き対応する [`projects/<project>/README.md`](./projects/nuinuiCAD/README.md) を入口にする。
 root README は repository overview / router であり、詳細な development workflow の owner ではない。
 
