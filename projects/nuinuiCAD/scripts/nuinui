@@ -1309,8 +1309,22 @@ context_valid_sha() {
   nuinui_ownership_valid_sha "$1"
 }
 
+context_origin_exact() {
+  context_origin_actual=$(git -C "$C" remote get-url origin 2>/dev/null) || return 1
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    [ -n "$CT" ] && [ "$context_origin_actual" = "$CT" ]
+    return $?
+  fi
+  case "$context_origin_actual" in
+    https://github.com/sayosomi/dev-context|https://github.com/sayosomi/dev-context.git|git@github.com:sayosomi/dev-context|git@github.com:sayosomi/dev-context.git|ssh://git@github.com/sayosomi/dev-context|ssh://git@github.com/sayosomi/dev-context.git)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 context_repo_ready() {
-  [ -n "$C" ] && gr "$C" && ao "$C" "$CT"
+  [ -n "$C" ] && gr "$C" && context_origin_exact
 }
 
 context_artifact_blob() {

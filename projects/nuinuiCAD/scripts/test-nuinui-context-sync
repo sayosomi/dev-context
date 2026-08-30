@@ -40,6 +40,7 @@ fixture_state() {
   printf 'prod-head=%s\n' "$(git -C "$PROD" rev-parse HEAD)"
   printf 'prod-branch=%s\n' "$(git -C "$PROD" symbolic-ref --quiet --short HEAD || echo detached)"
   printf 'prod-status=%s\n' "$(git -C "$PROD" status --porcelain)"
+  printf 'prod-origin=%s\n' "$(git -C "$PROD" remote get-url origin)"
   git -C "$PROD" for-each-ref --format='ref=%(refname)=%(objectname)' refs/heads refs/remotes
   git -C "$PROD" worktree list --porcelain
   printf 'dev-status=%s\n' "$(git -C "$DEV" status --porcelain 2>/dev/null || true)"
@@ -193,6 +194,21 @@ OTHER_REMOTE=$ROOT/other.git
 git init -q --bare "$OTHER_REMOTE"
 git -C "$PROD" remote set-url origin "$OTHER_REMOTE"
 expect_failure_unchanged 'repository origin mismatch' context-audit "$TARGET" "$BLOB_NEW"
+git -C "$PROD" remote set-url origin "$REMOTE"
+LOOKALIKE_REMOTE=$ROOT/remote.git-lookalike
+git clone --bare -q "$REMOTE" "$LOOKALIKE_REMOTE"
+git -C "$LOOKALIKE_REMOTE" symbolic-ref HEAD refs/heads/main
+case "$LOOKALIKE_REMOTE" in
+  *"$REMOTE"*) ;;
+  *) fail 'lookalike origin does not contain expected origin string' ;;
+esac
+assert_eq "$(git -C "$LOOKALIKE_REMOTE" rev-parse refs/heads/main)" "$TARGET" 'lookalike remote compatible main'
+git -C "$PROD" remote set-url origin "$LOOKALIKE_REMOTE"
+before=$(fixture_state)
+output=$(call_helper context-audit "$TARGET" "$BLOB_NEW" 2>&1) && fail 'lookalike repository origin unexpectedly accepted'
+assert_contains "$output" 'BLOCKED: standard clone repository/origin mismatch' 'lookalike repository origin mismatch'
+after=$(fixture_state)
+assert_eq "$after" "$before" 'lookalike repository origin state'
 git -C "$PROD" remote set-url origin "$REMOTE"
 TEST_PATH=$ROOT:$REAL_PATH
 NUINUI_GIT_WRAPPER_MODE=remote-fail; export NUINUI_GIT_WRAPPER_MODE
