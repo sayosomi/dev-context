@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-K='preflight verify lane-init begin start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-sync doctor transition-audit context-check self-test'
+K='preflight verify lane-init begin start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
 
 nuinui_usage() {
   echo "nuinui $V"
@@ -91,9 +91,24 @@ case "$1" in
     nuinui_run_public e2e-release ee
     exit $?
     ;;
+  context-audit)
+    [ "$#" = 3 ] || { echo 'Usage: nuinui context-audit <expected-main> <expected-artifact-blob>'; exit 2; }
+    nuinui_run_public context-audit context_audit_command "$2" "$3"
+    exit $?
+    ;;
   context-sync)
-    [ "$#" = 1 ] || { echo 'Usage: nuinui context-sync'; exit 2; }
-    nuinui_run_public context-sync sy
+    [ "$#" = 3 ] || { echo 'Usage: nuinui context-sync <expected-main> <expected-artifact-blob>'; exit 2; }
+    nuinui_run_public context-sync sy "$2" "$3"
+    exit $?
+    ;;
+  context-dev-audit)
+    [ "$#" = 3 ] || { echo 'Usage: nuinui context-dev-audit <expected-branch> <expected-head>'; exit 2; }
+    nuinui_run_public context-dev-audit context_dev_audit_command "$2" "$3"
+    exit $?
+    ;;
+  context-dev-transition)
+    [ "$#" = 5 ] || { echo 'Usage: nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>'; exit 2; }
+    nuinui_run_public context-dev-transition context_dev_transition_command "$2" "$3" "$4" "$5"
     exit $?
     ;;
   doctor)

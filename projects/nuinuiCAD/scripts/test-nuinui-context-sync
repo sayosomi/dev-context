@@ -1,0 +1,338 @@
+#!/bin/sh
+set -eu
+
+HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
+REAL_PATH=$PATH
+REAL_GIT=$(command -v git)
+ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-context-sync.XXXXXX")
+WRAPPER=$ROOT/git
+ARTIFACT=projects/nuinuiCAD/scripts/nuinui
+OLD_BRANCH=sayosomi/previous-task
+NEW_BRANCH=sayosomi/follow-up-task
+BASE_BRANCH=sayosomi/base-task
+
+cleanup() {
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "CONTEXT TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_eq() {
+  [ "$1" = "$2" ] || fail "$3 expected=$2 actual=$1"
+}
+
+assert_contains() {
+  case "$1" in
+    *"$2"*) ;;
+    *) fail "$3 missing=$2 output=$1" ;;
+  esac
+}
+
+call_helper() {
+  PATH=${TEST_PATH:-$REAL_PATH} "$HELPER" "$@"
+}
+
+fixture_state() {
+  printf 'prod-head=%s\n' "$(git -C "$PROD" rev-parse HEAD)"
+  printf 'prod-branch=%s\n' "$(git -C "$PROD" symbolic-ref --quiet --short HEAD || echo detached)"
+  printf 'prod-status=%s\n' "$(git -C "$PROD" status --porcelain)"
+  git -C "$PROD" for-each-ref --format='ref=%(refname)=%(objectname)' refs/heads refs/remotes
+  git -C "$PROD" worktree list --porcelain
+  printf 'dev-status=%s\n' "$(git -C "$DEV" status --porcelain 2>/dev/null || true)"
+}
+
+expect_failure_unchanged() {
+  label=$1
+  shift
+  before=$(fixture_state)
+  output=$(call_helper "$@" 2>&1) && fail "$label unexpectedly succeeded"
+  case "$output" in
+    BLOCKED:*|ERROR:*|*"BLOCKED:"*|*"ERROR:"*) ;;
+    *) fail "$label did not produce a blocked/error diagnostic: $output" ;;
+  esac
+  after=$(fixture_state)
+  [ "$before" = "$after" ] || fail "$label mutated local state\nbefore:\n$before\nafter:\n$after"
+}
+
+set_fixture() {
+  PROD=$1
+  DEV=$2
+  export NUINUI_DEV_CONTEXT_WT=$PROD
+  export NUINUI_DEV_CONTEXT_DEV_WT=$DEV
+  export NUINUI_SELFTEST_EXPECTED_ORIGIN=$REMOTE
+}
+
+make_target_fixture() {
+  name=$1
+  PROD=$ROOT/$name-prod
+  DEV=$ROOT/$name-dev
+  git clone -q "$REMOTE" "$PROD"
+  git -C "$PROD" worktree add -q -b "$BASE_BRANCH" "$DEV" "$TARGET"
+  set_fixture "$PROD" "$DEV"
+}
+
+make_base_fixture() {
+  name=$1
+  PROD=$ROOT/$name-prod
+  DEV=$ROOT/$name-dev
+  git clone -q "$REMOTE" "$PROD"
+  git -C "$PROD" worktree add -q -b "$OLD_BRANCH" "$DEV" "$BASE"
+  set_fixture "$PROD" "$DEV"
+}
+
+write_wrapper() {
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'case " $* " in' \
+    '  *" reset "*|*" stash "*|*" rebase "*|*" --force*|*" -f "*)' \
+    '    echo "forbidden git repair command: $*" >&2' \
+    '    exit 97' \
+    '    ;;' \
+    'esac' \
+    'case "${NUINUI_GIT_WRAPPER_MODE:-}" in' \
+    '  remote-fail)' \
+    '    case "$*" in *" ls-remote "*) exit 77;; esac' \
+    '    ;;' \
+    '  duplicate-worktree)' \
+    '    case "$*" in' \
+    '      *" worktree list --porcelain"*)' \
+    '        printf "worktree %s\\nHEAD %s\\nbranch refs/heads/main\\nworktree %s\\nHEAD %s\\nbranch refs/heads/%s\\nworktree %s\\nHEAD %s\\nbranch refs/heads/%s\\n" "$NUINUI_DUP_PROD" "$NUINUI_DUP_HEAD" "$NUINUI_DUP_DEV" "$NUINUI_DUP_HEAD" "$NUINUI_DUP_BRANCH" "$NUINUI_DUP_DEV" "$NUINUI_DUP_HEAD" "$NUINUI_DUP_BRANCH"' \
+    '        exit 0' \
+    '        ;;' \
+    '    esac' \
+    '    ;;' \
+    '  malformed-worktree)' \
+    '    case "$*" in *" worktree list --porcelain"*) printf "worktree %s\\nnot-valid\\n" "$NUINUI_DUP_PROD"; exit 0;; esac' \
+    '    ;;' \
+    '  race-main)' \
+    '    case "$*" in' \
+    '      *" ls-remote "*"refs/heads/main"*)' \
+    '        n=0; [ -f "$NUINUI_RACE_COUNT" ] && n=$(sed -n "1p" "$NUINUI_RACE_COUNT"); n=$((n + 1)); printf "%s\\n" "$n" >"$NUINUI_RACE_COUNT"' \
+    '        if [ "$n" = 2 ] && [ -n "${NUINUI_RACE_MAIN_SHA:-}" ]; then printf "%s\\trefs/heads/main\\n" "$NUINUI_RACE_MAIN_SHA"; exit 0; fi' \
+    '        ;;' \
+    '    esac' \
+    '    ;;' \
+    '  race-remote-branch)' \
+    '    case "$*" in' \
+    '      *" ls-remote "*"--heads "*"refs/heads/$NUINUI_RACE_BRANCH"*)' \
+    '        n=0; [ -f "$NUINUI_RACE_COUNT" ] && n=$(sed -n "1p" "$NUINUI_RACE_COUNT"); n=$((n + 1)); printf "%s\\n" "$n" >"$NUINUI_RACE_COUNT"' \
+    '        if [ "$n" = 2 ] && [ -n "${NUINUI_RACE_BRANCH_SHA:-}" ]; then printf "%s\\trefs/heads/%s\\n" "$NUINUI_RACE_BRANCH_SHA" "$NUINUI_RACE_BRANCH"; exit 0; fi' \
+    '        ;;' \
+    '    esac' \
+    '    ;;' \
+    'esac' \
+    'exec "$NUINUI_REAL_GIT" "$@"' >"$WRAPPER"
+  chmod +x "$WRAPPER"
+}
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=nuinui-test GIT_AUTHOR_EMAIL=nuinui-test@example.invalid
+export GIT_COMMITTER_NAME=nuinui-test GIT_COMMITTER_EMAIL=nuinui-test@example.invalid
+export NUINUI_SELFTEST=1
+export NUINUI_MAIN_WT=$ROOT/main-placeholder
+export NUINUI_SUB_WT=$ROOT/sub-placeholder
+export NUINUI_E2E_WT=$ROOT/e2e-placeholder
+export NUINUI_REAL_GIT=$REAL_GIT
+
+REMOTE=$ROOT/remote.git
+SEED=$ROOT/seed
+git init -q --bare "$REMOTE"
+git init -q -b main "$SEED"
+mkdir -p "$SEED/projects/nuinuiCAD/scripts"
+printf '%s\n' old-artifact >"$SEED/$ARTIFACT"
+printf '%s\n' base >"$SEED/base.txt"
+git -C "$SEED" add .
+git -C "$SEED" commit -qm base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -q origin main
+git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
+BASE=$(git -C "$SEED" rev-parse HEAD)
+BLOB_OLD=$(git -C "$SEED" rev-parse "$BASE:$ARTIFACT")
+
+PROD=$ROOT/behind-prod
+DEV=$ROOT/behind-dev
+git clone -q "$REMOTE" "$PROD"
+git -C "$PROD" worktree add -q -b "$OLD_BRANCH" "$DEV" "$BASE"
+
+printf '%s\n' new-artifact >"$SEED/$ARTIFACT"
+printf '%s\n' target >>"$SEED/base.txt"
+git -C "$SEED" add .
+git -C "$SEED" commit -qm target
+git -C "$SEED" push -q origin main
+TARGET=$(git -C "$SEED" rev-parse HEAD)
+BLOB_NEW=$(git -C "$SEED" rev-parse "$TARGET:$ARTIFACT")
+set_fixture "$PROD" "$DEV"
+TEST_PATH=$REAL_PATH
+
+write_wrapper
+output=$(call_helper context-audit "$TARGET" "$BLOB_NEW") || fail "valid behind audit failed: $output"
+assert_contains "$output" 'AUDIT COMPLETE' 'valid behind audit'
+assert_contains "$output" "head=$BASE" 'valid behind audit'
+assert_contains "$output" "origin_main=$TARGET" 'valid behind audit'
+assert_contains "$output" "artifact_blob=$BLOB_OLD" 'valid behind audit'
+assert_contains "$output" 'clean=yes' 'valid behind audit'
+
+before=$(fixture_state)
+output=$(call_helper context-audit "$TARGET" "$BLOB_NEW") || fail "repeat audit failed: $output"
+after=$(fixture_state)
+assert_eq "$after" "$before" 'read-only audit state'
+
+expect_failure_unchanged 'wrong expected main' context-audit "$BASE" "$BLOB_NEW"
+expect_failure_unchanged 'malformed expected main' context-audit not-a-sha "$BLOB_NEW"
+expect_failure_unchanged 'malformed expected artifact' context-audit "$TARGET" not-a-blob
+printf '%s\n' dirty >"$PROD/dirty.txt"
+expect_failure_unchanged 'dirty standard clone' context-audit "$TARGET" "$BLOB_NEW"
+rm -f "$PROD/dirty.txt"
+git -C "$PROD" switch --detach "$BASE" >/dev/null
+expect_failure_unchanged 'non-main standard clone' context-audit "$TARGET" "$BLOB_NEW"
+git -C "$PROD" switch main >/dev/null
+OTHER_REMOTE=$ROOT/other.git
+git init -q --bare "$OTHER_REMOTE"
+git -C "$PROD" remote set-url origin "$OTHER_REMOTE"
+expect_failure_unchanged 'repository origin mismatch' context-audit "$TARGET" "$BLOB_NEW"
+git -C "$PROD" remote set-url origin "$REMOTE"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=remote-fail; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'remote query failure' context-audit "$TARGET" "$BLOB_NEW"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
+output=$(call_helper context-sync "$TARGET" "$BLOB_NEW") || fail "valid sync failed: $output"
+assert_contains "$output" 'CONTEXT SYNCED' 'valid sync'
+assert_contains "$output" "head=$TARGET" 'valid sync'
+assert_contains "$output" "artifact_blob=$BLOB_NEW" 'valid sync'
+assert_contains "$output" 'clean=yes' 'valid sync'
+assert_eq "$(git -C "$PROD" rev-parse HEAD)" "$TARGET" 'post-sync head'
+assert_eq "$(git -C "$PROD" rev-parse HEAD:$ARTIFACT)" "$BLOB_NEW" 'post-sync artifact'
+output=$(call_helper context-sync "$TARGET" "$BLOB_NEW") || fail "already-current sync failed: $output"
+assert_contains "$output" 'CONTEXT SYNCED' 'already-current sync'
+expect_failure_unchanged 'wrong sync artifact' context-sync "$TARGET" "$BLOB_OLD"
+expect_failure_unchanged 'sync expected main mismatch' context-sync "$BASE" "$BLOB_OLD"
+
+make_target_fixture divergent
+printf '%s\n' divergent >"$PROD/divergent.txt"
+git -C "$PROD" add divergent.txt
+git -C "$PROD" commit -qm divergent
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=forbidden; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'diverged local main' context-sync "$TARGET" "$BLOB_NEW"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
+make_target_fixture sync-race
+RACE_SYNC_COUNT=$ROOT/race-sync-count
+RACE_MAIN_SHA=$(printf '%s\n' sync-race | git hash-object --stdin)
+export NUINUI_RACE_COUNT=$RACE_SYNC_COUNT NUINUI_RACE_MAIN_SHA=$RACE_MAIN_SHA
+rm -f "$RACE_SYNC_COUNT"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=race-main; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'remote main race before sync' context-sync "$TARGET" "$BLOB_NEW"
+unset NUINUI_GIT_WRAPPER_MODE NUINUI_RACE_MAIN_SHA
+TEST_PATH=$REAL_PATH
+
+make_target_fixture dev-audit
+dev_before=$(fixture_state)
+output=$(call_helper context-dev-audit "$BASE_BRANCH" "$TARGET") || fail "valid dev audit failed: $output"
+assert_contains "$output" 'DEV-CONTEXT AUDIT COMPLETE' 'valid dev audit'
+assert_contains "$output" "worktree=$DEV" 'valid dev audit'
+assert_contains "$output" "branch=$BASE_BRANCH" 'valid dev audit'
+assert_contains "$output" "head=$TARGET" 'valid dev audit'
+assert_contains "$output" 'clean=yes' 'valid dev audit'
+dev_after=$(fixture_state)
+assert_eq "$dev_after" "$dev_before" 'read-only dev audit state'
+
+missing_dev=$ROOT/missing-dev
+export NUINUI_DEV_CONTEXT_DEV_WT=$missing_dev
+output=$(call_helper context-dev-audit "$BASE_BRANCH" "$TARGET" 2>&1) && fail 'missing dev registration unexpectedly succeeded'
+case "$output" in
+  BLOCKED:*|ERROR:*|*"BLOCKED:"*|*"ERROR:"*) ;;
+  *) fail "missing dev registration diagnostic: $output" ;;
+esac
+export NUINUI_DEV_CONTEXT_DEV_WT=$DEV
+export NUINUI_DUP_PROD=$PROD NUINUI_DUP_DEV=$DEV NUINUI_DUP_HEAD=$TARGET NUINUI_DUP_BRANCH=$BASE_BRANCH
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=duplicate-worktree; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'duplicate worktree registration' context-dev-audit "$BASE_BRANCH" "$TARGET"
+NUINUI_GIT_WRAPPER_MODE=malformed-worktree; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'malformed worktree registration' context-dev-audit "$BASE_BRANCH" "$TARGET"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+printf '%s\n' dirty >"$DEV/dirty.txt"
+expect_failure_unchanged 'dirty dev worktree' context-dev-audit "$BASE_BRANCH" "$TARGET"
+rm -f "$DEV/dirty.txt"
+expect_failure_unchanged 'wrong expected dev branch' context-dev-audit "$OLD_BRANCH" "$TARGET"
+expect_failure_unchanged 'wrong expected dev head' context-dev-audit "$BASE_BRANCH" "$BASE"
+
+make_base_fixture transition-ok
+paths_before=$(git -C "$PROD" worktree list --porcelain | sed -n 's/^worktree //p')
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "valid dev transition failed: $output"
+assert_contains "$output" 'DEV-CONTEXT TRANSITIONED' 'valid dev transition'
+assert_contains "$output" "worktree=$DEV" 'valid dev transition'
+assert_contains "$output" "branch=$NEW_BRANCH" 'valid dev transition'
+assert_contains "$output" "base=$TARGET" 'valid dev transition'
+assert_contains "$output" "head=$TARGET" 'valid dev transition'
+assert_contains "$output" 'clean=yes' 'valid dev transition'
+paths_after=$(git -C "$PROD" worktree list --porcelain | sed -n 's/^worktree //p')
+assert_eq "$paths_after" "$paths_before" 'transition worktree paths'
+git -C "$PROD" show-ref --verify --quiet "refs/heads/$OLD_BRANCH" || fail 'transition deleted old branch'
+assert_eq "$(git -C "$DEV" symbolic-ref --short HEAD)" "$NEW_BRANCH" 'transition branch'
+assert_eq "$(git -C "$DEV" rev-parse HEAD)" "$TARGET" 'transition head'
+
+make_base_fixture local-new
+git -C "$PROD" branch "$NEW_BRANCH" "$TARGET"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=forbidden; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'local new branch exists' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+
+REMOTE_NEW=sayosomi/remote-task
+make_base_fixture remote-new
+expect_failure_unchanged 'remote new branch exists' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$REMOTE_NEW"
+
+make_base_fixture transition-wrong-old
+expect_failure_unchanged 'wrong old branch' context-dev-transition "$BASE_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+expect_failure_unchanged 'wrong old head' context-dev-transition "$OLD_BRANCH" "$TARGET" "$TARGET" "$NEW_BRANCH"
+printf '%s\n' dirty >"$DEV/dirty.txt"
+expect_failure_unchanged 'dirty transition worktree' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+rm -f "$DEV/dirty.txt"
+expect_failure_unchanged 'transition main mismatch' context-dev-transition "$OLD_BRANCH" "$BASE" "$BASE" "$NEW_BRANCH"
+
+make_base_fixture not-contained
+printf '%s\n' outside >"$DEV/outside.txt"
+git -C "$DEV" add outside.txt
+git -C "$DEV" commit -qm outside
+diverged_old=$(git -C "$DEV" rev-parse HEAD)
+expect_failure_unchanged 'old head not contained' context-dev-transition "$OLD_BRANCH" "$diverged_old" "$TARGET" "$NEW_BRANCH"
+rm -f "$DEV/outside.txt"
+
+make_base_fixture race-main
+RACE_MAIN_COUNT=$ROOT/race-main-count
+printf '%s\n' race-main >"$SEED/race-main.txt"
+git -C "$SEED" add race-main.txt
+git -C "$SEED" commit -qm race-main
+export NUINUI_RACE_COUNT=$RACE_MAIN_COUNT NUINUI_RACE_SEED=$SEED
+RACE_MAIN_SHA=$(printf '%s\n' transition-race | git hash-object --stdin)
+export NUINUI_RACE_MAIN_SHA=$RACE_MAIN_SHA
+rm -f "$RACE_MAIN_COUNT"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=race-main; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'remote main race before transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+unset NUINUI_RACE_MAIN_SHA
+
+make_base_fixture race-remote-branch
+RACE_REMOTE_BRANCH=sayosomi/race-remote-task
+RACE_BRANCH_COUNT=$ROOT/race-branch-count
+export NUINUI_RACE_COUNT=$RACE_BRANCH_COUNT NUINUI_RACE_SEED=$SEED NUINUI_RACE_BRANCH=$RACE_REMOTE_BRANCH NUINUI_RACE_BRANCH_SHA=$TARGET
+rm -f "$RACE_BRANCH_COUNT"
+NUINUI_GIT_WRAPPER_MODE=race-remote-branch; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'remote new branch race before transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$RACE_REMOTE_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+unset NUINUI_RACE_BRANCH_SHA
+
+TEST_PATH=$REAL_PATH
+unset NUINUI_GIT_WRAPPER_MODE
+echo 'CONTEXT SYNC TEST PASS'

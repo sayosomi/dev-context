@@ -112,6 +112,8 @@ canonical persistent worktreeが存在しない場合に限り、one-time bootst
 
 Task間でworktreeをremove / recreateしない。persistent worktreeをmerge後に`main`へ戻すことは必須ではなく、merged prior topic branchがnormal safe branch transitionまでlocalに残ることも許容する。next Taskを開始するためだけのbranch cleanupも要求しない。
 
+Recurring transition checksはversioned helperへrouteする。production read-back後は、GitHub authoritative `main` SHAと生成artifact blob SHAをcaller expectationとして、`nuinui context-audit <expected-main> <expected-artifact-blob>`でstandard cloneをread-only監査し、成功後だけ`nuinui context-sync <expected-main> <expected-artifact-blob>`でguarded fast-forwardする。persistent worktreeは`nuinui context-dev-audit <expected-branch> <expected-head>`でread-only監査し、concluded prior Taskから次のTaskへ進める場合だけ`nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>`を使う。後者は同じregistered worktreeを保持したまま、exact mainへのordinary detach/switchとfresh branch create/switchだけを行う。
+
 #### Fail-closed reuse
 
 persistent development worktreeがdirty、unexpectedなunresolved Task state、ambiguousなGit state、またはfreshly verifiedなnew Task baseへ安全にtransitionできない状態なら`BLOCKED`として停止する。reuseを成立させるためだけにreset、stash、force-switch、overwrite、delete / recreateを行わない。
@@ -184,13 +186,14 @@ merge後は、最初にauthoritative GitHub `main`をread backし、意図した
 
 persistent development worktreeはmerge後もremoveしない。next sequential Taskに利用可能な状態として保持し、次のTask自身がfresh remote/bootstrapとsafe branch transitionを行う。mergeごとに直ちに`main`をcheckoutすることは、後続のsafe operationに必要な場合を除いて要求しない。
 
-通常のsyncは次で行う。
+通常のsyncは、GitHub authoritative read-backで確定したexpected valuesを埋めたversioned helperで行う。
 
 ```bash
-git -C /Users/yosomi/Code/dev-context pull --ff-only
+nuinui context-audit <expected-main> <expected-artifact-blob>
+nuinui context-sync <expected-main> <expected-artifact-blob>
 ```
 
-standard cloneがdirty、`main`以外、またはfast-forward不能なら`BLOCKED`として停止する。reset、stash、force-switch、force-updateで修復しない。Human / local executionが実際に成功するまでsyncedと呼ばない。
+`context-audit`はmutation-freeであり、production cloneがexpected mainよりbehindでもlocal artifact blobをtargetと一致させることは要求しない。`context-sync`はfresh fetch後にauthoritative main、ancestry、expected-main treeのartifact blobを再検証し、fast-forward後もHEAD / artifact / clean stateをread backする。standard cloneがdirty、`main`以外、またはfast-forward不能なら`BLOCKED`として停止する。versioned helperが未install、stale、broken、またはcurrent operationをsupportしていない場合に限り、同じread-backとmanual safety checkを満たしたfallbackとして`git -C /Users/yosomi/Code/dev-context pull --ff-only`を提示する。reset、stash、force-switch、force-updateで修復しない。Human / local executionが実際に成功するまでsyncedと呼ばない。
 
 ## Ownership boundaries
 

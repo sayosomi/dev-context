@@ -37,10 +37,11 @@ candidate source / edit / test / promotionは次のpersistent single-track devel
 
 ## Local sync rule
 
-ChatGPTが承認済みdev-context create / update / deleteをGitHubへ反映した場合、同じ応答でlocal cloneへ反映するraw git commandを必ず提示する。
+ChatGPTが承認済みdev-context create / update / deleteをGitHubへ反映した場合、GitHub authoritative read-backで確定したexpected valuesを使い、versioned helperでlocal cloneを同期する。
 
 ```bash
-git -C /Users/yosomi/Code/dev-context pull --ff-only
+nuinui context-audit <expected-main> <expected-artifact-blob>
+nuinui context-sync <expected-main> <expected-artifact-blob>
 ```
 
 cloneがないことが分かっている場合だけ初回cloneを案内する。
@@ -49,13 +50,17 @@ cloneがないことが分かっている場合だけ初回cloneを案内する�
 git clone https://github.com/sayosomi/dev-context.git /Users/yosomi/Code/dev-context
 ```
 
-Humanが実行する前にlocal sync済みとみなさない。`nuinui context-sync`はconvenience commandだが、authoritative helper更新後にraw sync commandを提示する義務の代替ではない。
+Humanが実行する前にlocal sync済みとみなさない。versioned helperが未install、stale、broken、またはcurrent operationをsupportしていない場合だけ、同じGitHub read-backとmanual safety checkを満たしたfallbackとして次を提示する。
+
+```bash
+git -C /Users/yosomi/Code/dev-context pull --ff-only
+```
 
 local cloneがdirty、`main`以外、またはfast-forward不可能ならreset / stash / forceせず`BLOCKED:`で停止する。
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.6`。
+current standalone helper version: `1.6.7`。
 
 `nuinui release <main|sub> <merged-checkpoint> <claim>`は、post-mergeにlane checkoutだけがdriftした場合も、`CHECKOUTS.md`の狭いproof setをrelease中に満たすときだけ既存local claimed topicへ通常の`git switch`で復旧する。branch生成やforce系操作はせず、再検証に失敗した場合はactive ownershipを保持して`BLOCKED:`で停止する。このrelease-only recoveryは`resume` / `recover`のclaim-checkout mismatchを変更しない。
 
@@ -102,7 +107,7 @@ e2e.sh
   e2e-start / e2e-start-local-main / e2e-release mechanics
 
 context-sync.sh
-  context-sync / local dev-context state diagnostics
+  context-audit / guarded context-sync / persistent dev-context audit and transition
 
 diagnostics.sh
   doctor / transition-audit / context-check
@@ -132,7 +137,10 @@ current commands:
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main <SAY-123> <tested-ref>` | Active interim workflow時だけlocal main checkpointをe2eへ安全に固定 |
 | `nuinui e2e-release` | verified e2e stateをlatest `origin/main` detachedへ戻しmarker削除 |
-| `nuinui context-sync` | cleanなlocal dev-context `main`をsafe fast-forward |
+| `nuinui context-audit <expected-main> <expected-artifact-blob>` | GitHub authoritative mainを照合するstandard cloneのstrict read-only audit。behind local HEAD / artifactは許容 |
+| `nuinui context-sync <expected-main> <expected-artifact-blob>` | fresh fetch後にexpected-main treeのartifact blobを検証し、cleanなstandard clone `main`だけをff-only sync |
+| `nuinui context-dev-audit <expected-branch> <expected-head>` | canonical `/Users/yosomi/Code/dev-context-dev`のregistered worktree / repository / clean / branch / HEADをstrict read-only audit |
+| `nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` | concluded prior topicからexact expected mainへordinary detach/switchし、同じregistered worktreeでfresh branchをcreate/switch |
 | `nuinui doctor` | helper / lane / local dev-context diagnostic |
 | `nuinui doctor --full` | preflight、E2E status、local dev-context stateのread-only snapshot |
 | `nuinui transition-audit` | Active interim transition条件をread-only監査 |
@@ -159,7 +167,7 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
 
-`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、dirty valid BUSY lane classification、target start後にdirtyになるvalid BUSY peerを期待したbegin、wrong-branch fail-closed、complete lifecycle envelopes、release checkpoint / claim failure retention、target mutation後のnon-target audit failureと`mutation_state=COMPLETED`、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejection、全public lifecycle failureのnon-empty diagnosticsを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証する。
+`nuinui self-test`は既存のdurable safety pathsに加え、`scripts/test-nuinui-lifecycle`のisolated fixed-three-checkout testsでbegin occupancy admission、dirty valid BUSY lane classification、target start後にdirtyになるvalid BUSY peerを期待したbegin、wrong-branch fail-closed、complete lifecycle envelopes、release checkpoint / claim failure retention、target mutation後のnon-target audit failureと`mutation_state=COMPLETED`、interrupted start / release recovery、old signature rejection、BLOCKED lane、stale FREE rejection、全public lifecycle failureのnon-empty diagnosticsを検証し、`scripts/test-nuinui-pr-auto-merge`のfake GitHub testでAuto-mergeのfailure / race diagnosticsを検証し、`scripts/test-nuinui-context-sync`のisolated Git repository/worktree testでproduction context audit/syncとpersistent worktree audit/transitionのfail-closed境界を検証する。
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返す。
 
@@ -167,7 +175,7 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 ### Standalone non-lane mechanics
 
-`pr-auto-merge`, E2E, context-sync, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
+`pr-auto-merge`, E2E, context-audit / context-sync / context-dev-audit / context-dev-transition, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。`expected-main`はcallerがfreshに確認したauthoritative remote `main` SHAであり、helperはGitHubから`main` tipを独立取得して一致を確認する。PRの`baseRefOid`はauthoritative current-main freshnessのevidenceとして扱わない。PRがOPEN / non-draft / base=`main` / exact reviewed headで、reviewed headがそのauthoritative current `main`をintegration済みであり、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。current main mismatchは`BLOCKED: expected main mismatch`、behind PRは`BLOCKED: PR is behind current main; integration required`としてfail-closedする。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
 
@@ -185,7 +193,7 @@ main=<expected/current authoritative main>
 merge_method=MERGE
 ```
 
-`nuinui doctor --full`、`transition-audit`、`context-check`はread-only。checkout mutation、cleanup、process stop、Issue selection、Linear/GitHub update、merge判断を行わない。
+`nuinui doctor --full`、`transition-audit`、`context-check`、`context-audit`、`context-dev-audit`はread-only。`context-sync`はexpected-main tree artifactを検証したff-only mutation、`context-dev-transition`はexact old-stateを再検証したordinary detach/switch + create/switchだけを行う。これらはcleanup、process stop、Issue selection、Linear/GitHub update、merge判断を行わず、one-time worktree migrationやgeneric worktree cleanupもcommand surfaceに含めない。
 
 ## Human Manual E2E preparation helper
 
