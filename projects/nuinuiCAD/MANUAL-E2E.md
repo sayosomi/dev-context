@@ -479,7 +479,7 @@ unit FAIL?
   ↓
 runnable units complete or Human stops / pauses
   ↓
-aggregate PASS / FAIL / BLOCKED evidence
+aggregate PASS / FAIL candidate / BLOCKED evidence
   ↓
 FAIL candidate present?
   YES -> mandatory Human actual-host focused triage
