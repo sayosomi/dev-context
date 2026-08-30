@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
@@ -13,8 +13,8 @@ Usage:
   nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
   nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
   nuinui-e2e-prepare status
-  nuinui-e2e-prepare closure-check <SAY-123>
   nuinui-e2e-prepare cleanup
+  nuinui-e2e-prepare closure-check <SAY-123>
 
 Purpose:
   Prepare a deterministic Human Manual E2E environment in the dedicated e2e
@@ -22,7 +22,16 @@ Purpose:
   processes.
 
 The tested ref and e2e marker must already be fixed by the E2E lane helper.
-Run cleanup before releasing the E2E lane.
+
+Successful Human E2E closure is:
+  1. nuinui-e2e-prepare cleanup
+  2. nuinui e2e-release
+  3. nuinui-e2e-prepare closure-check <Issue>
+
+cleanup removes the prepared session's owned process, temporary root, handoff,
+and session metadata, but intentionally preserves the tested same-Issue marker.
+The marker is removed by nuinui e2e-release; closure-check is a post-release
+final read-only gate only.
 EOF
 }
 

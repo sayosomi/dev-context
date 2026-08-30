@@ -364,7 +364,19 @@ E2E中にremote `main`が進んでもtested stateを途中更新しない。
 
 ### e2e release
 
-host / fixture cleanupを完了し、cleanを確認してlatest `origin/main` detached HEADへ戻し、最後にmarkerを削除する。
+Canonicalなsuccessful Human E2E closure handoffは、必ず次の順序で行う。
+
+```text
+nuinui-e2e-prepare cleanup
+nuinui e2e-release
+nuinui-e2e-prepare closure-check <Issue>
+```
+
+`cleanup`はprepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
+
+`e2e-release`はmarkerの存在とsession metadataの不在をpreconditionとして要求し、cleanを確認してcurrent authoritative `origin/main` detached HEADへ安全に戻した後、markerを削除する。
+
+`nuinui-e2e-prepare closure-check <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
 
 `nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
 

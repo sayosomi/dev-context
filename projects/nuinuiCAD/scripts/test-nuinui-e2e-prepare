@@ -203,6 +203,24 @@ if find "$temp_parent" -type d -name 'nuinui-vscode-e2e.*' -prune -print 2>/dev/
   fail "cleanup retained an E2E root"
 fi
 
+echo "TEST: cleanup removes owned artifacts and preserves the tested marker"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "second prepare"
+[[ -f "$session" ]] || fail "second session metadata missing"
+handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+[[ -f "$handoff" ]] || fail "second handoff missing"
+root="$(sed -n 's/^root=//p' "$session")"
+[[ -d "$root" ]] || fail "second E2E root missing"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup >/dev/null || fail "second cleanup"
+[[ ! -e "$session" ]] || fail "second session metadata retained"
+[[ ! -e "$handoff" ]] || fail "second handoff retained"
+[[ ! -e "$root" ]] || fail "second E2E root retained"
+[[ -f "$marker" ]] || fail "cleanup removed the tested marker"
+if status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-999 2>&1)"; then
+  fail "closure-check accepted the same-Issue marker after cleanup"
+fi
+print -r -- "$status_out" | grep -Fq 'marker=BLOCKING-SAME-ISSUE' \
+  || fail "closure-check did not report the preserved same-Issue marker"
+
 echo "TEST: status blocks malformed session without mutation"
 printf 'issue=SAY-999\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=1\n' \
   "$tested_ref" "$TEST_ROOT/not-owned" "$temp_parent/nuinui-SAY-999-human-e2e.env" > "$session"
