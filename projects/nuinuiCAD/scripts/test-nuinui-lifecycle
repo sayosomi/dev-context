@@ -16,6 +16,18 @@ E2E_CLOSURE_TMPDIR="$ROOT/e2e-closure-tmp"
 
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
+assert_preflight_boundary() {
+  preflight_boundary_output=$1
+  preflight_boundary_marker=$2
+  [ "$(printf '%s\n' "$preflight_boundary_output" | sed -n '1p')" = '===== NUINUI PREFLIGHT RESULT =====' ] || {
+    printf '%s\n' "$preflight_boundary_output"
+    fail "preflight output did not begin with the fixed header"
+  }
+  [ "$(printf '%s\n' "$preflight_boundary_output" | tail -n 1)" = "$preflight_boundary_marker" ] || {
+    printf '%s\n' "$preflight_boundary_output"
+    fail "preflight output did not end with $preflight_boundary_marker"
+  }
+}
 gitdir() { git -C "$1" rev-parse --absolute-git-dir; }
 slot_state() { printf '%s/nuinui-implementation-slot/state\n' "$(gitdir "$1")"; }
 read_optional_file() { if [ -e "$1" ]; then cat "$1"; else echo absent; fi; }
@@ -457,6 +469,28 @@ export NUINUI_E2E_WT="$E2E"
 "$HELPER" lane-init sub >/dev/null
 BASE="$(git -C "$MAIN" rev-parse origin/main)"
 ALTERNATE_BASE="$(git -C "$SEED" commit-tree "$(git -C "$SEED" rev-parse HEAD^{tree})" -p "$BASE" -m 'alternate begin base')"
+
+PREFLIGHT_PASS_OUTPUT=$("$HELPER" preflight)
+assert_preflight_boundary "$PREFLIGHT_PASS_OUTPUT" 'PREFLIGHT PASS'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^main path=' 'PASS preflight missing main diagnostics'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^sub path=' 'PASS preflight missing sub diagnostics'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^e2e path=' 'PASS preflight missing e2e diagnostics'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^worktrees:$' 'PASS preflight missing worktree diagnostics'
+echo 'PASS: public preflight PASS has fixed result boundary'
+
+printf 'blocked preflight\n' > "$E2E/preflight-blocked"
+if PREFLIGHT_BLOCKED_OUTPUT=$("$HELPER" preflight 2>&1); then
+  printf '%s\n' "$PREFLIGHT_BLOCKED_OUTPUT"
+  fail 'blocked public preflight unexpectedly succeeded'
+else
+  PREFLIGHT_BLOCKED_RC=$?
+fi
+[ "$PREFLIGHT_BLOCKED_RC" -ne 0 ] || fail 'blocked public preflight returned zero'
+assert_preflight_boundary "$PREFLIGHT_BLOCKED_OUTPUT" 'PREFLIGHT BLOCKED'
+assert_line "$PREFLIGHT_BLOCKED_OUTPUT" '^e2e path=' 'BLOCKED preflight missing e2e diagnostics'
+assert_line "$PREFLIGHT_BLOCKED_OUTPUT" '^  clean=no marker=none$' 'BLOCKED preflight missing invalid e2e diagnostic'
+echo 'PASS: public preflight BLOCKED has fixed result boundary'
+rm "$E2E/preflight-blocked"
 
 E2E_MARKER="$(gitdir "$E2E")/nuinui-slot"
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'E2E setup is not detached'
