@@ -55,7 +55,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.4`。
+current standalone helper version: `1.6.5`。
 
 development sourceはresponsibility-separatedで、次のexplicit deterministic assemblyからstandalone artifactを作る。
 
