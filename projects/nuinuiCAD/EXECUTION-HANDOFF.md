@@ -47,6 +47,8 @@ Issue: SAY-123
 Slice: <current slice>
 Phase: implementation | integration | blocking-fix
 Lane: main | sub
+Branch: <exact durable claimed branch>
+Base: <exact claimed Base>
 Claim: <exact durable claim from fresh lane evidence>
 Checkpoint: <exact current lane HEAD expected at handoff>
 Current remote main: <fresh exact SHA>
@@ -57,6 +59,16 @@ Topic remote mode: absent | exact
 
 - `absent`: `nuinui begin`（または低レベル`nuinui start`）直後のfresh unpushed branch。remote topicが存在したらBLOCKする。
 - `exact`: remote保存済みimplementation / integration / blocking-fix continuation。remote topic HEADがCheckpointとexact一致しなければBLOCKする。
+
+`Topic remote mode: exact`の場合、current execution envelopeへChatGPTが次の2つのexact prefilled commandを置く。
+
+```text
+Handoff command:
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-handoff-check <lane> <Issue> <Claim> <Checkpoint> <Current remote main> exact
+
+Recovery command:
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui resume <lane> <Issue> <Base> <Checkpoint> <Branch> <Claim>
+```
 
 Envelopeへolder slice branch / SHA / claimをhistoryとして併記しない。
 
@@ -96,7 +108,31 @@ HANDOFF VERIFIED
 
 ## Failure handling
 
-Helperが`BLOCKED:`を返した場合、Lunaはrepository mutationへ進まない。
+Generic defaultはhard-stopである。Helperが`BLOCKED:`または`ERROR:`を返した場合、Lunaはrepository mutationへ進まない。
+
+唯一のautomatic recovery exceptionは、`Topic remote mode: exact`のpushed-checkpoint continuationで、initial exact handoff-checkがnonzero終了し、first output lineがexactly次の場合だけである。
+
+```text
+BLOCKED: handoff claimed branch mismatch
+```
+
+この場合だけ、envelopeにあるexact prefilled `Recovery command`を1回実行する。resume outputは次のcanonical envelopeを完全に返さなければならない。
+
+```text
+IMPLEMENTATION RESUMED
+lane=<lane>
+issue=<Issue>
+branch=<Branch>
+base=<Base>
+checkpoint=<Checkpoint>
+claim=<Claim>
+clean=yes
+state=BUSY
+```
+
+canonical evidenceの後、最初に渡したexact `Handoff command`をargument変更なしで再実行する。second handoff outputが`HANDOFF VERIFIED`で始まる場合だけrepository operationを続行する。resumeが失敗、evidenceがmissing / noncanonical、またはsecond handoffが失敗した場合は停止し、recoveryをretryしない。
+
+`CALLER_EXPECTED` / `ACTUAL` diagnosticsは、LunaがBranch、Base、Issue、Claim、Checkpoint、Current remote main、またはreplacement commandをsubstituteするauthorizationではない。identity valueとcommandはsession contextやrepository historyから推測・再生成しない。`absent` modeにはこのautomatic recoveryを適用しない。
 
 Current envelopeと異なるolder branch / SHA / claimをLuna自身がexpectedとして持っていたことが判明した場合は`STALE_EXECUTION_CONTEXT`として報告する。actual checkoutをold expectedへ合わせるrepairはしない。
 
@@ -111,7 +147,7 @@ New sessionでもReuseでも、current-run Execution Envelopeとmechanical hando
 ## Human / ChatGPT ordering
 
 - New slice: ChatGPTがfresh remote / Linear occupancy / parallel-admission decisionからtarget FREE lane、Base、branch、expected peerを決める -> Humanが`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`を1回実行 -> complete `IMPLEMENTATION STARTED` envelopeを確認 -> existing Linear checkpoint ruleを完了 -> `absent` handoffを生成。
-- Same active durable generation continuation: last verified lifecycle envelopeまたはcurrent Linear checkpointからclaim / checkpointをcaller expectationとして渡す -> Human preflightなしでLunaが最初に`nuinui-handoff-check`を実行 -> actual local durable claim / checkout / remote stateとのmatch後に`exact` handoffを続行する。
+- Same active durable generation continuation: last verified lifecycle envelopeまたはcurrent Linear checkpointからBranch / Base / Claim / Checkpointをcaller expectationとして渡す -> Human preflightなしでLunaが最初にexact prefilled `nuinui-handoff-check`を実行 -> first lineが`BLOCKED: handoff claimed branch mismatch`でmodeが`exact`の場合だけ、exact prefilled resumeを1回実行してcanonical `IMPLEMENTATION RESUMED`を確認し、同じhandoffを再実行する -> `HANDOFF VERIFIED`後に続行する。それ以外のfailureは[`CHECKOUTS.md`](./CHECKOUTS.md)へroutingする。
 - Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。`nuinui-handoff-check`がactual local evidenceを再検証する。
 - Blocking fix continuation: pushed reviewed/fix checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。blocking fixだけを理由にHuman preflightへ戻さない。
 - Chat rotation: rotation aloneではpreflightを要求しない。current Issue / lane / generation / checkpointをdurable external stateから復元できる場合は、caller expectationを構成して`nuinui-handoff-check`へ進む。

@@ -177,7 +177,7 @@ implementation slice開始時は、ChatGPTがfresh remote state、Linear current
 - 両方BUSY →新しいimplementationは開始しない;
 - `e2e`はimplementationへ使わない。
 
-same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけでは3-lane preflightへ戻らない。current claim / checkpointをcaller expectationとしてLunaの [`nuinui-handoff-check`](./EXECUTION-HANDOFF.md) に渡し、actual local stateをそこで機械的に検証する。`begin`、`resume`、`release`、handoff-checkのBLOCKED、crash suspicion、unexpected local state、identity不明、explicit diagnosis / recoveryだけがseparate preflightのrouting conditionである。
+same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけでは3-lane preflightへ戻らない。current Branch / Base / Claim / Checkpointをcaller expectationとしてLunaの [`nuinui-handoff-check`](./EXECUTION-HANDOFF.md) に渡し、actual local stateをそこで機械的に検証する。exact pushed-checkpoint continuationでfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に使ってよい。canonical `IMPLEMENTATION RESUMED`とexact original handoff rerunの`HANDOFF VERIFIED`が揃わなければ、または別classificationのhandoff-check `BLOCKED`であれば、separate Human preflightへ戻る。`begin`、`resume`、`release`、このIssue #84 exception外のhandoff-check `BLOCKED`、crash suspicion、unexpected local state、identity不明、explicit diagnosis / recoveryだけがseparate preflightのrouting conditionである。`absent` modeにはautomatic recoveryを適用しない。
 
 2 laneを超えるparallelismをIssue / branch / worktree追加で表現しない。2 laneを常時使用することも目標にしない。
 

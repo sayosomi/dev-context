@@ -49,7 +49,7 @@ versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>
 ```
 
-ChatGPTがactual local inventoryを知らず、begin / resume / release / handoff-checkがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。
+ChatGPTがactual local inventoryを知らず、begin / resume / release / handoff-checkがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。ただし、exact pushed-checkpoint Luna handoffのinitial failureのfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に実行する。
 
 ```bash
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui preflight
@@ -65,10 +65,15 @@ Separate preflightを使う条件は次に限定する。
 
 - Coordinatorがcurrent lane occupancyを知らず、Workのselect / route前にinventoryが必要;
 - current execution identityを一意に再構成できない;
-- `begin`、`resume`、`release`、または`nuinui-handoff-check`が`BLOCKED`を返した;
+- `begin`、`resume`、`release`、またはIssue #84 exception外の`nuinui-handoff-check`が`BLOCKED`を返した;
 - crash / interrupted lifecycle operationが疑われる;
 - unexpected checkout、branch、dirty stateが報告された;
 - explicit recovery / diagnosisが必要。
+
+For an exact pushed-checkpoint Luna handoff whose first handoff failure is exactly
+`BLOCKED: handoff claimed branch mismatch`, EXECUTION-HANDOFF.md's one-attempt exact resume recovery runs first.
+
+Human preflight is not required if resume returns the canonical `IMPLEMENTATION RESUMED` envelope and the exact original handoff-check rerun returns `HANDOFF VERIFIED`. Route to the normal BLOCKED / preflight path if the initial failure has any other classification, the one recovery attempt fails or returns ambiguous evidence, or the second handoff-check fails. This exception does not apply to `absent` topic mode.
 
 same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側のGitHub checkとLuna handoff-check inputとして別に扱う。
 
