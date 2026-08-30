@@ -101,7 +101,6 @@ e2e.sh
 
 context-sync.sh
   context-sync / local dev-context state diagnostics
-
 diagnostics.sh
   doctor / transition-audit / context-check
 
@@ -194,7 +193,7 @@ nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
 nuinui-e2e-prepare status
 nuinui-e2e-prepare cleanup
-nuinui-e2e-prepare closure-check <SAY-123>  # post-release final gate only
+nuinui-e2e-prepare closure-check <SAY-123>
 ```
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。
