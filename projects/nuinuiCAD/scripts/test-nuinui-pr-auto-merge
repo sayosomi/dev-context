@@ -260,6 +260,16 @@ fail() { echo "SELFTEST FAIL: $*" >&2; exit 1; }
 assert_contains() {
   printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
 }
+assert_success_envelope() {
+  name=$1
+  actual=$2
+  expected=$(printf 'AUTO-MERGE RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE' \
+    "$PR_NUMBER" "$HEAD" "$MAIN")
+  if [ "$actual" != "$expected" ]; then
+    printf '%s\n' "$actual"
+    fail "$name success envelope mismatch"
+  fi
+}
 assert_first_line_classified() {
   first=$(printf '%s\n' "$1" | sed -n '1p')
   case "$first" in
@@ -328,6 +338,7 @@ run_success() {
     fail "$name unexpectedly failed with exit $rc"
   fi
   [ "$rc" -eq 0 ] || fail "$name did not return zero"
+  assert_success_envelope "$name" "$output"
   assert_contains "$output" 'AUTO-MERGE RESERVED' "$name did not report reservation"
   assert_no_direct_merge "$CASE_ROOT/ops" "$name"
   [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name did not invoke exactly one GraphQL mutation"
@@ -355,6 +366,7 @@ run_fallback_pending() {
     fail "$name unexpectedly failed with exit $rc"
   fi
   [ "$rc" -eq 0 ] || fail "$name did not return zero"
+  assert_success_envelope "$name" "$output"
   assert_contains "$output" 'AUTO-MERGE RESERVED' "$name did not report reservation"
   assert_no_direct_merge "$CASE_ROOT/ops" "$name"
   [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name did not invoke exactly one GraphQL mutation"

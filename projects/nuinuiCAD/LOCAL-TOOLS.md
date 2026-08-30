@@ -110,6 +110,16 @@ visible required checksは`gh pr checks --required`のmachine-readable stdoutだ
 
 operationalなnonzero exitはHuman-visibleに分類する。証明できたfail-closed state / precondition mismatchは`BLOCKED:`、GitHub / API / auth / tool execution failureやreservation stateを判定できない場合は`ERROR:`で返す。mutation直前にpreconditionを再確認し、GraphQL `enablePullRequestAutoMerge`へ`mergeMethod=MERGE`と`expectedHeadOid`を渡す。initial check通過後のpre-mutation state transitionは`BLOCKED: Auto-merge reservation precondition changed before mutation`と具体的な現在理由を返してfail-closedし、mutationしない。GraphQL mutation raceはmutationをretryせず、fresh read-only diagnosisを最大1回だけ行い、direct mergeへfallbackしない。mutation後はsame PR / head / expected main / OPEN / `autoMergeRequest.mergeMethod=MERGE`をread-backして成功扱いする。
 
+成功時のstable output contractは次の5行である。これは既存のpost-mutation read-backがexact reservation identityを証明した後だけemitする。
+
+```text
+AUTO-MERGE RESERVED
+pr=<number>
+head=<exact reviewed head>
+main=<expected/current authoritative main>
+merge_method=MERGE
+```
+
 `nuinui doctor --full`、`transition-audit`、`context-check`はread-only。checkout mutation、cleanup、process stop、Issue selection、Linear/GitHub update、merge判断を行わない。
 
 ## Human Manual E2E preparation helper

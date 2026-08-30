@@ -599,7 +599,12 @@ printf 'expected_pr_id=%s\nexpected_state=OPEN\nexpected_draft=false\nexpected_b
 printf 'observed_pr_id=%s\nobserved_state=%s\nobserved_draft=%s\nobserved_base=%s\nobserved_base_oid=%s\nobserved_head=%s\nobserved_merge_method=%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$8" >&2
 rm -f "$d";return 1
 fi
-rm -f "$d";echo 'AUTO-MERGE RESERVED'
+rm -f "$d"
+printf '%s\n' 'AUTO-MERGE RESERVED'
+printf 'pr=%s\n' "$p"
+printf 'head=%s\n' "$h"
+printf 'main=%s\n' "$m"
+printf 'merge_method=MERGE\n'
 }
 # Lifecycle façade. Public lifecycle commands call the canonical low-level
 # state and mutation owners assembled earlier in this standalone artifact.
