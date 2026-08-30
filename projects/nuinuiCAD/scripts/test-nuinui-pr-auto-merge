@@ -35,7 +35,16 @@ fake_gh() {
         ;;
       main-mismatch)
         actual_head=$HEAD
-        actual_main=8888888888888888888888888888888888888888
+        actual_main=$BASE_EVIDENCE
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
+      pr-behind-current-main|up-to-date-pending|main-advances-before-mutation)
+        actual_head=$HEAD
+        actual_main=$BASE_EVIDENCE
         state=OPEN
         draft=false
         base=main
@@ -69,7 +78,7 @@ fake_gh() {
         mergeability=MERGEABLE
         auto=none
         ;;
-      mutation-error|readback-fails|success)
+      mutation-error|readback-fails|success|up-to-date-pending)
         actual_head=$HEAD
         actual_main=$MAIN
         state=OPEN
@@ -96,7 +105,7 @@ fake_gh() {
       :
     elif [ "$scenario" = mutation-race ] && [ -f "$root/mutation-complete" ]; then
       :
-    elif { [ "$scenario" = success ] || [ "$scenario" = empty-actions-pending ]; } && [ "$n" -ge 3 ]; then
+    elif { [ "$scenario" = success ] || [ "$scenario" = up-to-date-pending ] || [ "$scenario" = empty-actions-pending ]; } && [ "$n" -ge 3 ]; then
       auto=MERGE
     elif [ "$scenario" = readback-fails ] && [ "$n" -ge 3 ]; then
       echo 'fake gh: read-back API unavailable' >&2
@@ -126,7 +135,7 @@ fake_gh() {
           printf 'CI\tpending\n'
         fi
         ;;
-      mutation-error|success|readback-fails)
+      mutation-error|success|up-to-date-pending|main-advances-before-mutation|readback-fails)
         printf 'CI\tpending\n'
         ;;
       failure-failure|failure-cancelled|failure-skipped|failure-unknown)
@@ -146,6 +155,38 @@ fake_gh() {
         ;;
     esac
     return 0
+  fi
+
+  if [ "$1" = api ]; then
+    api_endpoint=$2
+    case "$api_endpoint" in
+      repos/sayosomi/nuinuiCAD/commits/main)
+        n=$(next_count current-main)
+        case "$scenario" in
+          main-mismatch) printf '8888888888888888888888888888888888888888\n' ;;
+          main-advances-before-mutation)
+            if [ "$n" = 1 ]; then
+              printf '%s\n' "$MAIN"
+            else
+              printf '%s\n' "$ADVANCED_MAIN"
+            fi
+            ;;
+          *) printf '%s\n' "$MAIN" ;;
+        esac
+        return 0
+        ;;
+      repos/sayosomi/nuinuiCAD/compare/*)
+        case "$scenario" in
+          pr-behind-current-main)
+            printf 'behind\t%s\t%s\t0\t1\n' "$MAIN" "$BASE_EVIDENCE"
+            ;;
+          *)
+            printf 'ahead\t%s\t%s\t1\t0\n' "$MAIN" "$MAIN"
+            ;;
+        esac
+        return 0
+        ;;
+    esac
   fi
 
   if [ "$1" = api ]; then
@@ -220,7 +261,7 @@ fake_gh() {
         echo 'fake gh: reservation mutation unavailable' >&2
         return 48
         ;;
-      success|readback-fails|empty-actions-pending)
+      success|up-to-date-pending|readback-fails|empty-actions-pending)
         printf '{"data":{"enablePullRequestAutoMerge":{"clientMutationId":"fake"}}}\n'
         return 0
         ;;
@@ -255,6 +296,8 @@ trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 PR_NUMBER=417
 HEAD=1111111111111111111111111111111111111111
 MAIN=2222222222222222222222222222222222222222
+ADVANCED_MAIN=3333333333333333333333333333333333333333
+BASE_EVIDENCE=4444444444444444444444444444444444444444
 
 fail() { echo "SELFTEST FAIL: $*" >&2; exit 1; }
 assert_contains() {
@@ -304,6 +347,7 @@ run_failure() {
   prepare_case "$scenario"
   if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
     FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
     "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
     printf '%s\n' "$output"
     fail "$name unexpectedly succeeded"
@@ -330,6 +374,7 @@ run_success() {
   prepare_case "$scenario"
   if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
     FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
     "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
     rc=0
   else
@@ -358,6 +403,7 @@ run_fallback_pending() {
   prepare_case "$scenario"
   if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
     FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
     "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
     rc=0
   else
@@ -410,8 +456,26 @@ assert_contains "$(cat "$ROOT/head-mismatch/ops")" 'pr view' 'head mismatch did 
 
 run_failure 'expected main mismatch' main-mismatch \
   "expected_main=$MAIN"
-assert_contains "$output" 'actual_base_oid=8888888888888888888888888888888888888888' 'main mismatch did not expose actual base OID'
+assert_contains "$output" 'actual_main=8888888888888888888888888888888888888888' 'main mismatch did not expose authoritative current main'
 assert_contains "$(cat "$ROOT/main-mismatch/ops")" 'pr view' 'main mismatch did not inspect the PR'
+assert_contains "$(cat "$ROOT/main-mismatch/ops")" 'repos/sayosomi/nuinuiCAD/commits/main' 'main mismatch did not fetch authoritative current main'
+assert_no_graphql "$ROOT/main-mismatch/ops" 'expected main mismatch'
+
+run_failure 'PR behind current main' pr-behind-current-main \
+  'BLOCKED: PR is behind current main; integration required'
+assert_contains "$output" "expected_main=$MAIN" 'behind PR did not expose expected main'
+assert_contains "$output" "reviewed_head=$HEAD" 'behind PR did not expose reviewed head'
+assert_contains "$output" "integrated_base=$BASE_EVIDENCE" 'behind PR did not expose integrated base evidence'
+assert_contains "$(cat "$ROOT/pr-behind-current-main/ops")" 'repos/sayosomi/nuinuiCAD/compare/' 'behind PR did not inspect integration'
+assert_no_graphql "$ROOT/pr-behind-current-main/ops" 'PR behind current main'
+
+run_success 'up-to-date PR with pending required checks' up-to-date-pending
+
+run_failure 'main advances before mutation' main-advances-before-mutation \
+  'BLOCKED: Auto-merge reservation precondition changed before mutation'
+assert_contains "$output" "actual_main=$ADVANCED_MAIN" 'main advance did not expose fresh main'
+assert_contains "$(cat "$ROOT/main-advances-before-mutation/ops")" 'repos/sayosomi/nuinuiCAD/commits/main' 'main advance did not refetch authoritative current main'
+assert_no_graphql "$ROOT/main-advances-before-mutation/ops" 'main advances before mutation'
 
 run_failure 'GitHub PR lookup failure' api-error \
   'ERROR: PR lookup/API failure'

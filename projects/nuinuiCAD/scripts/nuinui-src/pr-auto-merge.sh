@@ -1,6 +1,6 @@
 pd(){ printf '%s\n' "$*" >&2; }
 pdetail(){ [ -n "$1" ] && printf 'detail=%s\n' "$1" >&2; }
-pa(){ local p h m s c z b q check_out check_err check_rc;
+pa(){ local p h m s c z b q check_out check_err check_rc actual_main integration integration_status integrated_base compare_base merge_base ahead_by behind_by;
 p=$1;h=$2;m=$3
 echo "$p"|grep -Eq '^[1-9][0-9]*$'&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_sha "$m"||return 2
 s=$(ps "$p" 2>&1);z=$?
@@ -11,10 +11,25 @@ if [ "$#" != 9 ];then pd 'ERROR: PR lookup returned invalid data';pdetail "$s";r
 if [ "$2" != OPEN ];then pd 'BLOCKED: PR is not OPEN';printf 'state=%s\n' "$2" >&2;return 1;fi
 if [ "$3" != false ];then pd 'BLOCKED: PR is a draft';return 1;fi
 if [ "$4" != main ];then pd 'BLOCKED: PR base branch mismatch';printf 'expected_base=main\nactual_base=%s\n' "$4" >&2;return 1;fi
-if [ "$5" != "$m" ];then pd 'BLOCKED: expected main mismatch';printf 'expected_main=%s\nactual_base_oid=%s\n' "$m" "$5" >&2;return 1;fi
 if [ "$6" != "$h" ];then pd 'BLOCKED: reviewed head mismatch';printf 'expected_head=%s\nactual_head=%s\n' "$h" "$6" >&2;return 1;fi
 if [ "$7" != MERGEABLE ];then pd 'BLOCKED: PR mergeability is not acceptable or is ambiguous';printf 'mergeability=%s\n' "$7" >&2;return 1;fi
 if [ "$8" != none ];then pd 'BLOCKED: Auto-merge already configured';printf 'method=%s\n' "$8" >&2;return 1;fi
+integrated_base=$5
+actual_main=$(cm 2>&1);z=$?
+if [ "$z" != 0 ]||! nuinui_ownership_valid_sha "$actual_main";then pd 'ERROR: current main lookup/API failure';[ -n "$actual_main" ]&&pdetail "$actual_main";return 1;fi
+if [ "$actual_main" != "$m" ];then pd 'BLOCKED: expected main mismatch';printf 'expected_main=%s\nactual_main=%s\n' "$m" "$actual_main" >&2;return 1;fi
+integration=$(ci "$m" "$h" 2>&1);z=$?
+if [ "$z" != 0 ];then pd 'ERROR: PR integration lookup/API failure';[ -n "$integration" ]&&pdetail "$integration";return 1;fi
+set -- $integration
+if [ "$#" != 5 ]||! nuinui_ownership_valid_sha "$2"||! nuinui_ownership_valid_sha "$3";then pd 'ERROR: PR integration lookup returned invalid data';pdetail "$integration";return 1;fi
+integration_status=$1;compare_base=$2;merge_base=$3;ahead_by=$4;behind_by=$5
+case "$ahead_by" in ''|*[!0-9]*) pd 'ERROR: PR integration lookup returned invalid data';pdetail "$integration";return 1;; esac
+case "$behind_by" in ''|*[!0-9]*) pd 'ERROR: PR integration lookup returned invalid data';pdetail "$integration";return 1;; esac
+if { [ "$integration_status" != ahead ]&&[ "$integration_status" != identical ]; }||[ "$compare_base" != "$m" ]||[ "$merge_base" != "$m" ]||[ "$behind_by" != 0 ];then
+  pd 'BLOCKED: PR is behind current main; integration required'
+  printf 'expected_main=%s\nreviewed_head=%s\nintegrated_base=%s\n' "$m" "$h" "$integrated_base" >&2
+  return 1
+fi
 check_out=$(mktemp /tmp/nuinui-pr-checks.XXXXXX 2>&1);z=$?
 if [ "$z" != 0 ];then
   pd 'ERROR: unable to capture required-check output'
@@ -122,11 +137,22 @@ s=$(ps "$p" 2>"$d");z=$?
 if [ "$z" != 0 ];then pd 'ERROR: Auto-merge reservation state could not be verified';[ -s "$d" ]&&{ pd 'read_back_detail:';cat "$d" >&2;};rm -f "$d";return 1;fi
 set -- $s
 if [ "$#" != 9 ];then pd 'ERROR: Auto-merge reservation read-back returned invalid PR data';pdetail "$s";rm -f "$d";return 1;fi
-if [ "$1" != "$i" ]||[ "$2" != OPEN ]||[ "$3" != false ]||[ "$4" != main ]||[ "$5" != "$m" ]||[ "$6" != "$h" ]||[ "$8" != MERGE ];then
+if [ "$1" != "$i" ]||[ "$2" != OPEN ]||[ "$3" != false ]||[ "$4" != main ]||[ "$6" != "$h" ]||[ "$8" != MERGE ];then
 pd 'BLOCKED: Auto-merge reservation read-back mismatch'
 printf 'expected_pr_id=%s\nexpected_state=OPEN\nexpected_draft=false\nexpected_base=main\nexpected_main=%s\nexpected_head=%s\nexpected_merge_method=MERGE\n' "$i" "$m" "$h" >&2
 printf 'observed_pr_id=%s\nobserved_state=%s\nobserved_draft=%s\nobserved_base=%s\nobserved_base_oid=%s\nobserved_head=%s\nobserved_merge_method=%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$8" >&2
 rm -f "$d";return 1
+fi
+actual_main=$(cm 2>&1);z=$?
+if [ "$z" != 0 ]||! nuinui_ownership_valid_sha "$actual_main";then
+  pd 'ERROR: authoritative current main read-back failed'
+  [ -n "$actual_main" ]&&pdetail "$actual_main"
+  rm -f "$d";return 1
+fi
+if [ "$actual_main" != "$m" ];then
+  pd 'BLOCKED: Auto-merge reservation read-back main mismatch'
+  printf 'expected_main=%s\nactual_main=%s\n' "$m" "$actual_main" >&2
+  rm -f "$d";return 1
 fi
 rm -f "$d"
 printf '%s\n' 'AUTO-MERGE RESERVED'
