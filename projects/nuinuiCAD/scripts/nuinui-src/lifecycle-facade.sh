@@ -151,6 +151,22 @@ lifecycle_prove_busy_retry() {
   return 1
 }
 
+lifecycle_prove_begin_duplicate() {
+  local lane issue branch base peer expected_peer
+  lane=$1
+  issue=$2
+  branch=$3
+  base=$4
+  peer=$5
+  expected_peer=$6
+
+  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base" || return 1
+  lifecycle_preflight || return 1
+  lifecycle_expect_lane "$lane" "$issue" || return 1
+  lifecycle_expect_lane "$peer" "$expected_peer" || return 1
+  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base"
+}
+
 lifecycle_prove_idle() {
   local lane repo git_dir head origin branch clean
   lane=$1
@@ -251,11 +267,24 @@ lifecycle_begin() {
     echo 'BLOCKED: begin fixed-lane preflight failed'
     return 1
   }
-  lifecycle_expect_lane "$lane" FREE || {
+  if ! lifecycle_expect_lane "$lane" FREE; then
+    if [ "$(lifecycle_lane_state "$lane")" = BUSY ] &&
+      lifecycle_prove_begin_duplicate "$lane" "$issue" "$branch" "$base" "$peer" "$expected_peer"; then
+      lifecycle_begin_peer_state=$(lifecycle_lane_state "$peer")
+      lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$peer")
+      lifecycle_emit_busy_envelope 'IMPLEMENTATION ALREADY STARTED' "$lane"
+      printf 'peer_lane=%s\n' "$peer"
+      printf 'peer_state=%s\n' "$lifecycle_begin_peer_state"
+      peer_issue=$lifecycle_begin_peer_issue
+      [ -n "$peer_issue" ] || peer_issue=-
+      printf 'peer_issue=%s\n' "$peer_issue"
+      printf 'mutation=no-op\npreflight=PASS\n'
+      return 0
+    fi
     lifecycle_blocked_occupancy 'target lane is not FREE' "$lane" FREE "$peer" \
       "$(lifecycle_lane_state "$lane")" "$(lifecycle_lane_issue "$lane")"
     return 1
-  }
+  fi
   lifecycle_expect_lane "$peer" "$expected_peer" || {
     lifecycle_blocked_occupancy 'peer occupancy does not match caller expectation' "$lane" \
       "$expected_peer" "$peer" "$(lifecycle_lane_state "$peer")" \

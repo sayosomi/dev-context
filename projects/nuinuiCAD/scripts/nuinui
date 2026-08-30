@@ -141,7 +141,7 @@ nuinui_ownership_parse_releasing() {
   [ "${nuinui_ownership_releasing_dir##*/}" = "nuinui-implementation-slot.releasing.$4" ] || return 1
   printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$nuinui_ownership_releasing_checkpoint"
 }
-V=1.6.7;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
+V=1.6.8;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then M=${NUINUI_MAIN_WT:?};S=${NUINUI_SUB_WT:?};E=${NUINUI_E2E_WT:?};C=${NUINUI_DEV_CONTEXT_WT:-};RT=;CT=;else M=/Users/yosomi/Code/nuinuiCAD;S=/Users/yosomi/Code/nuinuiCAD-sub;E=/Users/yosomi/Code/nuinuiCAD-e2e;C=/Users/yosomi/Code/dev-context;RT=sayosomi/nuinuiCAD;CT=sayosomi/dev-context;fi
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then CD=${NUINUI_DEV_CONTEXT_DEV_WT:-};[ -z "${NUINUI_SELFTEST_EXPECTED_ORIGIN:-}" ]||CT=$NUINUI_SELFTEST_EXPECTED_ORIGIN;else CD=/Users/yosomi/Code/dev-context-dev;fi
 lr(){ case $1 in main)echo "$M";;sub)echo "$S";;e2e)echo "$E";;*)return 2;;esac;};il(){ case $1 in main|sub);;*)return 2;;esac;};gr(){ [ -d "$1" ]&&git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1;};ao(){ [ -z "$2" ]||git -C "$1" remote get-url origin 2>/dev/null|grep -Fq "$2";};cn(){ [ -z "$(git -C "$1" status --porcelain)" ];};bn(){ git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null||true;};hh(){ git -C "$1" rev-parse HEAD;};om(){ git -C "$1" rev-parse origin/main;};fm(){ git -C "$1" fetch origin main >/dev/null 2>&1;};fp(){ git -C "$1" fetch origin --prune >/dev/null 2>&1;};an(){ git -C "$1" merge-base --is-ancestor "$2" "$3";};sd(){ git -C "$1" switch --detach "$2" >/dev/null;};gd(){ git -C "$1" rev-parse --absolute-git-dir 2>/dev/null;};ip(){ echo "$(gd "$1")/nuinui-implementation-v1";};sp(){ echo "$(gd "$1")/nuinui-implementation-slot";};kp(){ echo "$(gd "$1")/nuinui-implementation-lock";};rp(){ echo "$(gd "$1")/nuinui-implementation-slot.releasing.$2";};rds(){ find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null|sort;};mp(){ echo "$(gd "$1")/nuinui-slot";};ep(){ echo "$(gd "$1")/nuinui-e2e-session";}
@@ -853,6 +853,22 @@ lifecycle_prove_busy_retry() {
   return 1
 }
 
+lifecycle_prove_begin_duplicate() {
+  local lane issue branch base peer expected_peer
+  lane=$1
+  issue=$2
+  branch=$3
+  base=$4
+  peer=$5
+  expected_peer=$6
+
+  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base" || return 1
+  lifecycle_preflight || return 1
+  lifecycle_expect_lane "$lane" "$issue" || return 1
+  lifecycle_expect_lane "$peer" "$expected_peer" || return 1
+  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base"
+}
+
 lifecycle_prove_idle() {
   local lane repo git_dir head origin branch clean
   lane=$1
@@ -953,11 +969,24 @@ lifecycle_begin() {
     echo 'BLOCKED: begin fixed-lane preflight failed'
     return 1
   }
-  lifecycle_expect_lane "$lane" FREE || {
+  if ! lifecycle_expect_lane "$lane" FREE; then
+    if [ "$(lifecycle_lane_state "$lane")" = BUSY ] &&
+      lifecycle_prove_begin_duplicate "$lane" "$issue" "$branch" "$base" "$peer" "$expected_peer"; then
+      lifecycle_begin_peer_state=$(lifecycle_lane_state "$peer")
+      lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$peer")
+      lifecycle_emit_busy_envelope 'IMPLEMENTATION ALREADY STARTED' "$lane"
+      printf 'peer_lane=%s\n' "$peer"
+      printf 'peer_state=%s\n' "$lifecycle_begin_peer_state"
+      peer_issue=$lifecycle_begin_peer_issue
+      [ -n "$peer_issue" ] || peer_issue=-
+      printf 'peer_issue=%s\n' "$peer_issue"
+      printf 'mutation=no-op\npreflight=PASS\n'
+      return 0
+    fi
     lifecycle_blocked_occupancy 'target lane is not FREE' "$lane" FREE "$peer" \
       "$(lifecycle_lane_state "$lane")" "$(lifecycle_lane_issue "$lane")"
     return 1
-  }
+  fi
   lifecycle_expect_lane "$peer" "$expected_peer" || {
     lifecycle_blocked_occupancy 'peer occupancy does not match caller expectation' "$lane" \
       "$expected_peer" "$peer" "$(lifecycle_lane_state "$peer")" \
