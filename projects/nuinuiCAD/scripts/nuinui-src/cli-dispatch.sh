@@ -21,32 +21,6 @@ nuinui_run_public() {
   return "$nuinui_public_rc"
 }
 
-nuinui_self_test() {
-  ( T )
-  nuinui_selftest_rc=$?
-  [ "$nuinui_selftest_rc" = 0 ] || return "$nuinui_selftest_rc"
-
-  if [ -n "$NUINUI_SELFTEST_TEST_DIR" ]; then
-    nuinui_selftest_dir=$NUINUI_SELFTEST_TEST_DIR
-  else
-    nuinui_selftest_dir=$D
-    if [ ! -f "$nuinui_selftest_dir/test-nuinui-lifecycle" ] &&
-      [ -f "$PWD/projects/nuinuiCAD/scripts/test-nuinui-lifecycle" ]; then
-      nuinui_selftest_dir=$PWD/projects/nuinuiCAD/scripts
-    fi
-  fi
-  [ -f "$nuinui_selftest_dir/test-nuinui-lifecycle" ] || {
-    echo 'SELFTEST BLOCKED: lifecycle test is missing'
-    return 1
-  }
-  [ -x "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" ] || {
-    echo 'SELFTEST BLOCKED: pr-auto-merge test is missing or not executable'
-    return 1
-  }
-  /bin/sh "$nuinui_selftest_dir/test-nuinui-lifecycle" "$P" || return $?
-  /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" "$P"
-}
-
 case "$1" in
   version)
     [ "$#" = 1 ] || { echo 'Usage: nuinui version'; exit 2; }

@@ -200,6 +200,28 @@ export NUINUI_E2E_WT="$E2E"
 "$HELPER" lane-init sub >/dev/null
 BASE="$(git -C "$MAIN" rev-parse origin/main)"
 
+E2E_MARKER="$(gitdir "$E2E")/nuinui-slot"
+[ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'E2E setup is not detached'
+[ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'E2E setup is not clean'
+[ ! -e "$E2E_MARKER" ] || fail 'E2E setup has a marker'
+E2E_TESTED_REF="$(git -C "$E2E" rev-parse origin/main)"
+[ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_TESTED_REF" ] || fail 'E2E setup is not at origin/main'
+E2E_START_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
+[ "$(printf '%s\n' "$E2E_START_OUTPUT" | tail -n 1)" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_START_OUTPUT"; fail 'normal E2E start did not return exact success output'; }
+[ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'normal E2E start attached the checkout'
+[ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_TESTED_REF" ] || fail 'normal E2E start changed the tested ref'
+[ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E start dirtied the checkout'
+[ -f "$E2E_MARKER" ] || fail 'normal E2E start did not create the marker'
+[ "$(cat "$E2E_MARKER")" = "$(printf 'issue=SAY-299\nref=%s\n' "$E2E_TESTED_REF")" ] || fail 'normal E2E start wrote the wrong marker'
+E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release)
+[ "$(printf '%s\n' "$E2E_RELEASE_OUTPUT" | tail -n 1)" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_OUTPUT"; fail 'normal E2E release did not return exact success output'; }
+[ ! -e "$E2E_MARKER" ] || fail 'normal E2E release retained the marker'
+[ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'normal E2E release attached the checkout'
+[ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E release dirtied the checkout'
+E2E_RELEASE_REF="$(git -C "$E2E" rev-parse origin/main)"
+[ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_RELEASE_REF" ] || fail 'normal E2E release did not return to origin/main'
+echo 'PASS: normal E2E start/release regression'
+
 expect_old_signature_rejected 'old claimless resume signature' resume main SAY-1 "$BASE" old-branch
 expect_old_signature_rejected 'old claimless release signature' release main "$BASE"
 
