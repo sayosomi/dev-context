@@ -67,7 +67,7 @@ Separate preflightを使う条件は次に限定する。
 - current execution identityを一意に再構成できない;
 - `begin`、`resume`、`release`、またはIssue #84 exception外の`nuinui-handoff-check`が`BLOCKED`を返した;
 - crash / interrupted lifecycle operationが疑われる;
-- unexpected checkout、branch、dirty stateが報告された;
+- unexpected checkout、branch、dirty stateが報告された。ただし、exact pushed-checkpoint Luna handoffのinitial failureがIssue #84のexact `claimed branch mismatch` classifierである場合だけは、下記one-attempt recoveryを先に適用する;
 - explicit recovery / diagnosisが必要。
 
 For an exact pushed-checkpoint Luna handoff whose first handoff failure is exactly

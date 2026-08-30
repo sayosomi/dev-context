@@ -207,7 +207,7 @@ Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、a
 
 Promptのstartup sequenceでは、Luna processのinitial cwdをlane validationに使わない。assigned lane checkoutを先にtargetし、そのcheckout上でrepository identity、branch、HEAD、clean state、remote stateを検証する。
 
-Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は変更せず停止して報告させる。
+Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は、下記 `Luna startup handoff gate` が明示する exact pushed-checkpoint `claimed branch mismatch` recoveryだけを例外とし、それ以外は変更せず停止して報告させる。
 
 ### Luna startup handoff gate
 
