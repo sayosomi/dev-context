@@ -44,6 +44,42 @@ expect_begin_blocked() {
   echo "PASS: $name"
 }
 
+expect_resume_blocked() {
+  name="$1"
+  lane="$2"
+  shift 2
+  before_branch="$(git -C "$lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  before_head="$(git -C "$lane" rev-parse HEAD)"
+  before_status="$(git -C "$lane" status --porcelain)"
+  before_refs="$(lane_refs "$MAIN")"
+  before_slot="$(if [ -f "$(slot_state "$lane")" ]; then cat "$(slot_state "$lane")"; else echo absent; fi)"
+  before_lock="$(if [ -f "$(gitdir "$lane")/nuinui-implementation-lock/state" ]; then cat "$(gitdir "$lane")/nuinui-implementation-lock/state"; else echo absent; fi)"
+  before_tombstones="$(find "$(gitdir "$lane")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)"
+  if "$HELPER" resume "$@" >"$ROOT/resume-blocked.out" 2>&1; then
+    cat "$ROOT/resume-blocked.out"
+    fail "$name unexpectedly succeeded"
+  fi
+  grep -q '^BLOCKED:' "$ROOT/resume-blocked.out" || {
+    cat "$ROOT/resume-blocked.out"
+    fail "$name did not fail closed"
+  }
+  after_branch="$(git -C "$lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  after_head="$(git -C "$lane" rev-parse HEAD)"
+  after_status="$(git -C "$lane" status --porcelain)"
+  after_refs="$(lane_refs "$MAIN")"
+  after_slot="$(if [ -f "$(slot_state "$lane")" ]; then cat "$(slot_state "$lane")"; else echo absent; fi)"
+  after_lock="$(if [ -f "$(gitdir "$lane")/nuinui-implementation-lock/state" ]; then cat "$(gitdir "$lane")/nuinui-implementation-lock/state"; else echo absent; fi)"
+  after_tombstones="$(find "$(gitdir "$lane")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)"
+  [ "$before_branch" = "$after_branch" ] || fail "$name changed branch"
+  [ "$before_head" = "$after_head" ] || fail "$name changed HEAD"
+  [ "$before_status" = "$after_status" ] || fail "$name changed working tree"
+  [ "$before_refs" = "$after_refs" ] || fail "$name changed local refs"
+  [ "$before_slot" = "$after_slot" ] || fail "$name changed durable slot"
+  [ "$before_lock" = "$after_lock" ] || fail "$name changed mutation lock"
+  [ "$before_tombstones" = "$after_tombstones" ] || fail "$name changed release-pending state"
+  echo "PASS: $name"
+}
+
 expect_old_signature_rejected() {
   name="$1"
   shift
@@ -494,6 +530,156 @@ assert_line "$RESUME5" "^claim=$CLAIM5$" 'resume missing claim'
 assert_line "$RESUME5" '^clean=yes$' 'resume missing clean state'
 assert_line "$RESUME5" '^state=BUSY$' 'resume missing BUSY state'
 "$HELPER" release sub "$CHECKPOINT5" "$CLAIM5" >/dev/null
+sync_free_lanes
+
+PREPUSH_BASE="$(git -C "$MAIN" rev-parse origin/main)"
+PREPUSH_BRANCH=sayosomi/say-216-prepush-resume
+PREPUSH_OUT=$("$HELPER" begin main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BRANCH" FREE)
+PREPUSH_CLAIM="$(printf '%s\n' "$PREPUSH_OUT" | sed -n 's/^claim=//p')"
+PREPUSH_CHECKPOINT="$(printf '%s\n' "$PREPUSH_OUT" | sed -n 's/^checkpoint=//p')"
+assert_line "$PREPUSH_OUT" '^IMPLEMENTATION STARTED$' 'pre-push begin missing header'
+assert_line "$PREPUSH_OUT" "^base=$PREPUSH_BASE$" 'pre-push begin changed Base'
+assert_line "$PREPUSH_OUT" "^checkpoint=$PREPUSH_BASE$" 'pre-push begin checkpoint is not Base'
+assert_line "$PREPUSH_OUT" '^clean=yes$' 'pre-push begin is not clean'
+PREPUSH_SLOT_BEFORE="$(cat "$(slot_state "$MAIN")")"
+if git -C "$MAIN" ls-remote --exit-code --heads origin "refs/heads/$PREPUSH_BRANCH" >"$ROOT/prepush-remote.out" 2>&1; then
+  cat "$ROOT/prepush-remote.out"
+  fail 'pre-push setup unexpectedly has a remote topic'
+else
+  PREPUSH_REMOTE_RC=$?
+fi
+[ "$PREPUSH_REMOTE_RC" = 2 ] || fail 'pre-push setup did not positively prove remote absence'
+git -C "$MAIN" switch -q main
+[ "$(cat "$(slot_state "$MAIN")")" = "$PREPUSH_SLOT_BEFORE" ] || fail 'idle transition changed pre-push durable ownership'
+
+RACE_SOURCE_BRANCH=sayosomi/say-216-remote-race-source
+git -C "$SEED" switch -q -c "$RACE_SOURCE_BRANCH"
+printf 'remote race checkpoint\n' > "$SEED/remote-race"
+git -C "$SEED" add remote-race
+git -C "$SEED" commit -qm 'remote race checkpoint'
+RACE_CHECKPOINT="$(git -C "$SEED" rev-parse HEAD)"
+git -C "$SEED" switch -q main
+RACE_BIN="$ROOT/race-bin"
+mkdir "$RACE_BIN"
+RACE_COUNTER="$ROOT/race-counter"
+printf '0\n' > "$RACE_COUNTER"
+RACE_REAL_GIT="$(command -v git)"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'case "$*" in' \
+  '  *ls-remote*"refs/heads/$RACE_GIT_BRANCH"*)' \
+  '    race_count=$(cat "$RACE_GIT_COUNTER")' \
+  '    if [ "$race_count" = 1 ]; then' \
+  '      printf "2\\n" > "$RACE_GIT_COUNTER"' \
+  '      "$RACE_GIT_REAL" -C "$RACE_GIT_SEED" push -q origin "$RACE_GIT_SOURCE:$RACE_GIT_BRANCH"' \
+  '    else' \
+  '      printf "%s\\n" "$((race_count + 1))" > "$RACE_GIT_COUNTER"' \
+  '    fi' \
+  '    ;;' \
+  'esac' \
+  'exec "$RACE_GIT_REAL" "$@"' > "$RACE_BIN/git"
+chmod 755 "$RACE_BIN/git"
+RACE_BEFORE_BRANCH="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+RACE_BEFORE_HEAD="$(git -C "$MAIN" rev-parse HEAD)"
+RACE_BEFORE_STATUS="$(git -C "$MAIN" status --porcelain)"
+RACE_BEFORE_REFS="$(lane_refs "$MAIN")"
+RACE_BEFORE_SLOT="$(cat "$(slot_state "$MAIN")")"
+if RACE_OUTPUT=$(PATH="$RACE_BIN:$PATH" \
+  RACE_GIT_REAL="$RACE_REAL_GIT" \
+  RACE_GIT_COUNTER="$RACE_COUNTER" \
+  RACE_GIT_SEED="$SEED" \
+  RACE_GIT_SOURCE="$RACE_SOURCE_BRANCH" \
+  RACE_GIT_BRANCH="$PREPUSH_BRANCH" \
+  "$HELPER" resume main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM" 2>&1); then
+  printf '%s\n' "$RACE_OUTPUT"
+  fail 'pre-push remote race unexpectedly succeeded'
+else
+  RACE_RC=$?
+fi
+[ "$RACE_RC" -ne 0 ] || fail 'pre-push remote race returned zero'
+printf '%s\n' "$RACE_OUTPUT" | grep -q '^BLOCKED:' || {
+  printf '%s\n' "$RACE_OUTPUT"
+  fail 'pre-push remote race did not fail closed'
+}
+[ "$RACE_BEFORE_BRANCH" = "$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'pre-push remote race changed branch'
+[ "$RACE_BEFORE_HEAD" = "$(git -C "$MAIN" rev-parse HEAD)" ] || fail 'pre-push remote race changed HEAD'
+[ "$RACE_BEFORE_STATUS" = "$(git -C "$MAIN" status --porcelain)" ] || fail 'pre-push remote race changed working tree'
+[ "$RACE_BEFORE_REFS" = "$(lane_refs "$MAIN")" ] || fail 'pre-push remote race changed local refs'
+[ "$RACE_BEFORE_SLOT" = "$(cat "$(slot_state "$MAIN")")" ] || fail 'pre-push remote race changed durable ownership'
+RACE_REMOTE="$(git -C "$MAIN" ls-remote --exit-code --heads origin "refs/heads/$PREPUSH_BRANCH")" || fail 'pre-push remote race did not create its test remote topic'
+RACE_REMOTE_HEAD="$(printf '%s\n' "$RACE_REMOTE" | awk 'NR == 1 {print $1}')"
+RACE_REMOTE_REF="$(printf '%s\n' "$RACE_REMOTE" | awk 'NR == 1 {print $2}')"
+[ "$RACE_REMOTE_HEAD" = "$RACE_CHECKPOINT" ] || fail 'pre-push remote race created the wrong remote checkpoint'
+[ "$RACE_REMOTE_REF" = "refs/heads/$PREPUSH_BRANCH" ] || fail 'pre-push remote race returned the wrong remote ref'
+git -C "$SEED" push -q origin ":$PREPUSH_BRANCH"
+echo 'PASS: pre-push remote race is rejected before switch'
+
+PREPUSH_RESUME=$("$HELPER" resume main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM")
+assert_line "$PREPUSH_RESUME" '^IMPLEMENTATION RESUMED$' 'pre-push resume missing header'
+assert_line "$PREPUSH_RESUME" '^lane=main$' 'pre-push resume missing lane'
+assert_line "$PREPUSH_RESUME" '^issue=SAY-216$' 'pre-push resume missing Issue'
+assert_line "$PREPUSH_RESUME" "^branch=$PREPUSH_BRANCH$" 'pre-push resume missing branch'
+assert_line "$PREPUSH_RESUME" "^base=$PREPUSH_BASE$" 'pre-push resume changed Base'
+assert_line "$PREPUSH_RESUME" "^checkpoint=$PREPUSH_BASE$" 'pre-push resume changed checkpoint'
+assert_line "$PREPUSH_RESUME" "^claim=$PREPUSH_CLAIM$" 'pre-push resume changed claim'
+assert_line "$PREPUSH_RESUME" '^clean=yes$' 'pre-push resume missing clean state'
+assert_line "$PREPUSH_RESUME" '^state=BUSY$' 'pre-push resume missing BUSY state'
+[ "$(cat "$(slot_state "$MAIN")")" = "$PREPUSH_SLOT_BEFORE" ] || fail 'pre-push resume changed durable ownership'
+echo 'PASS: begin-created pre-push resume preserves exact generation'
+git -C "$MAIN" switch -q main
+
+expect_resume_blocked 'pre-push wrong Issue' "$MAIN" main SAY-217 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+expect_resume_blocked 'pre-push wrong branch' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" sayosomi/say-216-wrong-branch "$PREPUSH_CLAIM"
+expect_resume_blocked 'pre-push wrong Base' "$MAIN" main SAY-216 0000000000000000000000000000000000000000 "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+expect_resume_blocked 'pre-push wrong claim' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" wrong-claim-216
+
+printf 'dirty pre-push\n' > "$MAIN/prepush-dirty"
+expect_resume_blocked 'pre-push dirty worktree' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+rm "$MAIN/prepush-dirty"
+
+git -C "$MAIN" branch -D "$PREPUSH_BRANCH"
+expect_resume_blocked 'pre-push missing local topic' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$MAIN" branch "$PREPUSH_BRANCH" "$PREPUSH_BASE"
+
+git -C "$MAIN" switch -q "$PREPUSH_BRANCH"
+printf 'local-only progress\n' > "$MAIN/prepush-progress"
+git -C "$MAIN" add prepush-progress
+git -C "$MAIN" commit -qm 'local-only pre-push progress'
+PREPUSH_NONBASE="$(git -C "$MAIN" rev-parse HEAD)"
+git -C "$MAIN" switch -q main
+git -C "$MAIN" update-ref "refs/heads/$PREPUSH_BRANCH" "$PREPUSH_NONBASE"
+expect_resume_blocked 'pre-push local topic at unexpected SHA' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$MAIN" update-ref "refs/heads/$PREPUSH_BRANCH" "$PREPUSH_NONBASE"
+expect_resume_blocked 'pre-push arbitrary non-Base checkpoint' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_NONBASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$MAIN" update-ref "refs/heads/$PREPUSH_BRANCH" "$PREPUSH_BASE"
+
+git -C "$SUB" switch -q "$PREPUSH_BRANCH"
+expect_resume_blocked 'pre-push topic checked out in another worktree' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$SUB" switch -q --detach "$PREPUSH_BASE"
+
+REMOTE_DIFF_BRANCH=sayosomi/say-216-remote-diff-source
+git -C "$SEED" switch -q -c "$REMOTE_DIFF_BRANCH"
+printf 'remote different\n' > "$SEED/remote-different"
+git -C "$SEED" add remote-different
+git -C "$SEED" commit -qm 'remote different checkpoint'
+git -C "$SEED" push -q origin "$REMOTE_DIFF_BRANCH:$PREPUSH_BRANCH"
+git -C "$SEED" switch -q main
+expect_resume_blocked 'pre-push remote topic at different SHA' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$SEED" push -q origin ":$PREPUSH_BRANCH"
+
+ORIGIN_URL="$(git -C "$MAIN" remote get-url origin)"
+git -C "$MAIN" remote set-url origin "$ROOT/missing-remote.git"
+expect_resume_blocked 'pre-push remote query failure' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$MAIN" remote set-url origin "$ORIGIN_URL"
+
+git -C "$MAIN" switch -q --detach "$PREPUSH_BASE"
+expect_resume_blocked 'pre-push unsafe checkout identity' "$MAIN" main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM"
+git -C "$MAIN" switch -q main
+
+git -C "$MAIN" switch -q "$PREPUSH_BRANCH"
+git -C "$MAIN" push -q -u origin "$PREPUSH_BRANCH"
+merge_topic_into_main "$PREPUSH_BRANCH"
+"$HELPER" release main "$PREPUSH_BASE" "$PREPUSH_CLAIM" >/dev/null
 sync_free_lanes
 
 BRANCH6=sayosomi/say-208-unmerged
