@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.9`。
+current standalone helper version: `1.6.10`。
 
 `nuinui preflight`のHuman copy boundaryは、`===== NUINUI PREFLIGHT RESULT =====`からコピーを開始し、`PREFLIGHT PASS`または`PREFLIGHT BLOCKED`の直後で停止する。ヘッダはplain-textの出力境界だけを示し、lane / preflight semanticsは変更しない。
 
@@ -105,6 +105,9 @@ pr-auto-merge.sh
 lifecycle-facade.sh
   public lifecycle façade/envelopes
 
+integration-clean.sh
+  conflict-free merge-only Human integration refresh
+
 e2e.sh
   e2e-start / e2e-start-local-main / e2e-release mechanics
 
@@ -136,6 +139,7 @@ current commands:
 | `nuinui release <main\|sub> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <main\|sub> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
 | `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | reviewed exact headへrequired CI pending時だけGitHub Auto-mergeを予約 |
+| `nuinui integrate-clean <main\|sub> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | ChatGPT-authorized NON-INTERFERING merge-gate refreshをactive laneでconflict-free merge-only実行し、verify後にnormal push |
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main <SAY-123> <tested-ref>` | Active interim workflow時だけlocal main checkpointをe2eへ安全に固定 |
 | `nuinui e2e-release` | verified e2e stateをlatest `origin/main` detachedへ戻しmarker削除 |
@@ -178,6 +182,20 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返す。
 
 `start`をexplicit low-level primitiveとして直接使った場合も、full local audit後にlocal transition envelopeを返す。ただしpeerはその時点の観測値であり、ChatGPTが決めたcaller expectationとの一致を証明しない。canonical normal startupでは`begin`のexpected peer照合と`preflight=PASS`をadmission evidenceに使う。
+
+### `integrate-clean` merge-only integration
+
+`nuinui integrate-clean <main|sub> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->` は、already-reviewed topicに対するcurrent-base freshnessだけが必要な場合のnarrow Human integration helper。
+
+eligibilityとpost-integration driftのsemantic `NON-INTERFERING`判断はChatGPTが行い、helper自身は判断しない。active durable lane / Issue / claim / branch / Base / exact local and remote topic / exact current main / clean stateを再検証してから、exact current mainの`--no-commit --no-ff` mergeだけを行う。
+
+`verification-script`はChatGPTがcurrent Task contractから確定したabsolute executable pathを渡す。helperはtest selectionやCI classificationを再決定しない。optional manifestを使う場合はabsolute readable regular fileとし、`expected-main -> prospective merge tree`のNUL-delimited exact file setと比較する。
+
+commit前のconflict、file-set mismatch、verification failure、tracked merge-state mutation、remote raceはmergeをabortし、必要なtracked worktree restorationをindexから行った上でoriginal topic checkpoint / durable claim / clean state / original remote topicを再証明する。`reset`、`stash`、force-switch、force-pushは行わない。exact restorationを証明できなければ`ERROR:`で停止する。
+
+verification成功後にremote main / topicを再読込し、変化がない場合だけmerge commitを作る。commitはprior topicとexact expected mainの2 parentおよびverified prospective treeであることを検証する。normal non-force push成功後だけ`INTEGRATION PUSHED` envelopeを返し、その`integration_watermark`をexpected mainとして扱う。
+
+push failureはverified local merge commitを保持し、rollback / rewrite / retryを行わずfresh ChatGPT diagnosisへ戻す。conflict resolution、integration fix、source edit、ambiguous failure diagnosis、test-debug loopはこのhelperのscope外でLunaへ戻す。
 
 ### Standalone non-lane mechanics
 

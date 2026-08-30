@@ -112,7 +112,7 @@ current slice implementationとfocused verificationを完了しremoteへ保存�
 pushed implementation checkpoint
 -> inspect Base checkpoint..latest main
 -> determine relevant drift
--> Luna integrates latest intended base in same lane
+-> Luna integrates latest intended base in same lane, or the exact freshness-only exception uses Human `nuinui integrate-clean`
 -> resolve conflicts / integration regressions
 -> required broad verification
 -> record Integration Watermark
@@ -153,6 +153,14 @@ blocking fix中やreview中にremote `main`がadvanceした場合、その差分
 同じsliceでexception integrationが繰り返し必要になる場合、最新mainを追い続ける問題として扱わない。同じsemantic owner / shared primitiveをparallel laneが継続的に変更しているcontention signalとして、Coordinatorのparallel admission / lane schedulingを再評価し、必要なら片方を先にmergeするsequential executionへ戻す。
 
 blocking review PASS時にはexact topic SHAを`Review Head`として扱う。PR / auto-merge / merge直前はcurrent `main`と`Post-integration Drift`をfreshに確認するが、`NON-INTERFERING` driftならReview Headを作り直すためのintegrationを要求しない。
+
+#### Merge-gate freshness-only Human refresh
+
+`MERGE-GATE`のうち、underlying post-integration semantic drift自体はChatGPTが`NON-INTERFERING`とfresh判定でき、merge gateの唯一の要求がcurrent-base CI / branch freshnessである場合は、source implementationとは別のdeterministic integration operationとしてHuman `nuinui integrate-clean`を使ってよい。
+
+preconditionはalready-reviewed exact Review Head、same durable generation、known exact verification plan、no Manual E2E追加要求、conflict / source edit / integration fix / ambiguous diagnosis不要であること。helperはcurrent mainをconflict-free merge-onlyで取り込み、verification後にnormal pushする。successful pushed merge headでIntegration Watermarkを更新し、parents / effective diff / verification evidence / remote stateを対象とするfocused blocking reviewとfresh required PR CIを行う。
+
+この条件を外れた`RELEVANT` / `MERGE-GATE` integrationは従来どおりLunaが担当する。
 
 ### Verification boundary
 

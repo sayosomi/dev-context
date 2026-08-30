@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-K='preflight verify lane-init begin start resume release recover pr-auto-merge e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
+K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
 
 nuinui_usage() {
   echo "nuinui $V"
@@ -74,6 +74,11 @@ case "$1" in
   pr-auto-merge)
     [ "$#" = 4 ] || { echo 'Usage: nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>'; exit 2; }
     nuinui_run_public pr-auto-merge pam "$2" "$3" "$4"
+    exit $?
+    ;;
+  integrate-clean)
+    [ "$#" = 8 ] || { echo 'Usage: nuinui integrate-clean <main|sub> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->'; exit 2; }
+    nuinui_run_public integrate-clean integration_clean_command "$2" "$3" "$4" "$5" "$6" "$7" "$8"
     exit $?
     ;;
   e2e-start)

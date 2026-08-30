@@ -17,6 +17,7 @@ github_pr_source=$script_dir/nuinui-src/github-pr.sh
 required_checks_source=$script_dir/nuinui-src/required-checks.sh
 pr_auto_merge_source=$script_dir/nuinui-src/pr-auto-merge.sh
 facade_source=$script_dir/nuinui-src/lifecycle-facade.sh
+integration_clean_source=$script_dir/nuinui-src/integration-clean.sh
 e2e_source=$script_dir/nuinui-src/e2e.sh
 context_sync_source=$script_dir/nuinui-src/context-sync.sh
 diagnostics_source=$script_dir/nuinui-src/diagnostics.sh
@@ -48,6 +49,10 @@ artifact_path=$script_dir/nuinui
   echo "generate-nuinui: lifecycle façade source is missing: $facade_source" >&2
   exit 1
 }
+[ -f "$integration_clean_source" ] || {
+  echo "generate-nuinui: integration-clean source is missing: $integration_clean_source" >&2
+  exit 1
+}
 [ -f "$e2e_source" ] || {
   echo "generate-nuinui: E2E source is missing: $e2e_source" >&2
   exit 1
@@ -76,7 +81,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$ownership_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$facade_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
+  "$ownership_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$facade_source"|"$integration_clean_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
     echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -108,7 +113,7 @@ trap cleanup EXIT HUP INT TERM
 # The source order is explicit and deterministic. The ownership schema must
 # precede every consumer that invokes it.
 umask 077
-cat "$ownership_source" "$body_source" "$github_pr_source" "$required_checks_source" "$pr_auto_merge_source" "$facade_source" "$e2e_source" "$context_sync_source" "$diagnostics_source" "$self_test_source" "$dispatch_source" > "$temporary_path"
+cat "$ownership_source" "$body_source" "$github_pr_source" "$required_checks_source" "$pr_auto_merge_source" "$facade_source" "$integration_clean_source" "$e2e_source" "$context_sync_source" "$diagnostics_source" "$self_test_source" "$dispatch_source" > "$temporary_path"
 chmod 755 "$temporary_path"
 mv "$temporary_path" "$output_path"
 
