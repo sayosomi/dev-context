@@ -28,6 +28,30 @@ Repository-owned documentation / specification / policy workはsource-code imple
 
 途中でsource code / test / generated outputの変更、broad implementation-side debugging、または許可済みplanを越える変更が必要になった場合は例外を解除し、通常のLuna xhigh lifecycleへ戻す。
 
+### Narrow CI/tooling direct execution exception
+
+CI / repository tooling / automation workのうち、product implementationから独立した**狭く一意なCI/tooling-only変更**は、source-code implementationとは別のexecution classとする。
+
+次の条件をすべて満たすTaskは、Luna xhighを使わずChatGPTが直接実行してよい。
+
+- targetがCI workflow / CI config、repository-only automation / tooling、またはrepository checkの狭い配線変更に限定される;
+- product source implementation、runtime semantics、DSL semantics、fixtures、generated artifacts、product build output / packaging semanticsを変更しない;
+- latest remote repositoryからintended changeが一意に決まり、implementation scopeが狭い;
+- target file、current problem、change purpose、intended change summaryをユーザーへ事前提示し、ユーザーの明示的な許可を得ている;
+- verificationがread-onlyまたはfocusedなCI/tooling checkで完結し、broad test-debug loopを必要としない;
+- Manual E2Eを必要としない;
+- conflict resolution、integration-heavy work、またはambiguous failure diagnosisを必要としない。
+
+典型例は、既存CI jobへrepository内にすでに存在するcheck commandを1 step追加するだけで、上記条件をすべて満たす変更である。
+
+この例外ではfixed main/sub/e2e lane、Base checkpoint、Luna sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、merge、relevant work-management synchronizationまで担当してよい。
+
+write直前にlatest remote SHAとtarget file freshnessを再確認する。freshness driftによってintended change、scope、またはverification routeが一意でなくなった場合はwriteせず再評価する。
+
+途中でproduct source / runtime behavior / DSL semantics側の変更、broad debugging、conflict resolution、integration-heavy work、またはその他の除外scopeが必要になった場合はdirect executionを停止し、通常のLuna xhigh + fixed implementation lane lifecycleへ戻す。
+
+このexceptionは旧 `only_chatgpt` execution model全体を復活させるものではない。
+
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
 ## Role boundary
@@ -43,7 +67,7 @@ ChatGPT owns:
 - Luna prompt生成;
 - blocking review / merge判断;
 - Linear / GitHub management;
-- documentation / specification / policy direct execution exceptionのplan策定、承認取得、remote edit、review、merge判断。
+- documentation / specification / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionのplan策定、承認取得、remote edit、focused verification、review、merge判断。
 
 Luna owns:
 
@@ -81,13 +105,14 @@ Human terminal assistanceを使う場合、ChatGPTはshared `human-terminal-inst
 - integration checkpointのintegration fix;
 - branch commit / pushを含むsource-code implementation execution。
 
-Documentation / policy direct execution exceptionに該当するTaskのdocumentation editing / policy editing / review / mergeはこの一覧のsource-code implementationには含めない。
+Documentation / policy direct execution exceptionのdocumentation / policy editingと、narrow CI/tooling direct execution exceptionのCI/tooling editing / focused verification / review / mergeは、この一覧のsource-code implementationには含めない。
 
 Default routing:
 
 ```text
 ChatGPT determines the operation
--> documentation / policy direct-execution exception? YES -> ChatGPT direct remote execution after explicit user plan approval
+-> documentation / policy direct-execution exception? YES -> ChatGPT direct execution after explicit user plan approval
+-> narrow CI/tooling direct-execution exception? YES -> ChatGPT direct execution after explicit user plan approval
 -> simple deterministic local operation? YES -> Human terminal assistance
 -> NO / source-code implementation work -> Luna xhigh
 ```
@@ -105,7 +130,7 @@ Source-code implementation executionは [`CHECKOUTS.md`](./CHECKOUTS.md) の2 la
 
 Manual E2Eは`/Users/yosomi/Code/nuinuiCAD-e2e`専用で、source-code implementationへ転用しない。
 
-Documentation / policy direct execution exceptionではこれらのimplementation laneをclaimしない。
+Documentation / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionでは、これらのimplementation laneをclaimしない。
 
 ### Codex project / initial cwd is not lane ownership
 
@@ -128,7 +153,7 @@ ChatGPTがLuna promptを生成するときは、initial `pwd`一致をpreconditi
 
 新しいsource-code implementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
 
-Documentation / policy direct execution exceptionにはこのBase checkpoint requirementを適用しない。ただしwrite直前に対象fileのlatest remote SHAと、許可済みplanとのscope一致を確認する。
+Documentation / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionには、このBase checkpoint requirementを適用しない。ただしwrite直前にlatest remote SHA、対象fileのfreshness、許可済みplanとのscope一致を確認する。
 
 Shared Coding Agent Workflowのpre-prompt freshness gateは、nuinuiCADでは次のように適用する。
 
