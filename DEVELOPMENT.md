@@ -2,6 +2,7 @@
 
 この document は、`sayosomi/dev-context` repository 自体を変更するときの canonical development lifecycle owner である。
 repository overview / routing は [root README](./README.md)、複数 project に再利用するmechanicsは [shared development router](./shared/DEVELOPMENT.md) と各 shared owner document、project固有のruleは [`projects/<project>/`](./projects) 配下の owner document が担当する。
+GitHub Issue authoring、current contract、contract lifecycle、re-auditは [root ISSUES.md](./ISSUES.md) が担当する。
 この document はそれらの全文を複製せず、dev-context self-developmentに固有のauthority、checkout境界、lifecycle、routingを定める。
 
 ## Scope and authority
@@ -25,6 +26,7 @@ root READMEはoverview / routerであり、詳細なself-development workflowの
 - 最新のremote `sayosomi/dev-context` `main`
 - root `README.md`
 - root `DEVELOPMENT.md`
+- root `ISSUES.md`（Issue authoringまたはcontract auditが関係する場合）
 - relevantなshared / project owner document
 - 関連するcurrent GitHub Issue / PR state
 
@@ -43,9 +45,15 @@ shared reusable development policy
   -> shared owner documents
 project-specific policy
   -> projects/<project>/ owner documents
-current task contract / progress
-  -> GitHub Issue / PR / comments or another explicit current work owner
+current Work scope / implementation contract
+  -> GitHub Issue body
+current Issue evidence / rationale / contract history
+  -> GitHub Issue comments
+implementation / review state
+  -> GitHub branch / commits / PR / checks
 ```
+
+dev-contextではGitHub Issuesがprimary Work / current-contract authorityであり、Issue authoring / contract / re-auditの詳細は [root ISSUES.md](./ISSUES.md) がownerする。
 
 durable policy documentへcurrent taskのSHA、branch、checkpoint、progress、temporary implementation planを記録しない。
 
