@@ -27,6 +27,14 @@ nuinuiCAD作業開始時はlocal cloneの有無にかかわらず、GitHub上の
 
 このcloneはnuinuiCAD repositoryの4th checkoutではない。
 
+candidate source / edit / test / promotionは次のpersistent single-track development worktreeで行う。
+
+```text
+/Users/yosomi/Code/dev-context-dev
+```
+
+標準production / cache / toolbox cloneはcandidate work中もpromoted artifactを保持し、merge / read-back後だけsyncする。
+
 ## Local sync rule
 
 ChatGPTが承認済みdev-context create / update / deleteをGitHubへ反映した場合、同じ応答でlocal cloneへ反映するraw git commandを必ず提示する。
@@ -49,7 +57,62 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 current standalone helper version: `1.6.3`。
 
-`projects/nuinuiCAD/scripts/nuinui`はimplementation durable ownershipと既存のnon-lane mechanicsを単一scriptで実装する。runtime compatibility backendや別legacy helperへdelegateしない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
+development sourceはresponsibility-separatedで、次のexplicit deterministic assemblyからstandalone artifactを作る。
+
+```text
+responsibility-separated development source
+projects/nuinuiCAD/scripts/nuinui-src/**
+
+-> explicit deterministic assembly
+projects/nuinuiCAD/scripts/generate-nuinui
+
+-> separate candidate standalone artifact
+
+-> exact black-box verification
+-> candidate SHA-256 + Git blob identity fixation
+
+-> checked-in promoted standalone generated artifact
+projects/nuinuiCAD/scripts/nuinui
+```
+
+source ownership map:
+
+```text
+ownership-schema.sh
+  canonical durable ownership schema semantics
+
+nuinui-body.sh
+  shared runtime / low-level lifecycle primitives
+
+github-pr.sh
+  GitHub PR transport boundary
+
+required-checks.sh
+  required-check evidence correlation/classification
+
+pr-auto-merge.sh
+  reservation state machine
+
+lifecycle-facade.sh
+  public lifecycle façade/envelopes
+
+e2e.sh
+  e2e-start / e2e-start-local-main / e2e-release mechanics
+
+context-sync.sh
+  context-sync / local dev-context state diagnostics
+
+diagnostics.sh
+  doctor / transition-audit / context-check
+
+self-test.sh
+  built-in self-test + external regression aggregation
+
+cli-dispatch.sh
+  public command membership / usage / validation / dispatch
+```
+
+これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
 current commands:
 
@@ -168,13 +231,13 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 current `nuinui` 1.6.3 exact Git blob:
 
 ```text
-1de17a943fbc75e534025bdab4ec02fa4b274317
+b192bfd6ad26ca538baf113d0525449e15c650ff
 ```
 
 candidate SHA-256:
 
 ```text
-7bddef58015ca086aaf8c60a01899a7054e3ac62556ca7196d170ca717e30a40
+4f7298b66cf0e393e4b06ff891500f7379dbf52be415ea3342abaaca9811ed4b
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
@@ -216,8 +279,8 @@ projects/nuinuiCAD/scripts/test-nuinui-handoff-check             PASS
 projects/nuinuiCAD/scripts/nuinui context-check                  PASS
 /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge PASS
 projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge           PASS
-git hash-object projects/nuinuiCAD/scripts/nuinui                  1de17a943fbc75e534025bdab4ec02fa4b274317
-shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  7bddef58015ca086aaf8c60a01899a7054e3ac62556ca7196d170ca717e30a40
+git hash-object projects/nuinuiCAD/scripts/nuinui                  b192bfd6ad26ca538baf113d0525449e15c650ff
+shasum -a 256 projects/nuinuiCAD/scripts/nuinui                  4f7298b66cf0e393e4b06ff891500f7379dbf52be415ea3342abaaca9811ed4b
 ```
 
 1.5.1 repairではpromotion後のmacOS標準awk failureを再現根拠として、strict metadata parserの出力をternary expressionなしのPOSIX awkへ変更した。exact candidateで`/bin/sh -n`と`nuinui self-test`を再実行し、parser単体は`awk` / `nawk` / BusyBox awkでvalid slotの同一field outputとduplicate-key rejectionを確認した。GitHub compareで1.5.0からのcode diffはversion bumpとこのparser rewriteだけである。
