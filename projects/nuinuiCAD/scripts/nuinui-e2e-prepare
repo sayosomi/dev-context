@@ -14,7 +14,7 @@ Usage:
   nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
   nuinui-e2e-prepare status
   nuinui-e2e-prepare cleanup
-  nuinui-e2e-prepare closure-check <SAY-123>  # post-release final gate only
+  nuinui-e2e-prepare closure-check <SAY-123>
 
 Purpose:
   Prepare a deterministic Human Manual E2E environment in the dedicated e2e
