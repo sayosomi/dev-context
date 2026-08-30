@@ -176,6 +176,7 @@ Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repositor
 - selected lane;
 - Base checkpoint SHA;
 - branch;
+- complete current-run handoff identity: Branch, Base, Claim, Checkpoint, Current remote main, Topic remote mode, exact handoff command, and exact recovery command for exact-mode continuation;
 - concrete change owner / files / symbols / API boundary;
 - settled acceptance;
 - required verification;
@@ -193,6 +194,8 @@ Promptにはcurrent executable source-code sliceだけを書く。
 - repository
 - lane checkout path
 - expected current lane branch / HEAD / Base checkpoint
+- current-run Execution Envelope with Branch / Base / Claim / Checkpoint / Current remote main / Topic remote mode
+- exact prefilled handoff command and, for `exact` mode, exact prefilled recovery command
 - current slice / change target
 - concrete required changes
 - required tests / verification
@@ -204,7 +207,30 @@ Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、a
 
 Promptのstartup sequenceでは、Luna processのinitial cwdをlane validationに使わない。assigned lane checkoutを先にtargetし、そのcheckout上でrepository identity、branch、HEAD、clean state、remote stateを検証する。
 
-Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は変更せず停止して報告させる。
+Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は、下記 `Luna startup handoff gate` が明示する exact pushed-checkpoint `claimed branch mismatch` recoveryだけを例外とし、それ以外は変更せず停止して報告させる。
+
+### Luna startup handoff gate
+
+Repository operation前に、Lunaはcurrent-run Execution Envelopeからsupplied exact handoff commandをargument変更なしで実行する。
+
+```text
+handoff succeeds
+-> continue
+
+handoff exits nonzero and first output line exactly
+BLOCKED: handoff claimed branch mismatch
+and Topic remote mode = exact
+-> execute the supplied exact recovery command once
+-> require the canonical IMPLEMENTATION RESUMED envelope
+-> rerun the supplied original handoff command unchanged
+-> require HANDOFF VERIFIED
+-> continue
+
+anything else
+-> stop
+```
+
+The recovery command is the prefilled same-generation `nuinui resume` command. Luna must not infer or regenerate Issue, lane, Branch, Base, Claim, Checkpoint, Current remote main, handoff command, or recovery command from retained session context or repository history. `CALLER_EXPECTED` / `ACTUAL` output never authorizes identity substitution. A failed or ambiguous resume, or a failed second handoff, is a hard-stop with no retry. The existing stale-context, dirty-state, ownership, and remote-mismatch hard-stop rules remain unchanged; `absent` mode is not eligible for this exception.
 
 ## Scope control
 

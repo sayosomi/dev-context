@@ -124,6 +124,20 @@ expect_blocked "wrong checkpoint" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BAS
 
 git -C "$MAIN" switch -q "$OLD_BRANCH"
 expect_blocked "stale same-Issue checkout" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
+[ "$(sed -n '1p' "$ROOT/out")" = "BLOCKED: handoff claimed branch mismatch" ] || {
+  cat "$ROOT/out"
+  fail "stale same-Issue checkout did not use exact claimed branch mismatch classification"
+}
+
+grep -Fx "CALLER_EXPECTED: $BRANCH" "$ROOT/out" >/dev/null || {
+  cat "$ROOT/out"
+  fail "stale same-Issue checkout did not report exact claimed branch"
+}
+
+grep -Fx "ACTUAL:          $OLD_BRANCH" "$ROOT/out" >/dev/null || {
+  cat "$ROOT/out"
+  fail "stale same-Issue checkout did not report actual checkout branch"
+}
 git -C "$MAIN" switch -q "$BRANCH"
 
 echo dirty >> "$MAIN/a"
