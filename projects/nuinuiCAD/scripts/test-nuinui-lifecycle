@@ -19,6 +19,7 @@ assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
 gitdir() { git -C "$1" rev-parse --absolute-git-dir; }
 slot_state() { printf '%s/nuinui-implementation-slot/state\n' "$(gitdir "$1")"; }
 lane_refs() { git -C "$1" for-each-ref --format='%(refname) %(objectname)' | sort; }
+local_lane_refs() { git -C "$1" for-each-ref refs/heads --format='%(refname) %(objectname)' | sort; }
 e2e_closure_check() {
   env \
     NUINUI_E2E_PREPARE_WT="$E2E" \
@@ -219,6 +220,130 @@ release_main() {
   assert_line "$(cat "$ROOT/release.out")" '^origin_main=[0-9a-fA-F]{40}$' 'release missing origin main'
   assert_line "$(cat "$ROOT/release.out")" '^clean=yes$' 'release missing clean state'
   assert_line "$(cat "$ROOT/release.out")" '^state=FREE$' 'release missing FREE state'
+}
+
+assert_release_envelope() {
+  output=$1
+  lane=$2
+  checkpoint=$3
+  claim=$4
+  branch=$5
+  idle_branch=$6
+  assert_line "$output" '^IMPLEMENTATION RELEASED$' 'drift release did not succeed'
+  assert_line "$output" "^lane=$lane$" 'drift release missing lane'
+  assert_line "$output" "^saved_checkpoint=$checkpoint$" 'drift release missing saved checkpoint'
+  assert_line "$output" "^released_claim=$claim$" 'drift release missing claim'
+  assert_line "$output" "^released_branch=$branch$" 'drift release missing branch'
+  assert_line "$output" "^idle_branch=$idle_branch$" 'drift release missing idle branch'
+  assert_line "$output" '^idle_head=[0-9a-fA-F]{40}$' 'drift release missing idle HEAD'
+  assert_line "$output" '^origin_main=[0-9a-fA-F]{40}$' 'drift release missing origin main'
+  assert_line "$output" '^clean=yes$' 'drift release missing clean state'
+  assert_line "$output" '^state=FREE$' 'drift release missing FREE state'
+}
+
+setup_main_drift() {
+  DRIFT_LANE=main
+  DRIFT_ISSUE=$1
+  DRIFT_BRANCH=$2
+  DRIFT_BASE=$(git -C "$MAIN" rev-parse origin/main)
+  DRIFT_BEGIN_OUTPUT=$({ "$HELPER" begin main "$DRIFT_ISSUE" "$DRIFT_BASE" "$DRIFT_BRANCH" FREE; })
+  DRIFT_CLAIM=$(printf '%s\n' "$DRIFT_BEGIN_OUTPUT" | sed -n 's/^claim=//p')
+  DRIFT_FILE="$MAIN/drift-$DRIFT_ISSUE"
+  printf '%s\n' "$DRIFT_ISSUE" > "$DRIFT_FILE"
+  git -C "$MAIN" add "$DRIFT_FILE"
+  git -C "$MAIN" commit -qm "drift $DRIFT_ISSUE"
+  DRIFT_CHECKPOINT=$(git -C "$MAIN" rev-parse HEAD)
+  git -C "$MAIN" push -q -u origin "$DRIFT_BRANCH"
+  merge_topic_into_main "$DRIFT_BRANCH"
+  git -C "$SEED" push -q origin ":$DRIFT_BRANCH"
+  git -C "$MAIN" switch -q main
+}
+
+setup_sub_drift() {
+  DRIFT_LANE=sub
+  DRIFT_ISSUE=$1
+  DRIFT_BRANCH=$2
+  sync_free_lanes
+  DRIFT_BASE=$(git -C "$MAIN" rev-parse origin/main)
+  DRIFT_BEGIN_OUTPUT=$({ "$HELPER" begin sub "$DRIFT_ISSUE" "$DRIFT_BASE" "$DRIFT_BRANCH" FREE; })
+  DRIFT_CLAIM=$(printf '%s\n' "$DRIFT_BEGIN_OUTPUT" | sed -n 's/^claim=//p')
+  DRIFT_FILE="$SUB/drift-$DRIFT_ISSUE"
+  printf '%s\n' "$DRIFT_ISSUE" > "$DRIFT_FILE"
+  git -C "$SUB" add "$DRIFT_FILE"
+  git -C "$SUB" commit -qm "drift $DRIFT_ISSUE"
+  DRIFT_CHECKPOINT=$(git -C "$SUB" rev-parse HEAD)
+  git -C "$SUB" push -q -u origin "$DRIFT_BRANCH"
+  merge_topic_into_main "$DRIFT_BRANCH"
+  git -C "$SUB" switch -q --detach "$DRIFT_BASE"
+}
+
+setup_main_unmerged_drift() {
+  DRIFT_LANE=main
+  DRIFT_ISSUE=$1
+  DRIFT_BRANCH=$2
+  DRIFT_BASE=$(git -C "$MAIN" rev-parse origin/main)
+  DRIFT_BEGIN_OUTPUT=$({ "$HELPER" begin main "$DRIFT_ISSUE" "$DRIFT_BASE" "$DRIFT_BRANCH" FREE; })
+  DRIFT_CLAIM=$(printf '%s\n' "$DRIFT_BEGIN_OUTPUT" | sed -n 's/^claim=//p')
+  DRIFT_FILE="$MAIN/drift-$DRIFT_ISSUE"
+  printf '%s\n' "$DRIFT_ISSUE" > "$DRIFT_FILE"
+  git -C "$MAIN" add "$DRIFT_FILE"
+  git -C "$MAIN" commit -qm "unmerged drift $DRIFT_ISSUE"
+  DRIFT_CHECKPOINT=$(git -C "$MAIN" rev-parse HEAD)
+  git -C "$MAIN" push -q -u origin "$DRIFT_BRANCH"
+  git -C "$MAIN" switch -q main
+}
+
+release_drift_main() {
+  DRIFT_RELEASE_OUTPUT=$({ "$HELPER" release main "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM"; })
+  assert_release_envelope "$DRIFT_RELEASE_OUTPUT" main "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM" "$DRIFT_BRANCH" main
+}
+
+release_drift_sub() {
+  DRIFT_RELEASE_OUTPUT=$({ "$HELPER" release sub "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM"; })
+  assert_release_envelope "$DRIFT_RELEASE_OUTPUT" sub "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM" "$DRIFT_BRANCH" DETACHED
+}
+
+expect_release_blocked_command() {
+  name=$1
+  lane=$2
+  shift 2
+  before_branch=$(git -C "$lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  before_head=$(git -C "$lane" rev-parse HEAD)
+  before_status=$(git -C "$lane" status --porcelain)
+  before_refs=$(local_lane_refs "$MAIN")
+  before_slot=$(cat "$(slot_state "$lane")")
+  before_lock=$(if [ -f "$(gitdir "$lane")/nuinui-implementation-lock/state" ]; then cat "$(gitdir "$lane")/nuinui-implementation-lock/state"; else echo absent; fi)
+  before_tombstones=$(find "$(gitdir "$lane")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)
+  if output=$({ "$@"; } 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    rc=$?
+  fi
+  [ "$rc" -ne 0 ] || fail "$name returned zero"
+  printf '%s\n' "$output" | grep -q '^BLOCKED:' || {
+    printf '%s\n' "$output"
+    fail "$name did not fail closed"
+  }
+  [ "$before_branch" = "$(git -C "$lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail "$name changed branch"
+  [ "$before_head" = "$(git -C "$lane" rev-parse HEAD)" ] || fail "$name changed HEAD"
+  [ "$before_status" = "$(git -C "$lane" status --porcelain)" ] || fail "$name changed working tree"
+  [ "$before_refs" = "$(local_lane_refs "$MAIN")" ] || fail "$name changed local refs"
+  [ "$before_slot" = "$(cat "$(slot_state "$lane")")" ] || fail "$name changed durable slot"
+  after_lock=$(if [ -f "$(gitdir "$lane")/nuinui-implementation-lock/state" ]; then cat "$(gitdir "$lane")/nuinui-implementation-lock/state"; else echo absent; fi)
+  after_tombstones=$(find "$(gitdir "$lane")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)
+  [ "$before_lock" = "$after_lock" ] || fail "$name changed mutation lock"
+  [ "$before_tombstones" = "$after_tombstones" ] || fail "$name changed release tombstone state"
+  echo "PASS: $name"
+}
+
+expect_release_blocked_drift() {
+  case "$DRIFT_LANE" in
+    main) drift_repo=$MAIN ;;
+    sub) drift_repo=$SUB ;;
+    *) fail "unknown drift lane: $DRIFT_LANE" ;;
+  esac
+  expect_release_blocked_command "$1" "$drift_repo" "$HELPER" release "$DRIFT_LANE" "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM"
 }
 
 git init -q --bare "$REMOTE"
@@ -471,6 +596,167 @@ cp "$ROOT/valid-release-slot" "$SLOT_PATH"
 release_main "$CHECKPOINT1" "$CLAIM1" "$BRANCH1"
 
 sync_free_lanes
+setup_main_drift SAY-301 sayosomi/say-301-release-main-drift
+release_drift_main
+echo 'PASS: release restores a clean main checkout drift with an absent remote topic'
+sync_free_lanes
+
+setup_sub_drift SAY-302 sayosomi/say-302-release-sub-drift
+release_drift_sub
+echo 'PASS: release restores a clean detached sub checkout drift with an exact remote topic'
+sync_free_lanes
+
+setup_main_drift SAY-303 sayosomi/say-303-release-claim-checks
+DRIFT_WRONG_CLAIM=wrong-claim-303
+expect_release_blocked_command 'release drift wrong claim' "$MAIN" "$HELPER" release main "$DRIFT_CHECKPOINT" "$DRIFT_WRONG_CLAIM"
+DRIFT_WRONG_CHECKPOINT=0000000000000000000000000000000000000000
+expect_release_blocked_command 'release drift wrong checkpoint' "$MAIN" "$HELPER" release main "$DRIFT_WRONG_CHECKPOINT" "$DRIFT_CLAIM"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-304 sayosomi/say-304-release-missing-topic
+git -C "$MAIN" branch -D "$DRIFT_BRANCH"
+expect_release_blocked_drift 'release drift missing local topic'
+git -C "$MAIN" branch "$DRIFT_BRANCH" "$DRIFT_CHECKPOINT"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-305 sayosomi/say-305-release-different-topic
+git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_BASE"
+expect_release_blocked_drift 'release drift local topic at different SHA'
+git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_CHECKPOINT"
+release_drift_main
+sync_free_lanes
+
+setup_main_unmerged_drift SAY-306 sayosomi/say-306-release-unmerged
+expect_release_blocked_drift 'release drift checkpoint not contained in origin main'
+merge_topic_into_main "$DRIFT_BRANCH"
+git -C "$SEED" push -q origin ":$DRIFT_BRANCH"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-307 sayosomi/say-307-release-dirty-checkout
+printf 'dirty release drift\n' > "$MAIN/release-drift-dirty"
+expect_release_blocked_drift 'release drift dirty checkout'
+rm "$MAIN/release-drift-dirty"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-308 sayosomi/say-308-release-unrelated-branch
+DRIFT_UNRELATED_BRANCH=sayosomi/say-308-unrelated-release-branch
+git -C "$MAIN" switch -q -c "$DRIFT_UNRELATED_BRANCH" "$DRIFT_BASE"
+expect_release_blocked_drift 'release drift unrelated named branch'
+git -C "$MAIN" switch -q main
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-309 sayosomi/say-309-release-other-worktree
+git -C "$SUB" switch -q "$DRIFT_BRANCH"
+expect_release_blocked_drift 'release drift topic checked out in another worktree'
+git -C "$SUB" switch -q --detach "$DRIFT_BASE"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-310 sayosomi/say-310-release-existing-lock
+DRIFT_LOCK_DIR="$(gitdir "$MAIN")/nuinui-implementation-lock"
+mkdir "$DRIFT_LOCK_DIR"
+printf 'version=1\noperation=release\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$DRIFT_ISSUE" "$DRIFT_BRANCH" "$DRIFT_BASE" "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM" > "$DRIFT_LOCK_DIR/state"
+expect_release_blocked_drift 'release drift existing lock'
+rm "$DRIFT_LOCK_DIR/state"
+rmdir "$DRIFT_LOCK_DIR"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-311 sayosomi/say-311-release-tombstone
+DRIFT_TOMBSTONE="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.$DRIFT_CLAIM"
+mkdir "$DRIFT_TOMBSTONE"
+cp "$(slot_state "$MAIN")" "$DRIFT_TOMBSTONE/state"
+printf '%s\n' "$DRIFT_CHECKPOINT" > "$DRIFT_TOMBSTONE/checkpoint"
+expect_release_blocked_drift 'release drift existing releasing tombstone'
+rm "$DRIFT_TOMBSTONE/state" "$DRIFT_TOMBSTONE/checkpoint"
+rmdir "$DRIFT_TOMBSTONE"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-312 sayosomi/say-312-release-malformed-slot
+DRIFT_SLOT_PATH="$(slot_state "$MAIN")"
+sed 's/^version=1$/version=2/' "$DRIFT_SLOT_PATH" > "$ROOT/malformed-drift-slot"
+mv "$ROOT/malformed-drift-slot" "$DRIFT_SLOT_PATH"
+expect_release_blocked_drift 'release drift malformed durable metadata'
+git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_CHECKPOINT"
+sed 's/^version=2$/version=1/' "$DRIFT_SLOT_PATH" > "$ROOT/restored-drift-slot"
+mv "$ROOT/restored-drift-slot" "$DRIFT_SLOT_PATH"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-313 sayosomi/say-313-release-remote-diff
+DRIFT_REMOTE_SOURCE=sayosomi/say-313-remote-different-source
+git -C "$SEED" switch -q -c "$DRIFT_REMOTE_SOURCE"
+printf 'incompatible remote topic\n' > "$SEED/drift-remote-different"
+git -C "$SEED" add drift-remote-different
+git -C "$SEED" commit -qm 'incompatible remote topic'
+git -C "$SEED" push -q origin "$DRIFT_REMOTE_SOURCE:$DRIFT_BRANCH"
+git -C "$SEED" switch -q main
+expect_release_blocked_drift 'release drift incompatible existing remote topic'
+git -C "$SEED" push -q origin ":$DRIFT_BRANCH"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-314 sayosomi/say-314-release-remote-failure
+DRIFT_ORIGIN_URL="$(git -C "$MAIN" remote get-url origin)"
+git -C "$MAIN" remote set-url origin "$ROOT/missing-release-remote.git"
+expect_release_blocked_drift 'release drift authoritative remote query failure'
+git -C "$MAIN" remote set-url origin "$DRIFT_ORIGIN_URL"
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-315 sayosomi/say-315-release-remote-race
+DRIFT_RACE_SOURCE=sayosomi/say-315-remote-race-source
+git -C "$SEED" switch -q -c "$DRIFT_RACE_SOURCE"
+printf 'release remote race\n' > "$SEED/drift-remote-race"
+git -C "$SEED" add drift-remote-race
+git -C "$SEED" commit -qm 'release remote race source'
+git -C "$SEED" push -q origin "$DRIFT_RACE_SOURCE"
+git -C "$SEED" switch -q main
+DRIFT_RACE_BIN="$ROOT/release-race-bin"
+mkdir "$DRIFT_RACE_BIN"
+DRIFT_RACE_COUNTER="$ROOT/release-race-counter"
+printf '0\n' > "$DRIFT_RACE_COUNTER"
+DRIFT_RACE_REAL_GIT="$(command -v git)"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'case "$*" in' \
+  '  *ls-remote*"refs/heads/$RACE_GIT_BRANCH"*)' \
+  '    race_output=$("$RACE_GIT_REAL" "$@")' \
+  '    race_rc=$?' \
+  '    race_count=$(cat "$RACE_GIT_COUNTER")' \
+  '    if [ "$race_count" = 0 ]; then' \
+  '      printf "1\\n" > "$RACE_GIT_COUNTER"' \
+  '      "$RACE_GIT_REAL" -C "$RACE_GIT_SEED" push -q origin "$RACE_GIT_SOURCE:$RACE_GIT_BRANCH"' \
+  '    fi' \
+  '    printf "%s" "$race_output"' \
+  '    exit "$race_rc"' \
+  '    ;;' \
+  'esac' \
+  'exec "$RACE_GIT_REAL" "$@"' > "$DRIFT_RACE_BIN/git"
+chmod 755 "$DRIFT_RACE_BIN/git"
+expect_release_blocked_command 'release drift remote topic race before switch' "$MAIN" \
+  env PATH="$DRIFT_RACE_BIN:$PATH" \
+  RACE_GIT_REAL="$DRIFT_RACE_REAL_GIT" \
+  RACE_GIT_COUNTER="$DRIFT_RACE_COUNTER" \
+  RACE_GIT_SEED="$SEED" \
+  RACE_GIT_SOURCE="$DRIFT_RACE_SOURCE" \
+  RACE_GIT_BRANCH="$DRIFT_BRANCH" \
+  "$HELPER" release main "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM"
+git -C "$SEED" push -q origin ":$DRIFT_BRANCH"
+release_drift_main
+sync_free_lanes
+
+# The drift scenarios intentionally advance origin/main; later peer tests use
+# the latest released checkpoint as their shared base.
+CHECKPOINT1="$(git -C "$MAIN" rev-parse origin/main)"
+
 BRANCH2=sayosomi/say-202-busy-peer
 OUT2=$("$HELPER" begin sub SAY-202 "$CHECKPOINT1" "$BRANCH2" FREE)
 assert_line "$OUT2" '^peer_lane=main$' 'BUSY peer setup missing peer lane'
