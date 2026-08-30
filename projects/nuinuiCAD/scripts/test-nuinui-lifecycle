@@ -538,13 +538,12 @@ STALE_BASE="$(git -C "$MAIN" rev-parse origin/main)"
 
 POST_BRANCH=sayosomi/say-214-postmutation-envelope
 if post_output=$(NUINUI_SELFTEST_BEGIN_AFTER_START=dirty-e2e "$HELPER" begin main SAY-214 "$STALE_BASE" "$POST_BRANCH" FREE 2>&1); then
-  printf '%s\n' "$post_output"
-  fail 'post-mutation audit failure unexpectedly succeeded'
+  post_rc=0
 else
   post_rc=$?
 fi
-[ "$post_rc" -ne 0 ] || fail 'post-mutation audit failure returned zero'
-assert_line "$post_output" '^BLOCKED: begin post-mutation consistency check failed$' 'post-mutation failure did not start with BLOCKED classification'
+[ "$post_rc" = 0 ] || { printf '%s\n' "$post_output"; fail 'proven completed begin mutation returned non-zero'; }
+assert_line "$post_output" '^IMPLEMENTATION STARTED$' 'completed post-mutation begin did not return success identity'
 assert_line "$post_output" '^mutation_state=COMPLETED$' 'post-mutation failure did not expose completed mutation'
 assert_line "$post_output" '^lane=main$' 'post-mutation envelope missing lane'
 assert_line "$post_output" '^issue=SAY-214$' 'post-mutation envelope missing Issue'
@@ -565,6 +564,30 @@ assert_line "$(cat "$(slot_state "$MAIN")")" '^' 'post-mutation durable target s
 rm "$E2E/nuinui-selftest-e2e-dirty"
 echo 'PASS: post-mutation failure exposes and retains completed target generation'
 release_main "$POST_CHECKPOINT" "$POST_CLAIM" "$POST_BRANCH"
+sync_free_lanes
+
+STALE_RELEASE_BASE="$(git -C "$MAIN" rev-parse origin/main)"
+STALE_RELEASE_BRANCH=sayosomi/say-215-stale-release-result
+STALE_RELEASE_OUT=$("$HELPER" begin sub SAY-215 "$STALE_RELEASE_BASE" "$STALE_RELEASE_BRANCH" FREE)
+STALE_RELEASE_CLAIM="$(printf '%s\n' "$STALE_RELEASE_OUT" | sed -n 's/^claim=//p')"
+git -C "$SUB" push -q -u origin "$STALE_RELEASE_BRANCH"
+merge_topic_into_main "$STALE_RELEASE_BRANCH"
+if stale_release_output=$(NUINUI_SELFTEST_STALE_RESULT=release "$HELPER" release sub "$STALE_RELEASE_BASE" "$STALE_RELEASE_CLAIM" 2>&1); then
+  stale_release_rc=0
+else
+  stale_release_rc=$?
+fi
+[ "$stale_release_rc" = 0 ] || { printf '%s\n' "$stale_release_output"; fail 'stale release result was not reconciled to success'; }
+assert_line "$stale_release_output" '^IMPLEMENTATION RELEASED$' 'stale release result did not return released envelope'
+assert_line "$stale_release_output" '^issue=SAY-215$' 'stale release result omitted captured Issue'
+assert_line "$stale_release_output" "^released_claim=$STALE_RELEASE_CLAIM$" 'stale release result omitted captured claim'
+assert_line "$stale_release_output" "^released_branch=$STALE_RELEASE_BRANCH$" 'stale release result omitted captured branch'
+assert_line "$stale_release_output" '^state=FREE$' 'stale release result did not prove FREE state'
+if printf '%s\n' "$stale_release_output" | grep -Eq '^BLOCKED: (invalid/missing active slot|release mutation completion could not be proven)$'; then
+  printf '%s\n' "$stale_release_output"
+  fail 'stale release result exposed a stale failure'
+fi
+echo 'PASS: completed release with stale result is reconciled to success'
 sync_free_lanes
 
 printf 'remote-newer\n' > "$SEED/newer"
