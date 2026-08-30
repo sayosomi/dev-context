@@ -10,12 +10,22 @@ SEED="$ROOT/seed"
 MAIN="$ROOT/main"
 SUB="$ROOT/sub"
 E2E="$ROOT/e2e"
+E2E_PREPARE_HELPER="$(cd "$(dirname "$HELPER")" && pwd -P)/nuinui-e2e-prepare"
+E2E_CLOSURE_TEMP="$ROOT/e2e-closure-temp"
+E2E_CLOSURE_TMPDIR="$ROOT/e2e-closure-tmp"
 
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
 gitdir() { git -C "$1" rev-parse --absolute-git-dir; }
 slot_state() { printf '%s/nuinui-implementation-slot/state\n' "$(gitdir "$1")"; }
 lane_refs() { git -C "$1" for-each-ref --format='%(refname) %(objectname)' | sort; }
+e2e_closure_check() {
+  env \
+    NUINUI_E2E_PREPARE_WT="$E2E" \
+    NUINUI_E2E_TEMP_PARENT="$E2E_CLOSURE_TEMP" \
+    TMPDIR="$E2E_CLOSURE_TMPDIR" \
+    zsh "$E2E_PREPARE_HELPER" closure-check "$1"
+}
 
 expect_begin_blocked() {
   name="$1"
@@ -226,6 +236,7 @@ git -C "$MAIN" config user.name test
 git -C "$MAIN" config user.email test@example.invalid
 git -C "$MAIN" worktree add -q --detach "$SUB" origin/main
 git -C "$MAIN" worktree add -q --detach "$E2E" origin/main
+mkdir -p "$E2E_CLOSURE_TEMP" "$E2E_CLOSURE_TMPDIR"
 
 export NUINUI_SELFTEST=1
 export NUINUI_MAIN_WT="$MAIN"
@@ -248,7 +259,19 @@ E2E_START_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
 [ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_TESTED_REF" ] || fail 'normal E2E start changed the tested ref'
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E start dirtied the checkout'
 [ -f "$E2E_MARKER" ] || fail 'normal E2E start did not create the marker'
+[ ! -e "$(gitdir "$E2E")/nuinui-e2e-session" ] || fail 'release-ready E2E state has prep session metadata'
 [ "$(cat "$E2E_MARKER")" = "$(printf 'issue=SAY-299\nref=%s\n' "$E2E_TESTED_REF")" ] || fail 'normal E2E start wrote the wrong marker'
+echo 'PASS: release-ready E2E state preserves marker until e2e-release'
+if E2E_CLOSURE_OUTPUT=$(e2e_closure_check SAY-299 2>&1); then
+  printf '%s\n' "$E2E_CLOSURE_OUTPUT"
+  fail 'release-ready same-Issue closure-check unexpectedly succeeded'
+else
+  E2E_CLOSURE_RC=$?
+fi
+[ "$E2E_CLOSURE_RC" -ne 0 ] || fail 'release-ready same-Issue closure-check returned zero'
+assert_line "$E2E_CLOSURE_OUTPUT" '^  marker=BLOCKING-SAME-ISSUE$' 'release-ready closure-check did not block on the marker'
+assert_line "$E2E_CLOSURE_OUTPUT" '^  session=none-for-requested-issue$' 'release-ready closure-check did not prove no prep session'
+assert_line "$E2E_CLOSURE_OUTPUT" '^E2E CLOSURE BLOCKED$' 'release-ready closure-check did not report BLOCKED'
 E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release)
 [ "$(printf '%s\n' "$E2E_RELEASE_OUTPUT" | tail -n 1)" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_OUTPUT"; fail 'normal E2E release did not return exact success output'; }
 [ ! -e "$E2E_MARKER" ] || fail 'normal E2E release retained the marker'
@@ -256,6 +279,11 @@ E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release)
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E release dirtied the checkout'
 E2E_RELEASE_REF="$(git -C "$E2E" rev-parse origin/main)"
 [ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_RELEASE_REF" ] || fail 'normal E2E release did not return to origin/main'
+E2E_CLOSURE_OUTPUT=$(e2e_closure_check SAY-299) || {
+  printf '%s\n' "$E2E_CLOSURE_OUTPUT"
+  fail 'post-release closure-check did not become clean'
+}
+assert_line "$E2E_CLOSURE_OUTPUT" '^E2E CLOSURE CLEAN$' 'post-release closure-check did not report clean'
 echo 'PASS: normal E2E start/release regression'
 
 expect_old_signature_rejected 'old claimless resume signature' resume main SAY-1 "$BASE" old-branch

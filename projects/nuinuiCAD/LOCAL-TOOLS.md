@@ -193,15 +193,23 @@ merge_method=MERGE
 nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
 nuinui-e2e-prepare status
-nuinui-e2e-prepare closure-check <SAY-123>
 nuinui-e2e-prepare cleanup
+nuinui-e2e-prepare closure-check <SAY-123>  # post-release final gate only
 ```
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。
 
-session metadataはexact E2E root / handoff / launch PIDを保持する。`cleanup`はmetadataとmarkerを再検証しowned resourcesだけを終了・削除する。session metadataが残る間はe2e laneをreleaseしない。
+Human E2Eのcanonical successful closureは、次の順序に固定する。
 
-`status`と`closure-check`はread-only。unmanaged artifactや別Issue stateを勝手にcleanupしない。
+```text
+nuinui-e2e-prepare cleanup
+nuinui e2e-release
+nuinui-e2e-prepare closure-check <SAY-123>
+```
+
+session metadataはexact E2E root / handoff / launch PIDを保持する。`cleanup`はmetadataとtested markerを再検証し、owned process / temporary root / handoff / session metadataだけを削除する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。markerを削除するのは`nuinui e2e-release`だけである。session metadataが残る間はe2e laneをreleaseしない。
+
+`status`と`closure-check`はread-only。unmanaged artifactや別Issue stateを勝手にcleanupしない。`closure-check`はe2e-release後だけに行うfinal read-only closure proofであり、cleanupとe2e-releaseの間の通常のrelease-precondition checkではない。同一Issue markerが残っている間はclosure-checkが`BLOCKED`になるfail-closed semanticsを維持する。
 
 `projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`はtemporary Git checkoutとfake hostでisolated self-testを行う。実機VS Code / dependency / CDP lifecycleはactual e2e preparation時に別途確認する。
 

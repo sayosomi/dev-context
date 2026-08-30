@@ -17,6 +17,18 @@ E2E chatを新しく作っただけでは`e2e` laneをclaimしない。tested co
 - Human向けVS Code host preparationでは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned Human E2E preparation helperがcurrent local cloneで利用可能なら、そのhelperをhandoffに使う。ChatGPTが同じlaunch / session lifecycleをinline shellとして再実装しない。
 - versioned preparation helperの実行がunexpected error / hang / state mismatchになった場合、まずhelperの`status`とowner documentのrepair / fallback ruleで状態を分類する。session rootやtemporary artifactをad-hoc shellで探索・推測して別launcherへ迂回しない。
 
+## Human E2E closure handoff
+
+Canonicalなsuccessful closure handoffは、必ず次の順序で行う。
+
+```text
+nuinui-e2e-prepare cleanup
+nuinui e2e-release
+nuinui-e2e-prepare closure-check <Issue>
+```
+
+cleanup成功後はtested same-Issue markerが残るnormalなrelease-ready stateであり、markerを削除するのは`e2e-release`である。`closure-check`はrelease後のfinal read-only closure proofとしてだけ実行し、cleanupとe2e-releaseの間には置かない。同一Issue markerがある間はclosure-checkが`BLOCKED`になるsemanticsを変更しない。Manual E2EのPASS/FAIL semanticsは[`MANUAL-E2E.md`](./MANUAL-E2E.md)のまま維持する。
+
 ## Chat rotation / recovery
 
 E2E chatのrotation自体はTask pauseではない。tested commit、marker、lane ownership、Manual E2E stateをrotationだけで変更しない。
