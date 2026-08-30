@@ -473,6 +473,57 @@ lifecycle_release_prove_drift_checkout() {
   an "$lifecycle_release_repo" "$lifecycle_release_topic_checkpoint" "$authoritative_main" || return 1
 }
 
+lifecycle_release_prove_duplicate() {
+  local receipt receipt_lane receipt_issue receipt_branch receipt_base receipt_checkpoint receipt_claim
+  local current_branch current_head authoritative_main
+
+  lifecycle_release_duplicate_proven=
+  case "$lifecycle_release_lane" in
+    main|sub) ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$lifecycle_release_saved_checkpoint" || return 1
+  nuinui_ownership_valid_claim "$lifecycle_release_claim" || return 1
+  [ -n "$lifecycle_release_git_dir" ] || return 1
+  [ ! -e "$lifecycle_release_slot_dir" ] || return 1
+  [ ! -e "$lifecycle_release_lock_dir" ] || return 1
+  [ -z "$(rds "$lifecycle_release_repo")" ] || return 1
+
+  receipt=$(rr "$lifecycle_release_repo") || return 1
+  [ -f "$receipt" ] || return 1
+  set -- $(nuinui_ownership_parse_release_receipt "$receipt") || return 1
+  [ "$#" = 6 ] || return 1
+  receipt_lane=$1
+  receipt_issue=$2
+  receipt_branch=$3
+  receipt_base=$4
+  receipt_checkpoint=$5
+  receipt_claim=$6
+  [ "$receipt_lane" = "$lifecycle_release_lane" ] || return 1
+  [ "$receipt_checkpoint" = "$lifecycle_release_saved_checkpoint" ] || return 1
+  [ "$receipt_claim" = "$lifecycle_release_claim" ] || return 1
+  an "$lifecycle_release_repo" "$receipt_base" "$receipt_checkpoint" || return 1
+
+  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
+  current_branch=$(bn "$lifecycle_release_repo")
+  case "$lifecycle_release_lane" in
+    main) [ "$current_branch" = main ] || return 1 ;;
+    sub) [ -z "$current_branch" ] || return 1 ;;
+  esac
+  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null) || return 1
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  authoritative_main=$(am "$lifecycle_release_repo") || return 1
+  nuinui_ownership_valid_sha "$authoritative_main" || return 1
+  [ "$current_head" = "$authoritative_main" ] || return 1
+  an "$lifecycle_release_repo" "$receipt_checkpoint" "$authoritative_main" || return 1
+
+  lifecycle_release_duplicate_issue=$receipt_issue
+  lifecycle_release_duplicate_branch=$receipt_branch
+  lifecycle_release_duplicate_base=$receipt_base
+  lifecycle_release_duplicate_origin_main=$authoritative_main
+  lifecycle_release_duplicate_proven=yes
+}
+
 lifecycle_release_validate() {
   lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo" 2>/dev/null || true)
   if [ -n "$lifecycle_release_git_dir" ]; then
@@ -483,6 +534,7 @@ lifecycle_release_validate() {
     lifecycle_release_lock_dir=
   fi
   lifecycle_release_tombstones=
+  lifecycle_release_duplicate_proven=
   [ -z "$lifecycle_release_git_dir" ] || lifecycle_release_tombstones=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)
 
   if [ -n "$lifecycle_release_tombstones" ]; then
@@ -504,6 +556,10 @@ lifecycle_release_validate() {
     fi
     printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
     return 1
+  fi
+  if [ -n "$lifecycle_release_git_dir" ] && [ ! -e "$lifecycle_release_slot_dir" ] &&
+    lifecycle_release_prove_duplicate; then
+    return 0
   fi
   if [ -z "$lifecycle_release_git_dir" ] ||
     [ ! -d "$lifecycle_release_slot_dir" ] ||
@@ -579,6 +635,18 @@ lifecycle_release_validate() {
   return 0
 }
 
+lifecycle_emit_release_duplicate_envelope() {
+  printf 'IMPLEMENTATION ALREADY RELEASED\n'
+  printf 'lane=%s\n' "$lifecycle_release_lane"
+  printf 'issue=%s\n' "$lifecycle_release_duplicate_issue"
+  printf 'base=%s\n' "$lifecycle_release_duplicate_base"
+  printf 'saved_checkpoint=%s\n' "$lifecycle_release_saved_checkpoint"
+  printf 'released_claim=%s\n' "$lifecycle_release_claim"
+  printf 'released_branch=%s\n' "$lifecycle_release_duplicate_branch"
+  printf 'origin_main=%s\n' "$lifecycle_release_duplicate_origin_main"
+  printf 'clean=yes\nmutation=no-op\nstate=FREE\n'
+}
+
 lifecycle_emit_release_envelope() {
   printf 'IMPLEMENTATION RELEASED\n'
   printf 'lane=%s\n' "$lifecycle_release_lane"
@@ -611,6 +679,10 @@ lifecycle_release_command() {
   }
 
   lifecycle_release_validate || return $?
+  if [ "$lifecycle_release_duplicate_proven" = yes ]; then
+    lifecycle_emit_release_duplicate_envelope
+    return 0
+  fi
   lifecycle_release_output=$(rl "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" \
     "$lifecycle_release_claim" 2>&1) || lifecycle_release_rc=$?
 

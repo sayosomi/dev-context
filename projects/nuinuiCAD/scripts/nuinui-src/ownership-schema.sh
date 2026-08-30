@@ -110,6 +110,21 @@ nuinui_ownership_parse_slot() {
   printf '%s %s %s %s\n' "$2" "$3" "$4" "$5"
 }
 
+nuinui_ownership_parse_release_receipt() {
+  set -- $(nuinui_ownership_read_fields "$1" version,lane,issue,branch,base,checkpoint,claim) || return 1
+  [ "$#" = 7 ] || return 1
+  [ "$1" = 1 ] || return 1
+  case "$2" in
+    main|sub) ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
+  nuinui_ownership_valid_sha "$5" || return 1
+  nuinui_ownership_valid_sha "$6" || return 1
+  nuinui_ownership_valid_claim "$7" || return 1
+  printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
 nuinui_ownership_parse_lock() {
   set -- $(nuinui_ownership_read_fields "$1" version,operation,issue,branch,base,checkpoint,claim) || return 1
   [ "$#" = 7 ] || return 1
