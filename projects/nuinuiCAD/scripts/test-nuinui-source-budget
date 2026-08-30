@@ -15,20 +15,51 @@ source_budget_check() {
     }
   done
 
-  source_budget_list=$(mktemp "${TMPDIR:-/tmp}/nuinui-source-budget.XXXXXX")
-  {
-    find "$source_budget_script_dir/nuinui-src" -type f -print
-    find "$source_budget_script_dir/nuinui-handoff-check-src" -type f -print
-    find "$source_budget_script_dir" -maxdepth 1 -type f -print | while IFS= read -r source_path; do
-      source_name=${source_path##*/}
-      case "$source_name" in
-        nuinui|nuinui-handoff-check|generate-*|test-*)
-          continue
-          ;;
-      esac
-      printf '%s\n' "$source_path"
-    done
-  } | LC_ALL=C sort > "$source_budget_list"
+  source_budget_workspace=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-source-budget.XXXXXX")
+  source_budget_nuinui_list=$source_budget_workspace/nuinui-src
+  source_budget_handoff_list=$source_budget_workspace/nuinui-handoff-check-src
+  source_budget_top_level_list=$source_budget_workspace/top-level
+  source_budget_unsorted_list=$source_budget_workspace/unsorted
+  source_budget_list=$source_budget_workspace/sorted
+
+  if ! find "$source_budget_script_dir/nuinui-src" -type f -print > "$source_budget_nuinui_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=nuinui-src path=$source_budget_script_dir/nuinui-src" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
+  if ! find "$source_budget_script_dir/nuinui-handoff-check-src" -type f -print > "$source_budget_handoff_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=nuinui-handoff-check-src path=$source_budget_script_dir/nuinui-handoff-check-src" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
+  if ! find "$source_budget_script_dir" -maxdepth 1 -type f -print > "$source_budget_top_level_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=top-level path=$source_budget_script_dir" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
+  if ! cat "$source_budget_nuinui_list" "$source_budget_handoff_list" > "$source_budget_unsorted_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=combine path=$source_budget_workspace" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
+  if ! while IFS= read -r source_path || [ -n "$source_path" ]; do
+    source_name=${source_path##*/}
+    case "$source_name" in
+      nuinui|nuinui-handoff-check|generate-*|test-*)
+        continue
+        ;;
+    esac
+    printf '%s\n' "$source_path"
+  done < "$source_budget_top_level_list" >> "$source_budget_unsorted_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=top-level-classification path=$source_budget_script_dir" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
+  if ! LC_ALL=C sort "$source_budget_unsorted_list" > "$source_budget_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=sort path=$source_budget_unsorted_list" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
 
   source_budget_rc=0
   source_count=0
@@ -47,7 +78,7 @@ source_budget_check() {
       source_budget_rc=1
     fi
   done < "$source_budget_list"
-  rm -f "$source_budget_list"
+  rm -rf "$source_budget_workspace"
 
   [ "$source_budget_rc" = 0 ] || return "$source_budget_rc"
   echo "SOURCE BUDGET PASS: sources=$source_count largest=$largest_source actual=$largest_bytes budget=$budget"
@@ -124,6 +155,36 @@ run_expected_pass() {
   echo "PASS: $source_budget_label"
 }
 
+make_failing_find() {
+  source_budget_fake_find=$1
+  source_budget_real_find=$2
+  {
+    printf '%s\n' '#!/bin/sh'
+    printf '%s\n' 'case "$1" in'
+    printf '%s\n' '  */nuinui-src) exit 91 ;;'
+    printf '%s\n' 'esac'
+    printf 'exec %s "$@"\n' "$source_budget_real_find"
+  } > "$source_budget_fake_find"
+  chmod 755 "$source_budget_fake_find"
+}
+
+run_expected_discovery_failure() {
+  source_budget_label=$1
+  source_budget_runner=$2
+  source_budget_find_bin=$3
+  source_budget_failed_root=$4
+  if source_budget_output=$(PATH="$source_budget_find_bin:$PATH" "$source_budget_runner" --check 2>&1); then
+    printf '%s\n' "$source_budget_output"
+    fail "$source_budget_label unexpectedly passed"
+  fi
+  assert_contains "$source_budget_output" 'SOURCE BUDGET BLOCKED: discovery=nuinui-src' "$source_budget_label missing discovery stage"
+  assert_contains "$source_budget_output" "path=$source_budget_failed_root" "$source_budget_label missing discovery path"
+  case "$source_budget_output" in
+    *'SOURCE BUDGET PASS:'*) fail "$source_budget_label emitted a successful result" ;;
+  esac
+  echo "PASS: $source_budget_label"
+}
+
 budget_script=$script_dir/test-nuinui-source-budget
 [ -x "$budget_script" ] || fail 'source-budget owner is missing or not executable'
 
@@ -161,6 +222,18 @@ standalone_fixture=$(make_fixture standalone)
 standalone_path=$standalone_fixture/scripts/new-standalone-helper
 make_bytes 32769 "$standalone_path"
 run_expected_failure 'top-level standalone helper over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$standalone_path"
+
+discovery_fixture=$(make_fixture discovery-failure)
+discovery_bin=$discovery_fixture/bin
+mkdir -p "$discovery_bin"
+make_failing_find "$discovery_bin/find" "$(command -v find)"
+if PATH="$discovery_bin:$PATH" find "$discovery_fixture/scripts/nuinui-src" -type f -print >/dev/null 2>&1; then
+  fail 'synthetic guarded discovery command unexpectedly passed'
+fi
+run_expected_discovery_failure 'guarded discovery failure is fail-closed' \
+  "$discovery_fixture/scripts/test-nuinui-source-budget" \
+  "$discovery_bin" \
+  "$discovery_fixture/scripts/nuinui-src"
 
 exclusion_fixture=$(make_fixture exclusions)
 for excluded_name in nuinui nuinui-handoff-check generate-synthetic test-synthetic; do
