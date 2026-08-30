@@ -85,6 +85,16 @@ Humanへ戻してよいのはproduct / UX / scope decision、unsafe local state�
 
 local deterministic releaseだけが残る場合はWork completion / Linear statusとphysical lane cleanupを混同しない。
 
+## Merge-only Human integration continuation
+
+Integration Watermark到達済みのalready-reviewed Review Headに対し、fresh post-integration semantic driftが`NON-INTERFERING`で、repository merge gateがcurrent-base freshnessだけを要求する場合は、[`CODING-AGENT.md`](./CODING-AGENT.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のnarrow exceptionとしてHuman `nuinui integrate-clean`へ直接handoffしてよい。
+
+このrouteではnew implementation lane / Base / Luna sessionを作らない。current active durable generationのIssue / claim / Review Headとfresh current main、settled verification script、optional expected-file manifestをexact inputとして渡す。
+
+`INTEGRATION PUSHED`を受けたら、ChatGPTはnew merge headのparents、effective diff / merge tree、verification evidence、remote topic/current mainをfresh確認してfocused merge-only blocking reviewを行う。その後もrequired PR CIを通常どおり満たす。
+
+helperが`BLOCKED:` / `ERROR:`を返し、conflict、source edit、integration fix、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常Luna lifecycleへ戻す。
+
 ## Final closure declaration rule
 
 Issue `Done`とimplementation laneを含むexecution lifecycle final closureを区別する。

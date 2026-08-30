@@ -148,12 +148,22 @@ New sessionでもReuseでも、current-run Execution Envelopeとmechanical hando
 
 - New slice: ChatGPTがfresh remote / Linear occupancy / parallel-admission decisionからtarget FREE lane、Base、branch、expected peerを決める -> Humanが`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>`を1回実行 -> complete `IMPLEMENTATION STARTED` envelopeを確認 -> existing Linear checkpoint ruleを完了 -> `absent` handoffを生成。
 - Same active durable generation continuation: last verified lifecycle envelopeまたはcurrent Linear checkpointからBranch / Base / Claim / Checkpointをcaller expectationとして渡す -> Human preflightなしでLunaが最初にexact prefilled `nuinui-handoff-check`を実行 -> first lineが`BLOCKED: handoff claimed branch mismatch`でmodeが`exact`の場合だけ、exact prefilled resumeを1回実行してcanonical `IMPLEMENTATION RESUMED`を確認し、同じhandoffを再実行する -> `HANDOFF VERIFIED`後に続行する。それ以外のfailureは[`CHECKOUTS.md`](./CHECKOUTS.md)へroutingする。
-- Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。`nuinui-handoff-check`がactual local evidenceを再検証する。
+- Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> 通常はsame-generation claim / checkpointを`exact` Luna handoffへ渡す。already-reviewed headについてChatGPTがsemantic `NON-INTERFERING` + current-base freshness-only merge gateをauthorizeした場合だけ、same durable identityをcaller inputにしてHuman `nuinui integrate-clean`へrouteできる。
 - Blocking fix continuation: pushed reviewed/fix checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。blocking fixだけを理由にHuman preflightへ戻さない。
 - Chat rotation: rotation aloneではpreflightを要求しない。current Issue / lane / generation / checkpointをdurable external stateから復元できる場合は、caller expectationを構成して`nuinui-handoff-check`へ進む。
 - Crash、Issue #84 exception外のBLOCKED、unexpected checkout / branch / dirty state、identity不明、explicit diagnosis / recoveryでは[`CHECKOUTS.md`](./CHECKOUTS.md)のpreflight diagnostic / routing ruleを使う。exact pushed-checkpoint continuationのinitial failureがexactly `BLOCKED: handoff claimed branch mismatch`の場合だけは、上記one-attempt recoveryを先に適用し、recovery失敗・ambiguous evidence・second handoff failure時にCHECKOUTS.mdへroutingする。
 
 ChatGPT-side remote freshness gateは各handoff生成直前に行う。remote main freshnessはこのGitHub-side checkとhandoff-check inputであり、それだけではHuman 3-lane preflightのinvalidationではない。
+
+## Conflict-free Human integration handoff
+
+`nuinui integrate-clean`は`nuinui-handoff-check`のreplacementではなく、same durable execution identityをconsumeする別のmutation boundary。
+
+ChatGPTは実行前にlatest remote main、saved Review Head / Integration Watermark / claim、post-integration driftをfresh確認し、semantic `NON-INTERFERING`とcurrent-base freshness-only merge gateをauthorizeする。helper自身がmutation直前・verification後・push後にexact durable/local/remote stateを再検証するため、過去の`HANDOFF VERIFIED`だけでmutationをauthorizeしない。
+
+checkout / branch / claim mismatchがある場合、`integrate-clean`はsilent resume / repairをしない。exact pushed-checkpoint continuationが既存Issue 84 recovery条件を満たす場合は先にそのresume + handoff recoveryを完了し、clean exact checkpointを再構成してから別 invocationとして`integrate-clean`へ進む。
+
+success envelopeのnew `head`はmerge-only integration checkpoint、`integration_watermark`はmerged exact main。helper成功だけでblocking review freshnessやrequired PR CIをPASS扱いにしない。
 
 ## Versioned helper
 

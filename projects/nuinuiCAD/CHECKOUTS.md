@@ -105,11 +105,17 @@ remote `main` advanceは観測してよい。contract / ownershipを無効化す
 1. current sliceの実装とfocused verificationを完了する。
 2. branchへcommit / pushしcurrent stateをremote保存する。
 3. Base checkpoint以降のremote `main` changeを確認する。
-4. Lunaが必要なintegration / conflict fixをそのlaneで行う。
+4. 原則Lunaが必要なintegration / conflict fixをそのlaneで行う。semantic driftが`NON-INTERFERING`でcurrent-base freshnessだけがmerge gateとなるexact narrow caseは`nuinui integrate-clean`を使ってよい。
 5. integration後のrequired verificationを行う。
 6. blocking review / merge gateへ進む。
 
 integration checkpoint前に相手laneの進行中branchへ依存しない。dependencyが必要なら依存先mergeまでsafe checkpointで止める。Post-integration Driftの扱いは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
+
+### Conflict-free merge-only refresh exception
+
+Integration Watermark到達後のalready-reviewed topicについて、ChatGPTがpost-integration semantic driftを`NON-INTERFERING`とfresh判定し、repository merge gateがcurrent-base freshnessだけを要求する場合は、`nuinui integrate-clean`をsame active durable generationでHumanが実行してよい。
+
+このhelperはnew lane claim / Base refresh / source implementation routeではない。current durable slotをconsumeし、exact Issue / claim / branch / Base / local topic / remote topic / current main / clean stateをmutation boundaryで再検証する。conflict resolutionやintegration fixは行わず、conflictまたはpre-commit failureではoriginal topic checkpointへのexact rollbackを証明する。push failure後はverified local merge commitを保持してfresh diagnosisへ戻す。
 
 ## Durable implementation ownership
 

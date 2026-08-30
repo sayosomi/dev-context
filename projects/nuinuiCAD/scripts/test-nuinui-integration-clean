@@ -1,0 +1,346 @@
+set -eu
+
+if [ "$#" -gt 0 ]; then
+  case "$1" in
+    /*) HELPER=$1 ;;
+    *) HELPER=$(CDPATH= cd -- "$(dirname -- "$1")" && pwd -P)/$(basename -- "$1") ;;
+  esac
+else
+  HELPER=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui
+fi
+
+ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-integrate-clean-test.XXXXXX")
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() {
+  echo "INTEGRATION CLEAN TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
+}
+
+helper() {
+  NUINUI_SELFTEST=1 \
+  NUINUI_MAIN_WT="$M" \
+  NUINUI_SUB_WT="$S" \
+  NUINUI_E2E_WT="$E" \
+  NUINUI_DEV_CONTEXT_WT="$CASE_ROOT/context" \
+  "$HELPER" "$@"
+}
+
+setup_case() {
+  case_name=$1
+  case_mode=${2:-clean}
+  CASE_ROOT=$ROOT/$case_name
+  O=$CASE_ROOT/origin.git
+  M=$CASE_ROOT/main
+  S=$CASE_ROOT/sub
+  E=$CASE_ROOT/e2e
+  mkdir -p "$CASE_ROOT"
+  git init -q --bare "$O"
+  git init -q -b main "$M"
+  git -C "$M" config user.name test
+  git -C "$M" config user.email test@example.com
+  printf 'base\n' > "$M/shared.txt"
+  printf 'base\n' > "$M/base.txt"
+  git -C "$M" add shared.txt base.txt
+  git -C "$M" commit -qm base
+  git -C "$M" remote add origin "$O"
+  git -C "$M" push -qu origin main
+  git -C "$M" worktree add -q --detach "$S" origin/main
+  git -C "$M" worktree add -q --detach "$E" origin/main
+  git -C "$S" config user.name test
+  git -C "$S" config user.email test@example.com
+  git -C "$E" config user.name test
+  git -C "$E" config user.email test@example.com
+
+  helper lane-init main >/dev/null || fail "$case_name lane-init main failed"
+  helper lane-init sub >/dev/null || fail "$case_name lane-init sub failed"
+
+  BASE=$(git -C "$M" rev-parse HEAD)
+  START_OUT=$(helper start sub SAY-89 "$BASE" sayosomi/say-89-integration-clean-test) ||
+    fail "$case_name start failed"
+  CLAIM=$(printf '%s\n' "$START_OUT" | sed -n 's/^claim=//p')
+  [ -n "$CLAIM" ] || CLAIM=$(printf '%s\n' "$START_OUT" | sed -n 's/^  claim=//p')
+  [ -n "$CLAIM" ] || fail "$case_name claim missing"
+
+  if [ "$case_mode" = conflict ]; then
+    printf 'topic\n' > "$S/shared.txt"
+    git -C "$S" add shared.txt
+  else
+    printf 'topic\n' > "$S/topic.txt"
+    git -C "$S" add topic.txt
+  fi
+  git -C "$S" commit -qm topic
+  git -C "$S" push -qu origin HEAD
+  TOPIC=$(git -C "$S" rev-parse HEAD)
+
+  if [ "$case_mode" = conflict ]; then
+    printf 'main\n' > "$M/shared.txt"
+    git -C "$M" add shared.txt
+  else
+    printf 'main\n' > "$M/main.txt"
+    git -C "$M" add main.txt
+  fi
+  git -C "$M" commit -qm main
+  git -C "$M" push -q origin main
+  MAIN_HEAD=$(git -C "$M" rev-parse HEAD)
+
+  VERIFY_OK=$CASE_ROOT/verify-ok
+  printf '\043!/bin/sh\nexit 0\n' > "$VERIFY_OK"
+  chmod 755 "$VERIFY_OK"
+  MANIFEST_OK=$CASE_ROOT/files-ok
+  printf 'topic.txt\0' > "$MANIFEST_OK"
+}
+
+run_failure() {
+  name=$1
+  expected=$2
+  shift 2
+  if output=$("$@" 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    rc=$?
+  fi
+  [ "$rc" -ne 0 ] || fail "$name returned zero"
+  [ -n "$output" ] || fail "$name produced no diagnostic"
+  first=$(printf '%s\n' "$output" | sed -n '1p')
+  case "$first" in
+    BLOCKED:*|ERROR:*) ;;
+    *) fail "$name first line was not classified: $first" ;;
+  esac
+  assert_contains "$output" "$expected" "$name missing expected diagnostic"
+  LAST_OUTPUT=$output
+}
+
+assert_restored() {
+  name=$1
+  [ "$(git -C "$S" rev-parse HEAD)" = "$TOPIC" ] || fail "$name did not restore topic HEAD"
+  [ "$(git -C "$S" branch --show-current)" = sayosomi/say-89-integration-clean-test ] ||
+    fail "$name did not restore topic branch"
+  [ -z "$(git -C "$S" status --porcelain)" ] || fail "$name did not restore clean worktree"
+  if git -C "$S" rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    fail "$name left MERGE_HEAD"
+  fi
+  remote_topic=$(git -C "$S" ls-remote --heads origin refs/heads/sayosomi/say-89-integration-clean-test |
+    awk 'NR==1{print $1}')
+  [ "$remote_topic" = "$TOPIC" ] || fail "$name remote topic changed"
+}
+
+setup_case success
+SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
+  fail 'success case failed'
+first=$(printf '%s\n' "$SUCCESS_OUT" | sed -n '1p')
+[ "$first" = 'INTEGRATION PUSHED' ] || fail 'success first line mismatch'
+SUCCESS_HEAD=$(printf '%s\n' "$SUCCESS_OUT" | sed -n 's/^head=//p')
+[ -n "$SUCCESS_HEAD" ] || fail 'success head missing'
+assert_contains "$SUCCESS_OUT" "lane=sub" 'success lane missing'
+assert_contains "$SUCCESS_OUT" "issue=SAY-89" 'success issue missing'
+assert_contains "$SUCCESS_OUT" "branch=sayosomi/say-89-integration-clean-test" 'success branch missing'
+assert_contains "$SUCCESS_OUT" "prior_topic=$TOPIC" 'success prior topic missing'
+assert_contains "$SUCCESS_OUT" "integration_watermark=$MAIN_HEAD" 'success watermark missing'
+assert_contains "$SUCCESS_OUT" "claim=$CLAIM" 'success claim missing'
+assert_contains "$SUCCESS_OUT" "topic_remote=$SUCCESS_HEAD" 'success remote missing'
+assert_contains "$SUCCESS_OUT" "verification=PASS" 'success verification missing'
+assert_contains "$SUCCESS_OUT" "file_set=VERIFIED" 'success file set missing'
+assert_contains "$SUCCESS_OUT" "clean=yes" 'success clean missing'
+set -- $(git -C "$S" rev-list --parents -n 1 "$SUCCESS_HEAD")
+[ "$#" = 3 ] || fail 'success did not create two-parent merge'
+[ "$2" = "$TOPIC" ] || fail 'success first parent mismatch'
+[ "$3" = "$MAIN_HEAD" ] || fail 'success second parent mismatch'
+effective_files=$CASE_ROOT/effective-files
+git -C "$S" diff --name-only -z "$MAIN_HEAD" "$SUCCESS_HEAD" > "$effective_files"
+cmp -s "$effective_files" "$MANIFEST_OK" || fail 'success effective file set mismatch'
+[ -z "$(git -C "$S" status --porcelain)" ] || fail 'success worktree dirty'
+
+setup_case no-manifest
+NO_MANIFEST_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -) ||
+  fail 'no-manifest case failed'
+assert_contains "$NO_MANIFEST_OUT" 'file_set=NOT_REQUESTED' 'no-manifest result mismatch'
+
+setup_case dirty
+printf 'dirty\n' > "$S/dirty.tmp"
+run_failure dirty 'active lane checkpoint could not be proven clean and exact' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+rm "$S/dirty.tmp"
+
+setup_case wrong-lane
+run_failure wrong-lane 'lane must be main or sub' \
+  helper integrate-clean e2e SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+
+setup_case wrong-issue
+run_failure wrong-issue 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-999 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+
+setup_case wrong-claim
+run_failure wrong-claim 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 wrongclaim9 "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+
+setup_case wrong-branch
+git -C "$S" switch -qc sayosomi/say-89-wrong "$TOPIC"
+run_failure wrong-branch 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+
+setup_case local-topic-mismatch
+printf 'local\n' > "$S/local.txt"
+git -C "$S" add local.txt
+git -C "$S" commit -qm local
+run_failure local-topic-mismatch 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+
+setup_case remote-topic-mismatch
+WRITER=$CASE_ROOT/writer
+git clone -q "$O" "$WRITER"
+git -C "$WRITER" config user.name writer
+git -C "$WRITER" config user.email writer@example.com
+git -C "$WRITER" switch -q sayosomi/say-89-integration-clean-test
+printf 'remote\n' > "$WRITER/remote.txt"
+git -C "$WRITER" add remote.txt
+git -C "$WRITER" commit -qm remote
+git -C "$WRITER" push -q origin HEAD
+run_failure remote-topic-mismatch 'remote topic mismatch' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+
+setup_case main-mismatch
+run_failure main-mismatch 'expected main mismatch' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$BASE" "$VERIFY_OK" -
+
+setup_case conflict conflict
+run_failure conflict 'merge conflict or no-commit merge failure' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+assert_restored conflict
+
+setup_case file-set-mismatch
+MANIFEST_BAD=$CASE_ROOT/files-bad
+printf 'wrong.txt\0' > "$MANIFEST_BAD"
+run_failure file-set-mismatch 'expected effective file set mismatch' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_BAD"
+assert_restored file-set-mismatch
+
+setup_case verifier-failure
+VERIFY_FAIL=$CASE_ROOT/verify-fail
+printf '\043!/bin/sh\necho verifier-failed\nexit 7\n' > "$VERIFY_FAIL"
+chmod 755 "$VERIFY_FAIL"
+run_failure verifier-failure 'required verification failed' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_FAIL" -
+assert_contains "$LAST_OUTPUT" 'verifier-failed' 'verifier failure detail missing'
+assert_restored verifier-failure
+
+setup_case verifier-tracked-mutation
+VERIFY_MUTATE=$CASE_ROOT/verify-mutate
+printf '\043!/bin/sh\nprintf "mutated\\n" > topic.txt\nexit 0\n' > "$VERIFY_MUTATE"
+chmod 755 "$VERIFY_MUTATE"
+run_failure verifier-tracked-mutation 'verification altered prospective tracked merge state' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_MUTATE" -
+assert_restored verifier-tracked-mutation
+[ "$(cat "$S/topic.txt")" = topic ] || fail 'tracked mutation rollback did not restore topic.txt'
+
+setup_case main-race
+VERIFY_MAIN_RACE=$CASE_ROOT/verify-main-race
+printf '\043!/bin/sh\n' > "$VERIFY_MAIN_RACE"
+cat >> "$VERIFY_MAIN_RACE" <<EOF
+printf 'race\n' > "$M/race-main.txt"
+git -C "$M" add race-main.txt
+git -C "$M" commit -qm race-main
+git -C "$M" push -q origin main
+exit 0
+EOF
+chmod 755 "$VERIFY_MAIN_RACE"
+run_failure main-race 'remote main moved during verification' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_MAIN_RACE" -
+assert_restored main-race
+
+setup_case topic-race
+WRITER=$CASE_ROOT/writer
+git clone -q "$O" "$WRITER"
+git -C "$WRITER" config user.name writer
+git -C "$WRITER" config user.email writer@example.com
+git -C "$WRITER" switch -q sayosomi/say-89-integration-clean-test
+VERIFY_TOPIC_RACE=$CASE_ROOT/verify-topic-race
+printf '\043!/bin/sh\n' > "$VERIFY_TOPIC_RACE"
+cat >> "$VERIFY_TOPIC_RACE" <<EOF
+printf 'race\n' > "$WRITER/race-topic.txt"
+git -C "$WRITER" add race-topic.txt
+git -C "$WRITER" commit -qm race-topic
+git -C "$WRITER" push -q origin HEAD
+exit 0
+EOF
+chmod 755 "$VERIFY_TOPIC_RACE"
+run_failure topic-race 'rollback could not be proven' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_TOPIC_RACE" -
+[ "$(git -C "$S" rev-parse HEAD)" = "$TOPIC" ] || fail 'topic race local HEAD not restored'
+[ -z "$(git -C "$S" status --porcelain)" ] || fail 'topic race local worktree not restored'
+
+setup_case commit-failure
+HOOK_DIR=$(git -C "$S" rev-parse --git-common-dir)/hooks
+mkdir -p "$HOOK_DIR"
+PRE_COMMIT=$HOOK_DIR/pre-commit
+printf '\043!/bin/sh\nexit 9\n' > "$PRE_COMMIT"
+chmod 755 "$PRE_COMMIT"
+run_failure commit-failure 'merge commit failed before advancing HEAD' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+assert_restored commit-failure
+
+setup_case ambiguous-commit
+REAL_GIT=$(command -v git)
+WRAP_DIR=$CASE_ROOT/wrap
+mkdir -p "$WRAP_DIR"
+printf '\043!/bin/sh\n' > "$WRAP_DIR/git"
+cat >> "$WRAP_DIR/git" <<'EOF'
+set -eu
+real=${REAL_GIT:?}
+is_commit=no
+for arg in "$@"; do
+  [ "$arg" = commit ] && is_commit=yes
+done
+if [ "$is_commit" = yes ]; then
+  "$real" "$@"
+  rc=$?
+  [ "$rc" = 0 ] || exit "$rc"
+  exit 77
+fi
+exec "$real" "$@"
+EOF
+chmod 755 "$WRAP_DIR/git"
+if output=$(NUINUI_SELFTEST=1 \
+  NUINUI_MAIN_WT="$M" \
+  NUINUI_SUB_WT="$S" \
+  NUINUI_E2E_WT="$E" \
+  NUINUI_DEV_CONTEXT_WT="$CASE_ROOT/context" \
+  PATH="$WRAP_DIR:$PATH" REAL_GIT="$REAL_GIT" \
+  "$HELPER" integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" - 2>&1); then
+  printf '%s\n' "$output"
+  fail 'ambiguous commit unexpectedly succeeded'
+else
+  rc=$?
+fi
+[ "$rc" -ne 0 ] || fail 'ambiguous commit returned zero'
+assert_contains "$output" 'ERROR: merge commit reported failure after HEAD changed' 'ambiguous commit diagnostic missing'
+AMBIGUOUS_HEAD=$(git -C "$S" rev-parse HEAD)
+[ "$AMBIGUOUS_HEAD" != "$TOPIC" ] || fail 'ambiguous commit did not advance local HEAD'
+remote_topic=$(git -C "$S" ls-remote --heads origin refs/heads/sayosomi/say-89-integration-clean-test |
+  awk 'NR==1{print $1}')
+[ "$remote_topic" = "$TOPIC" ] || fail 'ambiguous commit unexpectedly pushed'
+[ -z "$(git -C "$S" status --porcelain)" ] || fail 'ambiguous commit local worktree dirty'
+
+setup_case push-failure
+PRE_RECEIVE=$O/hooks/pre-receive
+printf '\043!/bin/sh\nexit 13\n' > "$PRE_RECEIVE"
+chmod 755 "$PRE_RECEIVE"
+run_failure push-failure 'integration push failed after verified merge commit' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
+PUSH_FAIL_HEAD=$(git -C "$S" rev-parse HEAD)
+[ "$PUSH_FAIL_HEAD" != "$TOPIC" ] || fail 'push failure did not preserve local merge commit'
+set -- $(git -C "$S" rev-list --parents -n 1 "$PUSH_FAIL_HEAD")
+[ "$#" = 3 ] || fail 'push failure local commit is not a merge'
+[ "$2" = "$TOPIC" ] || fail 'push failure first parent mismatch'
+[ "$3" = "$MAIN_HEAD" ] || fail 'push failure second parent mismatch'
+remote_topic=$(git -C "$S" ls-remote --heads origin refs/heads/sayosomi/say-89-integration-clean-test |
+  awk 'NR==1{print $1}')
+[ "$remote_topic" = "$TOPIC" ] || fail 'push failure changed remote topic'
+[ -z "$(git -C "$S" status --porcelain)" ] || fail 'push failure local worktree dirty'
+
+echo 'INTEGRATION CLEAN TEST PASS'
