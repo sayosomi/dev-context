@@ -89,6 +89,6 @@ test_generator() {
   echo "PASS: $name generation candidate_sha256=$candidate_sha256 candidate_git_blob=$candidate_git_blob"
 }
 
-test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.6.6
+test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.6.7
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.0.0
 echo 'GENERATION PASS'
