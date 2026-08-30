@@ -101,6 +101,7 @@ e2e.sh
 
 context-sync.sh
   context-sync / local dev-context state diagnostics
+
 diagnostics.sh
   doctor / transition-audit / context-check
 
