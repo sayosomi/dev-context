@@ -55,7 +55,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.3`。
+current standalone helper version: `1.6.4`。
 
 development sourceはresponsibility-separatedで、次のexplicit deterministic assemblyからstandalone artifactを作る。
 
@@ -167,7 +167,7 @@ ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのまま
 
 `pr-auto-merge`, E2E, context-sync, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
-`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。PRがOPEN / non-draft / base=`main` / exact reviewed headで、current base OIDがexpected mainに一致し、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
+`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。`expected-main`はcallerがfreshに確認したauthoritative remote `main` SHAであり、helperはGitHubから`main` tipを独立取得して一致を確認する。PRの`baseRefOid`はauthoritative current-main freshnessのevidenceとして扱わない。PRがOPEN / non-draft / base=`main` / exact reviewed headで、reviewed headがそのauthoritative current `main`をintegration済みであり、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。current main mismatchは`BLOCKED: expected main mismatch`、behind PRは`BLOCKED: PR is behind current main; integration required`としてfail-closedする。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
 
 visible required checksは`gh pr checks --required`のmachine-readable stdoutだけをparseし、stderrの`no required checks reported`等のhuman proseをcheck rowとして扱わない。required check viewが空の場合はbranch protectionのrequired status metadata、ruleset metadata、exact-head pull_request workflow run、check suite、check runを相関する。exact-head Actions runがqueued / in_progressならpending、関連executionがすべてsuccessならpass、evidenceがない場合はnone-required、相関が不完全 / 矛盾 / truncatedならrequired-checks-unresolved、GitHub/API/tool failureならapi-errorとしてfail-closedする。commit-statusのdefault pendingだけではpendingと判定しない。
 
@@ -228,16 +228,16 @@ unexpected error、hang、wrong output、unsafe-looking behaviorが出た場合�
 
 ## Standalone durable helper promotion evidence
 
-current `nuinui` 1.6.3 exact Git blob:
+current `nuinui` 1.6.4 exact Git blob:
 
 ```text
-b192bfd6ad26ca538baf113d0525449e15c650ff
+8dda577d6c5261ea10700c6bbe160498e1062db5
 ```
 
 candidate SHA-256:
 
 ```text
-4f7298b66cf0e393e4b06ff891500f7379dbf52be415ea3342abaaca9811ed4b
+3a9cd6e21df707a5f13661f704fba25bfd7a357722c9f6b9bc6a14c6b0033c2c
 ```
 
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
