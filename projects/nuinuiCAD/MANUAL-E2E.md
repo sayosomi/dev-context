@@ -347,10 +347,10 @@ operate
 Per unit:
 
 - `PASS` — expected observable condition verified with sufficient evidence;
-- `FAIL` — observed product behavior objectively differs;
+- `FAIL` candidate — observed behavior objectively differs from the predeclared oracle; this is not yet a confirmed product failure;
 - `BLOCKED` — environment / remote state / initial state / operation / observation / evidence / oracle prevents reliable execution.
 
-For `FAIL`, record the expected result, observed result, concise reproduction steps, and evidence.
+For a `FAIL` candidate, record the expected result, observed result, concise reproduction steps, and evidence.
 
 For `BLOCKED`, record the exact blocking condition and do not guess through it.
 
@@ -370,14 +370,33 @@ Sol High validates evidence before accepting Luna result.
 
 A Luna `PASS` requires evidence supporting the predeclared oracle; commentary such as “looks correct” is insufficient.
 
-A Luna or Human product `FAIL` does **not** choose the implementation executor.
+A unit-level `FAIL` candidate observed by Luna or Human is evidence for classification, not a confirmed product failure. Do not set the Manual E2E result to product `FAIL` or begin implementation-failure decomposition from that observation alone.
 
-First classify the result:
+### Mandatory Human actual-host triage gate for FAIL candidates
 
-- test environment / instruction problem → correct setup / plan and rerun;
-- Luna capability problem → reclassify executor; do not treat as product failure;
-- ambiguous / newly exposed product decision → return Contract / plan to non-Ready;
-- confirmed implementation failure → return to implementation decomposition.
+After the safely executable independent units have finished, or after execution has stopped by an explicit Human instruction, aggregate the available evidence under the existing [common runtime control](#common-runtime-control-after-a-unit-result). If the aggregate contains a `FAIL` candidate and no explicit stop / pause has interrupted before triage completes, a Human must complete the following focused triage before any final Manual E2E product `FAIL` classification. This gate applies whether the candidate was observed by Luna or Human.
+
+The Human performs triage on the current tested ref using the actual production host / physical environment and verifies, at minimum:
+
+- the tested ref / build is the intended one;
+- the declared fixture and initial state are actually established;
+- execution uses the current production path;
+- the reproduction steps are reproducible;
+- the observed behavior reproduces under the same conditions; and
+- setup, environment, host state, instruction, or oracle problems do not explain the observation.
+
+Classify the candidate only after these checks:
+
+- fixture / setup / environment / instruction / host-state problem → do not confirm product `FAIL`; correct the setup / plan as appropriate and rerun the necessary unit(s);
+- Luna capability problem → reclassify the affected Objective unit to `Executor: Human` under the existing executor rule, with `Reason: Luna capability`; do not classify it as product failure;
+- ambiguous oracle / newly exposed product decision → return the Contract / Manual E2E plan to non-Ready; do not confirm product `FAIL`;
+- actual behavior on the current tested ref and current production path, reproducibly disagreeing with the contract-defined oracle after test-side explanations have been excluded → confirm Manual E2E product `FAIL` and enter the existing implementation failure decomposition flow below.
+
+If Human explicitly stops or pauses before triage completes, the [Human stop / pause rule](#common-runtime-control-after-a-unit-result) remains highest priority: request no further E2E operation, record triage as incomplete / not performed as applicable, and do not infer or confirm product `FAIL` from incomplete triage.
+
+Triage is limited to failure classification and minimal reproduction evidence collection: tested ref / build, actual host and production path, fixture / initial state, concise reproducible steps and observation, excluded test-side explanations, triage class, and whether rerun or implementation decomposition is required. It is not implementation debugging. Do not modify product code in the E2E checkout, perform ad-hoc implementation repair or fix experiments there, or turn triage into open-ended repository / source investigation. Once implementation failure is confirmed, fixes continue through the existing decomposition flow and return to a `FREE` `main` / `sub` implementation lane.
+
+After this gate, continue with the existing result-handling flow below; a confirmed implementation failure is the only triage outcome that enters implementation-failure decomposition.
 
 ### Implementation failure decomposition
 
@@ -460,12 +479,20 @@ unit FAIL?
   ↓
 runnable units complete or Human stops / pauses
   ↓
-aggregate PASS / FAIL / BLOCKED evidence
+aggregate PASS / FAIL candidate / BLOCKED evidence
   ↓
-confirmed implementation FAIL?
-  YES -> existing result handling / focused latest-main re-audit
-         -> Ready + unblocked -> FREE main/sub -> Luna fix -> merge -> rerun
-         -> Pending / Blocked -> Backlog until resolved
+FAIL candidate present?
+  YES -> mandatory Human actual-host focused triage
+         -> fixture / setup / environment / instruction / host-state problem:
+            correct setup / plan -> rerun necessary units
+         -> Luna capability problem: reclassify executor; no product FAIL
+         -> ambiguous oracle / new product decision: Contract / plan non-Ready
+         -> confirmed implementation failure:
+            confirm product FAIL -> existing result handling / focused latest-main re-audit
+            -> Ready + unblocked -> FREE main/sub -> Luna fix -> merge -> rerun
+            -> Pending / Blocked -> Backlog until resolved
+         -> Human stops / pauses before triage completes:
+            record incomplete / not performed -> no product FAIL
   NO
   ↓
 all required units PASS
