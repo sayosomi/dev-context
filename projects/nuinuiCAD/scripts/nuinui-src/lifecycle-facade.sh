@@ -425,6 +425,25 @@ lifecycle_resume_command() {
   return 1
 }
 
+lifecycle_release_prove_drift_checkout() {
+  local current_branch current_head authoritative_main
+  current_branch=$(bn "$lifecycle_release_repo")
+  current_head=$lifecycle_release_head
+
+  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
+  case "$lifecycle_release_lane" in
+    main) [ "$current_branch" = main ] || return 1 ;;
+    sub) [ -z "$current_branch" ] || return 1 ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  fp "$lifecycle_release_repo" || return 1
+  authoritative_main=$(om "$lifecycle_release_repo" 2>/dev/null) || return 1
+  nuinui_ownership_valid_sha "$authoritative_main" || return 1
+  an "$lifecycle_release_repo" "$current_head" "$authoritative_main" || return 1
+  an "$lifecycle_release_repo" "$lifecycle_release_topic_checkpoint" "$authoritative_main" || return 1
+}
+
 lifecycle_release_validate() {
   lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo" 2>/dev/null || true)
   if [ -n "$lifecycle_release_git_dir" ]; then
@@ -505,12 +524,21 @@ lifecycle_release_validate() {
     return 1
   fi
   lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || true)
-  if [ "$lifecycle_release_head" != "$lifecycle_release_topic_checkpoint" ]; then
-    echo 'BLOCKED: checkpoint mismatch'
-    printf 'expected=%s\nactual=%s\n' "$lifecycle_release_topic_checkpoint" "$lifecycle_release_head"
-    printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
-      "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
-    return 1
+  if [ "$lifecycle_release_head" = "$lifecycle_release_topic_checkpoint" ] &&
+    [ "$(bn "$lifecycle_release_repo")" = "$lifecycle_release_topic" ]; then
+    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
+      echo 'BLOCKED: claim-checkout-mismatch'
+      printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
+        "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+      return 1
+    fi
+  else
+    if ! lifecycle_release_prove_drift_checkout; then
+      echo 'BLOCKED: claim-checkout-mismatch'
+      printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
+        "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+      return 1
+    fi
   fi
   if [ -n "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ]; then
     echo 'BLOCKED: mutation lock/state conflict'

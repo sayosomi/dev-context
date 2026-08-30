@@ -296,6 +296,10 @@ releaseはvalid active slotがexpected claimを所有し、claimed local topic b
 
 PR merge後にremote topic refが自動削除されていても、それ自体をBLOCK条件にしない。authoritative evidenceはsaved exact checkpointとcurrent `origin/main` ancestryである。別のsafe mergeで`origin/main`がさらにadvanceしていてもcheckpointがancestorならlatest `origin/main`へreleaseしてよい。
 
+post-mergeに実装laneのcheckoutだけがdriftした場合、release自身が次の狭い条件をすべて満たすときだけ、既存local claimed topicへ復旧してから続行できる。active slotがIssue-derived branch / base / caller claimとexact一致し、lock / tombstoneがなく、local topic refがsaved checkpointとexact一致し、checkpointがfresh authoritative `origin/main`に含まれ、topicが別worktreeでcheckoutされていないことを確認する。current checkoutは`main` laneならcleanな名前付き`main`、`sub` laneならcleanなdetached HEADに限り、current HEADもfresh `origin/main`に含まれていなければならない。remote topicはabsentでもよいが、存在する場合は同じcheckpointのexact refでなければならない。
+
+この復旧はreleaseの既存mutation lock取得後、slotをreleasing tombstoneへrenameする前に行う。switch直前に上記critical factsを再取得・再検証し、existing local branchへの通常の`git switch`だけを使う。branch生成、reset、stash、merge、rebase、force switchは行わない。driftがdirty、別named branch、別worktree、remote / ancestry / metadataが不明確、または再検証中に変化した場合は`BLOCKED:`でactive slotを保持する。`resume` / `recover` / generic claim-checkout mismatchの意味はこのrelease-only recoveryで変更しない。
+
 idle state:
 
 - `main`: clean local `main` at latest `origin/main`;
