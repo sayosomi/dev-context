@@ -114,6 +114,8 @@ Task間でworktreeをremove / recreateしない。persistent worktreeをmerge後
 
 Recurring transition checksはversioned helperへrouteする。production read-back後は、GitHub authoritative `main` SHAと生成artifact blob SHAをcaller expectationとして、`nuinui context-audit <expected-main> <expected-artifact-blob>`でstandard cloneをread-only監査し、成功後だけ`nuinui context-sync <expected-main> <expected-artifact-blob>`でguarded fast-forwardする。persistent worktreeは`nuinui context-dev-audit <expected-branch> <expected-head>`でread-only監査し、concluded prior Taskから次のTaskへ進める場合だけ`nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>`を使う。後者は同じregistered worktreeを保持したまま、exact mainへのordinary detach/switchとfresh branch create/switchだけを行う。
 
+`context-dev-transition`がexact immediate duplicateとして`DEV-CONTEXT ALREADY TRANSITIONED`と`mutation=no-op`を返した場合、そのenvelopeはrequested transitionが安全に完了済みであるterminal proofである。ChatGPTはその結果からcurrent Taskのnormal workflowへ直接継続する。duplicate invocationだけを理由に、追加の`context-dev-audit`、branch / HEAD / worktree-registration paste、最初のtransitionの確認、同じtransitionの再実行、またはgeneric diagnosisを求めない。current branchが進行済み、mismatched、またはambiguousな場合はalready-transitionedとは扱わず、従来どおりfail-closedしてnormal fresh-state routeを使う。このclarificationはsingle-track policyと通常のtransition safety rulesを変更しない。
+
 #### Fail-closed reuse
 
 persistent development worktreeがdirty、unexpectedなunresolved Task state、ambiguousなGit state、またはfreshly verifiedなnew Task baseへ安全にtransitionできない状態なら`BLOCKED`として停止する。reuseを成立させるためだけにreset、stash、force-switch、overwrite、delete / recreateを行わない。

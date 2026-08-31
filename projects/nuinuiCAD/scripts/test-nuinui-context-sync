@@ -32,6 +32,10 @@ assert_contains() {
   esac
 }
 
+assert_line() {
+  printf '%s\n' "$1" | grep -Fqx "$2" || fail "$3 missing_line=$2 output=$1"
+}
+
 call_helper() {
   PATH=${TEST_PATH:-$REAL_PATH} "$HELPER" "$@"
 }
@@ -65,6 +69,7 @@ set_fixture() {
   export NUINUI_DEV_CONTEXT_WT=$PROD
   export NUINUI_DEV_CONTEXT_DEV_WT=$DEV
   export NUINUI_SELFTEST_EXPECTED_ORIGIN=$REMOTE
+  export NUINUI_SELFTEST_RESULT_REPO=$PROD
 }
 
 make_target_fixture() {
@@ -89,7 +94,7 @@ write_wrapper() {
   printf '%s\n' \
     '#!/bin/sh' \
     'case " $* " in' \
-    '  *" reset "*|*" stash "*|*" rebase "*|*" --force*|*" -f "*)' \
+    '  *" reset "*|*" stash "*|*" rebase "*|*" --force "*|*" -f "*)' \
     '    echo "forbidden git repair command: $*" >&2' \
     '    exit 97' \
     '    ;;' \
@@ -108,6 +113,15 @@ write_wrapper() {
     '    ;;' \
     '  malformed-worktree)' \
     '    case "$*" in *" worktree list --porcelain"*) printf "worktree %s\\nnot-valid\\n" "$NUINUI_DUP_PROD"; exit 0;; esac' \
+    '    ;;' \
+    '  duplicate-no-mutation)' \
+    '    case "${3:-}:${4:-}" in' \
+    '      fetch:*|switch:*|checkout:*|reset:*|stash:*|rebase:*|merge:*|update-ref:*|branch:*|worktree:add|worktree:move|worktree:remove|worktree:prune|worktree:lock|worktree:unlock)' \
+    '        printf "%s\\n" "$*" >>"$NUINUI_DUPLICATE_MUTATION_LOG"' \
+    '        echo "forbidden duplicate-path mutation: $*" >&2' \
+    '        exit 98' \
+    '        ;;' \
+    '    esac' \
     '    ;;' \
     '  race-main)' \
     '    case "$*" in' \
@@ -297,6 +311,81 @@ git -C "$PROD" show-ref --verify --quiet "refs/heads/$OLD_BRANCH" || fail 'trans
 assert_eq "$(git -C "$DEV" symbolic-ref --short HEAD)" "$NEW_BRANCH" 'transition branch'
 assert_eq "$(git -C "$DEV" rev-parse HEAD)" "$TARGET" 'transition head'
 
+duplicate_before=$(fixture_state)
+NUINUI_DUPLICATE_MUTATION_LOG=$ROOT/duplicate-mutation.log
+: >"$NUINUI_DUPLICATE_MUTATION_LOG"
+export NUINUI_DUPLICATE_MUTATION_LOG
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=duplicate-no-mutation; export NUINUI_GIT_WRAPPER_MODE
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "exact duplicate transition failed: $output"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+assert_line "$output" 'DEV-CONTEXT ALREADY TRANSITIONED' 'exact duplicate transition'
+assert_line "$output" "worktree=$DEV" 'exact duplicate transition'
+assert_line "$output" "branch=$NEW_BRANCH" 'exact duplicate transition'
+assert_line "$output" "base=$TARGET" 'exact duplicate transition'
+assert_line "$output" "head=$TARGET" 'exact duplicate transition'
+assert_line "$output" 'mutation=no-op' 'exact duplicate transition'
+assert_line "$output" 'clean=yes' 'exact duplicate transition'
+assert_line "$output" 'mutation=no' 'exact duplicate tracked footer'
+[ ! -s "$NUINUI_DUPLICATE_MUTATION_LOG" ] || fail "exact duplicate invoked Git mutation: $(cat "$NUINUI_DUPLICATE_MUTATION_LOG")"
+duplicate_after=$(fixture_state)
+assert_eq "$duplicate_after" "$duplicate_before" 'exact duplicate Git/worktree/ref state'
+assert_eq "$(git -C "$PROD" rev-parse "refs/heads/$OLD_BRANCH")" "$BASE" 'exact duplicate old branch head'
+assert_eq "$(git -C "$DEV" symbolic-ref --short HEAD)" "$NEW_BRANCH" 'exact duplicate branch'
+assert_eq "$(git -C "$DEV" rev-parse HEAD)" "$TARGET" 'exact duplicate head'
+last_result=$(call_helper last-result) || fail "duplicate last-result failed: $last_result"
+assert_line "$last_result" 'result=SUCCESS' 'duplicate last-result'
+assert_line "$last_result" 'mutation=no' 'duplicate last-result'
+assert_line "$last_result" 'DEV-CONTEXT ALREADY TRANSITIONED' 'duplicate last-result'
+
+make_base_fixture progressed
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "progressed fixture setup failed: $output"
+printf '%s\n' progressed >"$DEV/progressed.txt"
+git -C "$DEV" add progressed.txt
+git -C "$DEV" commit -qm progressed
+expect_failure_unchanged 'advanced new branch' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+
+make_base_fixture remote-new-duplicate
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "remote duplicate fixture setup failed: $output"
+git -C "$SEED" push -q origin "HEAD:refs/heads/$NEW_BRANCH"
+expect_failure_unchanged 'remote new branch after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+git -C "$REMOTE" update-ref -d "refs/heads/$NEW_BRANCH"
+
+make_base_fixture old-branch-missing
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "missing-old fixture setup failed: $output"
+git -C "$PROD" branch -D "$OLD_BRANCH" >/dev/null
+expect_failure_unchanged 'old branch missing after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+
+make_base_fixture old-branch-moved
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "moved-old fixture setup failed: $output"
+git -C "$PROD" branch -f "$OLD_BRANCH" "$TARGET"
+expect_failure_unchanged 'old branch moved after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+
+make_base_fixture duplicate-mismatch
+output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "mismatch fixture setup failed: $output"
+expect_failure_unchanged 'wrong expected old head after transition' context-dev-transition "$OLD_BRANCH" "$TARGET" "$TARGET" "$NEW_BRANCH"
+expect_failure_unchanged 'wrong expected main after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$BASE" "$NEW_BRANCH"
+expect_failure_unchanged 'wrong new branch after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" sayosomi/wrong-follow-up-task
+printf '%s\n' dirty >"$DEV/dirty.txt"
+expect_failure_unchanged 'dirty duplicate transition worktree' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+rm -f "$DEV/dirty.txt"
+
+export NUINUI_DUP_PROD=$PROD NUINUI_DUP_DEV=$DEV NUINUI_DUP_HEAD=$TARGET NUINUI_DUP_BRANCH=$NEW_BRANCH
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=duplicate-worktree; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'duplicate worktree registration after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+NUINUI_GIT_WRAPPER_MODE=malformed-worktree; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'malformed worktree registration after transition' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=remote-fail; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'duplicate authoritative remote query failure' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
 make_base_fixture local-new
 git -C "$PROD" branch "$NEW_BRANCH" "$TARGET"
 TEST_PATH=$ROOT:$REAL_PATH
@@ -306,6 +395,7 @@ unset NUINUI_GIT_WRAPPER_MODE
 
 REMOTE_NEW=sayosomi/remote-task
 make_base_fixture remote-new
+git -C "$SEED" push -q origin "HEAD:refs/heads/$REMOTE_NEW"
 expect_failure_unchanged 'remote new branch exists' context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$REMOTE_NEW"
 
 make_base_fixture transition-wrong-old
