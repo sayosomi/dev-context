@@ -21,6 +21,12 @@ assert_contains() {
   printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
 }
 
+assert_not_contains() {
+  if printf '%s\n' "$1" | grep -Fq -- "$2"; then
+    fail "$3"
+  fi
+}
+
 helper() {
   NUINUI_SELFTEST=1 \
   NUINUI_MAIN_WT="$M" \
@@ -95,6 +101,20 @@ setup_case() {
   printf 'topic.txt\0' > "$MANIFEST_OK"
 }
 
+make_counting_verifier() {
+  VERIFY_COUNT=$CASE_ROOT/verify-count
+  VERIFY_COUNT_SCRIPT=$CASE_ROOT/verify-count.sh
+  printf '\043!/bin/sh\n' > "$VERIFY_COUNT_SCRIPT"
+  printf 'count_file=%s\n' "$VERIFY_COUNT" >> "$VERIFY_COUNT_SCRIPT"
+  printf '%s\n' \
+    'n=0' \
+    'if [ -f "$count_file" ]; then n=$(cat "$count_file"); fi' \
+    'n=$((n + 1))' \
+    'printf "%s\\n" "$n" > "$count_file"' \
+    'exit 0' >> "$VERIFY_COUNT_SCRIPT"
+  chmod 755 "$VERIFY_COUNT_SCRIPT"
+}
+
 run_failure() {
   name=$1
   expected=$2
@@ -156,10 +176,137 @@ git -C "$S" diff --name-only -z "$MAIN_HEAD" "$SUCCESS_HEAD" > "$effective_files
 cmp -s "$effective_files" "$MANIFEST_OK" || fail 'success effective file set mismatch'
 [ -z "$(git -C "$S" status --porcelain)" ] || fail 'success worktree dirty'
 
+setup_case receipt-write-failure
+RECEIPT_FAILURE_PATH=$(git -C "$S" rev-parse --absolute-git-dir)/nuinui-integrate-clean-receipt-v1
+mkdir "$RECEIPT_FAILURE_PATH"
+run_failure receipt-write-failure 'ERROR: pushed integration lane state could not be proven' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK"
+assert_contains "$LAST_OUTPUT" 'reason=completed integration receipt could not be persisted' \
+  'receipt persistence failure reason missing'
+RECEIPT_FAILURE_HEAD=$(git -C "$S" rev-parse HEAD)
+[ "$RECEIPT_FAILURE_HEAD" != "$TOPIC" ] || fail 'receipt persistence failure did not preserve local merge commit'
+set -- $(git -C "$S" rev-list --parents -n 1 "$RECEIPT_FAILURE_HEAD")
+[ "$#" = 3 ] || fail 'receipt persistence failure local commit is not a merge'
+[ "$2" = "$TOPIC" ] || fail 'receipt persistence failure first parent mismatch'
+[ "$3" = "$MAIN_HEAD" ] || fail 'receipt persistence failure second parent mismatch'
+remote_topic=$(git -C "$S" ls-remote --heads origin refs/heads/sayosomi/say-89-integration-clean-test |
+  awk 'NR==1{print $1}')
+[ "$remote_topic" = "$RECEIPT_FAILURE_HEAD" ] || fail 'receipt persistence failure changed remote topic unexpectedly'
+[ -d "$RECEIPT_FAILURE_PATH" ] || fail 'receipt persistence failure rewrote receipt target'
+[ -z "$(git -C "$S" status --porcelain)" ] || fail 'receipt persistence failure worktree dirty'
+LAST_RESULT_OUT=$(helper last-result) || fail 'receipt persistence failure last-result failed'
+assert_contains "$LAST_RESULT_OUT" 'command=integrate-clean' 'receipt persistence failure command result missing'
+assert_contains "$LAST_RESULT_OUT" 'mutation=yes' 'receipt persistence failure mutation classification missing'
+
+setup_case exact-rerun
+make_counting_verifier
+EXACT_SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK") ||
+  fail 'exact rerun setup success failed'
+EXACT_HEAD=$(printf '%s\n' "$EXACT_SUCCESS_OUT" | sed -n 's/^head=//p')
+[ "$(cat "$VERIFY_COUNT")" = 1 ] || fail 'exact rerun verifier did not execute exactly once initially'
+EXACT_COMMIT_COUNT=$(git -C "$S" rev-list --count HEAD)
+PUSH_MARKER=$CASE_ROOT/unexpected-push
+printf '\043!/bin/sh\nprintf push > "%s"\nexit 13\n' "$PUSH_MARKER" > "$O/hooks/pre-receive"
+chmod 755 "$O/hooks/pre-receive"
+EXACT_DUP_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK") ||
+  fail 'exact duplicate did not succeed'
+[ "$(printf '%s\n' "$EXACT_DUP_OUT" | sed -n '1p')" = 'INTEGRATION ALREADY PUSHED' ] ||
+  fail 'exact duplicate first line mismatch'
+assert_contains "$EXACT_DUP_OUT" "lane=sub" 'exact duplicate lane missing'
+assert_contains "$EXACT_DUP_OUT" "issue=SAY-89" 'exact duplicate issue missing'
+assert_contains "$EXACT_DUP_OUT" "branch=sayosomi/say-89-integration-clean-test" 'exact duplicate branch missing'
+assert_contains "$EXACT_DUP_OUT" "prior_topic=$TOPIC" 'exact duplicate prior topic missing'
+assert_contains "$EXACT_DUP_OUT" "head=$EXACT_HEAD" 'exact duplicate head missing'
+assert_contains "$EXACT_DUP_OUT" "integration_watermark=$MAIN_HEAD" 'exact duplicate watermark missing'
+assert_contains "$EXACT_DUP_OUT" "claim=$CLAIM" 'exact duplicate claim missing'
+assert_contains "$EXACT_DUP_OUT" "topic_remote=$EXACT_HEAD" 'exact duplicate remote topic missing'
+assert_contains "$EXACT_DUP_OUT" 'verification=PASS' 'exact duplicate verification missing'
+assert_contains "$EXACT_DUP_OUT" 'file_set=VERIFIED' 'exact duplicate file set missing'
+assert_contains "$EXACT_DUP_OUT" 'mutation=no-op' 'exact duplicate mutation marker missing'
+assert_contains "$EXACT_DUP_OUT" 'clean=yes' 'exact duplicate clean marker missing'
+[ "$(cat "$VERIFY_COUNT")" = 1 ] || fail 'exact duplicate reran verifier'
+[ "$(git -C "$S" rev-parse HEAD)" = "$EXACT_HEAD" ] || fail 'exact duplicate changed local HEAD'
+[ "$(git -C "$S" rev-list --count HEAD)" = "$EXACT_COMMIT_COUNT" ] || fail 'exact duplicate created another commit'
+[ ! -e "$PUSH_MARKER" ] || fail 'exact duplicate pushed'
+
+VERIFY_OTHER=$CASE_ROOT/verify-other
+printf '\043!/bin/sh\nexit 0\n' > "$VERIFY_OTHER"
+chmod 755 "$VERIFY_OTHER"
+MANIFEST_OTHER=$CASE_ROOT/manifest-other
+printf 'other.txt\0' > "$MANIFEST_OTHER"
+run_failure exact-wrong-claim 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 wrongclaim9 "$TOPIC" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK"
+run_failure exact-wrong-prior-topic 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$BASE" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK"
+run_failure exact-wrong-main 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$BASE" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK"
+run_failure exact-wrong-verifier 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OTHER" "$MANIFEST_OK"
+run_failure exact-wrong-manifest 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OTHER"
+
 setup_case no-manifest
 NO_MANIFEST_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -) ||
   fail 'no-manifest case failed'
 assert_contains "$NO_MANIFEST_OUT" 'file_set=NOT_REQUESTED' 'no-manifest result mismatch'
+
+setup_case no-manifest-duplicate
+NO_MANIFEST_SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -) ||
+  fail 'no-manifest duplicate setup success failed'
+NO_MANIFEST_DUP_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -) ||
+  fail 'no-manifest duplicate did not succeed'
+[ "$(printf '%s\n' "$NO_MANIFEST_DUP_OUT" | sed -n '1p')" = 'INTEGRATION ALREADY PUSHED' ] ||
+  fail 'no-manifest duplicate first line mismatch'
+assert_contains "$NO_MANIFEST_DUP_OUT" 'file_set=NOT_REQUESTED' 'no-manifest duplicate did not report NOT_REQUESTED'
+assert_contains "$NO_MANIFEST_DUP_OUT" 'mutation=no-op' 'no-manifest duplicate mutation marker missing'
+
+setup_case remote-topic-after-success
+REMOTE_SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
+  fail 'remote topic drift setup success failed'
+WRITER=$CASE_ROOT/writer
+git clone -q "$O" "$WRITER"
+git -C "$WRITER" config user.name writer
+git -C "$WRITER" config user.email writer@example.com
+git -C "$WRITER" switch -q sayosomi/say-89-integration-clean-test
+printf 'remote-after-success\n' > "$WRITER/remote-after-success.txt"
+git -C "$WRITER" add remote-after-success.txt
+git -C "$WRITER" commit -qm remote-after-success
+git -C "$WRITER" push -q origin HEAD
+run_failure remote-topic-after-success 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK"
+assert_not_contains "$LAST_OUTPUT" 'INTEGRATION ALREADY PUSHED' 'remote topic drift was accepted as duplicate'
+
+setup_case malformed-receipt
+MALFORMED_SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
+  fail 'malformed receipt setup success failed'
+MALFORMED_RECEIPT=$(git -C "$S" rev-parse --absolute-git-dir)/nuinui-integrate-clean-receipt-v1
+printf 'version=2\n' > "$MALFORMED_RECEIPT"
+run_failure malformed-receipt 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK"
+assert_not_contains "$LAST_OUTPUT" 'INTEGRATION ALREADY PUSHED' 'malformed receipt was accepted as duplicate'
+
+setup_case superseded-receipt
+FIRST_INTEGRATION_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
+  fail 'superseded receipt first success failed'
+FIRST_INTEGRATION_HEAD=$(printf '%s\n' "$FIRST_INTEGRATION_OUT" | sed -n 's/^head=//p')
+RECEIPT=$(git -C "$S" rev-parse --absolute-git-dir)/nuinui-integrate-clean-receipt-v1
+FIRST_RECEIPT=$(cat "$RECEIPT")
+printf 'main-2\n' > "$M/main-2.txt"
+git -C "$M" add main-2.txt
+git -C "$M" commit -qm main-2
+git -C "$M" push -q origin main
+SECOND_MAIN_HEAD=$(git -C "$M" rev-parse HEAD)
+SECOND_INTEGRATION_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$FIRST_INTEGRATION_HEAD" "$SECOND_MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
+  fail 'superseded receipt second success failed'
+SECOND_INTEGRATION_HEAD=$(printf '%s\n' "$SECOND_INTEGRATION_OUT" | sed -n 's/^head=//p')
+[ "$SECOND_INTEGRATION_HEAD" != "$FIRST_INTEGRATION_HEAD" ] || fail 'second integration did not create a new merge head'
+assert_not_contains "$FIRST_RECEIPT" "prior_topic=$FIRST_INTEGRATION_HEAD" 'first receipt unexpectedly had second prior topic'
+assert_contains "$(cat "$RECEIPT")" "prior_topic=$FIRST_INTEGRATION_HEAD" 'second receipt did not supersede prior topic'
+assert_contains "$(cat "$RECEIPT")" "integration_watermark=$SECOND_MAIN_HEAD" 'second receipt did not supersede watermark'
+assert_contains "$(cat "$RECEIPT")" "resulting_head=$SECOND_INTEGRATION_HEAD" 'second receipt did not supersede resulting head'
+run_failure superseded-old-request 'durable lane identity does not match' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK"
+assert_not_contains "$LAST_OUTPUT" 'INTEGRATION ALREADY PUSHED' 'superseded old request was accepted as duplicate'
 
 setup_case dirty
 printf 'dirty\n' > "$S/dirty.tmp"

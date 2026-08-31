@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.17`。
+current standalone helper version: `1.6.18`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -227,6 +227,28 @@ commit前のconflict、file-set mismatch、verification failure、tracked merge-
 verification成功後にremote main / topicを再読込し、変化がない場合だけmerge commitを作る。commitはprior topicとexact expected mainの2 parentおよびverified prospective treeであることを検証する。normal non-force push成功後だけ`INTEGRATION PUSHED` envelopeを返し、その`integration_watermark`をexpected mainとして扱う。
 
 push failureはverified local merge commitを保持し、rollback / rewrite / retryを行わずfresh ChatGPT diagnosisへ戻す。conflict resolution、integration fix、source edit、ambiguous failure diagnosis、test-debug loopはこのhelperのscope外でLunaへ戻す。
+
+successful push/read-back後、`integrate-clean`はGit dirの`nuinui-integrate-clean-receipt-v1`へ、request identity、active durable claim、branch / Base、prior topic、integration watermark、resulting merge head、verifier / manifest identity、verification / file-set successをstrict versioned receiptとしてatomically保存する。receiptはownership authorityではなく、後続のsuccessful integrationで置き換えられる。
+
+同じrequestを直後に再実行した場合、receiptとcallerのlane / Issue / claim / prior topic / expected main / verifier / manifest、active slot、branch / Base、clean checkout、local / remote resulting head、exact two-parent merge、lock / releasing state、current authoritative mainをすべてread-onlyで再証明できたときだけ、次のterminal evidenceを返す。
+
+```text
+INTEGRATION ALREADY PUSHED
+lane=...
+issue=...
+branch=...
+prior_topic=...
+head=...
+integration_watermark=...
+claim=...
+topic_remote=...
+verification=PASS
+file_set=VERIFIED|NOT_REQUESTED
+mutation=no-op
+clean=yes
+```
+
+このexact duplicate pathはmerge、verifier、commit、push、reset、checkout mutation、receipt rewriteを行わない。上記success envelopeはcompleted integrationのterminal evidenceであり、ChatGPTは追加のHuman preflight、lane / remote state paste、初回成功確認、verifier再実行、generic diagnosis、同じcommandの再々実行を要求せず、blocking review / PR workflowへ直接継続する。claim、prior topic、expected main、verifier、manifest、local / remote head、parent shape、receipt schema、lock / releasing stateのnear-match、superseded receipt、またはその他のambiguous stateは従来どおり`BLOCKED`でfail-closedする。
 
 ### Standalone non-lane mechanics
 

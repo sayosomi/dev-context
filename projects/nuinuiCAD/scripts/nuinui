@@ -1775,6 +1775,191 @@ integration_clean_remote_topic() {
   ab "$1" "$2"
 }
 
+integration_clean_receipt_path() {
+  printf '%s/nuinui-integrate-clean-receipt-v1\n' "$(gd "$1")"
+}
+
+integration_clean_receipt_read() {
+  local repo receipt
+  repo=$1
+
+  receipt=$(integration_clean_receipt_path "$repo") || return 1
+  [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 1
+  nuinui_ownership_validate_exact_file "$receipt" \
+    version,lane,issue,claim,branch,base,prior_topic,integration_watermark,resulting_head,verifier,verifier_sha256,manifest,manifest_sha256,verification,file_set || return 1
+
+  INTEGRATION_CLEAN_RECEIPT_VERSION=$(nuinui_ownership_field "$receipt" version) || return 1
+  INTEGRATION_CLEAN_RECEIPT_LANE=$(nuinui_ownership_field "$receipt" lane) || return 1
+  INTEGRATION_CLEAN_RECEIPT_ISSUE=$(nuinui_ownership_field "$receipt" issue) || return 1
+  INTEGRATION_CLEAN_RECEIPT_CLAIM=$(nuinui_ownership_field "$receipt" claim) || return 1
+  INTEGRATION_CLEAN_RECEIPT_BRANCH=$(nuinui_ownership_field "$receipt" branch) || return 1
+  INTEGRATION_CLEAN_RECEIPT_BASE=$(nuinui_ownership_field "$receipt" base) || return 1
+  INTEGRATION_CLEAN_RECEIPT_PRIOR_TOPIC=$(nuinui_ownership_field "$receipt" prior_topic) || return 1
+  INTEGRATION_CLEAN_RECEIPT_WATERMARK=$(nuinui_ownership_field "$receipt" integration_watermark) || return 1
+  INTEGRATION_CLEAN_RECEIPT_HEAD=$(nuinui_ownership_field "$receipt" resulting_head) || return 1
+  INTEGRATION_CLEAN_RECEIPT_VERIFIER=$(nuinui_ownership_field "$receipt" verifier) || return 1
+  INTEGRATION_CLEAN_RECEIPT_VERIFIER_SHA256=$(nuinui_ownership_field "$receipt" verifier_sha256) || return 1
+  INTEGRATION_CLEAN_RECEIPT_MANIFEST=$(nuinui_ownership_field "$receipt" manifest) || return 1
+  INTEGRATION_CLEAN_RECEIPT_MANIFEST_SHA256=$(nuinui_ownership_field "$receipt" manifest_sha256) || return 1
+  INTEGRATION_CLEAN_RECEIPT_VERIFICATION=$(nuinui_ownership_field "$receipt" verification) || return 1
+  INTEGRATION_CLEAN_RECEIPT_FILE_SET=$(nuinui_ownership_field "$receipt" file_set) || return 1
+
+  [ "$INTEGRATION_CLEAN_RECEIPT_VERSION" = 1 ] || return 1
+  case "$INTEGRATION_CLEAN_RECEIPT_LANE" in
+    main|sub) ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_issue "$INTEGRATION_CLEAN_RECEIPT_ISSUE" || return 1
+  nuinui_ownership_valid_claim "$INTEGRATION_CLEAN_RECEIPT_CLAIM" || return 1
+  nuinui_ownership_validate_issue_branch \
+    "$INTEGRATION_CLEAN_RECEIPT_ISSUE" "$INTEGRATION_CLEAN_RECEIPT_BRANCH" || return 1
+  nuinui_ownership_valid_sha "$INTEGRATION_CLEAN_RECEIPT_BASE" || return 1
+  nuinui_ownership_valid_sha "$INTEGRATION_CLEAN_RECEIPT_PRIOR_TOPIC" || return 1
+  nuinui_ownership_valid_sha "$INTEGRATION_CLEAN_RECEIPT_WATERMARK" || return 1
+  nuinui_ownership_valid_sha "$INTEGRATION_CLEAN_RECEIPT_HEAD" || return 1
+  case "$INTEGRATION_CLEAN_RECEIPT_VERIFIER" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  printf '%s\n' "$INTEGRATION_CLEAN_RECEIPT_VERIFIER_SHA256" | grep -Eq '^[0-9a-f]{64}$' || return 1
+  if [ "$INTEGRATION_CLEAN_RECEIPT_MANIFEST" = - ]; then
+    [ "$INTEGRATION_CLEAN_RECEIPT_MANIFEST_SHA256" = - ] || return 1
+    [ "$INTEGRATION_CLEAN_RECEIPT_FILE_SET" = NOT_REQUESTED ] || return 1
+  else
+    case "$INTEGRATION_CLEAN_RECEIPT_MANIFEST" in
+      /*) ;;
+      *) return 1 ;;
+    esac
+    printf '%s\n' "$INTEGRATION_CLEAN_RECEIPT_MANIFEST_SHA256" | grep -Eq '^[0-9a-f]{64}$' || return 1
+    [ "$INTEGRATION_CLEAN_RECEIPT_FILE_SET" = VERIFIED ] || return 1
+  fi
+  [ "$INTEGRATION_CLEAN_RECEIPT_VERIFICATION" = PASS ] || return 1
+}
+
+integration_clean_receipt_write() {
+  local repo lane issue claim branch base prior_topic expected_main head verifier manifest file_set
+  local receipt verifier_sha256 manifest_sha256
+  repo=$1
+  lane=$2
+  issue=$3
+  claim=$4
+  branch=$5
+  base=$6
+  prior_topic=$7
+  expected_main=$8
+  head=$9
+  shift 9
+  verifier=$1
+  manifest=$2
+  file_set=$3
+
+  receipt=$(integration_clean_receipt_path "$repo") || return 1
+  if [ -e "$receipt" ] || [ -L "$receipt" ]; then
+    [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 1
+  fi
+  verifier_sha256=$(nuinui_command_result_sha256 "$verifier") || return 1
+  manifest_sha256=-
+  if [ "$manifest" != - ]; then
+    manifest_sha256=$(nuinui_command_result_sha256 "$manifest") || return 1
+  fi
+  wa "$receipt" "version=1\nlane=$lane\nissue=$issue\nclaim=$claim\nbranch=$branch\nbase=$base\nprior_topic=$prior_topic\nintegration_watermark=$expected_main\nresulting_head=$head\nverifier=$verifier\nverifier_sha256=$verifier_sha256\nmanifest=$manifest\nmanifest_sha256=$manifest_sha256\nverification=PASS\nfile_set=$file_set\n" || return 1
+  integration_clean_receipt_read "$repo" || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_LANE" = "$lane" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_ISSUE" = "$issue" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_CLAIM" = "$claim" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_BRANCH" = "$branch" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_BASE" = "$base" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_PRIOR_TOPIC" = "$prior_topic" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_WATERMARK" = "$expected_main" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_HEAD" = "$head" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_VERIFIER" = "$verifier" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_VERIFIER_SHA256" = "$verifier_sha256" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_MANIFEST" = "$manifest" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_MANIFEST_SHA256" = "$manifest_sha256" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_FILE_SET" = "$file_set" ] || return 1
+}
+
+integration_clean_already_pushed() {
+  local repo lane issue claim expected_topic expected_main verifier manifest
+  local slot slot_issue slot_branch slot_base slot_claim current_branch current_head branch_head
+  local authoritative_main local_main remote_topic verifier_sha256 manifest_sha256
+  local parents parent1 parent2
+  repo=$1
+  lane=$2
+  issue=$3
+  claim=$4
+  expected_topic=$5
+  expected_main=$6
+  verifier=$7
+  manifest=$8
+
+  integration_clean_receipt_read "$repo" || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_LANE" = "$lane" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_ISSUE" = "$issue" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_CLAIM" = "$claim" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_PRIOR_TOPIC" = "$expected_topic" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_WATERMARK" = "$expected_main" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_VERIFIER" = "$verifier" ] || return 1
+  [ "$INTEGRATION_CLEAN_RECEIPT_MANIFEST" = "$manifest" ] || return 1
+  [ ! -e "$(kp "$repo")" ] && [ ! -L "$(kp "$repo")" ] || return 1
+  [ -z "$(rds "$repo")" ] || return 1
+
+  slot="$(sp "$repo")/state"
+  set -- $(nuinui_ownership_parse_slot "$slot") || return 1
+  [ "$#" = 4 ] || return 1
+  slot_issue=$1
+  slot_branch=$2
+  slot_base=$3
+  slot_claim=$4
+  [ "$slot_issue" = "$INTEGRATION_CLEAN_RECEIPT_ISSUE" ] || return 1
+  [ "$slot_branch" = "$INTEGRATION_CLEAN_RECEIPT_BRANCH" ] || return 1
+  [ "$slot_base" = "$INTEGRATION_CLEAN_RECEIPT_BASE" ] || return 1
+  [ "$slot_claim" = "$INTEGRATION_CLEAN_RECEIPT_CLAIM" ] || return 1
+
+  current_branch=$(bn "$repo")
+  [ "$current_branch" = "$INTEGRATION_CLEAN_RECEIPT_BRANCH" ] || return 1
+  current_head=$(hh "$repo" 2>/dev/null) || return 1
+  [ "$current_head" = "$INTEGRATION_CLEAN_RECEIPT_HEAD" ] || return 1
+  branch_head=$(git -C "$repo" rev-parse "refs/heads/$current_branch^{commit}" 2>/dev/null) || return 1
+  [ "$branch_head" = "$current_head" ] || return 1
+  [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || return 1
+  an "$repo" "$INTEGRATION_CLEAN_RECEIPT_BASE" "$current_head" || return 1
+
+  authoritative_main=$(integration_clean_remote_main "$repo" 2>/dev/null || true)
+  [ "$authoritative_main" = "$expected_main" ] || return 1
+  local_main=$(om "$repo" 2>/dev/null || true)
+  [ "$local_main" = "$expected_main" ] || return 1
+  remote_topic=$(integration_clean_remote_topic "$repo" "$current_branch" 2>/dev/null || true)
+  [ "$remote_topic" = "$current_head" ] || return 1
+
+  set -- $(git -C "$repo" rev-list --parents -n 1 "$current_head" 2>/dev/null) || return 1
+  [ "$#" = 3 ] || return 1
+  parent1=$2
+  parent2=$3
+  [ "$parent1" = "$INTEGRATION_CLEAN_RECEIPT_PRIOR_TOPIC" ] || return 1
+  [ "$parent2" = "$INTEGRATION_CLEAN_RECEIPT_WATERMARK" ] || return 1
+
+  verifier_sha256=$(nuinui_command_result_sha256 "$verifier" 2>/dev/null || true)
+  [ "$verifier_sha256" = "$INTEGRATION_CLEAN_RECEIPT_VERIFIER_SHA256" ] || return 1
+  if [ "$manifest" != - ]; then
+    manifest_sha256=$(nuinui_command_result_sha256 "$manifest" 2>/dev/null || true)
+    [ "$manifest_sha256" = "$INTEGRATION_CLEAN_RECEIPT_MANIFEST_SHA256" ] || return 1
+  fi
+  [ "$INTEGRATION_CLEAN_RECEIPT_VERIFICATION" = PASS ] || return 1
+  case "$INTEGRATION_CLEAN_RECEIPT_FILE_SET" in
+    VERIFIED) [ "$manifest" != - ] || return 1 ;;
+    NOT_REQUESTED) [ "$manifest" = - ] || return 1 ;;
+    *) return 1 ;;
+  esac
+
+  printf 'INTEGRATION ALREADY PUSHED\n'
+  printf 'lane=%s\nissue=%s\nbranch=%s\nprior_topic=%s\nhead=%s\nintegration_watermark=%s\nclaim=%s\ntopic_remote=%s\nverification=PASS\nfile_set=%s\nmutation=no-op\nclean=yes\n' \
+    "$lane" "$issue" "$INTEGRATION_CLEAN_RECEIPT_BRANCH" \
+    "$INTEGRATION_CLEAN_RECEIPT_PRIOR_TOPIC" "$current_head" \
+    "$INTEGRATION_CLEAN_RECEIPT_WATERMARK" "$claim" "$remote_topic" \
+    "$INTEGRATION_CLEAN_RECEIPT_FILE_SET"
+}
+
 integration_clean_restore_precommit() {
   local repo lane issue claim topic branch base remote_topic restore_rc
   repo=$1
@@ -1853,7 +2038,7 @@ integration_clean_fail_precommit() {
 
 integration_clean_command() {
   local lane issue claim expected_topic expected_main verifier manifest repo
-  local slot issue_actual branch base claim_actual actual_main actual_topic
+  local slot issue_actual branch base claim_actual actual_main actual_topic current_topic
   local root merge_output verifier_output status_before status_after actual_manifest
   local prospective_tree after_tree precommit_main precommit_topic commit_output commit_rc
   local head parents parent1 parent2 commit_tree push_output push_rc post_topic file_set
@@ -1919,12 +2104,18 @@ integration_clean_command() {
     return 1
   }
 
-  integration_clean_slot_identity "$repo" "$issue" "$claim" "$expected_topic" || {
+  if ! integration_clean_slot_identity "$repo" "$issue" "$claim" "$expected_topic"; then
+    current_topic=$(hh "$repo" 2>/dev/null || true)
+    if [ -n "$current_topic" ] && [ "$current_topic" != "$expected_topic" ] &&
+      integration_clean_already_pushed "$repo" "$lane" "$issue" "$claim" \
+        "$expected_topic" "$expected_main" "$verifier" "$manifest"; then
+      return 0
+    fi
     echo 'BLOCKED: durable lane identity does not match integrate-clean request'
     printf 'lane=%s\nissue=%s\nexpected_topic=%s\nclaim=%s\n' \
       "$lane" "$issue" "$expected_topic" "$claim"
     return 1
-  }
+  fi
   branch=$INTEGRATION_CLEAN_BRANCH
   base=$INTEGRATION_CLEAN_BASE
 
@@ -2197,6 +2388,18 @@ integration_clean_command() {
   if ! lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" "$claim" "$head"; then
     echo 'ERROR: pushed integration lane state could not be proven'
     printf 'head=%s\nclaim=%s\n' "$head" "$claim"
+    rm -rf "$root"
+    return 1
+  fi
+
+  if ! integration_clean_receipt_write "$repo" "$lane" "$issue" "$claim" \
+    "$branch" "$base" "$expected_topic" "$expected_main" "$head" \
+    "$verifier" "$manifest" "$file_set"; then
+    echo 'ERROR: pushed integration lane state could not be proven'
+    echo 'reason=completed integration receipt could not be persisted'
+    printf 'lane=%s\nissue=%s\nbranch=%s\nprior_topic=%s\nhead=%s\nintegration_watermark=%s\nclaim=%s\ntopic_remote=%s\nclean=yes\n' \
+      "$lane" "$issue" "$branch" "$expected_topic" "$head" \
+      "$expected_main" "$claim" "$post_topic"
     rm -rf "$root"
     return 1
   fi
@@ -3405,7 +3608,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.17
+V=1.6.18
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
