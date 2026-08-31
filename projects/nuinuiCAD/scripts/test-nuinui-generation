@@ -13,6 +13,7 @@ nuinui_integration_clean_source=$script_dir/nuinui-src/integration-clean.sh
 nuinui_e2e_source=$script_dir/nuinui-src/e2e.sh
 nuinui_context_sync_source=$script_dir/nuinui-src/context-sync.sh
 nuinui_diagnostics_source=$script_dir/nuinui-src/diagnostics.sh
+nuinui_command_result_source=$script_dir/nuinui-src/command-result.sh
 nuinui_self_test_source=$script_dir/nuinui-src/self-test.sh
 nuinui_dispatch_source=$script_dir/nuinui-src/cli-dispatch.sh
 handoff_body_source=$script_dir/nuinui-handoff-check-src/handoff-body.sh
@@ -41,6 +42,7 @@ trap cleanup EXIT HUP INT TERM
 [ -f "$nuinui_e2e_source" ] || fail 'nuinui E2E source is missing'
 [ -f "$nuinui_context_sync_source" ] || fail 'nuinui context-sync source is missing'
 [ -f "$nuinui_diagnostics_source" ] || fail 'nuinui diagnostics source is missing'
+[ -f "$nuinui_command_result_source" ] || fail 'nuinui command-result source is missing'
 [ -f "$nuinui_self_test_source" ] || fail 'nuinui self-test source is missing'
 [ -f "$nuinui_dispatch_source" ] || fail 'nuinui CLI dispatch source is missing'
 [ -f "$handoff_body_source" ] || fail 'handoff body source is missing'
@@ -69,7 +71,7 @@ test_generator() {
   [ "$candidate_version" = "$expected_version" ] || fail "$name generated candidate version is $candidate_version"
 
   protected_paths="$artifact_path"
-  [ "$name" = nuinui ] && protected_paths="$protected_paths $ownership_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_facade_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_self_test_source $nuinui_dispatch_source"
+  [ "$name" = nuinui ] && protected_paths="$protected_paths $ownership_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_facade_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_self_test_source $nuinui_dispatch_source"
   for protected_path in $protected_paths; do
     protected_before=$(shasum -a 256 "$protected_path" | awk 'NR == 1 {print $1}')
     if "$generator" "$protected_path" >"$root/$name-protected-output.log" 2>&1; then
@@ -91,6 +93,6 @@ test_generator() {
   echo "PASS: $name generation candidate_sha256=$candidate_sha256 candidate_git_blob=$candidate_git_blob"
 }
 
-test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.6.15
+test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.6.16
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.0.0
 echo 'GENERATION PASS'

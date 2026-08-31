@@ -43,6 +43,8 @@ exceptionを使う場合も、supplied pathはcanonical absolute directoryであ
 
 Humanがterminalでlocal checkoutへ行うmechanical / deterministic operationはlane ownershipそのものではなく、Luna implementation routeとは別の操作補助として扱う。
 
+Human terminal disappearance is an external-state recovery case. If terminal output disappears or is lost after a Human mutation command, do not blindly rerun that mutation. Run the official read-only command `nuinui last-result` first. An exact recovered terminal SUCCESS can continue through normal next-stage verification; a recovered BLOCKED or ERROR continues from that exact outcome. `NONE`, `INVALID`, or `INCOMPLETE` routes to the existing lane-specific diagnosis/preflight path. Do not reset, stash, force-switch, or otherwise repair state while recovering the lost output.
+
 Humanへ任せてよい典型:
 
 - read-only audit: `git status`, `git rev-parse`, `git worktree list`, branch / HEAD / upstream / path確認;

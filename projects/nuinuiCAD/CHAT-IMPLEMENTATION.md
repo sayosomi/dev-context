@@ -58,6 +58,8 @@ Human terminal handoffでcanonical `nuinui begin`またはexplicit low-level `nu
 3. `begin`のfull local auditとsuccessful `IMPLEMENTATION STARTED` envelopeが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で`In Progress`へ変更する。低レベル`start`を使う場合も、そのlocal envelopeを確認する。
 4. 同じcontinuationで`Implementation checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従いread-backする。
 
+If a Human reports terminal disappearance or lost output after `begin`, `start`, `resume`, `release`, `integrate-clean`, or another tracked mutation, request the single exact command `nuinui last-result` rather than asking for the mutation again. If it returns `recovery=READY` with the expected command and identity and `result=SUCCESS`, continue directly from the recovered checkpoint into the normal fresh remote / blocking-review / PR workflow. If `result=BLOCKED` or `result=ERROR`, continue from that exact terminal state. If recovery is `NONE`, `INVALID`, or `INCOMPLETE`, or the identity does not match the intended handoff, use the existing diagnostic/preflight routing. Do not demand duplicate state paste merely because stdout was lost.
+
 start / resume後のidentity invariantは、physical BUSYなmain/subから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数<=2だけでは十分ではない。
 
 same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHuman 3-lane preflightへ戻さない。current Linear checkpoint / last verified envelopeのclaimとcheckpointをcaller expectationとして`nuinui-handoff-check`へ渡し、actual local durable stateとのmatchをその場で検証する。
