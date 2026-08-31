@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.15
-K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
+V=1.6.16
+K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -90,6 +90,13 @@ nuinui_run_public() {
   return "$nuinui_public_rc"
 }
 
+nuinui_run_tracked() {
+  nuinui_tracked_name=$1
+  nuinui_tracked_request_count=$2
+  shift 2
+  nuinui_command_result_run "$nuinui_tracked_name" "$nuinui_tracked_request_count" "$@"
+}
+
 nuinui_forensic_worktree=
 nuinui_forensic_option_active=0
 
@@ -122,7 +129,7 @@ case "$1" in
     ;;
   lane-init)
     [ "$#" = 2 ] || { echo 'Usage: nuinui lane-init <main|sub>'; exit 2; }
-    nuinui_run_public lane-init li "$2"
+    nuinui_run_tracked lane-init "$#" "$@" li "$2"
     exit $?
     ;;
   begin)
@@ -134,7 +141,7 @@ case "$1" in
       exit 2
     fi
     nuinui_validate_public_issue_branch "$3" "$5" || exit $?
-    nuinui_run_public begin lifecycle_begin "$2" "$3" "$4" "$5" "$6"
+    nuinui_run_tracked begin "$#" "$@" lifecycle_begin "$2" "$3" "$4" "$5" "$6"
     exit $?
     ;;
   start)
@@ -146,47 +153,47 @@ case "$1" in
       exit 2
     fi
     nuinui_validate_public_issue_branch "$3" "$5" || exit $?
-    nuinui_run_public start lifecycle_start_command "$2" "$3" "$4" "$5"
+    nuinui_run_tracked start "$#" "$@" lifecycle_start_command "$2" "$3" "$4" "$5"
     exit $?
     ;;
   resume)
     [ "$#" = 7 ] || { echo 'Usage: nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>'; exit 2; }
-    nuinui_run_public resume lifecycle_resume_command "$2" "$3" "$4" "$5" "$6" "$7"
+    nuinui_run_tracked resume "$#" "$@" lifecycle_resume_command "$2" "$3" "$4" "$5" "$6" "$7"
     exit $?
     ;;
   release)
     [ "$#" = 4 ] || { echo 'Usage: nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>'; exit 2; }
-    nuinui_run_public release lifecycle_release_command "$2" "$3" "$4"
+    nuinui_run_tracked release "$#" "$@" lifecycle_release_command "$2" "$3" "$4"
     exit $?
     ;;
   recover)
     [ "$#" = 3 ] || { echo 'Usage: nuinui recover <main|sub> <expected-claim>'; exit 2; }
-    nuinui_run_public recover rc "$2" "$3"
+    nuinui_run_tracked recover "$#" "$@" rc "$2" "$3"
     exit $?
     ;;
   pr-auto-merge)
     [ "$#" = 4 ] || { echo 'Usage: nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>'; exit 2; }
-    nuinui_run_public pr-auto-merge pam "$2" "$3" "$4"
+    nuinui_run_tracked pr-auto-merge "$#" "$@" pam "$2" "$3" "$4"
     exit $?
     ;;
   integrate-clean)
     [ "$#" = 8 ] || { echo 'Usage: nuinui integrate-clean <main|sub> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->'; exit 2; }
-    nuinui_run_public integrate-clean integration_clean_command "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    nuinui_run_tracked integrate-clean "$#" "$@" integration_clean_command "$2" "$3" "$4" "$5" "$6" "$7" "$8"
     exit $?
     ;;
   e2e-start)
     [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-start <SAY-123> <tested-ref>'; exit 2; }
-    nuinui_run_public e2e-start es "$2" "$3"
+    nuinui_run_tracked e2e-start "$#" "$@" es "$2" "$3"
     exit $?
     ;;
   e2e-start-local-main)
     [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-start-local-main <SAY-123> <tested-ref>'; exit 2; }
-    nuinui_run_public e2e-start-local-main el "$2" "$3"
+    nuinui_run_tracked e2e-start-local-main "$#" "$@" el "$2" "$3"
     exit $?
     ;;
   e2e-release)
     [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-release <SAY-123> <tested-ref>'; exit 2; }
-    nuinui_run_public e2e-release ee "$2" "$3"
+    nuinui_run_tracked e2e-release "$#" "$@" ee "$2" "$3"
     exit $?
     ;;
   context-audit)
@@ -196,7 +203,7 @@ case "$1" in
     ;;
   context-sync)
     [ "$#" = 3 ] || { echo 'Usage: nuinui context-sync <expected-main> <expected-artifact-blob>'; exit 2; }
-    nuinui_run_public context-sync sy "$2" "$3"
+    nuinui_run_tracked context-sync "$#" "$@" sy "$2" "$3"
     exit $?
     ;;
   context-dev-audit)
@@ -206,7 +213,7 @@ case "$1" in
     ;;
   context-dev-transition)
     [ "$#" = 5 ] || { echo 'Usage: nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>'; exit 2; }
-    nuinui_run_public context-dev-transition context_dev_transition_command "$2" "$3" "$4" "$5"
+    nuinui_run_tracked context-dev-transition "$#" "$@" context_dev_transition_command "$2" "$3" "$4" "$5"
     exit $?
     ;;
   doctor)
@@ -233,6 +240,11 @@ case "$1" in
   self-test)
     [ "$#" = 1 ] || { nuinui_usage; exit 2; }
     nuinui_run_public self-test nuinui_self_test
+    exit $?
+    ;;
+  last-result)
+    [ "$#" = 1 ] || { echo 'Usage: nuinui last-result'; exit 2; }
+    nuinui_run_public last-result nuinui_command_result_last_result
     exit $?
     ;;
   *)

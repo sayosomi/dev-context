@@ -1,0 +1,290 @@
+#!/bin/sh
+set -eu
+
+HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
+ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-command-result.XXXXXX")
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() {
+  echo "COMMAND RESULT TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
+}
+
+assert_not_contains() {
+  if printf '%s\n' "$1" | grep -Fq -- "$2"; then
+    fail "$3"
+  fi
+}
+
+assert_line() {
+  printf '%s\n' "$1" | grep -Eq -- "$2" || fail "$3"
+}
+
+assert_file_line() {
+  grep -Eq -- "$2" "$1" || fail "$3"
+}
+
+result_dir() {
+  printf '%s/nuinui-command-result-v1\n' "$(git -C "$CONTEXT" rev-parse --absolute-git-dir)"
+}
+
+state_path() {
+  printf '%s/state\n' "$(result_dir)"
+}
+
+output_path() {
+  printf '%s/output\n' "$(result_dir)"
+}
+
+state_value() {
+  awk -F= -v wanted="$2" '$1 == wanted {print substr($0, length(wanted) + 2); exit}' "$1"
+}
+
+last_result() {
+  "$HELPER" last-result
+}
+
+setup_case() {
+  CASE=$1
+  CASE_ROOT=$ROOT/$CASE
+  ORIGIN=$CASE_ROOT/origin.git
+  M=$CASE_ROOT/main
+  S=$CASE_ROOT/sub
+  E=$CASE_ROOT/e2e
+  CONTEXT=$CASE_ROOT/context
+  mkdir -p "$CASE_ROOT"
+  git init -q --bare "$ORIGIN"
+  git init -q -b main "$M"
+  git -C "$M" config user.name test
+  git -C "$M" config user.email test@example.invalid
+  printf 'base\n' > "$M/base.txt"
+  git -C "$M" add base.txt
+  git -C "$M" commit -qm base
+  git -C "$M" remote add origin "$ORIGIN"
+  git -C "$M" push -qu origin main
+  git -C "$M" worktree add -q --detach "$S" origin/main
+  git -C "$M" worktree add -q --detach "$E" origin/main
+  git -C "$S" config user.name test
+  git -C "$S" config user.email test@example.invalid
+  git -C "$E" config user.name test
+  git -C "$E" config user.email test@example.invalid
+  git init -q "$CONTEXT"
+  export NUINUI_SELFTEST=1
+  export NUINUI_MAIN_WT="$M"
+  export NUINUI_SUB_WT="$S"
+  export NUINUI_E2E_WT="$E"
+  export NUINUI_SELFTEST_RESULT_REPO="$CONTEXT"
+}
+
+initialize_lanes() {
+  "$HELPER" lane-init main >/dev/null
+  "$HELPER" lane-init sub >/dev/null
+}
+
+assert_footer() {
+  assert_contains "$1" '===== NUINUI COMMAND RESULT =====' "$2 missing footer"
+  assert_contains "$1" '===== END NUINUI COMMAND RESULT =====' "$2 missing footer end"
+}
+
+assert_last_ready() {
+  if last_output=$(last_result); then
+    :
+  else
+    printf '%s\n' "$last_output"
+    fail "$1 did not recover a terminal result"
+  fi
+  assert_contains "$last_output" 'recovery=READY' "$1 was not recovery READY"
+}
+
+write_valid_terminal() {
+  printf 'canonical output\n' > "$(output_path)"
+  output_sha=$(shasum -a 256 "$(output_path)" | awk 'NR == 1 {print $1}')
+  printf 'version=1\noperation_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ntimestamp=2026-08-31T00:00:00Z\ncommand=lane-init\nphase=TERMINAL\nresult=SUCCESS\nlane=-\nissue=-\nclaim=-\nrequest_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nmutation=yes\nexit=0\noutput_sha256=%s\n' "$output_sha" > "$(state_path)"
+}
+
+expect_invalid() {
+  invalid_name=$1
+  if invalid_output=$(last_result 2>&1); then
+    printf '%s\n' "$invalid_output"
+    fail "$invalid_name unexpectedly succeeded"
+  else
+    invalid_rc=$?
+  fi
+  [ "$invalid_rc" -ne 0 ] || fail "$invalid_name returned zero"
+  assert_contains "$invalid_output" 'recovery=INVALID' "$invalid_name was not invalid"
+  assert_not_contains "$invalid_output" 'recovery=READY' "$invalid_name reported READY"
+}
+
+setup_case successful-mutation
+success_output=$("$HELPER" lane-init main)
+assert_contains "$success_output" 'LANE INITIALIZED' 'successful mutation lost canonical output'
+assert_footer "$success_output" successful-mutation
+assert_file_line "$(state_path)" '^version=1$' 'successful state version is not strict'
+assert_file_line "$(state_path)" '^phase=TERMINAL$' 'successful state is not terminal'
+assert_file_line "$(state_path)" '^result=SUCCESS$' 'successful state result is wrong'
+assert_file_line "$(state_path)" '^mutation=yes$' 'successful state mutation is wrong'
+[ "$(wc -l < "$(state_path)" | tr -d '[:space:]')" = 13 ] || fail 'successful state does not have exactly 13 fields'
+expected_request_sha=$(printf '%s\0%s\0' lane-init main | shasum -a 256 | awk 'NR == 1 {print $1}')
+[ "$(state_value "$(state_path)" request_sha256)" = "$expected_request_sha" ] || fail 'request identity did not bind command and arguments'
+[ "$(cat "$(output_path)")" = 'LANE INITIALIZED' ] || fail 'stored output changed canonical output'
+assert_last_ready successful-mutation
+assert_contains "$last_output" 'command=lane-init' 'successful recovery command is wrong'
+assert_contains "$last_output" 'result=SUCCESS' 'successful recovery result is wrong'
+assert_contains "$last_output" 'mutation=yes' 'successful recovery mutation is wrong'
+assert_contains "$last_output" 'LANE INITIALIZED' 'successful recovery lost canonical output'
+assert_not_contains "$last_output" '===== NUINUI COMMAND RESULT =====' 'recovery exposed the command footer'
+
+setup_case no-op
+initialize_lanes
+BASE=$(git -C "$M" rev-parse origin/main)
+"$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result FREE >/dev/null
+noop_output=$("$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result FREE)
+assert_contains "$noop_output" 'mutation=no-op' 'exact duplicate did not preserve no-op evidence'
+assert_footer "$noop_output" no-op
+assert_last_ready no-op
+assert_contains "$last_output" 'result=SUCCESS' 'no-op result was not terminal success'
+assert_contains "$last_output" 'mutation=no' 'no-op mutation was not classified no'
+
+setup_case blocked-before-mutation
+initialize_lanes
+BASE=$(git -C "$M" rev-parse origin/main)
+"$HELPER" begin main SAY-20 "$BASE" sayosomi/say-20-command-result FREE >/dev/null
+before_blocked=$(git -C "$M" rev-parse HEAD):$(git -C "$M" status --porcelain):$(git -C "$S" rev-parse HEAD)
+if blocked_output=$("$HELPER" begin main SAY-21 "$BASE" sayosomi/say-21-command-result FREE 2>&1); then
+  printf '%s\n' "$blocked_output"
+  fail 'blocked mutation unexpectedly succeeded'
+else
+  blocked_rc=$?
+fi
+[ "$blocked_rc" -ne 0 ] || fail 'blocked mutation returned zero'
+assert_contains "$blocked_output" 'BLOCKED:' 'blocked mutation was not classified'
+assert_footer "$blocked_output" blocked-before-mutation
+assert_contains "$blocked_output" 'result=BLOCKED' 'blocked footer result is wrong'
+assert_contains "$blocked_output" 'mutation=no' 'blocked footer mutation is wrong'
+after_blocked=$(git -C "$M" rev-parse HEAD):$(git -C "$M" status --porcelain):$(git -C "$S" rev-parse HEAD)
+[ "$before_blocked" = "$after_blocked" ] || fail 'blocked mutation changed lane state'
+assert_last_ready blocked-before-mutation
+assert_contains "$last_output" 'result=BLOCKED' 'blocked result was not recoverable'
+assert_contains "$last_output" 'mutation=no' 'blocked recovered mutation is wrong'
+
+setup_case interrupted
+mkdir -p "$(result_dir)"
+printf 'old canonical output\n' > "$(output_path)"
+printf 'version=1\noperation_id=cccccccccccccccccccccccccccccccccccccccc\ntimestamp=2026-08-31T00:00:00Z\ncommand=begin\nphase=STARTED\nresult=INCOMPLETE\nlane=main\nissue=SAY-30\nclaim=-\nrequest_sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\nmutation=unknown\nexit=-\noutput_sha256=-\n' > "$(state_path)"
+if interrupted_output=$(last_result 2>&1); then
+  printf '%s\n' "$interrupted_output"
+  fail 'STARTED result unexpectedly recovered'
+else
+  interrupted_rc=$?
+fi
+[ "$interrupted_rc" -ne 0 ] || fail 'STARTED result returned zero'
+assert_contains "$interrupted_output" 'operation_id=cccccccccccccccccccccccccccccccccccccccc' 'incomplete operation identity was lost'
+assert_contains "$interrupted_output" 'result=INCOMPLETE' 'incomplete result was not reported'
+assert_contains "$interrupted_output" 'recovery=BLOCKED' 'incomplete recovery was not blocked'
+assert_not_contains "$interrupted_output" 'old canonical output' 'incomplete result exposed old output'
+assert_not_contains "$interrupted_output" 'recovery=READY' 'incomplete result reported READY'
+
+setup_case malformed
+mkdir -p "$(result_dir)"
+write_valid_terminal
+printf 'result=SUCCESS\n' >> "$(state_path)"
+expect_invalid duplicate-field
+write_valid_terminal
+printf 'unknown=value\n' >> "$(state_path)"
+expect_invalid unknown-field
+write_valid_terminal
+sed 's/^result=SUCCESS$/result=NOPE/' "$(state_path)" > "$CASE_ROOT/invalid-state"
+mv "$CASE_ROOT/invalid-state" "$(state_path)"
+expect_invalid invalid-enum
+write_valid_terminal
+sed 's/^request_sha256=.*/request_sha256=bad/' "$(state_path)" > "$CASE_ROOT/invalid-state"
+mv "$CASE_ROOT/invalid-state" "$(state_path)"
+expect_invalid invalid-hash
+write_valid_terminal
+rm "$(output_path)"
+expect_invalid missing-output
+write_valid_terminal
+printf 'changed output\n' > "$(output_path)"
+expect_invalid output-hash-mismatch
+write_valid_terminal
+rm "$(output_path)"
+ln -s "$CASE_ROOT/not-output" "$(output_path)"
+expect_invalid unsafe-output
+
+setup_case superseded
+initialize_lanes
+BASE=$(git -C "$M" rev-parse origin/main)
+first_output=$("$HELPER" begin main SAY-40 "$BASE" sayosomi/say-40-command-result-a FREE)
+first_operation=$(printf '%s\n' "$first_output" | sed -n 's/^operation_id=//p')
+first_claim=$(printf '%s\n' "$first_output" | sed -n 's/^claim=//p')
+[ -n "$first_claim" ] || fail 'first same-lane generation did not expose its claim'
+git -C "$M" push -qu origin HEAD
+"$HELPER" release main "$BASE" "$first_claim" >/dev/null
+second_output=$("$HELPER" begin main SAY-41 "$BASE" sayosomi/say-41-command-result-b FREE)
+second_operation=$(printf '%s\n' "$second_output" | sed -n 's/^operation_id=//p')
+[ -n "$first_operation" ] && [ -n "$second_operation" ] || fail 'operation identities were not emitted'
+[ "$first_operation" != "$second_operation" ] || fail 'operation identity was reused'
+assert_last_ready superseded
+assert_contains "$last_output" 'command=begin' 'superseded result did not identify operation B'
+assert_contains "$last_output" 'lane=main' 'superseded result did not identify operation B lane'
+assert_contains "$last_output" 'issue=SAY-41' 'superseded result did not identify operation B Issue'
+assert_not_contains "$last_output" "operation_id=$first_operation" 'older success remained latest'
+
+setup_case readonly
+initialize_lanes
+readonly_state_before=$(shasum -a 256 "$(state_path)" | awk 'NR == 1 {print $1}')
+readonly_output_before=$(shasum -a 256 "$(output_path)" | awk 'NR == 1 {print $1}')
+readonly_repo_before=$(git -C "$M" status --porcelain):$(git -C "$M" rev-parse HEAD)
+"$HELPER" preflight >/dev/null 2>&1 || :
+"$HELPER" last-result >/dev/null
+readonly_state_after=$(shasum -a 256 "$(state_path)" | awk 'NR == 1 {print $1}')
+readonly_output_after=$(shasum -a 256 "$(output_path)" | awk 'NR == 1 {print $1}')
+readonly_repo_after=$(git -C "$M" status --porcelain):$(git -C "$M" rev-parse HEAD)
+[ "$readonly_state_before" = "$readonly_state_after" ] || fail 'read-only command changed result state'
+[ "$readonly_output_before" = "$readonly_output_after" ] || fail 'read-only command changed result output'
+[ "$readonly_repo_before" = "$readonly_repo_after" ] || fail 'last-result changed repository state'
+
+setup_case integration-push-failure
+initialize_lanes
+BASE=$(git -C "$M" rev-parse HEAD)
+start_output=$("$HELPER" start sub SAY-89 "$BASE" sayosomi/say-89-command-result)
+CLAIM=$(printf '%s\n' "$start_output" | sed -n 's/^claim=//p')
+[ -n "$CLAIM" ] || CLAIM=$(printf '%s\n' "$start_output" | sed -n 's/^  claim=//p')
+[ -n "$CLAIM" ] || fail 'integration fixture claim is missing'
+printf 'topic\n' > "$S/topic.txt"
+git -C "$S" add topic.txt
+git -C "$S" commit -qm topic
+TOPIC=$(git -C "$S" rev-parse HEAD)
+git -C "$S" push -qu origin HEAD
+printf 'main\n' > "$M/main.txt"
+git -C "$M" add main.txt
+git -C "$M" commit -qm main
+MAIN_HEAD=$(git -C "$M" rev-parse HEAD)
+git -C "$M" push -qu origin main
+printf '#!/bin/sh\nexit 13\n' > "$ORIGIN/hooks/pre-receive"
+chmod 755 "$ORIGIN/hooks/pre-receive"
+VERIFY=$CASE_ROOT/verify
+printf '#!/bin/sh\nexit 0\n' > "$VERIFY"
+chmod 755 "$VERIFY"
+if integration_output=$("$HELPER" integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY" - 2>&1); then
+  printf '%s\n' "$integration_output"
+  fail 'integration push failure unexpectedly succeeded'
+else
+  integration_rc=$?
+fi
+[ "$integration_rc" -ne 0 ] || fail 'integration push failure returned zero'
+assert_contains "$integration_output" 'ERROR: integration push failed after verified merge commit' 'integration failure evidence is missing'
+assert_contains "$integration_output" 'result=ERROR' 'integration failure footer result is wrong'
+assert_contains "$integration_output" 'mutation=yes' 'post-commit push failure was not classified as mutation'
+assert_footer "$integration_output" integration-push-failure
+assert_last_ready integration-push-failure
+assert_contains "$last_output" 'result=ERROR' 'integration error was not recoverable'
+assert_contains "$last_output" 'mutation=yes' 'recovered integration mutation evidence is wrong'
+assert_contains "$last_output" "head=" 'recovered integration output lost local head evidence'
+assert_not_contains "$last_output" '===== NUINUI COMMAND RESULT =====' 'integration recovery exposed the command footer'
+
+echo 'COMMAND RESULT TEST PASS'

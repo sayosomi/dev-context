@@ -303,12 +303,15 @@ fail() { echo "SELFTEST FAIL: $*" >&2; exit 1; }
 assert_contains() {
   printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
 }
+without_command_result_footer() {
+  printf '%s\n' "$1" | sed '/^===== NUINUI COMMAND RESULT =====$/,$d'
+}
 assert_success_envelope() {
   name=$1
   actual=$2
   expected=$(printf 'AUTO-MERGE RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE' \
     "$PR_NUMBER" "$HEAD" "$MAIN")
-  if [ "$actual" != "$expected" ]; then
+  if [ "$(without_command_result_footer "$actual")" != "$expected" ]; then
     printf '%s\n' "$actual"
     fail "$name success envelope mismatch"
   fi
@@ -337,6 +340,7 @@ prepare_case() {
   CASE_ROOT=$ROOT/$scenario
   rm -rf "$CASE_ROOT"
   mkdir -p "$CASE_ROOT"
+  mkdir -p "$CASE_ROOT/context"
   : > "$CASE_ROOT/ops"
 }
 
@@ -345,7 +349,8 @@ run_failure() {
   scenario=$2
   expected=$3
   prepare_case "$scenario"
-  if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+  if output=$(NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$CASE_ROOT/context" NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
     FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
     ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
     "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
@@ -372,7 +377,8 @@ run_success() {
   name=$1
   scenario=$2
   prepare_case "$scenario"
-  if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+  if output=$(NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$CASE_ROOT/context" NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
     FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
     ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
     "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
@@ -401,7 +407,8 @@ run_fallback_pending() {
   name=$1
   scenario=$2
   prepare_case "$scenario"
-  if output=$(NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+  if output=$(NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$CASE_ROOT/context" NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
     FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
     ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
     "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then

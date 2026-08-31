@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.15`。
+current standalone helper version: `1.6.16`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -121,6 +121,9 @@ context-sync.sh
 diagnostics.sh
   doctor / transition-audit / context-check
 
+command-result.sh
+  durable Human mutation outcome storage and read-only last-result recovery
+
 self-test.sh
   built-in self-test + external regression aggregation
 
@@ -160,6 +163,7 @@ current commands:
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main <SAY-123> <tested-ref>` | Active interim workflow時だけlocal main checkpointをe2eへ安全に固定 |
 | `nuinui e2e-release <SAY-123> <tested-ref>` | caller identityを照合し、verified e2e stateをlatest `origin/main` detachedへ戻し、durable receipt後にmarker削除。exact duplicateはread-only no-op |
+| `nuinui last-result` | latest tracked Human mutationのstrict durable resultと、footerを除くcanonical outputをread-onlyで検証・復旧 |
 | `nuinui context-audit <expected-main> <expected-artifact-blob>` | GitHub authoritative mainを照合するstandard cloneのstrict read-only audit。behind local HEAD / artifactは許容 |
 | `nuinui context-sync <expected-main> <expected-artifact-blob>` | fresh fetch後にexpected-main treeのartifact blobを検証し、cleanなstandard clone `main`だけをff-only sync |
 | `nuinui context-dev-audit <expected-branch> <expected-head>` | canonical `/Users/yosomi/Code/dev-context-dev`のregistered worktree / repository / clean / branch / HEADをstrict read-only audit |
@@ -171,6 +175,16 @@ current commands:
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported safety pathsをexercise |
 
 旧claimless `resume <lane> <Issue> <checkpoint> <branch>`、旧`release <lane> <checkpoint>`、active checkoutをownershipへadoptするpublic commandはcurrent CLIではない。argument count mismatchはfail-closedでusage errorにする。
+
+### Recoverable Human mutation results
+
+Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。Read-only commands, including `preflight`, `verify`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
+
+The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-parse --absolute-git-dir)/nuinui-command-result-v1/` in the standard dev-context Git directory and contains only `state` and `output`。 It is recovery evidence only; lane ownership, claims, locks, release receipts, E2E markers/sessions, and other authorities remain authoritative. The production helper uses the canonical standard clone represented by `C`; isolated `NUINUI_SELFTEST` runs use an isolated dev-context repository and never the production store.
+
+Each tracked request binds the command, every original argument in order, and any forensic option/path with a NUL-separated SHA-256 request identity. The state is strict schema version 1. A fresh operation atomically replaces the previous result with `phase=STARTED`, `result=INCOMPLETE`, and `mutation=unknown` before the mutation runs. A terminal result atomically stores the exact combined canonical stdout/stderr in `output` first, then the matching `phase=TERMINAL` state with `result=SUCCESS|BLOCKED|ERROR`, `mutation=yes|no|unknown`, the actual exit status, and the output SHA-256. The timestamp is informational identity evidence, not an expiry rule.
+
+After successful terminal finalization, tracked mutations append a common `NUINUI COMMAND RESULT` footer while preserving their existing canonical output. `nuinui last-result` verifies the stored output hash before printing `recovery=READY` and the original output without that footer. A valid `STARTED` record returns `result=INCOMPLETE` / `recovery=BLOCKED` and never exposes an older output. Missing, malformed, unsafe, partial, or hash-mismatched state fails closed without `recovery=READY`; a recovered terminal BLOCKED or ERROR is still a successful read-only `last-result` operation.
 
 ### Durable ownership behavior
 

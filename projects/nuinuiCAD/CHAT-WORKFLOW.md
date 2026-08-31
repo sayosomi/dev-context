@@ -15,6 +15,10 @@ current stateのauthorityは次の通り。
 
 過去chat、chat summary、project conversation historyはcurrent stateのauthorityにしない。
 
+## Human terminal-loss recovery
+
+Lost Human terminal output is an external-state recovery case, not permission to retry a mutation. The first official recovery surface is the read-only `nuinui last-result` command. The durable result store and its verified canonical output are the evidence; chat history is not the authority. A later mutation is never automatically retried merely because the terminal disappeared.
+
 ## Chat roles
 
 Chat roleは会話整理のための分類であり、Issue status、execution ownership、lane occupancyそのものではない。
