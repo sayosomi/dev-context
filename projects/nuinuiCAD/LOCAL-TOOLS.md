@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.19`。
+current standalone helper version: `1.6.20`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -167,7 +167,7 @@ current commands:
 | `nuinui context-audit <expected-main> <expected-artifact-blob>` | GitHub authoritative mainを照合するstandard cloneのstrict read-only audit。behind local HEAD / artifactは許容 |
 | `nuinui context-sync <expected-main> <expected-artifact-blob>` | fresh fetch後にexpected-main treeのartifact blobを検証し、cleanなstandard clone `main`だけをff-only sync |
 | `nuinui context-dev-audit <expected-branch> <expected-head>` | canonical `/Users/yosomi/Code/dev-context-dev`のregistered worktree / repository / clean / branch / HEADをstrict read-only audit |
-| `nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` | concluded prior topicからexact expected mainへordinary detach/switchし、同じregistered worktreeでfresh branchをcreate/switch |
+| `nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` | concluded prior topicからexact expected mainへordinary detach/switchし、同じregistered worktreeでfresh branchをcreate/switch。exact immediate duplicateはread-only no-opとして認識 |
 | `nuinui doctor` | helper / lane / local dev-context diagnostic |
 | `nuinui doctor --full` | preflight、E2E status、local dev-context stateのread-only snapshot |
 | `nuinui transition-audit` | Active interim transition条件をread-only監査 |
@@ -185,6 +185,22 @@ The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-
 Each tracked request binds the command, every original argument in order, and any forensic option/path with a NUL-separated SHA-256 request identity. The state is strict schema version 1. A fresh operation atomically replaces the previous result with `phase=STARTED`, `result=INCOMPLETE`, and `mutation=unknown` before the mutation runs. A terminal result atomically stores the exact combined canonical stdout/stderr in `output` first, then the matching `phase=TERMINAL` state with `result=SUCCESS|BLOCKED|ERROR`, `mutation=yes|no|unknown`, the actual exit status, and the output SHA-256. The timestamp is informational identity evidence, not an expiry rule.
 
 After successful terminal finalization, tracked mutations append a common `NUINUI COMMAND RESULT` footer while preserving their existing canonical output. `nuinui last-result` verifies the stored output hash before printing `recovery=READY` and the original output without that footer. A valid `STARTED` record returns `result=INCOMPLETE` / `recovery=BLOCKED` and never exposes an older output. Missing, malformed, unsafe, partial, or hash-mismatched state fails closed without `recovery=READY`; a recovered terminal BLOCKED or ERROR is still a successful read-only `last-result` operation.
+
+`context-dev-transition` keeps the normal #78 transition semantics unchanged: exact old branch / head, clean canonical registered worktree, authoritative remote `main` equal to expected main, old-head ancestry, absent local / remote new branch, guarded fetch / revalidation, ordinary detach to expected main, ordinary new-branch create / switch, exact post-transition read-back, and retained old branch. After argument validation, standard repository / origin identity validation, and exact canonical worktree-registration validation, a non-old current branch is eligible for already-transitioned recognition only when every fresh read-only proof matches: current branch is exactly caller `new-branch`; current HEAD is exactly caller `expected-main`; the worktree is clean; registration is exact, unique, valid, and tied to the same repository; authoritative remote `main` is exactly caller `expected-main`; local `expected-old-branch` exists and points exactly to caller `expected-old-head`; `expected-old-head` is contained in `expected-main`; and remote `new-branch` is absent. The remote-new-branch absence intentionally limits recognition to the immediate post-transition state before implementation / push progression.
+
+The exact duplicate success envelope is deterministic:
+
+```text
+DEV-CONTEXT ALREADY TRANSITIONED
+worktree=/Users/yosomi/Code/dev-context-dev
+branch=<new-branch>
+base=<expected-main>
+head=<expected-main>
+mutation=no-op
+clean=yes
+```
+
+The duplicate implementation path performs no Git, worktree, ref, or fetch mutation; the tracked command-result store may still durably record the terminal no-op. This is terminal evidence for continuing the current Task workflow without extra Human handback. Progressed, mismatched, near-match, missing, malformed, or ambiguous state remains `BLOCKED` / `ERROR` and follows the normal fresh-state route; no branch naming inference or repair is allowed.
 
 ### Durable ownership behavior
 

@@ -316,6 +316,54 @@ context_dev_transition_command() {
   context_valid_sha "$context_transition_expected_main" || { echo "ERROR: invalid expected main SHA: $context_transition_expected_main"; return 2; }
   context_repo_ready || { echo "BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"; return 1; }
   context_dev_ready || { echo "BLOCKED: canonical dev worktree registration is missing, duplicate, malformed, or belongs to another repository path=$CD"; return 1; }
+  context_transition_current_branch=$(bn "$CD")
+  if [ "$context_transition_current_branch" != "$context_transition_old_branch" ]; then
+    [ "$context_transition_current_branch" = "$context_transition_new_branch" ] || {
+      echo "BLOCKED: dev branch mismatch expected_old=$context_transition_old_branch expected_new=$context_transition_new_branch actual=${context_transition_current_branch:-detached}"
+      return 1
+    }
+    context_transition_current_head=$(hh "$CD") || {
+      echo 'ERROR: unable to read canonical dev worktree HEAD'
+      return 1
+    }
+    [ "$context_transition_current_head" = "$context_transition_expected_main" ] || {
+      echo "BLOCKED: already-transitioned HEAD mismatch expected=$context_transition_expected_main actual=$context_transition_current_head"
+      return 1
+    }
+    cn "$CD" || { echo "BLOCKED: canonical dev worktree is dirty path=$CD"; return 1; }
+    context_authoritative_main >/dev/null || { echo 'ERROR: authoritative remote main query failed'; return 1; }
+    [ "$context_remote_main" = "$context_transition_expected_main" ] || {
+      echo "BLOCKED: authoritative main mismatch expected=$context_transition_expected_main actual=$context_remote_main"
+      return 1
+    }
+    context_local_branch_exists "$context_transition_old_branch" || {
+      echo "BLOCKED: old local branch is missing: $context_transition_old_branch"
+      return 1
+    }
+    context_transition_old_local_head=$(git -C "$C" rev-parse --verify --quiet "refs/heads/$context_transition_old_branch^{commit}") || {
+      echo "ERROR: unable to read old local branch: $context_transition_old_branch"
+      return 1
+    }
+    [ "$context_transition_old_local_head" = "$context_transition_old_head" ] || {
+      echo "BLOCKED: old local branch HEAD mismatch expected=$context_transition_old_head actual=$context_transition_old_local_head"
+      return 1
+    }
+    an "$C" "$context_transition_old_head" "$context_transition_expected_main" || {
+      echo "BLOCKED: old HEAD is not contained in expected main old=$context_transition_old_head expected_main=$context_transition_expected_main"
+      return 1
+    }
+    context_remote_branch "$context_transition_new_branch" || {
+      echo "ERROR: unable to query remote new branch: $context_transition_new_branch"
+      return 1
+    }
+    [ "$context_remote_branch_state" = absent ] || {
+      echo "BLOCKED: remote new branch already exists: $context_transition_new_branch"
+      return 1
+    }
+    printf 'DEV-CONTEXT ALREADY TRANSITIONED\nworktree=%s\nbranch=%s\nbase=%s\nhead=%s\nmutation=no-op\nclean=yes\n' \
+      "$CD" "$context_transition_new_branch" "$context_transition_expected_main" "$context_transition_expected_main"
+    return 0
+  fi
   [ "$(bn "$CD")" = "$context_transition_old_branch" ] || { echo "BLOCKED: old dev branch mismatch expected=$context_transition_old_branch actual=$(bn "$CD")"; return 1; }
   cn "$CD" || { echo "BLOCKED: canonical dev worktree is dirty path=$CD"; return 1; }
   [ "$(hh "$CD")" = "$context_transition_old_head" ] || { echo "BLOCKED: old dev HEAD mismatch expected=$context_transition_old_head actual=$(hh "$CD")"; return 1; }
