@@ -734,10 +734,6 @@ if [ "$z" != 0 ];then pd 'ERROR: PR lookup/API failure';[ -n "$s" ]&&pdetail "$s
 set -- $s
 if [ "$#" != 9 ];then pd 'ERROR: PR lookup returned invalid data';pdetail "$s";return 1;fi
 [ -n "$1" ]||{ pd 'ERROR: PR lookup returned no pull request identity';return 1; }
-case "$9" in
-  */pull/"$p") ;;
-  *) pd 'BLOCKED: PR number mismatch';printf 'expected_pr=%s\nactual_url=%s\n' "$p" "$9" >&2;return 1;;
-esac
 if [ "$2" != OPEN ];then pd 'BLOCKED: PR is not OPEN';printf 'state=%s\n' "$2" >&2;return 1;fi
 if [ "$3" != false ];then pd 'BLOCKED: PR is a draft';return 1;fi
 if [ "$4" != main ];then pd 'BLOCKED: PR base branch mismatch';printf 'expected_base=main\nactual_base=%s\n' "$4" >&2;return 1;fi
@@ -745,7 +741,13 @@ if [ "$6" != "$h" ];then pd 'BLOCKED: reviewed head mismatch';printf 'expected_h
 if [ "$7" != MERGEABLE ];then pd 'BLOCKED: PR mergeability is not acceptable or is ambiguous';printf 'mergeability=%s\n' "$7" >&2;return 1;fi
 case "$8" in
   none) already_reserved=0 ;;
-  MERGE) already_reserved=1 ;;
+  MERGE)
+    case "$9" in
+      */pull/"$p") ;;
+      *) pd 'BLOCKED: PR number mismatch';printf 'expected_pr=%s\nactual_url=%s\n' "$p" "$9" >&2;return 1;;
+    esac
+    already_reserved=1
+    ;;
   *) pd 'BLOCKED: Auto-merge already configured';printf 'method=%s\n' "$8" >&2;return 1 ;;
 esac
 integrated_base=$5
