@@ -87,6 +87,28 @@ Humanへ戻してよいのはproduct / UX / scope decision、unsafe local state�
 
 local deterministic releaseだけが残る場合はWork completion / Linear statusとphysical lane cleanupを混同しない。
 
+## Post-merge E2E-only handoff barrier (#129)
+
+implementationがmergeされ、authoritative read-backでrequired Manual E2Eだけが残ると確認できた場合は、次のbarrierを完了してからnormal E2E startupへ進む。
+
+- implementation executionは終了している。
+- normal E2E startupより先にIssueを`In Review`へ同期する。
+- E2Eを待つ間も実行中も、old main/sub claimを保持しない。
+- exact current implementation generationを、既存の`nuinui release <main|sub> <checkpoint> <claim>` contractでreleaseする。
+- successful release後、`IMPLEMENTATION RELEASED`を確認し、Lane release checkpointをrecordしてread-backする。
+- E2E laneのavailabilityは、completed implementation laneをreleaseするかどうかを制御しない。
+
+release anomalyがpost-merge E2E-only handoffで発生した場合:
+
+- Work statusは`In Review`に保つ。
+- physical `FREE`を推測しない。
+- `BUSY`、`BLOCKED`、`RELEASE-PENDING`のcleanup stateはcapacity unavailableとして扱う。
+- 既存のrelease / recovery mechanicsへrouteする。
+- release anomalyが解消するまでnormal E2Eをstartしない。
+- reset、stash、force-repair、old implementation claimのreviveを行わない。
+
+このbarrierは、[`CHECKOUTS.md`](./CHECKOUTS.md)のrelease state-machine mechanicsをduplicateまたは再定義しない。
+
 ## Merge-only Human integration continuation
 
 Integration Watermark到達済みのalready-reviewed Review Headに対し、fresh post-integration semantic driftが`NON-INTERFERING`で、repository merge gateがcurrent-base freshnessだけを要求する場合は、[`CODING-AGENT.md`](./CODING-AGENT.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のnarrow exceptionとしてHuman `nuinui integrate-clean`へ直接handoffしてよい。
@@ -107,6 +129,8 @@ main/subを使用したWorkで「完全終了」「追加作業なし」と宣�
 2. [`CHECKOUTS.md`](./CHECKOUTS.md)に従うlane release成功、actual lane FREE;
 3. current Linear Issueへ`Lane release checkpoint`記録;
 4. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のPost-write verification完了。
+
+merge後にrequired Manual E2Eだけが残る場合、このfinal closureではなく先にPost-merge E2E-only handoff barrierを完了する。E2E closureが終わるまでfinal closureを宣言しない。
 
 Human boundaryは次の1回だけにする。
 

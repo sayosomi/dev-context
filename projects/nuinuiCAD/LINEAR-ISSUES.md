@@ -39,6 +39,16 @@ Readyだけを理由にIn Progressへしない。actual durable lane assignment�
 
 [`CHECKOUTS.md`](./CHECKOUTS.md)の`RELEASE-PENDING`はphysical cleanup stateでありcurrent implementation executionではない。cleanupだけを理由にIssueをIn Progressへ保持しない。
 
+## #129 release-before-E2E barrier
+
+implementation mergeとauthoritative read-backでrequired Manual E2Eだけが残ることを確認したIssueは、`In Review`へ同期する。physical implementation cleanup stateはWork statusとは別である。
+
+post-merge E2E-only release anomalyでは、physical main/sub laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でもIssue statusは`In Review`に保つ。old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。cleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
+
+この間に unrelated new implementation admissionを判定する場合も、そのlaneはunavailableとして数える。ただし、そのlaneのowner Issueをcurrent implementation `In Progress`集合へ戻してはならない。release / recoveryが成功した後、Lane release checkpointをrecordしてread-backし、laneを通常の`FREE` capacityへ戻す。
+
+このexceptionはmerged + E2E-only evidenceがあるpost-merge cleanupに限る。通常のactive implementationで、同じevidenceなしにBUSY laneとstatusが一致しない場合は、既存のoccupancy reconciliationを変更せずfail-closedにする。
+
 ## Fixed implementation capacity
 
 ```text
@@ -202,7 +212,7 @@ In Review + manual_e2e_only + Manual E2E: Deferred
 
 `manual_e2e_only`はimplementation / review / merge / management workがなくrequired Manual E2Eだけが残るleaf Issueにだけ付ける。PR open / CI / blocking review中をIn Reviewとは呼ばない。
 
-Manual E2Eはe2e laneだけを使い、tested commit / stable refとmarker / Issue Commentを同期する。implementation lane RELEASE-PENDINGだけをIn Review blockerにしない。
+Manual E2Eはe2e laneだけを使い、tested commit / stable refとmarker / Issue Commentを同期する。implementation laneのcleanup stateだけではWork statusを変更しないが、post-merge E2E-only release anomalyが解消するまでnormal E2E startupは行わない。
 
 ## Manual E2E failure
 
@@ -211,9 +221,9 @@ confirmed implementation failure:
 1. `manual_e2e_only`を外す;
 2. `Manual E2E: Failed` evidence維持;
 3. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
-4. Ready + unblockedならlane未割当中Todo、Pending/BlockedならBacklog;
-5. actual main/sub start成功後だけIn Progress;
-6. fix merge後only E2E remainsならmanual_e2e_only + In Review;
+4. new implementation laneが未割当の間は、Ready / unblockedなretryのstatusを`Todo`にする。focused contract / prerequisite自体がPending / Blockedなら既存のreadiness precedenceに従い`Backlog`とし、いずれも`In Progress`にはしない;
+5. laterにcurrently `FREE`なmain/sub laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
+6. fix merge後にrequired E2Eだけが残れば`manual_e2e_only` + `In Review`へ戻し、同じrelease-before-E2E barrierを適用;
 7. new exact tested commitでaffected E2E rerun。
 
 E2E failure / re-auditだけでIn Progressへ進めない。e2e checkoutをimplementationへ変えない。
