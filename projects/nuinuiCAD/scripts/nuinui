@@ -2956,6 +2956,18 @@ nuinui_command_result_state_valid() {
       if (values["output_sha256"] != "-" && values["output_sha256"] !~ /^[0-9a-f]{64}$/) invalid=1
       if (values["phase"] == "STARTED" && (values["result"] != "INCOMPLETE" || values["mutation"] != "unknown" || values["exit"] != "-" || values["output_sha256"] != "-")) invalid=1
       if (values["phase"] == "TERMINAL" && (values["result"] !~ /^(SUCCESS|BLOCKED|ERROR)$/ || values["exit"] == "-" || values["output_sha256"] !~ /^[0-9a-f]{64}$/)) invalid=1
+      if (values["phase"] == "TERMINAL" && values["result"] == "SUCCESS" && values["exit"] + 0 != 0) invalid=1
+      if (values["phase"] == "TERMINAL" && values["result"] ~ /^(BLOCKED|ERROR)$/ && values["exit"] + 0 == 0) invalid=1
+      if (values["phase"] == "TERMINAL" && values["result"] == "SUCCESS") {
+        if (values["command"] == "lane-init" && (values["lane"] !~ /^(main|sub)$/ || values["issue"] != "-" || values["claim"] != "-")) invalid=1
+        if (values["command"] ~ /^(begin|start)$/ && (values["lane"] !~ /^(main|sub)$/ || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
+        if (values["command"] == "resume" && (values["lane"] !~ /^(main|sub)$/ || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
+        if (values["command"] ~ /^(release|recover)$/ && (values["lane"] !~ /^(main|sub)$/ || values["issue"] != "-" || values["claim"] == "-")) invalid=1
+        if (values["command"] == "pr-auto-merge" && (values["lane"] != "-" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
+        if (values["command"] == "integrate-clean" && (values["lane"] !~ /^(main|sub)$/ || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
+        if (values["command"] ~ /^(e2e-start|e2e-start-local-main|e2e-release)$/ && (values["lane"] != "e2e" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
+        if (values["command"] ~ /^(context-sync|context-dev-transition)$/ && (values["lane"] != "dev-context" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
+      }
       if (invalid) exit 1
     }
   ' "$nuinui_command_result_state_file"
@@ -3048,14 +3060,17 @@ nuinui_command_result_run() {
     nuinui_command_result_mutation=unknown
   elif [ "$nuinui_command_result_underlying_rc" = 0 ]; then
     nuinui_command_result_mutation=yes
-  elif nuinui_command_result_canonical_blocked "$nuinui_command_result_capture"; then
-    nuinui_command_result_mutation=no
   elif [ "$nuinui_command_result_command" = integrate-clean ] && {
     nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: integration push failed after verified merge commit$' ||
     nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: integration push read-back mismatch$' ||
     nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: pushed integration lane state could not be proven$';
   }; then
     nuinui_command_result_mutation=yes
+  elif nuinui_command_result_canonical_blocked "$nuinui_command_result_capture"; then
+    case "$nuinui_command_result_command" in
+      begin|integrate-clean|context-sync|context-dev-transition) nuinui_command_result_mutation=no ;;
+      *) nuinui_command_result_mutation=unknown ;;
+    esac
   else
     nuinui_command_result_mutation=unknown
   fi

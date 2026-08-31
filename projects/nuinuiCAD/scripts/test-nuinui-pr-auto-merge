@@ -344,6 +344,13 @@ prepare_case() {
   : > "$CASE_ROOT/ops"
 }
 
+last_result_for_case() {
+  case_name=$1
+  NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$ROOT/$case_name/context" \
+    "$HELPER" last-result
+}
+
 run_failure() {
   name=$1
   scenario=$2
@@ -442,6 +449,12 @@ assert_no_graphql "$ROOT/toctou-complete/ops" 'TOCTOU pending to complete'
 
 run_failure 'reservation mutation race' mutation-race \
   'BLOCKED: all required checks are already complete'
+assert_contains "$output" '===== NUINUI COMMAND RESULT =====' 'mutation race did not emit command-result footer'
+assert_contains "$output" 'mutation=unknown' 'mutation race was classified as no mutation'
+mutation_race_last_result=$(last_result_for_case mutation-race)
+assert_contains "$mutation_race_last_result" 'recovery=READY' 'mutation race last-result was not READY'
+assert_contains "$mutation_race_last_result" 'result=BLOCKED' 'mutation race last-result result is wrong'
+assert_contains "$mutation_race_last_result" 'mutation=unknown' 'mutation race last-result mutation is wrong'
 assert_contains "$(cat "$ROOT/mutation-race/ops")" 'pr checks' 'mutation race did not perform fresh diagnosis'
 [ "$(graphql_count "$ROOT/mutation-race/ops")" = 1 ] || fail 'mutation race retried GraphQL mutation'
 assert_contains "$(cat "$ROOT/mutation-race/ops")" 'pr view' 'mutation race did not read current PR state'

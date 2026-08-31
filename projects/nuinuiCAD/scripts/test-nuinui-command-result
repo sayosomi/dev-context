@@ -103,7 +103,7 @@ assert_last_ready() {
 write_valid_terminal() {
   printf 'canonical output\n' > "$(output_path)"
   output_sha=$(shasum -a 256 "$(output_path)" | awk 'NR == 1 {print $1}')
-  printf 'version=1\noperation_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ntimestamp=2026-08-31T00:00:00Z\ncommand=lane-init\nphase=TERMINAL\nresult=SUCCESS\nlane=-\nissue=-\nclaim=-\nrequest_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nmutation=yes\nexit=0\noutput_sha256=%s\n' "$output_sha" > "$(state_path)"
+  printf 'version=1\noperation_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\ntimestamp=2026-08-31T00:00:00Z\ncommand=lane-init\nphase=TERMINAL\nresult=SUCCESS\nlane=main\nissue=-\nclaim=-\nrequest_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nmutation=yes\nexit=0\noutput_sha256=%s\n' "$output_sha" > "$(state_path)"
 }
 
 expect_invalid() {
@@ -171,6 +171,40 @@ assert_last_ready blocked-before-mutation
 assert_contains "$last_output" 'result=BLOCKED' 'blocked result was not recoverable'
 assert_contains "$last_output" 'mutation=no' 'blocked recovered mutation is wrong'
 
+setup_case blocked-after-start
+initialize_lanes
+BASE=$(git -C "$M" rev-parse origin/main)
+if ambiguous_output=$(NUINUI_SELFTEST_CRASH_AT=start-after-slot "$HELPER" start main SAY-22 "$BASE" sayosomi/say-22-command-result 2>&1); then
+  printf '%s\n' "$ambiguous_output"
+  fail 'ambiguous start unexpectedly succeeded'
+else
+  ambiguous_rc=$?
+fi
+[ "$ambiguous_rc" -ne 0 ] || fail 'ambiguous start returned zero'
+assert_contains "$ambiguous_output" 'BLOCKED: start mutation completion could not be proven' 'ambiguous start did not preserve canonical BLOCKED evidence'
+assert_contains "$ambiguous_output" 'result=BLOCKED' 'ambiguous start footer result is wrong'
+assert_contains "$ambiguous_output" 'mutation=unknown' 'ambiguous start was not classified as unknown mutation'
+assert_last_ready blocked-after-start
+assert_contains "$last_output" 'result=BLOCKED' 'ambiguous start result was not recoverable'
+assert_contains "$last_output" 'mutation=unknown' 'ambiguous start recovery did not preserve unknown mutation'
+
+setup_case e2e-blocked
+BASE=$(git -C "$M" rev-parse origin/main)
+"$HELPER" e2e-start SAY-50 "$BASE" >/dev/null
+if e2e_blocked_output=$("$HELPER" e2e-start SAY-51 "$BASE" 2>&1); then
+  printf '%s\n' "$e2e_blocked_output"
+  fail 'blocked E2E start unexpectedly succeeded'
+else
+  e2e_blocked_rc=$?
+fi
+[ "$e2e_blocked_rc" -ne 0 ] || fail 'blocked E2E start returned zero'
+assert_contains "$e2e_blocked_output" 'BLOCKED:' 'blocked E2E start did not report canonical BLOCKED evidence'
+assert_contains "$e2e_blocked_output" 'result=BLOCKED' 'blocked E2E footer result is wrong'
+assert_contains "$e2e_blocked_output" 'mutation=unknown' 'blocked E2E result was treated as no mutation'
+assert_last_ready e2e-blocked
+assert_contains "$last_output" 'result=BLOCKED' 'blocked E2E result was not recoverable'
+assert_contains "$last_output" 'mutation=unknown' 'blocked E2E recovery did not preserve unknown mutation'
+
 setup_case interrupted
 mkdir -p "$(result_dir)"
 printf 'old canonical output\n' > "$(output_path)"
@@ -204,6 +238,14 @@ write_valid_terminal
 sed 's/^request_sha256=.*/request_sha256=bad/' "$(state_path)" > "$CASE_ROOT/invalid-state"
 mv "$CASE_ROOT/invalid-state" "$(state_path)"
 expect_invalid invalid-hash
+write_valid_terminal
+sed 's/^exit=0$/exit=1/' "$(state_path)" > "$CASE_ROOT/invalid-state"
+mv "$CASE_ROOT/invalid-state" "$(state_path)"
+expect_invalid success-nonzero-exit
+write_valid_terminal
+sed 's/^lane=main$/lane=-/' "$(state_path)" > "$CASE_ROOT/invalid-state"
+mv "$CASE_ROOT/invalid-state" "$(state_path)"
+expect_invalid success-lane-identity
 write_valid_terminal
 rm "$(output_path)"
 expect_invalid missing-output
