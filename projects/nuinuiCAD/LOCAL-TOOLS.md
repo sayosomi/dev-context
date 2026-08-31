@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.18`。
+current standalone helper version: `1.6.19`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -255,6 +255,21 @@ clean=yes
 `pr-auto-merge`, E2E, context-audit / context-sync / context-dev-audit / context-dev-transition, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。`expected-main`はcallerがfreshに確認したauthoritative remote `main` SHAであり、helperはGitHubから`main` tipを独立取得して一致を確認する。PRの`baseRefOid`はauthoritative current-main freshnessのevidenceとして扱わない。PRがOPEN / non-draft / base=`main` / exact reviewed headで、reviewed headがそのauthoritative current `main`をintegration済みであり、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。current main mismatchは`BLOCKED: expected main mismatch`、behind PRは`BLOCKED: PR is behind current main; integration required`としてfail-closedする。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
+
+initial current PR snapshotに既存のAuto-merge reservationがある場合、`pr-auto-merge`はPR number / OPEN state / non-draft / base=`main` / exact expected head / acceptableでunambiguousなmergeability / authoritative current main / #60 integration / `autoMergeRequest.mergeMethod=MERGE`をfreshに独立証明できたときだけ、read-only terminal successとして認識する。これは既存reservationをcancel / replace / recreateせず、GraphQL mutationを行わない。required checksはreservation後にpassへ進んでもよく、exact already-reserved recognitionではpendingのままであることを要求しない。
+
+exact already-reserved successのcanonical envelopeは次のとおりである。
+
+```text
+AUTO-MERGE ALREADY RESERVED
+pr=<number>
+head=<expected-head>
+main=<expected-main>
+merge_method=MERGE
+mutation=no-op
+```
+
+このsuccess envelopeはChatGPTがそのままnormal CI / PR workflowへ進むための十分なterminal evidenceである。exact proofが成功した場合、追加のPR-state paste、head/main recheck、同じ`pr-auto-merge`の再実行、最初のreservation確認、またはgeneric duplicate-only diagnosisをHumanへ求めない。near-match、non-MERGE、closed / merged、draft、non-main base、ambiguous mergeability / integration、current-main drift、lookup failureはfail-closedする。
 
 visible required checksは`gh pr checks --required`のmachine-readable stdoutだけをparseし、stderrの`no required checks reported`等のhuman proseをcheck rowとして扱わない。required check viewが空の場合はbranch protectionのrequired status metadata、ruleset metadata、exact-head pull_request workflow run、check suite、check runを相関する。exact-head Actions runがqueued / in_progressならpending、関連executionがすべてsuccessならpass、evidenceがない場合はnone-required、相関が不完全 / 矛盾 / truncatedならrequired-checks-unresolved、GitHub/API/tool failureならapi-errorとしてfail-closedする。commit-statusのdefault pendingだけではpendingと判定しない。
 

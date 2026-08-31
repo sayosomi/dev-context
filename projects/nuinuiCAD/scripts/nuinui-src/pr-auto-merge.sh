@@ -1,7 +1,7 @@
 pd(){ printf '%s\n' "$*" >&2; }
 pdetail(){ [ -n "$1" ] && printf 'detail=%s\n' "$1" >&2; }
-pa(){ local p h m s c z b q check_out check_err check_rc actual_main integration integration_status integrated_base compare_base merge_base ahead_by behind_by;
-p=$1;h=$2;m=$3
+pa(){ local p h m mode s c z b q check_out check_err check_rc actual_main integration integration_status integrated_base compare_base merge_base ahead_by behind_by already_reserved;
+p=$1;h=$2;m=$3;mode=$4
 echo "$p"|grep -Eq '^[1-9][0-9]*$'&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_sha "$m"||return 2
 s=$(ps "$p" 2>&1);z=$?
 if [ "$z" != 0 ];then pd 'ERROR: PR lookup/API failure';[ -n "$s" ]&&pdetail "$s";return 1;fi
@@ -13,7 +13,17 @@ if [ "$3" != false ];then pd 'BLOCKED: PR is a draft';return 1;fi
 if [ "$4" != main ];then pd 'BLOCKED: PR base branch mismatch';printf 'expected_base=main\nactual_base=%s\n' "$4" >&2;return 1;fi
 if [ "$6" != "$h" ];then pd 'BLOCKED: reviewed head mismatch';printf 'expected_head=%s\nactual_head=%s\n' "$h" "$6" >&2;return 1;fi
 if [ "$7" != MERGEABLE ];then pd 'BLOCKED: PR mergeability is not acceptable or is ambiguous';printf 'mergeability=%s\n' "$7" >&2;return 1;fi
-if [ "$8" != none ];then pd 'BLOCKED: Auto-merge already configured';printf 'method=%s\n' "$8" >&2;return 1;fi
+case "$8" in
+  none) already_reserved=0 ;;
+  MERGE)
+    case "$9" in
+      */pull/"$p") ;;
+      *) pd 'BLOCKED: PR number mismatch';printf 'expected_pr=%s\nactual_url=%s\n' "$p" "$9" >&2;return 1;;
+    esac
+    already_reserved=1
+    ;;
+  *) pd 'BLOCKED: Auto-merge already configured';printf 'method=%s\n' "$8" >&2;return 1 ;;
+esac
 integrated_base=$5
 actual_main=$(cm 2>&1);z=$?
 if [ "$z" != 0 ]||! nuinui_ownership_valid_sha "$actual_main";then pd 'ERROR: current main lookup/API failure';[ -n "$actual_main" ]&&pdetail "$actual_main";return 1;fi
@@ -29,6 +39,16 @@ if { [ "$integration_status" != ahead ]&&[ "$integration_status" != identical ];
   pd 'BLOCKED: PR is behind current main; integration required'
   printf 'expected_main=%s\nreviewed_head=%s\nintegrated_base=%s\n' "$m" "$h" "$integrated_base" >&2
   return 1
+fi
+if [ "$already_reserved" = 1 ];then
+  [ "$mode" = initial ] || { pd 'BLOCKED: Auto-merge reservation precondition changed before mutation';return 1; }
+  printf '%s\n' 'AUTO-MERGE ALREADY RESERVED'
+  printf 'pr=%s\n' "$p"
+  printf 'head=%s\n' "$h"
+  printf 'main=%s\n' "$m"
+  printf 'merge_method=MERGE\n'
+  printf 'mutation=no-op\n'
+  return 3
 fi
 check_out=$(mktemp /tmp/nuinui-pr-checks.XXXXXX 2>&1);z=$?
 if [ "$z" != 0 ];then
@@ -101,7 +121,8 @@ pam(){ local p h m s i o z d a ar;
 p=$1;h=$2;m=$3
 d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);z=$?
 if [ "$z" != 0 ];then pd 'ERROR: unable to capture Auto-merge precondition diagnostics';[ -n "$d" ]&&pdetail "$d";return 1;fi
-s=$(pa "$p" "$h" "$m" 2>"$d");z=$?
+s=$(pa "$p" "$h" "$m" initial 2>"$d");z=$?
+if [ "$z" = 3 ];then rm -f "$d";printf '%s\n' "$s";return 0;fi
 if [ "$z" != 0 ];then
 if [ "$z" = 2 ];then rm -f "$d";return 2;fi
 if [ -s "$d" ];then cat "$d" >&2;else pd 'ERROR: Auto-merge precondition check failed without a diagnostic';fi
@@ -110,7 +131,7 @@ fi
 rm -f "$d"
 d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);z=$?
 if [ "$z" != 0 ];then pd 'ERROR: unable to capture Auto-merge precondition diagnostics';[ -n "$d" ]&&pdetail "$d";return 1;fi
-s=$(pa "$p" "$h" "$m" 2>"$d");z=$?
+s=$(pa "$p" "$h" "$m" revalidate 2>"$d");z=$?
 if [ "$z" != 0 ];then
 pd 'BLOCKED: Auto-merge reservation precondition changed before mutation'
 if [ "$z" = 2 ];then pd 'ERROR: Auto-merge precondition validator rejected the command arguments';elif [ -s "$d" ];then cat "$d" >&2;else pd 'ERROR: current precondition reason could not be determined';fi
@@ -122,7 +143,7 @@ o=$("$GH" api graphql -f query='mutation($id:ID!,$h:GitObjectID!){enablePullRequ
 if [ "$z" != 0 ];then
 d=$(mktemp "${TMPDIR:-/tmp}/nuinui-pam.XXXXXX" 2>&1);ar=$?
 if [ "$ar" = 0 ];then
-a=$(pa "$p" "$h" "$m" 2>"$d");ar=$?
+a=$(pa "$p" "$h" "$m" revalidate 2>"$d");ar=$?
 if [ "$ar" != 0 ]&&grep -q '^BLOCKED:' "$d";then cat "$d" >&2;rm -f "$d";return 1;fi
 else
 a=;pd 'ERROR: unable to capture fresh Auto-merge failure diagnosis';[ -n "$d" ]&&pdetail "$d"
