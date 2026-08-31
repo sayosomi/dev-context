@@ -151,11 +151,21 @@ Human report / idea
 -> Todo
 -> Coordinator or direct request selects Work
 -> Implementation chat + FREE main/sub lane
--> merge
--> requiredなら E2E chat + e2e lane
+-> implementation merge + authoritative read-back
+-> prove remaining acceptance is required Manual E2E only
+-> synchronize Linear status to In Review
+-> synchronize `manual_e2e_only` and current Manual E2E state according to existing policy
+-> exact main/sub implementation lane release
+-> successful IMPLEMENTATION RELEASED
+-> Lane release checkpoint record and read-back
+-> implementation lane proven FREE
+-> if e2e lane is FREE, normal e2e-start / E2E handoff
+-> if e2e lane is BUSY, remain In Review and wait without retaining the implementation lane
 -> PASS
 -> Done
 ```
+
+ImplementationからE2Eへのcanonical handoffでは、E2E startをimplementation release barrierより前に置かない。E2E laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、E2EがBUSYならmain/subを保持せずIn Reviewで待つ。
 
 roleを切り替える際も、destination roleのstartup gateを省略しない。同じchatを継続するか新chatへ切り替えるかはWork identityとは別判断。
 

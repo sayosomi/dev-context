@@ -18,6 +18,40 @@ E2E chatを新しく作っただけでは`e2e` laneをclaimしない。tested co
 - versioned preparation helperの実行がunexpected error / hang / state mismatchになった場合、まずhelperの`status`とowner documentのrepair / fallback ruleで状態を分類する。session rootやtemporary artifactをad-hoc shellで探索・推測して別launcherへ迂回しない。
 - `nuinui-e2e-prepare prepare`の`E2E SETUP ALREADY READY` / `mutation=no-op` / `READY FOR HUMAN E2E`、および`cleanup`の`E2E CLEANUP ALREADY COMPLETE` / `mutation=no-op`は、read-onlyでexact duplicateを証明したterminal no-opである。これらが返った場合は通常workflowを直接継続し、Humanへstatus、session / marker / process state、初回invocationの成功確認、またはduplicateだけを理由にしたprepare / cleanup再実行を求めない。near-match、stale、ambiguous stateは`BLOCKED`として扱う。
 
+## Normal E2E startup after implementation release barrier (#129)
+
+normal E2E startupは、preceding implementation generationが#129 handoff barrierをsuccessfully crossedした後だけ行う。必要な順序は次の通り。
+
+```text
+implementation merge / authoritative read-back complete
+-> Issue synchronized to In Review / E2E-only state
+-> exact old main/sub generation released
+-> successful IMPLEMENTATION RELEASED
+-> Lane release checkpoint recorded and read back
+-> physical implementation lane proven FREE
+-> e2e-start / E2E handoff
+```
+
+implementation laneのrelease anomalyが残る間はnormal E2Eをstartしない。`BUSY`、`BLOCKED`、`RELEASE-PENDING`はcapacity unavailableであり、physical `FREE`を推測しない。e2e laneが`BUSY`ならIssueは`In Review`で待ち、main/sub capacityを保持しない。
+
+## Confirmed Manual E2E implementation failure
+
+confirmed Manual E2E implementation failureは次のtransitionで処理する。
+
+```text
+E2E FAIL confirmed
+-> preserve Manual E2E: Failed evidence
+-> remove `manual_e2e_only`
+-> Linear status = Todo
+-> remain Todo during fix contract / re-audit / dependency organization / rerun-plan synchronization
+-> synchronize focused contract / fix / rerun requirements
+-> later select a currently FREE main/sub lane
+-> start a new durable implementation generation
+-> only after canonical begin/start success change status to In Progress
+```
+
+pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後は、fix contract、re-audit、dependency organization、rerun-plan synchronizationを行っている間も`Todo`に保つ。laterにFREEなmain/sub implementation laneを選択し、新しいgenerationをcanonical begin/startで開始する。successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
+
 ## Human E2E closure handoff
 
 Canonicalなsuccessful closure handoffは、必ず次の順序で行う。
