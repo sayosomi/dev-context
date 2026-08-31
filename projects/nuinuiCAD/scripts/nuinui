@@ -110,6 +110,21 @@ nuinui_ownership_parse_slot() {
   printf '%s %s %s %s\n' "$2" "$3" "$4" "$5"
 }
 
+nuinui_ownership_parse_release_receipt() {
+  set -- $(nuinui_ownership_read_fields "$1" version,lane,issue,branch,base,checkpoint,claim) || return 1
+  [ "$#" = 7 ] || return 1
+  [ "$1" = 1 ] || return 1
+  case "$2" in
+    main|sub) ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
+  nuinui_ownership_valid_sha "$5" || return 1
+  nuinui_ownership_valid_sha "$6" || return 1
+  nuinui_ownership_valid_claim "$7" || return 1
+  printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
 nuinui_ownership_parse_lock() {
   set -- $(nuinui_ownership_read_fields "$1" version,operation,issue,branch,base,checkpoint,claim) || return 1
   [ "$#" = 7 ] || return 1
@@ -141,7 +156,7 @@ nuinui_ownership_parse_releasing() {
   [ "${nuinui_ownership_releasing_dir##*/}" = "nuinui-implementation-slot.releasing.$4" ] || return 1
   printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$nuinui_ownership_releasing_checkpoint"
 }
-V=1.6.11;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
+V=1.6.12;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then M=${NUINUI_MAIN_WT:?};S=${NUINUI_SUB_WT:?};E=${NUINUI_E2E_WT:?};C=${NUINUI_DEV_CONTEXT_WT:-};RT=;CT=;else M=/Users/yosomi/Code/nuinuiCAD;S=/Users/yosomi/Code/nuinuiCAD-sub;E=/Users/yosomi/Code/nuinuiCAD-e2e;C=/Users/yosomi/Code/dev-context;RT=sayosomi/nuinuiCAD;CT=sayosomi/dev-context;fi
 if [ "${NUINUI_SELFTEST:-0}" = 1 ];then CD=${NUINUI_DEV_CONTEXT_DEV_WT:-};[ -z "${NUINUI_SELFTEST_EXPECTED_ORIGIN:-}" ]||CT=$NUINUI_SELFTEST_EXPECTED_ORIGIN;else CD=/Users/yosomi/Code/dev-context-dev;fi
 lr(){ case $1 in main)echo "$M";;sub)echo "$S";;e2e)echo "$E";;*)return 2;;esac;};il(){ case $1 in main|sub);;*)return 2;;esac;};gr(){ [ -d "$1" ]&&git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1;};ao(){ [ -z "$2" ]||git -C "$1" remote get-url origin 2>/dev/null|grep -Fq "$2";};cn(){ [ -z "$(git -C "$1" status --porcelain)" ];};bn(){ git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null||true;};hh(){ git -C "$1" rev-parse HEAD;};om(){ git -C "$1" rev-parse origin/main;};fm(){ git -C "$1" fetch origin main >/dev/null 2>&1;};fp(){ git -C "$1" fetch origin --prune >/dev/null 2>&1;};an(){ git -C "$1" merge-base --is-ancestor "$2" "$3";};sd(){ git -C "$1" switch --detach "$2" >/dev/null;};gd(){ git -C "$1" rev-parse --absolute-git-dir 2>/dev/null;};ip(){ echo "$(gd "$1")/nuinui-implementation-v1";};sp(){ echo "$(gd "$1")/nuinui-implementation-slot";};kp(){ echo "$(gd "$1")/nuinui-implementation-lock";};rp(){ echo "$(gd "$1")/nuinui-implementation-slot.releasing.$2";};rds(){ find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null|sort;};mp(){ echo "$(gd "$1")/nuinui-slot";};ep(){ echo "$(gd "$1")/nuinui-e2e-session";}
@@ -220,8 +235,10 @@ rt(){ local r q h t s remote_head remote_ref; r=$1;q=$2;h=$3;t=$(git -C "$r" ls-
 cr(){ local l i a h q c r mode m z x; l=$1;i=$2;a=$3;h=$4;q=$5;c=$6;r=$(lr "$l");set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state")||return 1;[ "$1" = "$i" ]&&[ "$2" = "$q" ]&&[ "$3" = "$a" ]&&[ "$4" = "$c" ]||return 1;cn "$r"&&[ "$(git -C "$r" rev-parse "refs/heads/$q^{commit}" 2>/dev/null)" = "$h" ]&&an "$r" "$a" "$h"&&[ -z "$(bo "$r" "$q")" ]||return 1;mode=$(rt "$r" "$q" "$h")||return 1;if [ "$mode" = absent ];then [ "$h" = "$a" ]||return 1;fi;fm "$r"||return 1;m=$(om "$r");z=$(bn "$r");x=$(hh "$r");if [ "$z" != "$q" ]||[ "$x" != "$h" ];then case $l in main)[ "$z" = main ];;sub)[ -z "$z" ];;esac&&an "$r" "$x" "$m"&&[ "$(am "$r")" = "$m" ]&&[ "$(rt "$r" "$q" "$h")" = "$mode" ]||return 1;git -C "$r" switch "$q" >/dev/null||return 1;fi;[ "$(hh "$r")" = "$h" ]&&cn "$r"||return 1;echo RESUMED;};
 rs(){ local l i a h q c r z x; l=$1;i=$2;a=$3;h=$4;q=$5;c=$6;il "$l"&&nuinui_ownership_valid_issue "$i"&&nuinui_ownership_valid_sha "$a"&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;z=$(bn "$r");x=$(hh "$r");lo "$r" resume "$c" "$i" "$q" "$a" "$h"||return 1;cr "$l" "$i" "$a" "$h" "$q" "$c"||{ [ "$(bn "$r")" = "$z" ]&&[ "$(hh "$r")" = "$x" ]&&ul "$r" "$c" >/dev/null 2>&1;return 1;};ul "$r" "$c"||return 1;echo "  base=$a";echo "  claim=$c";}
 dl(){ local l h q r z x d; l=$1;h=$2;q=$3;r=$(lr "$l");cn "$r"||return 1;z=$(bn "$r");x=$(hh "$r");d=;[ "$z" = "$q" ]&&[ "$x" = "$h" ]&&d=$q;if [ "$l" = main ];then [ "$z" = "$q" ]||[ "$z" = main ]||return 1;git -C "$r" switch main >/dev/null&&git -C "$r" merge --ff-only origin/main >/dev/null||return 1;else [ "$z" = "$q" ]||[ -z "$z" ]||return 1;[ "$x" = "$h" ]||git -C "$r" merge-base --is-ancestor "$x" origin/main||return 1;sd "$r" origin/main||return 1;fi;if [ -n "$d" ];then [ "$(git -C "$r" rev-parse "refs/heads/$d^{commit}" 2>/dev/null)" = "$h" ]&&[ -z "$(bo "$r" "$d")" ]&&git -C "$r" update-ref -d "refs/heads/$d" "$h"||return 1;fi;echo RELEASED;}
-rl(){ local l h c r s i q a t; l=$1;h=$2;c=$3;il "$l"&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");s=$(sp "$r");set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;i=$1;q=$2;a=$3;[ "$4" = "$c" ]&&[ "$(git -C "$r" rev-parse "refs/heads/$q^{commit}" 2>/dev/null)" = "$h" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;lo "$r" release "$c" "$i" "$q" "$a" "$h"||return 1;release_restore_checkout "$l" "$r" "$q" "$a" "$h"||{ ul "$r" "$c";return 1;};fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main||{ ul "$r" "$c";return 1;};wa "$s/checkpoint" "$h\n"||return 1;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = release-after-rename ]&&return 97;dl "$l" "$h" "$q"||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c"||return 1;[ "${NUINUI_SELFTEST_STALE_RESULT:-}" = release ]&&return 98;echo "  claim=$c";}
-rc(){ local l c r k s z n o i q a h m t; l=$1;c=$2;il "$l"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");k=$(kp "$r");s=$(sp "$r");z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ ! -e "$k" ];then [ "$n" = 1 ]&&set -- $(nuinui_ownership_parse_releasing "$z")&&[ "$4" = "$c" ]||return 1;lo "$r" release "$c" "$1" "$2" "$3" "$5"||return 1;fi;set -- $(nuinui_ownership_parse_lock "$k/state")||return 1;o=$1;i=$2;q=$3;a=$4;h=$5;[ "$6" = "$c" ]||return 1;case $o in init)fm "$r"||return 1;m=$(om "$r");id "$l" "$r" "$m"||return 1;[ -e "$(ip "$r")" ]||wa "$(ip "$r")" 'version=1\n';nuinui_ownership_validate_initialization "$(ip "$r")"&&ul "$r" "$c";;start)set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ "$(bn "$r")" = "$q" ]&&[ "$(hh "$r")" = "$a" ]&&cn "$r";then ul "$r" "$c";else cs "$l" "$i" "$a" "$q" >/dev/null&&ul "$r" "$c";fi;;resume)cr "$l" "$i" "$a" "$h" "$q" "$c" >/dev/null&&ul "$r" "$c";;release)if [ "$n" = 0 ]&&[ -e "$s" ];then set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ -f "$s/checkpoint" ];then [ "$(cat "$s/checkpoint")" = "$h" ]||return 1;else wa "$s/checkpoint" "$h\n"||return 1;fi;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;elif [ "$n" = 1 ];then t=$z;else return 1;fi;set -- $(nuinui_ownership_parse_releasing "$t")||return 1;[ "$1 $2 $3 $4 $5" = "$i $q $a $c $h" ]||return 1;fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main&&dl "$l" "$h" "$q" >/dev/null||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c";;esac||return 1;echo "RECOVERED operation=$o";}
+rl(){ local l h c r s i q a t; l=$1;h=$2;c=$3;il "$l"&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");s=$(sp "$r");set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;i=$1;q=$2;a=$3;[ "$4" = "$c" ]&&[ "$(git -C "$r" rev-parse "refs/heads/$q^{commit}" 2>/dev/null)" = "$h" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;lo "$r" release "$c" "$i" "$q" "$a" "$h"||return 1;release_restore_checkout "$l" "$r" "$q" "$a" "$h"||{ ul "$r" "$c";return 1;};fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main||{ ul "$r" "$c";return 1;};wa "$s/checkpoint" "$h\n"||return 1;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = release-after-rename ]&&return 97;dl "$l" "$h" "$q"||return 1;write_release_receipt "$r" "$l" "$i" "$q" "$a" "$h" "$c"||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c"||return 1;[ "${NUINUI_SELFTEST_STALE_RESULT:-}" = release ]&&return 98;echo "  claim=$c";}
+rc(){ local l c r k s z n o i q a h m t; l=$1;c=$2;il "$l"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");k=$(kp "$r");s=$(sp "$r");z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ ! -e "$k" ];then [ "$n" = 1 ]&&set -- $(nuinui_ownership_parse_releasing "$z")&&[ "$4" = "$c" ]||return 1;lo "$r" release "$c" "$1" "$2" "$3" "$5"||return 1;fi;set -- $(nuinui_ownership_parse_lock "$k/state")||return 1;o=$1;i=$2;q=$3;a=$4;h=$5;[ "$6" = "$c" ]||return 1;case $o in init)fm "$r"||return 1;m=$(om "$r");id "$l" "$r" "$m"||return 1;[ -e "$(ip "$r")" ]||wa "$(ip "$r")" 'version=1\n';nuinui_ownership_validate_initialization "$(ip "$r")"&&ul "$r" "$c";;start)set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ "$(bn "$r")" = "$q" ]&&[ "$(hh "$r")" = "$a" ]&&cn "$r";then ul "$r" "$c";else cs "$l" "$i" "$a" "$q" >/dev/null&&ul "$r" "$c";fi;;resume)cr "$l" "$i" "$a" "$h" "$q" "$c" >/dev/null&&ul "$r" "$c";;release)if [ "$n" = 0 ]&&[ -e "$s" ];then set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ -f "$s/checkpoint" ];then [ "$(cat "$s/checkpoint")" = "$h" ]||return 1;else wa "$s/checkpoint" "$h\n"||return 1;fi;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;elif [ "$n" = 1 ];then t=$z;else return 1;fi;set -- $(nuinui_ownership_parse_releasing "$t")||return 1;[ "$1 $2 $3 $4 $5" = "$i $q $a $c $h" ]||return 1;fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main&&dl "$l" "$h" "$q" >/dev/null||return 1;write_release_receipt "$r" "$l" "$i" "$q" "$a" "$h" "$c"||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c";;esac||return 1;echo "RECOVERED operation=$o";}
+rr(){ echo "$(gd "$1")/nuinui-implementation-release-receipt";}
+write_release_receipt(){ local r l i q a h c p t; r=$1;l=$2;i=$3;q=$4;a=$5;h=$6;c=$7;p=$(rr "$r");wa "$p" "version=1\nlane=$l\nissue=$i\nbranch=$q\nbase=$a\ncheckpoint=$h\nclaim=$c\n"||return 1;set -- $(nuinui_ownership_parse_release_receipt "$p")||return 1;[ "$1 $2 $3 $4 $5 $6" = "$l $i $q $a $h $c" ]||return 1;}
 GH=${NUINUI_GH_BIN:-gh};PR=sayosomi/nuinuiCAD
 ps(){ "$GH" pr view "$1" -R "$PR" --json id,state,isDraft,baseRefName,baseRefOid,headRefOid,mergeable,autoMergeRequest,url --jq '[.id,.state,(.isDraft|tostring),.baseRefName,.baseRefOid,.headRefOid,.mergeable,(.autoMergeRequest.mergeMethod//"none"),.url]|@tsv'; }
 cm(){ "$GH" api "repos/$PR/commits/main" --jq '.sha'; }
@@ -1175,6 +1192,72 @@ lifecycle_release_prove_drift_checkout() {
   an "$lifecycle_release_repo" "$lifecycle_release_topic_checkpoint" "$authoritative_main" || return 1
 }
 
+lifecycle_release_discover_tombstones() {
+  local discovered
+
+  lifecycle_release_tombstones=
+  lifecycle_release_tombstone_discovery_ok=
+  [ -n "$lifecycle_release_git_dir" ] || return 1
+  discovered=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  if [ -n "$discovered" ]; then
+    lifecycle_release_tombstones=$(printf '%s\n' "$discovered" | LC_ALL=C sort) || return 1
+  fi
+  lifecycle_release_tombstone_discovery_ok=yes
+}
+
+lifecycle_release_prove_duplicate() {
+  local receipt receipt_lane receipt_issue receipt_branch receipt_base receipt_checkpoint receipt_claim
+  local current_branch current_head authoritative_main
+
+  lifecycle_release_duplicate_proven=
+  case "$lifecycle_release_lane" in
+    main|sub) ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$lifecycle_release_saved_checkpoint" || return 1
+  nuinui_ownership_valid_claim "$lifecycle_release_claim" || return 1
+  [ -n "$lifecycle_release_git_dir" ] || return 1
+  [ ! -e "$lifecycle_release_slot_dir" ] || return 1
+  [ ! -e "$lifecycle_release_lock_dir" ] || return 1
+  [ "$lifecycle_release_tombstone_discovery_ok" = yes ] || return 1
+  [ -z "$lifecycle_release_tombstones" ] || return 1
+  nuinui_ownership_validate_initialization "$(ip "$lifecycle_release_repo")" || return 1
+
+  receipt=$(rr "$lifecycle_release_repo") || return 1
+  [ -f "$receipt" ] || return 1
+  set -- $(nuinui_ownership_parse_release_receipt "$receipt") || return 1
+  [ "$#" = 6 ] || return 1
+  receipt_lane=$1
+  receipt_issue=$2
+  receipt_branch=$3
+  receipt_base=$4
+  receipt_checkpoint=$5
+  receipt_claim=$6
+  [ "$receipt_lane" = "$lifecycle_release_lane" ] || return 1
+  [ "$receipt_checkpoint" = "$lifecycle_release_saved_checkpoint" ] || return 1
+  [ "$receipt_claim" = "$lifecycle_release_claim" ] || return 1
+  an "$lifecycle_release_repo" "$receipt_base" "$receipt_checkpoint" || return 1
+
+  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
+  current_branch=$(bn "$lifecycle_release_repo")
+  case "$lifecycle_release_lane" in
+    main) [ "$current_branch" = main ] || return 1 ;;
+    sub) [ -z "$current_branch" ] || return 1 ;;
+  esac
+  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null) || return 1
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  authoritative_main=$(am "$lifecycle_release_repo") || return 1
+  nuinui_ownership_valid_sha "$authoritative_main" || return 1
+  [ "$current_head" = "$authoritative_main" ] || return 1
+  an "$lifecycle_release_repo" "$receipt_checkpoint" "$authoritative_main" || return 1
+
+  lifecycle_release_duplicate_issue=$receipt_issue
+  lifecycle_release_duplicate_branch=$receipt_branch
+  lifecycle_release_duplicate_base=$receipt_base
+  lifecycle_release_duplicate_origin_main=$authoritative_main
+  lifecycle_release_duplicate_proven=yes
+}
+
 lifecycle_release_validate() {
   lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo" 2>/dev/null || true)
   if [ -n "$lifecycle_release_git_dir" ]; then
@@ -1185,7 +1268,16 @@ lifecycle_release_validate() {
     lifecycle_release_lock_dir=
   fi
   lifecycle_release_tombstones=
-  [ -z "$lifecycle_release_git_dir" ] || lifecycle_release_tombstones=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)
+  lifecycle_release_duplicate_proven=
+  lifecycle_release_tombstone_discovery_ok=
+  if [ -n "$lifecycle_release_git_dir" ]; then
+    lifecycle_release_discover_tombstones || {
+      echo 'BLOCKED: release-pending state discovery failed'
+      printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' \
+        "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+      return 1
+    }
+  fi
 
   if [ -n "$lifecycle_release_tombstones" ]; then
     echo 'BLOCKED: mutation lock/state conflict'
@@ -1206,6 +1298,10 @@ lifecycle_release_validate() {
     fi
     printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
     return 1
+  fi
+  if [ -n "$lifecycle_release_git_dir" ] && [ ! -e "$lifecycle_release_slot_dir" ] &&
+    lifecycle_release_prove_duplicate; then
+    return 0
   fi
   if [ -z "$lifecycle_release_git_dir" ] ||
     [ ! -d "$lifecycle_release_slot_dir" ] ||
@@ -1281,6 +1377,18 @@ lifecycle_release_validate() {
   return 0
 }
 
+lifecycle_emit_release_duplicate_envelope() {
+  printf 'IMPLEMENTATION ALREADY RELEASED\n'
+  printf 'lane=%s\n' "$lifecycle_release_lane"
+  printf 'issue=%s\n' "$lifecycle_release_duplicate_issue"
+  printf 'base=%s\n' "$lifecycle_release_duplicate_base"
+  printf 'saved_checkpoint=%s\n' "$lifecycle_release_saved_checkpoint"
+  printf 'released_claim=%s\n' "$lifecycle_release_claim"
+  printf 'released_branch=%s\n' "$lifecycle_release_duplicate_branch"
+  printf 'origin_main=%s\n' "$lifecycle_release_duplicate_origin_main"
+  printf 'clean=yes\nmutation=no-op\nstate=FREE\n'
+}
+
 lifecycle_emit_release_envelope() {
   printf 'IMPLEMENTATION RELEASED\n'
   printf 'lane=%s\n' "$lifecycle_release_lane"
@@ -1313,6 +1421,10 @@ lifecycle_release_command() {
   }
 
   lifecycle_release_validate || return $?
+  if [ "$lifecycle_release_duplicate_proven" = yes ]; then
+    lifecycle_emit_release_duplicate_envelope
+    return 0
+  fi
   lifecycle_release_output=$(rl "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" \
     "$lifecycle_release_claim" 2>&1) || lifecycle_release_rc=$?
 
