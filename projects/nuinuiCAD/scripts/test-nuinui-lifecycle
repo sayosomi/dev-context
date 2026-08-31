@@ -2,7 +2,7 @@
 set -eu
 
 HELPER="${1:-$(cd "$(dirname "$0")" && pwd -P)/nuinui}"
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-lifecycle.XXXXXX")"
+ROOT="$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-lifecycle.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 
 REMOTE="$ROOT/sayosomi/nuinuiCAD.git"
@@ -16,6 +16,7 @@ E2E_CLOSURE_TMPDIR="$ROOT/e2e-closure-tmp"
 
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
+assert_exact_line() { printf '%s\n' "$1" | grep -Fqx "$2" || fail "$3"; }
 assert_preflight_boundary() {
   preflight_boundary_output=$1
   preflight_boundary_marker=$2
@@ -64,6 +65,7 @@ public_lifecycle_snapshot() {
   release_snapshot "$SUB"
   printf 'e2e\n'
   e2e_snapshot "$E2E"
+  printf 'worktrees=%s\n' "$(git -C "$MAIN" worktree list --porcelain)"
 }
 expect_public_request_rejected() {
   name=$1
@@ -307,6 +309,24 @@ expect_nonempty_failure() {
   [ -n "$output" ] || fail "$name produced no diagnostic"
   [ -n "$(printf '%s' "$output" | tr -d '[:space:]')" ] || fail "$name produced only whitespace"
   echo "PASS: $name"
+}
+
+expect_usage_rejected() {
+  usage_name=$1
+  usage_line=$2
+  shift 2
+  usage_before=$(public_lifecycle_snapshot)
+  if usage_output=$("$HELPER" "$@" 2>&1); then
+    printf '%s\n' "$usage_output"
+    fail "$usage_name unexpectedly succeeded"
+  else
+    usage_rc=$?
+  fi
+  [ "$usage_rc" -ne 0 ] || fail "$usage_name returned zero"
+  assert_exact_line "$usage_output" "$usage_line" "$usage_name did not report the expected Usage diagnostic"
+  usage_after=$(public_lifecycle_snapshot)
+  [ "$usage_before" = "$usage_after" ] || fail "$usage_name changed lifecycle state"
+  echo "PASS: $usage_name"
 }
 
 expect_malformed_release() {
@@ -669,6 +689,221 @@ export NUINUI_E2E_WT="$E2E"
 "$HELPER" lane-init sub >/dev/null
 BASE="$(git -C "$MAIN" rev-parse origin/main)"
 ALTERNATE_BASE="$(git -C "$SEED" commit-tree "$(git -C "$SEED" rev-parse HEAD^{tree})" -p "$BASE" -m 'alternate begin base')"
+
+FORENSIC="$ROOT/forensic"
+EXTRA_FORENSIC="$ROOT/extra-forensic"
+STANDALONE_CLONE="$ROOT/standalone-clone"
+OTHER_REPOSITORY="$ROOT/other-repository"
+NON_WORKTREE="$ROOT/not-a-worktree"
+MISSING_FORENSIC="$ROOT/missing-forensic"
+FORENSIC_ALIAS="$ROOT/forensic-alias"
+
+DEFAULT_THREE_OUTPUT=$($HELPER preflight)
+assert_preflight_boundary "$DEFAULT_THREE_OUTPUT" 'PREFLIGHT PASS'
+if printf '%s\n' "$DEFAULT_THREE_OUTPUT" | grep -q '^forensic_'; then
+  fail 'default three-worktree preflight exposed forensic diagnostics'
+fi
+echo 'PASS: default three-worktree preflight remains strict and quiet'
+
+git -C "$MAIN" worktree add -q --detach "$FORENSIC" origin/main
+git -C "$FORENSIC" switch -q -c sayosomi/forensic-arbitrary
+printf 'forensic dirty checkout\n' > "$FORENSIC/forensic-dirty"
+
+if FOURTH_NO_OPTION_OUTPUT=$($HELPER preflight 2>&1); then
+  printf '%s\n' "$FOURTH_NO_OPTION_OUTPUT"
+  fail 'unapproved fourth worktree unexpectedly passed without the option'
+else
+  FOURTH_NO_OPTION_RC=$?
+fi
+[ "$FOURTH_NO_OPTION_RC" -ne 0 ] || fail 'unapproved fourth worktree returned zero without the option'
+assert_preflight_boundary "$FOURTH_NO_OPTION_OUTPUT" 'PREFLIGHT BLOCKED'
+if printf '%s\n' "$FOURTH_NO_OPTION_OUTPUT" | grep -q '^forensic_'; then
+  fail 'default fourth-worktree rejection exposed forensic diagnostics without the option'
+fi
+echo 'PASS: unapproved fourth worktree remains BLOCKED by default'
+
+if INHERITED_FORENSIC_OUTPUT=$(nuinui_forensic_worktree="$FORENSIC" "$HELPER" preflight 2>&1); then
+  printf '%s\n' "$INHERITED_FORENSIC_OUTPUT"
+  fail 'inherited forensic environment unexpectedly bypassed strict inventory'
+else
+  INHERITED_FORENSIC_RC=$?
+fi
+[ "$INHERITED_FORENSIC_RC" -ne 0 ] || fail 'inherited forensic environment returned zero'
+assert_preflight_boundary "$INHERITED_FORENSIC_OUTPUT" 'PREFLIGHT BLOCKED'
+if printf '%s\n' "$INHERITED_FORENSIC_OUTPUT" | grep -q '^forensic_'; then
+  fail 'inherited forensic environment activated the exception'
+fi
+echo 'PASS: inherited forensic environment cannot activate the exception'
+
+FORENSIC_PREFLIGHT_OUTPUT=$($HELPER preflight --forensic-worktree "$FORENSIC")
+assert_preflight_boundary "$FORENSIC_PREFLIGHT_OUTPUT" 'PREFLIGHT PASS'
+assert_exact_line "$FORENSIC_PREFLIGHT_OUTPUT" 'forensic_exception=active' \
+  'valid forensic preflight did not expose active exception'
+assert_exact_line "$FORENSIC_PREFLIGHT_OUTPUT" "forensic_worktree=$FORENSIC" \
+  'valid forensic preflight did not expose the exact supplied path'
+echo 'PASS: exact forensic preflight accepts one registered extra worktree'
+
+git -C "$MAIN" worktree add -q --detach "$EXTRA_FORENSIC" origin/main
+if SECOND_FORENSIC_OUTPUT=$($HELPER preflight --forensic-worktree "$FORENSIC" 2>&1); then
+  printf '%s\n' "$SECOND_FORENSIC_OUTPUT"
+  fail 'forensic exception unexpectedly accepted a second extra worktree'
+else
+  SECOND_FORENSIC_RC=$?
+fi
+[ "$SECOND_FORENSIC_RC" -ne 0 ] || fail 'second extra worktree returned zero'
+assert_preflight_boundary "$SECOND_FORENSIC_OUTPUT" 'PREFLIGHT BLOCKED'
+assert_exact_line "$SECOND_FORENSIC_OUTPUT" 'forensic_exception=BLOCKED' \
+  'second extra worktree did not expose a blocked forensic exception'
+assert_exact_line "$SECOND_FORENSIC_OUTPUT" 'forensic_reason=registered-inventory-mismatch' \
+  'second extra worktree did not expose an inventory mismatch reason'
+assert_exact_line "$SECOND_FORENSIC_OUTPUT" "forensic_worktree=$FORENSIC" \
+  'second extra worktree changed the supplied forensic path'
+assert_line "$SECOND_FORENSIC_OUTPUT" "$EXTRA_FORENSIC" \
+  'second extra worktree was not visible in the registered inventory'
+git -C "$MAIN" worktree remove "$EXTRA_FORENSIC"
+echo 'PASS: second extra worktree is rejected with actual inventory evidence'
+
+mkdir -p "$NON_WORKTREE"
+git clone -q "$REMOTE" "$STANDALONE_CLONE"
+git init -q -b main "$OTHER_REPOSITORY"
+git -C "$OTHER_REPOSITORY" config user.name test
+git -C "$OTHER_REPOSITORY" config user.email test@example.invalid
+printf 'other repository\n' > "$OTHER_REPOSITORY/other"
+git -C "$OTHER_REPOSITORY" add other
+git -C "$OTHER_REPOSITORY" commit -qm 'other repository'
+ln -s "$FORENSIC" "$FORENSIC_ALIAS"
+
+expect_public_request_rejected 'wrong existing absolute non-worktree path' \
+  preflight --forensic-worktree "$NON_WORKTREE"
+assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+assert_exact_line "$output" 'forensic_exception=BLOCKED' 'wrong non-worktree path missed blocked forensic evidence'
+assert_exact_line "$output" 'forensic_reason=not-registered-worktree' 'wrong non-worktree path missed stable reason'
+assert_exact_line "$output" "forensic_worktree=$NON_WORKTREE" 'wrong non-worktree path changed evidence'
+
+expect_public_request_rejected 'relative forensic path' \
+  preflight --forensic-worktree relative-forensic
+assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+assert_exact_line "$output" 'forensic_reason=non-absolute-path' 'relative forensic path missed stable reason'
+
+expect_public_request_rejected 'missing absolute forensic path' \
+  preflight --forensic-worktree "$MISSING_FORENSIC"
+assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+assert_exact_line "$output" 'forensic_reason=missing-or-not-directory' 'missing forensic path missed stable reason'
+
+expect_public_request_rejected 'standalone same-repository clone' \
+  preflight --forensic-worktree "$STANDALONE_CLONE"
+assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+assert_exact_line "$output" 'forensic_reason=not-registered-worktree' 'standalone clone missed stable reason'
+
+expect_public_request_rejected 'other-repository forensic path' \
+  preflight --forensic-worktree "$OTHER_REPOSITORY"
+assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+assert_exact_line "$output" 'forensic_reason=not-registered-worktree' 'other repository missed stable reason'
+
+expect_public_request_rejected 'non-canonical forensic path' \
+  preflight --forensic-worktree "$FORENSIC_ALIAS"
+assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+assert_exact_line "$output" 'forensic_reason=non-canonical-path' 'non-canonical forensic path missed stable reason'
+
+for fixed_forensic_path in "$MAIN" "$SUB" "$E2E"; do
+  expect_public_request_rejected "fixed-lane forensic path $fixed_forensic_path" \
+    preflight --forensic-worktree "$fixed_forensic_path"
+  assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
+  assert_exact_line "$output" 'forensic_reason=fixed-lane-path' \
+    "fixed-lane forensic path $fixed_forensic_path missed stable reason"
+done
+echo 'PASS: all invalid forensic path classes fail closed with actionable evidence'
+
+expect_usage_rejected 'incomplete preflight forensic option' \
+  'Usage: nuinui preflight [--forensic-worktree <absolute-path>]' \
+  preflight --forensic-worktree
+expect_usage_rejected 'extra preflight forensic argument' \
+  'Usage: nuinui preflight [--forensic-worktree <absolute-path>]' \
+  preflight --forensic-worktree "$FORENSIC" extra
+expect_usage_rejected 'misplaced begin forensic option' \
+  'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123> [--forensic-worktree <absolute-path>]' \
+  begin main SAY-120 "$BASE" sayosomi/say-120-misplaced --forensic-worktree FREE
+expect_usage_rejected 'incomplete begin forensic option' \
+  'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123> [--forensic-worktree <absolute-path>]' \
+  begin main SAY-120 "$BASE" sayosomi/say-120-incomplete FREE --forensic-worktree
+expect_usage_rejected 'extra start forensic argument' \
+  'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]' \
+  start main SAY-120 "$BASE" sayosomi/say-120-extra --forensic-worktree "$FORENSIC" extra
+echo 'PASS: forensic option placement, completeness, and argument count are usage-gated'
+
+expect_public_request_rejected 'invalid begin forensic request' \
+  begin main SAY-121 "$BASE" sayosomi/say-121-invalid-forensic FREE \
+  --forensic-worktree "$MISSING_FORENSIC"
+assert_line "$output" '^forensic_exception=BLOCKED$' 'invalid begin forensic request missed blocked evidence'
+assert_line "$output" '^forensic_reason=missing-or-not-directory$' 'invalid begin forensic request missed reason'
+assert_line "$output" '^BLOCKED: begin fixed-lane preflight failed$' 'invalid begin forensic request did not stop before mutation'
+
+expect_public_request_rejected 'invalid start forensic request' \
+  start main SAY-122 "$BASE" sayosomi/say-122-invalid-forensic \
+  --forensic-worktree "$MISSING_FORENSIC"
+assert_line "$output" '^forensic_exception=BLOCKED$' 'invalid start forensic request missed blocked evidence'
+assert_line "$output" '^forensic_reason=missing-or-not-directory$' 'invalid start forensic request missed reason'
+assert_line "$output" '^BLOCKED: start fixed-lane preflight failed$' 'invalid start forensic request did not stop before mutation'
+echo 'PASS: rejected begin/start forensic requests are mutation-free'
+
+FORENSIC_BRANCH_BEFORE=$(git -C "$FORENSIC" symbolic-ref --quiet --short HEAD)
+FORENSIC_HEAD_BEFORE=$(git -C "$FORENSIC" rev-parse HEAD)
+FORENSIC_STATUS_BEFORE=$(git -C "$FORENSIC" status --porcelain)
+FORENSIC_BEGIN_BRANCH=sayosomi/say-123-forensic-begin
+FORENSIC_BEGIN_OUTPUT=$($HELPER begin main SAY-123 "$BASE" "$FORENSIC_BEGIN_BRANCH" FREE \
+  --forensic-worktree "$FORENSIC")
+[ "$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n '1p')" = 'IMPLEMENTATION STARTED' ] || {
+  printf '%s\n' "$FORENSIC_BEGIN_OUTPUT"
+  fail 'valid forensic begin changed the lifecycle envelope first line'
+}
+assert_exact_line "$FORENSIC_BEGIN_OUTPUT" 'forensic_exception=active' \
+  'valid forensic begin missed active forensic evidence'
+assert_exact_line "$FORENSIC_BEGIN_OUTPUT" "forensic_worktree=$FORENSIC" \
+  'valid forensic begin missed the exact forensic path'
+assert_line "$FORENSIC_BEGIN_OUTPUT" '^lane=main$' 'valid forensic begin missed target lane'
+assert_line "$FORENSIC_BEGIN_OUTPUT" '^state=BUSY$' 'valid forensic begin did not start target ownership'
+FORENSIC_BEGIN_CLAIM=$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n 's/^claim=//p')
+FORENSIC_BEGIN_CHECKPOINT=$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n 's/^checkpoint=//p')
+[ -n "$FORENSIC_BEGIN_CLAIM" ] || fail 'valid forensic begin did not expose a claim'
+[ "$FORENSIC_BEGIN_CHECKPOINT" = "$BASE" ] || fail 'valid forensic begin changed the expected checkpoint'
+[ "$(git -C "$FORENSIC" symbolic-ref --quiet --short HEAD)" = "$FORENSIC_BRANCH_BEFORE" ] || fail 'valid forensic begin switched forensic branch'
+[ "$(git -C "$FORENSIC" rev-parse HEAD)" = "$FORENSIC_HEAD_BEFORE" ] || fail 'valid forensic begin moved forensic HEAD'
+[ "$(git -C "$FORENSIC" status --porcelain)" = "$FORENSIC_STATUS_BEFORE" ] || fail 'valid forensic begin changed forensic dirtiness'
+[ ! -e "$(slot_state "$FORENSIC")" ] || fail 'forensic checkout acquired a durable slot'
+[ ! -e "$(gitdir "$FORENSIC")/nuinui-implementation-lock" ] || fail 'forensic checkout acquired a mutation lock'
+echo 'PASS: valid forensic begin preserves envelope and keeps forensic checkout inventory-only'
+release_main "$FORENSIC_BEGIN_CHECKPOINT" "$FORENSIC_BEGIN_CLAIM" "$FORENSIC_BEGIN_BRANCH"
+sync_free_lanes
+
+expect_public_request_rejected 'forensic begin peer occupancy mismatch' \
+  begin main SAY-124 "$BASE" sayosomi/say-124-peer-mismatch SAY-999 \
+  --forensic-worktree "$FORENSIC"
+assert_line "$output" '^BLOCKED: begin peer occupancy does not match caller expectation$' \
+  'forensic begin peer mismatch was not enforced'
+echo 'PASS: peer occupancy remains enforced with a valid forensic exception'
+
+FORENSIC_START_BRANCH=sayosomi/say-125-forensic-start
+FORENSIC_START_OUTPUT=$($HELPER start main SAY-125 "$BASE" "$FORENSIC_START_BRANCH" \
+  --forensic-worktree "$FORENSIC")
+[ "$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n '1p')" = 'IMPLEMENTATION STARTED' ] || {
+  printf '%s\n' "$FORENSIC_START_OUTPUT"
+  fail 'valid forensic direct start changed the lifecycle envelope first line'
+}
+assert_exact_line "$FORENSIC_START_OUTPUT" 'forensic_exception=active' \
+  'valid forensic direct start missed active forensic evidence'
+assert_exact_line "$FORENSIC_START_OUTPUT" "forensic_worktree=$FORENSIC" \
+  'valid forensic direct start missed the exact forensic path'
+assert_line "$FORENSIC_START_OUTPUT" '^state=BUSY$' 'valid forensic direct start did not start target ownership'
+FORENSIC_START_CLAIM=$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n 's/^claim=//p')
+FORENSIC_START_CHECKPOINT=$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n 's/^checkpoint=//p')
+release_main "$FORENSIC_START_CHECKPOINT" "$FORENSIC_START_CLAIM" "$FORENSIC_START_BRANCH"
+sync_free_lanes
+echo 'PASS: valid forensic direct start keeps forensic checkout outside lifecycle ownership'
+
+git -C "$MAIN" worktree remove --force "$FORENSIC"
+[ "$(git -C "$MAIN" worktree list --porcelain | sed -n 's/^worktree //p' | wc -l | tr -d '[:space:]')" = 3 ] || \
+  fail 'forensic test teardown left additional registered worktrees'
+echo 'PASS: forensic self-test teardown leaves exactly three registered worktrees'
 
 VERIFY_MATCH_BRANCH=sayosomi/say-118-matching-branch
 VERIFY_MATCH_OUTPUT=$("$HELPER" verify main SAY-118 "$BASE" "$VERIFY_MATCH_BRANCH")
