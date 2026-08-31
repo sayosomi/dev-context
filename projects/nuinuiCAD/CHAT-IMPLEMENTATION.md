@@ -103,6 +103,8 @@ release anomalyがpost-merge E2E-only handoffで発生した場合:
 - Work statusは`In Review`に保つ。
 - physical `FREE`を推測しない。
 - `BUSY`、`BLOCKED`、`RELEASE-PENDING`のcleanup stateはcapacity unavailableとして扱う。
+- release failureがslot rename前に起きた場合、physical laneが`BUSY`のままでもIssueを`In Progress`へ戻さない。
+- `RELEASE-PENDING`またはinterrupted cleanupは、recoveryでactual `FREE`が証明されるまでcapacity unavailableのまま扱う。
 - 既存のrelease / recovery mechanicsへrouteする。
 - release anomalyが解消するまでnormal E2Eをstartしない。
 - reset、stash、force-repair、old implementation claimのreviveを行わない。

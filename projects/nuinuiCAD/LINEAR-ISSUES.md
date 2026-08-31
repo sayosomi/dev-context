@@ -43,7 +43,7 @@ Readyだけを理由にIn Progressへしない。actual durable lane assignment�
 
 implementation mergeとauthoritative read-backでrequired Manual E2Eだけが残ることを確認したIssueは、`In Review`へ同期する。physical implementation cleanup stateはWork statusとは別である。
 
-post-merge E2E-only release anomalyでは、physical main/sub laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でもIssue statusは`In Review`に保つ。old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。cleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
+post-merge E2E-only release anomalyでは、physical main/sub laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でもIssue statusは`In Review`に保つ。slot rename前のrelease failureでphysical laneが`BUSY`のままでも、old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。interrupted cleanupを含むcleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
 
 この間に unrelated new implementation admissionを判定する場合も、そのlaneはunavailableとして数える。ただし、そのlaneのowner Issueをcurrent implementation `In Progress`集合へ戻してはならない。release / recoveryが成功した後、Lane release checkpointをrecordしてread-backし、laneを通常の`FREE` capacityへ戻す。
 
@@ -216,7 +216,7 @@ Manual E2Eはe2e laneだけを使い、tested commit / stable refとmarker / Iss
 
 ## Manual E2E failure
 
-confirmed implementation failure:
+confirmed Manual E2E implementation failure:
 
 1. `manual_e2e_only`を外す;
 2. `Manual E2E: Failed` evidence維持;
