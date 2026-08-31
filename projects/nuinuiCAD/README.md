@@ -70,7 +70,7 @@ Hard rule:
 - actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
 - repository engineering policy: `AGENTS.md`
 - current architecture / navigation index: `ARCHITECTURE.md`
-- normative nui4 language contract: `docs/nui4/spec.md`
+- normative nui1 language contract: `docs/nui1/spec.md`
 - implemented user-facing DSL documentation: `docs/dsl.md`
 
 実装事実について管理文書・過去chat・work-management systemとrepositoryが矛盾する場合はlatest repositoryをauthoritativeとする。
