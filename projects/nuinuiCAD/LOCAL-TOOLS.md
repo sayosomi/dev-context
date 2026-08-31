@@ -238,7 +238,7 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.2.2`。
+current Human E2E preparation helper version: `1.3.0`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はdedicated e2e laneでHuman Manual E2E hostを準備するversioned helper。
 
@@ -246,21 +246,38 @@ current Human E2E preparation helper version: `1.2.2`。
 nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
 nuinui-e2e-prepare status
-nuinui-e2e-prepare cleanup
+nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
 nuinui-e2e-prepare closure-check <SAY-123>
 ```
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。
 
+healthyなexact duplicate `prepare`は、active session、handoff、prepared fixture、owned process、CDPをread-onlyで完全一致検証した場合だけ次の成功 envelopeを返す。
+
+```text
+E2E SETUP ALREADY READY
+mutation=no-op
+READY FOR HUMAN E2E
+```
+
+exact duplicate `cleanup`は、active session authorityがない場合に限り、matchingなcleanup receipt、root不在、handoff不在、owned process不在をread-onlyで完全一致検証した場合だけ次を返す。
+
+```text
+E2E CLEANUP ALREADY COMPLETE
+mutation=no-op
+```
+
+active session authorityはcleanup receiptより常に優先される。near-match、stale、ambiguousなsession / handoff / receipt stateは`BLOCKED`であり、cleanup receiptからactive sessionを推測しない。この二つのexact duplicate success envelopeが返った場合、ChatGPTは通常workflowを直接継続し、Humanにstatus実行、session / marker / process stateの貼り付け、最初のinvocation成功確認、またはduplicateだけを理由にしたprepare / cleanup再実行を求めない。
+
 Human E2Eのcanonical successful closureは、次の順序に固定する。
 
 ```text
-nuinui-e2e-prepare cleanup
+nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
 nuinui e2e-release <SAY-123> <tested-ref>
 nuinui-e2e-prepare closure-check <SAY-123>
 ```
 
-session metadataはexact E2E root / handoff / launch PIDを保持する。`cleanup`はmetadataとtested markerを再検証し、owned process / temporary root / handoff / session metadataだけを削除する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
+session metadataはcurrent generationではstrictな`issue / ref / source_fixture / root / handoff / cdp_port / launch_pid`を保持する。legacyな6-field metadataはrollout/cleanup互換のためだけに認識し、duplicate prepareの成功には使わない。`cleanup <Issue> <tested-ref> <e2e-root>`はcallerのrootまでidentity照合し、owned process / temporary root / handoff / session metadataだけを削除する。完了時はGit dirの`nuinui-e2e-cleanup-receipt`（`version=1 / issue / ref / root`）を先にatomically保存する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
 
 `status`と`closure-check`はread-only。unmanaged artifactや別Issue stateを勝手にcleanupしない。`closure-check`はe2e-release後だけに行うfinal read-only closure proofであり、cleanupとe2e-releaseの間の通常のrelease-precondition checkではない。同一Issue markerが残っている間は`closure-check`が`BLOCKED`になるfail-closed semanticsを維持する。markerがない場合も、matchingなstrict E2E release receipt、idle clean detached checkout、current authoritative `origin/main`を証明できるexact duplicate releaseだけを`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先される。
 

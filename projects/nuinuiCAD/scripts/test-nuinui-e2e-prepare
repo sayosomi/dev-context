@@ -104,7 +104,7 @@ common_env=(
 )
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.2.2" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.3.0" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 cleanup_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
@@ -176,6 +176,8 @@ handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
 [[ -f "$handoff" ]] || fail "handoff missing"
 root="$(sed -n 's/^root=//p' "$session")"
 [[ -d "$root" ]] || fail "E2E root missing"
+source_fixture="$(realpath "$fixture")"
+[[ "$(sed -n 's/^source_fixture=//p' "$session")" == "$source_fixture" ]] || fail "session did not store canonical source fixture"
 
 
 echo "TEST: closure-check blocks same active Issue but ignores another active Issue"
@@ -205,8 +207,10 @@ rm -rf -- "$root"
 status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "status missing owned artifacts"
 print -r -- "$status_out" | grep -Fq "root=$root (missing)" || fail "status did not report missing root"
 print -r -- "$status_out" | grep -Fq "handoff=$handoff (missing)" || fail "status did not report missing handoff"
-env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup >/dev/null || fail "cleanup"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null || fail "cleanup"
 [[ ! -e "$session" ]] || fail "session metadata retained"
+cleanup_receipt="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-cleanup-receipt"
+[[ "$(cat "$cleanup_receipt")" == "$(printf 'version=1\nissue=SAY-999\nref=%s\nroot=%s' "$tested_ref" "$root")" ]] || fail "cleanup receipt did not bind the session root"
 [[ ! -e "$handoff" ]] || fail "handoff retained"
 if find "$temp_parent" -type d -name 'nuinui-vscode-e2e.*' -prune -print 2>/dev/null | grep -q .; then
   fail "cleanup retained an E2E root"
@@ -219,7 +223,7 @@ handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
 [[ -f "$handoff" ]] || fail "second handoff missing"
 root="$(sed -n 's/^root=//p' "$session")"
 [[ -d "$root" ]] || fail "second E2E root missing"
-env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup >/dev/null || fail "second cleanup"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null || fail "second cleanup"
 [[ ! -e "$session" ]] || fail "second session metadata retained"
 [[ ! -e "$handoff" ]] || fail "second handoff retained"
 [[ ! -e "$root" ]] || fail "second E2E root retained"
@@ -239,5 +243,157 @@ fi
 print -r -- "$status_out" | grep -Fq 'session=INVALID' || fail "status did not report malformed session"
 [[ -f "$session" ]] || fail "status mutated malformed session"
 rm -f -- "$session"
+
+echo "TEST: exact duplicate cleanup is read-only and arbitrary missing session is blocked"
+duplicate_cleanup_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root")" || fail "exact duplicate cleanup"
+print -r -- "$duplicate_cleanup_out" | grep -Fq 'E2E CLEANUP ALREADY COMPLETE' || fail "duplicate cleanup missing no-op envelope"
+arbitrary_root="$temp_parent/nuinui-vscode-e2e.arbitrary"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$arbitrary_root" >/dev/null 2>&1; then
+  fail "arbitrary missing session unexpectedly succeeded"
+fi
+
+echo "TEST: exact duplicate prepare is read-only"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "third prepare"
+root="$(sed -n 's/^root=//p' "$session")"
+launch_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+before_snapshot="$(find "$temp_parent" -maxdepth 2 -print | sort; ps -ww -p "$launch_pid" -o pid=,command= 2>/dev/null || true)"
+duplicate_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555)" || fail "exact duplicate prepare"
+print -r -- "$duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' || fail "duplicate prepare missing no-op envelope"
+print -r -- "$duplicate_out" | grep -Fq "source_fixture=$source_fixture" || fail "duplicate prepare missing source fixture"
+after_snapshot="$(find "$temp_parent" -maxdepth 2 -print | sort; ps -ww -p "$launch_pid" -o pid=,command= 2>/dev/null || true)"
+[[ "$before_snapshot" == "$after_snapshot" ]] || fail "duplicate prepare mutated host state"
+
+other_fixture="$TEST_ROOT/other fixture.nui"
+print -r -- other > "$other_fixture"
+other_ref="0000000000000000000000000000000000000000"
+for duplicate_case in issue ref fixture port; do
+  case "$duplicate_case" in
+    issue) duplicate_args=(SAY-998 "$tested_ref" "$fixture" 9555) ;;
+    ref) duplicate_args=(SAY-999 "$other_ref" "$fixture" 9555) ;;
+    fixture) duplicate_args=(SAY-999 "$tested_ref" "$other_fixture" 9555) ;;
+    port) duplicate_args=(SAY-999 "$tested_ref" "$fixture" 9556) ;;
+  esac
+  if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare "${duplicate_args[@]}" >/dev/null 2>&1; then
+    fail "duplicate prepare accepted wrong $duplicate_case"
+  fi
+done
+
+session_before="$(cat "$session")"
+printf 'issue=SAY-999\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=%s\nunknown=value\n' \
+  "$tested_ref" "$source_fixture" "$root" "$handoff" "$launch_pid" > "$session"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
+  fail "duplicate prepare accepted malformed current session"
+fi
+[[ "$(cat "$session")" != "$session_before" ]] || fail "malformed-session setup did not take effect"
+printf '%s\n' "$session_before" > "$session"
+
+echo "TEST: invalid current source_fixture is blocked without mutation"
+invalid_source_before="issue=SAY-999
+ref=$tested_ref
+source_fixture=relative/fixture.nui
+root=$root
+handoff=$handoff
+cdp_port=9555
+launch_pid=$launch_pid"
+printf '%s\n' "$invalid_source_before" > "$session"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
+  fail "relative source_fixture qualified for duplicate prepare"
+fi
+status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status 2>&1)" || true
+print -r -- "$status_out" | grep -Fq 'session=INVALID' || fail "invalid source_fixture was not reported as INVALID"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null 2>&1; then
+  fail "cleanup accepted invalid current source_fixture"
+fi
+[[ "$(cat "$session")" == "$invalid_source_before" ]] || fail "invalid source_fixture cleanup mutated session"
+printf '%s\n' "$session_before" > "$session"
+
+legacy_session="issue=SAY-999
+ref=$tested_ref
+root=$root
+handoff=$handoff
+cdp_port=9555
+launch_pid=$launch_pid"
+printf '%s\n' "$legacy_session" > "$session"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
+  fail "legacy session qualified for duplicate prepare"
+fi
+printf '%s\n' "$session_before" > "$session"
+
+echo "TEST: malformed legacy handoff is blocked before mutation"
+legacy_handoff_before="$(cat "$handoff")"
+legacy_session_before="issue=SAY-999
+ref=$tested_ref
+root=$root
+handoff=$handoff
+cdp_port=9555
+launch_pid=$launch_pid"
+printf '%s\n' "$legacy_session_before" > "$session"
+printf 'ISSUE=SAY-998\n' > "$handoff"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null 2>&1; then
+  fail "malformed legacy handoff unexpectedly cleaned"
+fi
+[[ "$(cat "$session")" == "$legacy_session_before" && -d "$root" && "$(cat "$handoff")" == 'ISSUE=SAY-998' ]] || fail "malformed legacy handoff cleanup mutated state"
+kill -0 "$launch_pid" >/dev/null 2>&1 || fail "malformed legacy handoff cleanup stopped the owned process"
+printf '%s\n' "$legacy_handoff_before" > "$handoff"
+printf '%s\n' "$session_before" > "$session"
+
+echo "TEST: cleanup identity mismatches are blocked without mutation"
+for cleanup_case in issue ref root; do
+  case "$cleanup_case" in
+    issue) cleanup_args=(SAY-998 "$tested_ref" "$root") ;;
+    ref) cleanup_args=(SAY-999 "$other_ref" "$root") ;;
+    root) cleanup_args=(SAY-999 "$tested_ref" "$arbitrary_root") ;;
+  esac
+  if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup "${cleanup_args[@]}" >/dev/null 2>&1; then
+    fail "cleanup accepted wrong $cleanup_case"
+  fi
+done
+
+echo "TEST: missing owned process blocks duplicate prepare"
+kill -TERM "$launch_pid" >/dev/null 2>&1 || true
+sleep 0.2
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
+  fail "duplicate prepare accepted missing owned process"
+fi
+
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null || fail "third cleanup"
+[[ ! -e "$session" ]] || fail "third cleanup retained session"
+
+echo "TEST: stale same-Issue cleanup cannot mutate a newer root generation"
+old_root="$root"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "newer same-Issue prepare"
+new_root="$(sed -n 's/^root=//p' "$session")"
+new_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+new_session_before="$(cat "$session")"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$old_root" >/dev/null 2>&1; then
+  fail "stale same-Issue cleanup unexpectedly succeeded"
+fi
+[[ "$(cat "$session")" == "$new_session_before" && -d "$new_root" && -f "$new_handoff" ]] || fail "stale same-Issue cleanup mutated newer session"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$new_root" >/dev/null || fail "newer same-Issue cleanup"
+
+echo "TEST: stale different-Issue/ref cleanup cannot mutate a newer session"
+other_ref="$(git -C "$repo" commit-tree "$(git -C "$repo" rev-parse HEAD^{tree})" -p "$tested_ref" -m other-ref)"
+git -C "$repo" update-ref refs/heads/tested-other "$other_ref"
+git -C "$repo" switch --detach -q "$other_ref"
+printf 'issue=SAY-998\nref=%s\n' "$other_ref" > "$marker"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-998 "$other_ref" "$fixture" 9555 >/dev/null || fail "different-Issue prepare"
+different_root="$(sed -n 's/^root=//p' "$session")"
+different_session_before="$(cat "$session")"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$new_root" >/dev/null 2>&1; then
+  fail "stale different-Issue cleanup unexpectedly succeeded"
+fi
+[[ "$(cat "$session")" == "$different_session_before" && -d "$different_root" ]] || fail "stale different-Issue cleanup mutated newer session"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-998 "$other_ref" "$different_root" >/dev/null || fail "different-Issue cleanup"
+
+receipt_content="$(cat "$cleanup_receipt")"
+printf 'version=1\nissue=SAY-998\n' > "$cleanup_receipt"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-998 "$other_ref" "$different_root" >/dev/null 2>&1; then
+  fail "malformed cleanup receipt unexpectedly succeeded"
+fi
+printf '%s\n' "$receipt_content" > "$cleanup_receipt"
+
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-998 "$other_ref" "$arbitrary_root" >/dev/null 2>&1; then
+  fail "wrong cleanup root unexpectedly succeeded"
+fi
 
 echo "SELFTEST PASS"

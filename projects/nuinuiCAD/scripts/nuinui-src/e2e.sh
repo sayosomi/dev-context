@@ -33,17 +33,37 @@ e2e_read_marker() {
 
 e2e_read_session() {
   local p="$1"
+  local source_fixture=""
+  local issue=""
+  local ref=""
+  local root=""
+  local handoff=""
+  local cdp_port=""
+  local launch_pid=""
 
   e2e_regular_file "$p" || return 1
-  set -- $(nuinui_ownership_read_fields "$p" issue,ref,root,handoff,cdp_port,launch_pid) || return 1
-  [ "$#" = 6 ] || return 1
-  nuinui_ownership_valid_issue "$1" || return 1
-  nuinui_ownership_valid_sha "$2" || return 1
-  [ -n "$3" ] || return 1
-  [ -n "$4" ] || return 1
-  printf '%s\n' "$5" | grep -Eq '^[0-9]+$' || return 1
-  printf '%s\n' "$6" | grep -Eq '^[0-9]+$' || return 1
-  printf '%s %s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$5" "$6"
+  if nuinui_ownership_validate_exact_file "$p" issue,ref,source_fixture,root,handoff,cdp_port,launch_pid; then
+    source_fixture="$(nuinui_ownership_field "$p" source_fixture)" || return 1
+    case "$source_fixture" in
+      /*) ;;
+      *) return 1 ;;
+    esac
+  elif ! nuinui_ownership_validate_exact_file "$p" issue,ref,root,handoff,cdp_port,launch_pid; then
+    return 1
+  fi
+  issue="$(nuinui_ownership_field "$p" issue)" || return 1
+  ref="$(nuinui_ownership_field "$p" ref)" || return 1
+  root="$(nuinui_ownership_field "$p" root)" || return 1
+  handoff="$(nuinui_ownership_field "$p" handoff)" || return 1
+  cdp_port="$(nuinui_ownership_field "$p" cdp_port)" || return 1
+  launch_pid="$(nuinui_ownership_field "$p" launch_pid)" || return 1
+  nuinui_ownership_valid_issue "$issue" || return 1
+  nuinui_ownership_valid_sha "$ref" || return 1
+  [ -n "$root" ] || return 1
+  [ -n "$handoff" ] || return 1
+  printf '%s\n' "$cdp_port" | grep -Eq '^[0-9]+$' || return 1
+  printf '%s\n' "$launch_pid" | grep -Eq '^[0-9]+$' || return 1
+  printf '%s %s %s %s %s %s\n' "$issue" "$ref" "$root" "$handoff" "$cdp_port" "$launch_pid"
 }
 
 e2e_read_receipt() {

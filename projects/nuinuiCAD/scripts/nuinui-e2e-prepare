@@ -1,45 +1,32 @@
 #!/bin/zsh
 
-VERSION="1.2.2"
-SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
+VERSION="1.3.0"
 E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
 DEFAULT_CDP_PORT="${NUINUI_E2E_CDP_PORT-9223}"
 E2E_TEMP_PARENT="${NUINUI_E2E_TEMP_PARENT-/private/tmp}"
-
+CURRENT_SESSION_KEYS='issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
+LEGACY_SESSION_KEYS='issue,ref,root,handoff,cdp_port,launch_pid'
+CLEANUP_RECEIPT_KEYS='version,issue,ref,root'
+HANDOFF_KEYS='ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
 usage() {
   cat <<'EOF'
 Usage:
   nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
   nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
   nuinui-e2e-prepare status
-  nuinui-e2e-prepare cleanup
+  nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
   nuinui-e2e-prepare closure-check <SAY-123>
 
-Purpose:
-  Prepare a deterministic Human Manual E2E environment in the dedicated e2e
-  checkout, without mutating product source code or killing unrelated VS Code
-  processes.
+Closure order:
+  nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
+  nuinui e2e-release <SAY-123> <tested-ref>
+  nuinui-e2e-prepare closure-check <Issue>
 
-The tested ref and e2e marker must already be fixed by the E2E lane helper.
+Exact duplicate prepare/cleanup: no-op; no status/confirmation. Near-match: BLOCKED.
 
-Successful Human E2E closure is:
-  1. nuinui-e2e-prepare cleanup
-  2. nuinui e2e-release <SAY-123> <tested-ref>
-  3. nuinui-e2e-prepare closure-check <Issue>
-
-cleanup removes the prepared session's owned process, temporary root, handoff,
-and session metadata, but intentionally preserves the tested same-Issue marker.
-The marker is removed by nuinui e2e-release <SAY-123> <tested-ref>; closure-check is a post-release
-final read-only gate only.
 EOF
 }
-
-block() {
-  echo "BLOCKED: $*"
-  return 1
-}
-
 resolve_existing_path() {
   local input_path="$1"
 
@@ -68,100 +55,163 @@ metadata_value() {
   (( ${#values} == 1 )) || return 1
   print -r -- "$values[1]"
 }
+handoff_value() {
+  local value="$(metadata_value "$1" "$2")" || return 1
+  [[ ${#value} -ge 2 && "${value[1]}" == "'" && "${value[-1]}" == "'" ]] || return 1
+  print -r -- "${value[2,-2]}"
+}
+
+path_exists() {
+  [[ -e "$1" || -L "$1" ]]
+}
+
+metadata_matches() {
+  local metadata="$1"
+  local keys="$2"
+  [[ -f "$metadata" && ! -L "$metadata" ]] || return 1
+  awk -v keys="$keys" '
+    BEGIN { count=split(keys, expected, ","); for (i=1; i<=count; i++) allowed[expected[i]]=1 }
+    {
+      equals=index($0, "=")
+      if (equals <= 1) { invalid=1; next }
+      key=substr($0, 1, equals-1)
+      value=substr($0, equals+1)
+      if (!(key in allowed) || (key in seen) || value == "") { invalid=1; next }
+      seen[key]=1
+    }
+    END { for (i=1; i<=count; i++) if (!(expected[i] in seen)) invalid=1; if (invalid) exit 1 }
+  ' "$metadata"
+}
+
+session_kind() {
+  local metadata="$1"
+  metadata_matches "$metadata" "$CURRENT_SESSION_KEYS" && { echo current; return 0; }
+  metadata_matches "$metadata" "$LEGACY_SESSION_KEYS" && { echo legacy; return 0; }
+  return 1
+}
+
+load_session() {
+  local metadata="$1"
+  SESSION_KIND="$(session_kind "$metadata")" || return 1
+  SESSION_ISSUE="$(metadata_value "$metadata" issue)" || return 1; SESSION_REF="$(metadata_value "$metadata" ref)" || return 1
+  SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1; SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
+  SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
+  if [[ "$SESSION_KIND" == current ]]; then
+    SESSION_SOURCE_FIXTURE="$(metadata_value "$metadata" source_fixture)" || return 1
+    case "$SESSION_SOURCE_FIXTURE" in /*) ;; *) return 1 ;; esac
+    [[ "$SESSION_SOURCE_FIXTURE" != */ && "$SESSION_SOURCE_FIXTURE" != *'/./'* && "$SESSION_SOURCE_FIXTURE" != *'/../'* && "$SESSION_SOURCE_FIXTURE" != *//* ]] || return 1
+    [[ ! -e "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" || -f "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" && "$(resolve_existing_path "$SESSION_SOURCE_FIXTURE")" == "$SESSION_SOURCE_FIXTURE" ]] || return 1
+  fi
+  [[ "$SESSION_ISSUE" =~ '^SAY-[0-9]+$' && "$SESSION_REF" =~ '^[0-9a-fA-F]{40}$' && -n "$SESSION_ROOT" && -n "$SESSION_HANDOFF" && -n "$SESSION_CDP_PORT" && -n "$SESSION_LAUNCH_PID" ]] || return 1
+  assert_port "$SESSION_CDP_PORT" || return 1
+  [[ "$SESSION_LAUNCH_PID" =~ '^[1-9][0-9]*$' ]] || return 1
+}
+
+assert_marker() {
+  local marker="$1"
+  metadata_matches "$marker" 'issue,ref' || { echo "BLOCKED: E2E marker is malformed"; return 1; }
+  MARKER_ISSUE="$(metadata_value "$marker" issue)" || return 1
+  MARKER_REF="$(metadata_value "$marker" ref)" || return 1
+  [[ "$MARKER_ISSUE" =~ '^SAY-[0-9]+$' && "$MARKER_REF" =~ '^[0-9a-fA-F]{40}$' ]] || { echo "BLOCKED: E2E marker contains invalid identity"; return 1; }
+}
+
+assert_port() {
+  [[ "$1" =~ '^[1-9][0-9]{0,4}$' ]] && (( $1 <= 65535 ))
+}
 
 assert_session_root() {
-  local root="$1"
-  local relative=""
-  local parent_real=""
-  local root_real=""
-
-  relative="${root#"$E2E_TEMP_PARENT"/}"
-  if [[ "$relative" == "$root" || "$relative" != nuinui-vscode-e2e.* || "$relative" == */* ]]; then
-    echo "BLOCKED: session root is outside the dedicated E2E temporary area"
-    echo "ROOT: $root"
-    return 1
-  fi
-
-  parent_real="$(resolve_existing_path "$E2E_TEMP_PARENT")" || {
-    echo "BLOCKED: dedicated E2E temporary area cannot be resolved"
-    echo "TEMP_PARENT: $E2E_TEMP_PARENT"
-    return 1
-  }
+  local root="$1" relative="${1#"${E2E_TEMP_PARENT%/}"/}" parent_real root_real
+  [[ "$relative" != "$root" && "$relative" == nuinui-vscode-e2e.* && "$relative" != */* ]] || return 1
+  parent_real="$(resolve_existing_path "$E2E_TEMP_PARENT")" || return 1
+  [[ ! -L "$root" ]] || return 1
   if [[ -e "$root" ]]; then
-    root_real="$(resolve_existing_path "$root")" || {
-      echo "BLOCKED: E2E session root cannot be resolved"
-      echo "ROOT: $root"
-      return 1
-    }
-    if [[ "$(dirname "$root_real")" != "$parent_real" ]]; then
-      echo "BLOCKED: resolved E2E session root escaped its temporary area"
-      echo "ROOT: $root_real"
-      return 1
-    fi
+    [[ -d "$root" ]] || return 1
+    root_real="$(resolve_existing_path "$root")" || return 1
+    [[ "$(dirname "$root_real")" == "$parent_real" ]] || return 1
   fi
 }
 
 assert_session_handoff() {
-  local issue="$1"
-  local handoff="$2"
-  local expected="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
-  if [[ "$handoff" != "$expected" ]]; then
-    echo "BLOCKED: unexpected E2E handoff path"
-    echo "EXPECTED: $expected"
-    echo "ACTUAL:   $handoff"
-    return 1
-  fi
+  [[ "$2" == "$E2E_TEMP_PARENT/nuinui-${1}-human-e2e.env" ]]
 }
 
-stop_owned_processes() {
+assert_handoff_file() {
+  local handoff="$1" issue="$2" tested_ref="$3" root="$4" cdp_port="$5" source_fixture="$6" prepared_fixture root_real
+  [[ -f "$handoff" && ! -L "$handoff" ]] || return 1
+  metadata_matches "$handoff" "$HANDOFF_KEYS" || return 1
+  prepared_fixture="$(handoff_value "$handoff" FIXTURE)" || return 1
+  [[ -z "$source_fixture" || "$prepared_fixture" == "$root/$(basename "$source_fixture")" ]] || return 1
+  [[ "$prepared_fixture" == "$root/"* && -f "$prepared_fixture" && ! -L "$prepared_fixture" ]] || return 1
+  root_real="$(resolve_existing_path "$root")" || return 1
+  [[ "$(handoff_value "$handoff" ISSUE)" == "$issue" &&
+    "$(handoff_value "$handoff" TESTED_REF)" == "$tested_ref" &&
+    "$(resolve_existing_path "$(handoff_value "$handoff" CHECKOUT)")" == "$(resolve_existing_path "$E2E_WT")" &&
+    "$(handoff_value "$handoff" E2E_ROOT)" == "$root" &&
+    "$(handoff_value "$handoff" CDP_PORT)" == "$cdp_port" ]] || return 1
+  [[ "$(resolve_existing_path "$prepared_fixture")" == "$root_real"/* ]] || return 1
+  PREPARED_FIXTURE="$prepared_fixture"
+}
+
+process_ids_for_root() {
   local root="$1"
-  local launch_pid="$2"
-  local command_line=""
-  local pid=""
+  pgrep -f "user-data-dir=$root/user-data" 2>/dev/null || true
+}
+
+assert_process_ownership() {
+  local root="$1" launch_pid="$2" command_line pid require_launch="${3:-0}"
   local -a pids
-  local -a matching_pids
-
   assert_session_root "$root" || return 1
-  matching_pids=()
-
-  if [[ "$launch_pid" =~ '^[0-9]+$' ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
+  if [[ -n "$launch_pid" && "$launch_pid" =~ '^[1-9][0-9]*$' ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
     command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
-    if [[ "$command_line" != *"$root"* ]]; then
-      echo "BLOCKED: recorded launch PID does not belong to the E2E root"
-      echo "PID: $launch_pid"
-      return 1
-    fi
-    matching_pids+=("$launch_pid")
+    [[ "$command_line" == *"$root"* ]] || { echo "BLOCKED: launch PID ownership mismatch"; return 1; }
+  elif [[ "$require_launch" == 1 ]]; then
+    echo "BLOCKED: recorded launch PID is not running"
+    return 1
   fi
-
-  pids=("${(@f)$(pgrep -f "user-data-dir=$root/user-data" 2>/dev/null || true)}")
+  pids=("${(@f)$(process_ids_for_root "$root")}")
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
     command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-    if [[ "$command_line" == *"$root"* ]] && (( ${matching_pids[(Ie)$pid]} == 0 )); then
-      matching_pids+=("$pid")
-    fi
+    [[ "$command_line" == *"$root"* ]] || { echo "BLOCKED: E2E process ownership is ambiguous"; return 1; }
+  done
+}
+
+assert_cdp_reachable() {
+  local cdp_port="$1"
+  assert_port "$cdp_port" || return 1
+  command -v curl >/dev/null 2>&1 || return 1
+  curl --max-time 1 -fsS "http://127.0.0.1:${cdp_port}/json/version" >/dev/null 2>&1
+}
+
+stop_owned_processes() {
+  local root="$1" launch_pid="$2" pid command_line remaining
+  local -a pids
+  local -a matching_pids
+  assert_process_ownership "$root" "$launch_pid" 0 || return 1
+  matching_pids=()
+  if [[ -n "$launch_pid" ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
+    matching_pids+=("$launch_pid")
+  fi
+  pids=("${(@f)$(process_ids_for_root "$root")}")
+  for pid in "${pids[@]}"; do
+    [[ -z "$pid" ]] && continue
+    command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+    [[ "$command_line" == *"$root"* ]] || return 1
+    (( ${matching_pids[(Ie)$pid]} == 0 )) && matching_pids+=("$pid")
   done
 
-  for pid in "${matching_pids[@]}"; do
-    kill -TERM "$pid" >/dev/null 2>&1 || return 1
-  done
-
+  for pid in "${matching_pids[@]}"; do kill -TERM "$pid" >/dev/null 2>&1 || return 1; done
   for _ in $(seq 1 10); do
-    local remaining=0
+    remaining=0
     for pid in "${matching_pids[@]}"; do
-      if kill -0 "$pid" >/dev/null 2>&1; then
-        remaining=1
-      fi
+      kill -0 "$pid" >/dev/null 2>&1 && remaining=1
     done
     (( remaining == 0 )) && return 0
     sleep 0.2
   done
-
   for pid in "${matching_pids[@]}"; do
-    if kill -0 "$pid" >/dev/null 2>&1; then
-      kill -KILL "$pid" >/dev/null 2>&1 || return 1
-    fi
+    kill -0 "$pid" >/dev/null 2>&1 || continue
+    kill -KILL "$pid" >/dev/null 2>&1 || return 1
   done
   return 0
 }
@@ -257,14 +307,15 @@ assert_checkout() {
   }
 
   marker="$(marker_path)" || return 1
-  [[ -f "$marker" ]] || {
+  [[ -f "$marker" && ! -L "$marker" ]] || {
     echo "BLOCKED: e2e marker is missing; run the lane e2e-start helper first"
     echo "MARKER: $marker"
     return 1
   }
 
-  marker_issue="$(sed -n 's/^issue=//p' "$marker")"
-  marker_ref="$(sed -n 's/^ref=//p' "$marker")"
+  assert_marker "$marker" || return 1
+  marker_issue="$MARKER_ISSUE"
+  marker_ref="$MARKER_REF"
   [[ "$marker_issue" == "$issue" ]] || {
     echo "BLOCKED: e2e marker Issue mismatch"
     echo "MARKER_ISSUE: $marker_issue"
@@ -314,10 +365,11 @@ ensure_dependencies() {
 write_session() {
   local issue="$1"
   local tested_ref="$2"
-  local root="$3"
-  local handoff="$4"
-  local cdp_port="$5"
-  local launch_pid="$6"
+  local source_fixture="$3"
+  local root="$4"
+  local handoff="$5"
+  local cdp_port="$6"
+  local launch_pid="$7"
   local session=""
   local temporary=""
 
@@ -329,6 +381,9 @@ write_session() {
   fi
   assert_session_root "$root" || return 1
   assert_session_handoff "$issue" "$handoff" || return 1
+  [[ -n "$source_fixture" ]] || return 1
+  assert_port "$cdp_port" || return 1
+  [[ "$launch_pid" =~ '^[1-9][0-9]*$' ]] || return 1
 
   temporary="$(mktemp "${session}.XXXXXX")" || {
     echo "ERROR: could not create E2E session metadata"
@@ -337,6 +392,7 @@ write_session() {
   if ! {
     printf 'issue=%s\n' "$issue"
     printf 'ref=%s\n' "$tested_ref"
+    printf 'source_fixture=%s\n' "$source_fixture"
     printf 'root=%s\n' "$root"
     printf 'handoff=%s\n' "$handoff"
     printf 'cdp_port=%s\n' "$cdp_port"
@@ -355,309 +411,209 @@ write_session() {
 
 status() {
   setopt local_options null_glob
-
-  local repo="$E2E_WT"
-  local session=""
-  local marker=""
-  local head=""
-  local branch=""
-  local dirty=""
-  local marker_issue=""
-  local marker_ref=""
-  local issue=""
-  local tested_ref=""
-  local root=""
-  local handoff=""
-  local cdp_port=""
-  local launch_pid=""
-  local command_line=""
-  local result=0
-  local session_valid=0
-  local -a root_candidates
-  local -a handoff_candidates
-  local candidate=""
-
-  [[ -d "$repo" ]] || { echo "BLOCKED: e2e checkout does not exist"; echo "PATH: $repo"; return 1; }
-  git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
-    echo "BLOCKED: e2e checkout is not a Git worktree"
-    echo "PATH: $repo"
-    return 1
-  }
-  session="$(session_path)" || { echo "BLOCKED: cannot resolve E2E session path"; return 1; }
-  marker="$(marker_path)" || { echo "BLOCKED: cannot resolve E2E marker path"; return 1; }
+  local repo="$E2E_WT" session marker head branch dirty issue tested_ref source_fixture root handoff launch_pid command_line candidate
+  local result=0 session_valid=0
+  local -a root_candidates handoff_candidates
+  [[ -d "$repo" ]] && git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "BLOCKED: e2e checkout is unavailable"; return 1; }
+  session="$(session_path)" || return 1
+  marker="$(marker_path)" || return 1
   head="$(git -C "$repo" rev-parse HEAD)" || return 1
   branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
   dirty="$(git -C "$repo" status --porcelain)"
-
   echo "E2E STATUS"
   echo "  checkout=$repo"
   echo "  head=$head"
   echo "  branch=${branch:-DETACHED}"
   echo "  clean=$([[ -z "$dirty" ]] && echo yes || echo no)"
-
-  if [[ -f "$marker" ]]; then
-    marker_issue="$(metadata_value "$marker" issue 2>/dev/null || true)"
-    marker_ref="$(metadata_value "$marker" ref 2>/dev/null || true)"
+  if [[ -f "$marker" && ! -L "$marker" ]] && assert_marker "$marker" >/dev/null 2>&1; then
     echo "  marker=present"
-    echo "  marker_issue=${marker_issue:-INVALID}"
-    echo "  marker_ref=${marker_ref:-INVALID}"
-  elif [[ -e "$marker" ]]; then
-    echo "  marker=invalid-not-file"
+    echo "  marker_issue=$MARKER_ISSUE"
+    echo "  marker_ref=$MARKER_REF"
+  elif path_exists "$marker"; then
+    echo "  marker=invalid"
     result=1
   else
     echo "  marker=none"
   fi
-
-  if [[ ! -e "$session" ]]; then
+  if [[ ! -e "$session" && ! -L "$session" ]]; then
     echo "  session=none"
-  elif [[ ! -f "$session" ]]; then
-    echo "  session=invalid-not-file"
-    result=1
-  else
-    issue="$(metadata_value "$session" issue 2>/dev/null || true)"
-    tested_ref="$(metadata_value "$session" ref 2>/dev/null || true)"
-    root="$(metadata_value "$session" root 2>/dev/null || true)"
-    handoff="$(metadata_value "$session" handoff 2>/dev/null || true)"
-    cdp_port="$(metadata_value "$session" cdp_port 2>/dev/null || true)"
-    launch_pid="$(metadata_value "$session" launch_pid 2>/dev/null || true)"
-
-    if [[ "$issue" =~ '^SAY-[0-9]+$' && "$tested_ref" =~ '^[0-9a-fA-F]{40}$' && "$cdp_port" =~ '^[0-9]+$' && "$launch_pid" =~ '^[0-9]+$' ]] \
-      && assert_session_root "$root" >/dev/null 2>&1 \
-      && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
-      session_valid=1
-      echo "  session=active"
-      echo "  issue=$issue"
-      echo "  ref=$tested_ref"
-      echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"
-      echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
-      echo "  cdp_port=$cdp_port"
+  elif [[ -f "$session" && ! -L "$session" ]] && load_session "$session"; then
+    issue="$SESSION_ISSUE"; tested_ref="$SESSION_REF"; source_fixture="$SESSION_SOURCE_FIXTURE"
+    root="$SESSION_ROOT"; handoff="$SESSION_HANDOFF"; launch_pid="$SESSION_LAUNCH_PID"
+    if assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
+      session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
+      echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"; echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
       if kill -0 "$launch_pid" >/dev/null 2>&1; then
         command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
-        if [[ "$command_line" == *"$root"* ]]; then
-          echo "  launch_pid=$launch_pid (owned-process-running)"
-        else
-          echo "  launch_pid=$launch_pid (process-ownership-mismatch)"
-          result=1
-        fi
-      else
-        echo "  launch_pid=$launch_pid (not-running)"
-      fi
-      if [[ "$marker_issue" != "$issue" || "$marker_ref" != "$tested_ref" ]]; then
-        echo "  session_marker=INCONSISTENT"
-        result=1
-      else
-        echo "  session_marker=consistent"
-      fi
-    else
-      echo "  session=INVALID"
-      result=1
+        [[ "$command_line" == *"$root"* ]] && echo "  launch_pid=$launch_pid (owned-process-running)" || { echo "  launch_pid=$launch_pid (process-ownership-mismatch)"; result=1; }
+      else echo "  launch_pid=$launch_pid (not-running)"; fi
+      [[ "$MARKER_ISSUE" == "$issue" && "$MARKER_REF" == "$tested_ref" ]] && echo "  session_marker=consistent" || { echo "  session_marker=INCONSISTENT"; result=1; }
+    else echo "  session=INVALID"; result=1
     fi
+  else
+    echo "  session=INVALID"; result=1
   fi
-
-  echo "  unmanaged_artifacts:"
   root_candidates=("$E2E_TEMP_PARENT"/nuinui-vscode-e2e.*(N))
-  for candidate in "${root_candidates[@]}"; do
-    [[ "$session_valid" == 1 && "$candidate" == "$root" ]] && continue
-    echo "    root-candidate=$candidate"
-  done
+  for candidate in "${root_candidates[@]}"; do [[ "$session_valid" == 1 && "$candidate" == "$root" ]] || echo "    root-candidate=$candidate"; done
   handoff_candidates=("$E2E_TEMP_PARENT"/nuinui-*-human-e2e.env(N))
-  for candidate in "${handoff_candidates[@]}"; do
-    [[ "$session_valid" == 1 && "$candidate" == "$handoff" ]] && continue
-    echo "    handoff-candidate=$candidate"
-  done
-
-  if (( result != 0 )); then
-    echo "E2E STATUS BLOCKED: inspect the reported state; do not delete artifacts automatically."
-    return 1
-  fi
-
+  for candidate in "${handoff_candidates[@]}"; do [[ "$session_valid" == 1 && "$candidate" == "$handoff" ]] || echo "    handoff-candidate=$candidate"; done
+  (( result == 0 )) || { echo "E2E STATUS BLOCKED: inspect the reported state; do not delete artifacts automatically."; return 1; }
   echo "E2E STATUS COMPLETE"
 }
 
 
 closure_check() {
   setopt local_options null_glob
-
-  local requested_issue="$1"
-  local issue_number=""
-  local session=""
-  local marker=""
-  local session_issue=""
-  local marker_issue=""
-  local temp_parent=""
-  local candidate=""
-  local processes=""
-  local result=0
-  local -a temp_parents
-  local -a root_candidates
-
-  [[ "$requested_issue" =~ '^SAY-[0-9]+$' ]] || {
-    echo "ERROR: Issue must look like SAY-123"
-    return 2
-  }
-
-  issue_number="${requested_issue#SAY-}"
-
-  session="$(session_path)" || {
-    echo "BLOCKED: cannot resolve E2E session path"
-    return 1
-  }
-  marker="$(marker_path)" || {
-    echo "BLOCKED: cannot resolve E2E marker path"
-    return 1
-  }
-
+  local requested_issue="$1" issue_number="${1#SAY-}" session marker session_issue marker_issue temp_parent candidate processes result=0
+  local -a temp_parents root_candidates
+  [[ "$requested_issue" =~ '^SAY-[0-9]+$' ]] || { echo "ERROR: Issue must look like SAY-123"; return 2; }
+  session="$(session_path)" || { echo "BLOCKED: cannot resolve E2E session path"; return 1; }
+  marker="$(marker_path)" || { echo "BLOCKED: cannot resolve E2E marker path"; return 1; }
   echo "E2E CLOSURE CHECK"
   echo "  issue=$requested_issue"
-
-  if [[ -f "$session" ]]; then
-    session_issue="$(metadata_value "$session" issue 2>/dev/null || true)"
-    if [[ -z "$session_issue" ]]; then
-      echo "  session=INVALID"
-      result=1
-    elif [[ "$session_issue" == "$requested_issue" ]]; then
-      echo "  session=BLOCKING-SAME-ISSUE"
-      result=1
-    else
-      echo "  session=other-issue:$session_issue"
-    fi
-  elif [[ -e "$session" ]]; then
-    echo "  session=INVALID-NOT-FILE"
-    result=1
-  else
+  if [[ ! -e "$session" && ! -L "$session" ]]; then
     echo "  session=none-for-requested-issue"
+  elif [[ -f "$session" && ! -L "$session" ]] && load_session "$session"; then
+    session_issue="$SESSION_ISSUE"
+    [[ "$session_issue" == "$requested_issue" ]] && { echo "  session=BLOCKING-SAME-ISSUE"; result=1; } || echo "  session=other-issue:$session_issue"
+  else echo "  session=INVALID"; result=1
   fi
-
-  if [[ -f "$marker" ]]; then
-    marker_issue="$(metadata_value "$marker" issue 2>/dev/null || true)"
-    if [[ -z "$marker_issue" ]]; then
-      echo "  marker=INVALID"
-      result=1
-    elif [[ "$marker_issue" == "$requested_issue" ]]; then
-      echo "  marker=BLOCKING-SAME-ISSUE"
-      result=1
-    else
-      echo "  marker=other-issue:$marker_issue"
-    fi
-  elif [[ -e "$marker" ]]; then
-    echo "  marker=INVALID-NOT-FILE"
-    result=1
-  else
-    echo "  marker=none-for-requested-issue"
+  if [[ -f "$marker" && ! -L "$marker" ]] && assert_marker "$marker" >/dev/null 2>&1; then
+    marker_issue="$MARKER_ISSUE"
+    [[ "$marker_issue" == "$requested_issue" ]] && { echo "  marker=BLOCKING-SAME-ISSUE"; result=1; } || echo "  marker=other-issue:$marker_issue"
+  elif path_exists "$marker"; then echo "  marker=INVALID"; result=1
+  else echo "  marker=none-for-requested-issue"
   fi
-
   temp_parents=("$E2E_TEMP_PARENT")
-  if [[ -n "${TMPDIR:-}" ]]; then
-    temp_parent="${TMPDIR%/}"
-    if [[ -n "$temp_parent" && "$temp_parent" != "$E2E_TEMP_PARENT" ]]; then
-      temp_parents+=("$temp_parent")
-    fi
-  fi
-
+  [[ -n "${TMPDIR:-}" && "${TMPDIR%/}" != "$E2E_TEMP_PARENT" ]] && temp_parents+=("${TMPDIR%/}")
   for temp_parent in "${temp_parents[@]}"; do
     [[ -d "$temp_parent" ]] || continue
-
-    root_candidates=(
-      "$temp_parent"/nuinui-say${issue_number}-e2e.*(N)
-      "$temp_parent"/nuinui-SAY${issue_number}-e2e.*(N)
-      "$temp_parent"/nuinui-SAY-${issue_number}-e2e.*(N)
-    )
-
-    for candidate in "${root_candidates[@]}"; do
-      [[ -d "$candidate" ]] || continue
-      echo "  fallback-root=BLOCKING:$candidate"
-      result=1
-    done
-
-    candidate="$temp_parent/nuinui-${requested_issue}-human-e2e.env"
-    if [[ -e "$candidate" ]]; then
-      echo "  handoff=BLOCKING:$candidate"
-      result=1
-    fi
-
-    candidate="$temp_parent/nuinui-say${issue_number}-human-e2e.env"
-    if [[ -e "$candidate" ]]; then
-      echo "  handoff=BLOCKING:$candidate"
-      result=1
-    fi
+    root_candidates=("$temp_parent"/nuinui-say${issue_number}-e2e.*(N) "$temp_parent"/nuinui-SAY${issue_number}-e2e.*(N) "$temp_parent"/nuinui-SAY-${issue_number}-e2e.*(N))
+    for candidate in "${root_candidates[@]}"; do [[ -d "$candidate" ]] && { echo "  fallback-root=BLOCKING:$candidate"; result=1; }; done
+    for candidate in "$temp_parent/nuinui-${requested_issue}-human-e2e.env" "$temp_parent/nuinui-say${issue_number}-human-e2e.env"; do path_exists "$candidate" && { echo "  handoff=BLOCKING:$candidate"; result=1; }; done
   done
+  processes="$({ pgrep -fal "nuinui-say${issue_number}-e2e\\." 2>/dev/null || true; pgrep -fal "nuinui-SAY${issue_number}-e2e\\." 2>/dev/null || true; pgrep -fal "nuinui-SAY-${issue_number}-e2e\\." 2>/dev/null || true; } | awk '!seen[$0]++')"
+  if [[ -n "$processes" ]]; then echo "  process=BLOCKING"; printf '%s\n' "$processes"; result=1; else echo "  process=none-for-requested-issue"; fi
+  (( result == 0 )) && { echo "E2E CLOSURE CLEAN"; return 0; }
+  echo "E2E CLOSURE BLOCKED"
+  return 1
+}
 
-  processes="$(
-    {
-      pgrep -fal "nuinui-say${issue_number}-e2e\\." 2>/dev/null || true
-      pgrep -fal "nuinui-SAY${issue_number}-e2e\\." 2>/dev/null || true
-      pgrep -fal "nuinui-SAY-${issue_number}-e2e\\." 2>/dev/null || true
-    } | awk '!seen[$0]++'
-  )"
+cleanup_receipt_path() {
+  local git_dir="$(git -C "$E2E_WT" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  printf '%s/nuinui-e2e-cleanup-receipt\n' "$git_dir"
+}
 
-  if [[ -n "$processes" ]]; then
-    echo "  process=BLOCKING"
-    printf '%s\n' "$processes"
-    result=1
-  else
-    echo "  process=none-for-requested-issue"
-  fi
+write_cleanup_receipt() {
+  local issue="$1" tested_ref="$2" root="$3" receipt temporary
+  receipt="$(cleanup_receipt_path)" || return 1
+  [[ ! -e "$receipt" && ! -L "$receipt" || -f "$receipt" && ! -L "$receipt" ]] || return 1
+  temporary="$(mktemp "${receipt}.XXXXXX")" || return 1
+  if ! {
+    printf 'version=1\n'
+    printf 'issue=%s\n' "$issue"
+    printf 'ref=%s\n' "$tested_ref"
+    printf 'root=%s\n' "$root"
+  } > "$temporary"; then rm -f -- "$temporary"; return 1; fi
+  mv -- "$temporary" "$receipt" || { rm -f -- "$temporary"; return 1; }
+  metadata_matches "$receipt" "$CLEANUP_RECEIPT_KEYS" || return 1
+  [[ "$(metadata_value "$receipt" issue)" == "$issue" &&
+    "$(metadata_value "$receipt" ref)" == "$tested_ref" &&
+    "$(metadata_value "$receipt" root)" == "$root" ]]
+}
 
-  if (( result != 0 )); then
-    echo "E2E CLOSURE BLOCKED"
+assert_cleanup_args() {
+  [[ "$1" =~ '^SAY-[0-9]+$' ]] || { echo "ERROR: Issue must look like SAY-123"; return 2; }
+  [[ "$2" =~ '^[0-9a-fA-F]{40}$' ]] || { echo "ERROR: invalid tested-ref"; return 2; }
+  assert_session_root "$3" || return 2
+}
+
+assert_no_owned_processes() {
+  local root="$1"
+  local pid
+  local -a pids
+  assert_process_ownership "$root" "" 0 || return 1
+  pids=("${(@f)$(process_ids_for_root "$root")}")
+  for pid in "${pids[@]}"; do
+    [[ -z "$pid" ]] && continue
+    echo "BLOCKED: E2E process still belongs to the cleaned root (PID $pid)"
     return 1
-  fi
+  done
+}
 
-  echo "E2E CLOSURE CLEAN"
+cleanup_duplicate() {
+  local issue="$1" tested_ref="$2" root="$3" receipt receipt_issue receipt_ref receipt_root handoff
+  receipt="$(cleanup_receipt_path)" || return 1
+  path_exists "$receipt" || { echo "BLOCKED: E2E cleanup receipt is missing"; return 1; }
+  metadata_matches "$receipt" "$CLEANUP_RECEIPT_KEYS" || { echo "BLOCKED: E2E cleanup receipt is malformed"; return 1; }
+  [[ "$(metadata_value "$receipt" version)" == 1 ]] || { echo "BLOCKED: E2E cleanup receipt version is unsupported"; return 1; }
+  receipt_issue="$(metadata_value "$receipt" issue)"
+  receipt_ref="$(metadata_value "$receipt" ref)"
+  receipt_root="$(metadata_value "$receipt" root)"
+  [[ "$receipt_issue" =~ '^SAY-[0-9]+$' && "$receipt_ref" =~ '^[0-9a-fA-F]{40}$' ]] || return 1
+  assert_session_root "$receipt_root" || return 1
+  [[ "$receipt_issue" == "$issue" && "$receipt_ref" == "$tested_ref" && "$receipt_root" == "$root" ]] || { echo "BLOCKED: E2E cleanup receipt identity mismatch"; return 1; }
+  assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
+  path_exists "$root" && { echo "BLOCKED: cleaned E2E root still exists"; return 1; }
+  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  path_exists "$handoff" && { echo "BLOCKED: cleaned E2E handoff still exists"; return 1; }
+  assert_no_owned_processes "$root" || return 1
+  printf 'E2E CLEANUP ALREADY COMPLETE\nissue=%s\nref=%s\ne2e_root=%s\nmutation=no-op\n' \
+    "$issue" "$tested_ref" "$root"
 }
 
 cleanup() {
+  local issue="$1"
+  local tested_ref="$2"
+  local requested_root="$3"
   local session=""
-  local issue=""
-  local tested_ref=""
-  local root=""
   local handoff=""
-  local cdp_port=""
-  local launch_pid=""
-  local head=""
-  local marker=""
-  local marker_issue=""
-  local marker_ref=""
 
+  assert_cleanup_args "$issue" "$tested_ref" "$requested_root" || return $?
   session="$(session_path)" || { echo "BLOCKED: cannot resolve E2E session path"; return 1; }
-  if [[ ! -f "$session" ]]; then
-    echo "BLOCKED: E2E session metadata does not exist"
-    return 1
+  if [[ ! -e "$session" && ! -L "$session" ]]; then
+    cleanup_duplicate "$issue" "$tested_ref" "$requested_root"
+    return $?
   fi
-
-  issue="$(sed -n 's/^issue=//p' "$session")"
-  tested_ref="$(sed -n 's/^ref=//p' "$session")"
-  root="$(sed -n 's/^root=//p' "$session")"
-  handoff="$(sed -n 's/^handoff=//p' "$session")"
-  cdp_port="$(sed -n 's/^cdp_port=//p' "$session")"
-  launch_pid="$(sed -n 's/^launch_pid=//p' "$session")"
-
-  [[ "$issue" =~ '^SAY-[0-9]+$' ]] || { echo "BLOCKED: invalid E2E session Issue"; return 1; }
-  [[ "$tested_ref" =~ '^[0-9a-fA-F]{40}$' ]] || { echo "BLOCKED: invalid E2E session ref"; return 1; }
-  [[ "$cdp_port" =~ '^[0-9]+$' ]] || { echo "BLOCKED: invalid E2E session CDP port"; return 1; }
-  [[ "$launch_pid" =~ '^[0-9]+$' ]] || { echo "BLOCKED: invalid E2E session launch PID"; return 1; }
-  assert_session_root "$root" || return 1
-  assert_session_handoff "$issue" "$handoff" || return 1
-
-  assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
-  head="$(git -C "$E2E_WT" rev-parse HEAD)" || return 1
-  [[ "$head" == "$tested_ref" ]] || { echo "BLOCKED: e2e HEAD changed before cleanup"; return 1; }
-  marker="$(marker_path)" || return 1
-  marker_issue="$(sed -n 's/^issue=//p' "$marker")"
-  marker_ref="$(sed -n 's/^ref=//p' "$marker")"
-  [[ "$marker_issue" == "$issue" && "$marker_ref" == "$tested_ref" ]] || {
-    echo "BLOCKED: E2E marker changed before cleanup"
+  [[ -f "$session" && ! -L "$session" ]] || {
+    echo "BLOCKED: invalid E2E session metadata"
     return 1
   }
-
-  stop_owned_processes "$root" "$launch_pid" || return 1
-  [[ ! -e "$root" ]] || rm -rf -- "$root" || { echo "ERROR: could not remove E2E root"; return 1; }
-  [[ ! -e "$handoff" ]] || rm -f -- "$handoff" || { echo "ERROR: could not remove E2E handoff"; return 1; }
-  rm -f -- "$session" || { echo "ERROR: could not remove E2E session metadata"; return 1; }
+  load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
+  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+    echo "BLOCKED: active session identity mismatch"
+    return 1
+  }
+  assert_session_root "$SESSION_ROOT" || return 1
+  assert_session_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" || return 1
+  if path_exists "$SESSION_HANDOFF"; then
+    assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
+  fi
+  assert_checkout "$SESSION_ISSUE" "$SESSION_REF" >/dev/null || return $?
+  stop_owned_processes "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || return 1
+  assert_no_owned_processes "$SESSION_ROOT" || return 1
+  if path_exists "$SESSION_ROOT"; then
+    rm -rf -- "$SESSION_ROOT" || { echo "ERROR: could not remove E2E root"; return 1; }
+  fi
+  handoff="$SESSION_HANDOFF"
+  if path_exists "$handoff"; then
+    rm -f -- "$handoff" || { echo "ERROR: could not remove E2E handoff"; return 1; }
+  fi
+  write_cleanup_receipt "$SESSION_ISSUE" "$SESSION_REF" "$SESSION_ROOT" || {
+    echo "BLOCKED: could not atomically write the E2E cleanup receipt; session retained"
+    return 1
+  }
+  load_session "$session" || { echo "BLOCKED: E2E session changed before metadata removal; receipt retained"; return 1; }
+  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
+  rm -- "$session" || { echo "ERROR: could not remove E2E session metadata; receipt retained"; return 1; }
 
   echo "E2E CLEANUP COMPLETE"
   echo "  issue=$issue"
   echo "  ref=$tested_ref"
+  echo "  e2e_root=$requested_root"
 }
 
 assert_no_tracked_mutations() {
@@ -713,11 +669,34 @@ resolve_code_bin() {
   echo "$code_bin"
 }
 
+prepare_duplicate() {
+  local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5"
+  [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
+  load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
+  [[ "$SESSION_KIND" == current ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
+  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
+    "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" ]] || {
+    echo "BLOCKED: active session identity mismatch"
+    return 1
+  }
+  assert_session_root "$SESSION_ROOT" || return 1
+  [[ -d "$SESSION_ROOT" && ! -L "$SESSION_ROOT" ]] || { echo "BLOCKED: active E2E root is missing or invalid"; return 1; }
+  assert_session_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" || return 1
+  assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" \
+    "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
+  assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 1 || return 1
+  assert_cdp_reachable "$SESSION_CDP_PORT" || { echo "BLOCKED: recorded CDP host is unreachable"; return 1; }
+  printf 'E2E SETUP ALREADY READY\nissue=%s\ntested_ref=%s\ne2e_root=%s\nfixture=%s\nsource_fixture=%s\ncdp_port=%s\nhandoff=%s\nsession=%s\nmutation=no-op\nREADY FOR HUMAN E2E\n' \
+    "$issue" "$tested_ref" "$SESSION_ROOT" "$PREPARED_FIXTURE" "$source_fixture" \
+    "$cdp_port" "$SESSION_HANDOFF" "$session"
+}
+
 prepare() {
   local issue="$1"
   local tested_ref="$2"
   local fixture="$3"
   local cdp_port="${4:-$DEFAULT_CDP_PORT}"
+  local source_fixture=""
   local repo="$E2E_WT"
   local code_bin=""
   local e2e_root=""
@@ -740,12 +719,16 @@ prepare() {
   }
 
   assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
+  assert_port "$cdp_port" || { echo "ERROR: CDP port must be between 1 and 65535"; return 2; }
+  source_fixture="$(resolve_existing_path "$fixture")" || {
+    echo "ERROR: could not resolve fixture path"
+    return 1
+  }
 
   session="$(session_path)" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
-  if [[ -e "$session" ]]; then
-    echo "BLOCKED: E2E session cleanup is still required"
-    echo "SESSION: $session"
-    return 1
+  if path_exists "$session"; then
+    prepare_duplicate "$issue" "$tested_ref" "$source_fixture" "$cdp_port" "$session"
+    return $?
   fi
 
   code_bin="$(resolve_code_bin)" || {
@@ -782,9 +765,9 @@ EOF
 
   [[ -f "$e2e_root/user-data/User/settings.json" ]] || { cleanup_failed_prepare 1; return 1; }
 
-  fixture_name="$(basename "$fixture")"
+  fixture_name="$(basename "$source_fixture")"
   prepared_fixture="$e2e_root/$fixture_name"
-  cp "$fixture" "$prepared_fixture" || {
+  cp "$source_fixture" "$prepared_fixture" || {
     echo "ERROR: fixture copy failed"
     cleanup_failed_prepare 1
     return 1
@@ -835,7 +818,7 @@ CDP_PORT='$cdp_port'
 RUST_BIN='$rust_bin'
 EOF
 
-  write_session "$issue" "$tested_ref" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
+  write_session "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
     cleanup_failed_prepare 1
     return 1
   }
@@ -846,6 +829,7 @@ EOF
   echo "  checkout=$repo"
   echo "  e2e_root=$e2e_root"
   echo "  fixture=$prepared_fixture"
+  echo "  source_fixture=$source_fixture"
   echo "  cdp_port=$cdp_port"
   echo "  handoff=$handoff"
   echo "  session=$session"
@@ -875,8 +859,8 @@ case "${1:-}" in
     closure_check "$2"
     ;;
   cleanup)
-    [[ "$#" -eq 1 ]] || { usage; exit 2; }
-    cleanup
+    [[ "$#" -eq 4 ]] || { usage; exit 2; }
+    cleanup "$2" "$3" "$4"
     ;;
   *)
     usage
