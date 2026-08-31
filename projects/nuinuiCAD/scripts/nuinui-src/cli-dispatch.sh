@@ -1,5 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
+V=1.6.13
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
 
 nuinui_usage() {
@@ -92,8 +93,8 @@ case "$1" in
     exit $?
     ;;
   e2e-release)
-    [ "$#" = 1 ] || { echo 'Usage: nuinui e2e-release'; exit 2; }
-    nuinui_run_public e2e-release ee
+    [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-release <SAY-123> <tested-ref>'; exit 2; }
+    nuinui_run_public e2e-release ee "$2" "$3"
     exit $?
     ;;
   context-audit)
