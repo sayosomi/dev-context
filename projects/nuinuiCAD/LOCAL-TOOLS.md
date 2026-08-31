@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.16`。
+current standalone helper version: `1.6.17`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -68,7 +68,7 @@ verify、direct public start、およびbeginは、既存のlifecycle ownerを�
 
 `nuinui preflight`のHuman copy boundaryは、`===== NUINUI PREFLIGHT RESULT =====`からコピーを開始し、`PREFLIGHT PASS`または`PREFLIGHT BLOCKED`の直後で停止する。ヘッダはplain-textの出力境界だけを示し、lane / preflight semanticsは変更しない。
 
-`nuinui release <main|sub> <merged-checkpoint> <claim>`は、post-mergeにlane checkoutだけがdriftした場合も、`CHECKOUTS.md`の狭いproof setをrelease中に満たすときだけ既存local claimed topicへ通常の`git switch`で復旧する。branch生成やforce系操作はせず、再検証に失敗した場合はactive ownershipを保持して`BLOCKED:`で停止する。成功したreleaseはlane Git dirへcompleted-release receiptをdurable化してからlock / tombstoneをcleanupし、receipt・idle state・authoritative main・clean checkoutをread-onlyで完全一致検証できる同一requestの再実行だけ`IMPLEMENTATION ALREADY RELEASED`の`mutation=no-op`として受理する。このrelease-only recoveryは`resume` / `recover`のclaim-checkout mismatchを変更しない。
+`nuinui release <main|sub> <merged-checkpoint> <claim>`は、post-mergeにlane checkoutだけがdriftした場合も、`CHECKOUTS.md`の狭いproof setをrelease中に満たすときだけ復旧する。claimed local refがcheckpointにある場合の differently named branch は、same-generation proof後にexisting claimed topicへ通常のexact `git switch`で戻す。claimed local refがmissingの場合は、current checkoutがcleanなnamed non-main branchで、current branch refとmerged checkpointがexact一致し、fresh authoritative `origin/main` / Base ancestry / remote topic / worktree identityが再検証できるときだけ、release lock下でdurable slotのbranch名へexact non-force `git branch -m`を行う。Issue textやstring similarityによるfuzzy matching、durable metadata rewrite、reset / stash / merge / rebase / cherry-pick / force操作は行わず、ambiguous stateは`BLOCKED: release claimed branch mismatch`としてclaimed / actual / head / checkpoint / claim / stable reasonを返す。正確にrecoverableなケースは追加のHuman preflight、manual rename、second release invocationなしで`IMPLEMENTATION RELEASED`まで完了し、`resume` / `recover`のclaim-checkout mismatchは変更しない。
 
 development sourceはresponsibility-separatedで、次のexplicit deterministic assemblyからstandalone artifactを作る。
 
@@ -204,7 +204,7 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 `resume`はcaller-supplied Lane / Issue / Base / exact checkpoint / branch / claimとslotをexact照合する。通常のpushed checkpointではremote topicも同じcheckpointであることを要求する。`begin`直後の初回push前に限り、remote topicの成功したabsence、local topic = Base = expected checkpoint、cleanな既存topic、safeなidle identityをすべて証明できた場合だけ、そのlocal topicへ復帰できる。Base refresh、merge-main、rebase、reset、stash、force-switch、branch generation、claim inferenceを行わない。
 
-`release`はcaller-supplied merged checkpoint + claimを必須とする。facadeはmutation前にactive slot、current topic branch checkpoint、durable claim、lock / tombstone / schemaをread-only検証し、checkpoint不一致は`BLOCKED: checkpoint mismatch`と`expected` / `actual`、claim不一致は`BLOCKED: claim mismatch`とdurable `expected` / caller `actual`を返す。rejected releaseはdurable ownershipを保持し、raw mutationが予期せず無診断で失敗してもcontext付きERRORを返す。remote topic branchがpost-mergeで削除済みでも、saved checkpointがcurrent authoritative mainに含まれることを証明できればrelease可能。release開始時にclaimed local topic branchをcheckoutしていた場合だけ、そのexact branchをsafe cleanup candidateにする。active generationがなく、receiptのlane / checkpoint / claim / Base / Issue / branch identity、idle checkout、authoritative main containmentをすべて完全一致で証明できない限り、過去receiptからreleaseを推測・採用しない。
+`release`はcaller-supplied merged checkpoint + claimを必須とする。facadeはmutation前にactive slot、current topic branch checkpoint、durable claim、lock / tombstone / schemaをread-only検証し、checkpoint不一致は`BLOCKED: checkpoint mismatch`と`expected` / `actual`、claim不一致は`BLOCKED: claim mismatch`とdurable `expected` / caller `actual`を返す。claimed local refのmissingはcheckpoint mismatchではなくbranch identity failureとして診断する。rejected releaseはdurable ownershipを保持し、raw mutationが予期せず無診断で失敗してもcontext付きERRORを返す。remote topic branchがpost-mergeで削除済みでも、saved checkpointがcurrent authoritative mainに含まれることを証明できればrelease可能。release開始時にclaimed local topic branchをcheckoutしていた場合だけ、そのexact branchをsafe cleanup candidateにする。active generationがなく、receiptのlane / checkpoint / claim / Base / Issue / branch identity、idle checkout、authoritative main containmentをすべて完全一致で証明できない限り、過去receiptからreleaseを推測・採用しない。
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
 

@@ -455,22 +455,109 @@ lifecycle_resume_command() {
 }
 
 lifecycle_release_prove_drift_checkout() {
-  local current_branch current_head authoritative_main
+  local mode current_branch current_head branch_head authoritative_main authoritative_main2
+  local target_head target_head2 remote_state remote_state2 initial_branch initial_head
+  mode=$1
   current_branch=$(bn "$lifecycle_release_repo")
   current_head=$lifecycle_release_head
+  initial_branch=$current_branch
+  initial_head=$current_head
 
   [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
-  case "$lifecycle_release_lane" in
-    main) [ "$current_branch" = main ] || return 1 ;;
-    sub) [ -z "$current_branch" ] || return 1 ;;
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  case "$mode" in
+    named)
+      [ -n "$current_branch" ] || return 1
+      [ "$current_branch" != "$lifecycle_release_topic" ] || return 1
+      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+      branch_head=$(git -C "$lifecycle_release_repo" rev-parse \
+        "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
+      ;;
+    rename)
+      [ -n "$current_branch" ] || return 1
+      [ "$current_branch" != main ] || return 1
+      [ "$current_branch" != "$lifecycle_release_topic" ] || return 1
+      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+      branch_head=$(git -C "$lifecycle_release_repo" rev-parse \
+        "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
+      ;;
+    canonical)
+      case "$lifecycle_release_lane" in
+        main) [ "$current_branch" = main ] || return 1 ;;
+        sub) [ -z "$current_branch" ] || return 1 ;;
+        *) return 1 ;;
+      esac
+      ;;
     *) return 1 ;;
   esac
-  nuinui_ownership_valid_sha "$current_head" || return 1
+  [ "$lifecycle_release_base" = "$current_head" ] ||
+    an "$lifecycle_release_repo" "$lifecycle_release_base" "$current_head" || return 1
+
   fp "$lifecycle_release_repo" || return 1
   authoritative_main=$(om "$lifecycle_release_repo" 2>/dev/null) || return 1
   nuinui_ownership_valid_sha "$authoritative_main" || return 1
   an "$lifecycle_release_repo" "$current_head" "$authoritative_main" || return 1
-  an "$lifecycle_release_repo" "$lifecycle_release_topic_checkpoint" "$authoritative_main" || return 1
+  an "$lifecycle_release_repo" "$lifecycle_release_saved_checkpoint" "$authoritative_main" || return 1
+  target_head=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
+    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
+  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
+    [ -z "$target_head" ] || return 1
+  else
+    [ "$target_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+  fi
+  [ -z "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ] || return 1
+  remote_state=$(rt "$lifecycle_release_repo" "$lifecycle_release_topic" \
+    "$lifecycle_release_saved_checkpoint") || return 1
+
+  fp "$lifecycle_release_repo" || return 1
+  authoritative_main2=$(om "$lifecycle_release_repo" 2>/dev/null) || return 1
+  [ "$authoritative_main2" = "$authoritative_main" ] || return 1
+  remote_state2=$(rt "$lifecycle_release_repo" "$lifecycle_release_topic" \
+    "$lifecycle_release_saved_checkpoint") || return 1
+  [ "$remote_state2" = "$remote_state" ] || return 1
+  current_branch=$(bn "$lifecycle_release_repo")
+  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null || true)
+  [ "$current_branch" = "$initial_branch" ] && [ "$current_head" = "$initial_head" ] || return 1
+  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  an "$lifecycle_release_repo" "$current_head" "$authoritative_main2" || return 1
+  an "$lifecycle_release_repo" "$lifecycle_release_saved_checkpoint" \
+    "$authoritative_main2" || return 1
+  case "$mode" in
+    named|rename)
+      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+      branch_head=$(git -C "$lifecycle_release_repo" rev-parse \
+        "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
+      ;;
+    canonical)
+      case "$lifecycle_release_lane" in
+        main) [ "$current_branch" = main ] || return 1 ;;
+        sub) [ -z "$current_branch" ] || return 1 ;;
+        *) return 1 ;;
+      esac
+      ;;
+  esac
+  target_head2=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
+    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
+  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
+    [ -z "$target_head2" ] || return 1
+  else
+    [ "$target_head2" = "$lifecycle_release_saved_checkpoint" ] || return 1
+  fi
+  [ -z "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]
+}
+
+lifecycle_release_emit_branch_mismatch() {
+  printf 'BLOCKED: release claimed branch mismatch\n'
+  printf 'lane=%s\nissue=%s\nclaimed_branch=%s\nactual_branch=%s\nhead=%s\n' \
+    "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" \
+    "${lifecycle_release_actual_branch:-DETACHED}" "$lifecycle_release_head"
+  printf 'checkpoint=%s\nclaim=%s\nreason=%s\n' \
+    "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim" \
+    "$lifecycle_release_branch_reason"
 }
 
 lifecycle_release_discover_tombstones() {
@@ -621,9 +708,12 @@ lifecycle_release_validate() {
       "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_base"
     return 1
   fi
-  lifecycle_release_topic_checkpoint=$(git -C "$lifecycle_release_repo" rev-parse \
+  lifecycle_release_topic_ref_missing=no
+  lifecycle_release_topic_checkpoint=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
     "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
-  if ! nuinui_ownership_valid_sha "$lifecycle_release_topic_checkpoint" ||
+  if [ -z "$lifecycle_release_topic_checkpoint" ]; then
+    lifecycle_release_topic_ref_missing=yes
+  elif ! nuinui_ownership_valid_sha "$lifecycle_release_topic_checkpoint" ||
     [ "$lifecycle_release_topic_checkpoint" != "$lifecycle_release_saved_checkpoint" ]; then
     echo 'BLOCKED: checkpoint mismatch'
     printf 'expected=%s\nactual=%s\n' "$lifecycle_release_topic_checkpoint" "$lifecycle_release_saved_checkpoint"
@@ -632,21 +722,50 @@ lifecycle_release_validate() {
     return 1
   fi
   lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || true)
-  if [ "$lifecycle_release_head" = "$lifecycle_release_topic_checkpoint" ] &&
-    [ "$(bn "$lifecycle_release_repo")" = "$lifecycle_release_topic" ]; then
+  lifecycle_release_actual_branch=$(bn "$lifecycle_release_repo")
+  [ -n "$lifecycle_release_actual_branch" ] || lifecycle_release_actual_branch=DETACHED
+  lifecycle_release_branch_reason=
+  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
     if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
-      echo 'BLOCKED: claim-checkout-mismatch'
-      printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
-        "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
+    else
+      lifecycle_release_branch_reason=missing-claimed-local-ref
+      if [ "$lifecycle_release_actual_branch" != DETACHED ] &&
+        lifecycle_release_prove_drift_checkout rename; then
+        return 0
+      fi
+    fi
+    lifecycle_release_emit_branch_mismatch
+    return 1
+  fi
+  if [ "$lifecycle_release_actual_branch" = "$lifecycle_release_topic" ]; then
+    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
+      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
+      lifecycle_release_emit_branch_mismatch
       return 1
     fi
   else
-    if ! lifecycle_release_prove_drift_checkout; then
-      echo 'BLOCKED: claim-checkout-mismatch'
-      printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
-        "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
+      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
+      lifecycle_release_emit_branch_mismatch
       return 1
     fi
+    case "$lifecycle_release_lane:$lifecycle_release_actual_branch" in
+      main:main|sub:DETACHED)
+        lifecycle_release_prove_drift_checkout canonical || {
+          lifecycle_release_branch_reason=checkout-branch-drift
+          lifecycle_release_emit_branch_mismatch
+          return 1
+        }
+        ;;
+      *)
+        lifecycle_release_prove_drift_checkout named || {
+          lifecycle_release_branch_reason=checkout-branch-drift
+          lifecycle_release_emit_branch_mismatch
+          return 1
+        }
+        ;;
+    esac
   fi
   if [ -n "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ]; then
     echo 'BLOCKED: mutation lock/state conflict'
