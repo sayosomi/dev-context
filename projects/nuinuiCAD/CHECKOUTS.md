@@ -393,12 +393,12 @@ E2E中にremote `main`が進んでもtested stateを途中更新しない。
 Canonicalなsuccessful Human E2E closure handoffは、必ず次の順序で行う。
 
 ```text
-nuinui-e2e-prepare cleanup
+nuinui-e2e-prepare cleanup <Issue> <tested-ref> <e2e-root>
 nuinui e2e-release <Issue> <tested-ref>
 nuinui-e2e-prepare closure-check <Issue>
 ```
 
-`cleanup`はprepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
+`cleanup <Issue> <tested-ref> <e2e-root>`はIssue/refに加えてexact rootをsession-generation identityとして照合し、prepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。完了時はGit dirへstrictな`version=1 / issue / ref / root`の`nuinui-e2e-cleanup-receipt`を先に保存する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
 
 `e2e-release <Issue> <tested-ref>`はcaller identityをmarkerと照合し、session metadataの不在、valid repository/origin、clean detached checkout、tested HEADをmutation前に要求する。fetch/prune後に同じproofを再検証し、current authoritative `origin/main`を取得する。Git dirへstrictな`version=1 / issue / ref`の`nuinui-e2e-release-receipt`をatomically write/replaceしてから安全に`origin/main`へdetachし、最後にmarkerを削除する。receipt writeに失敗した場合はmarkerを保持してBLOCKEDで停止する。
 
@@ -406,7 +406,7 @@ markerがない場合、同じcaller Issue/ref、strict receipt、session metada
 
 `nuinui-e2e-prepare closure-check <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
 
-`nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
+`nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup <Issue> <tested-ref> <e2e-root>`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
 
 ## E2E failure
 

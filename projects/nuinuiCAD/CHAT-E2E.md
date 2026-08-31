@@ -22,7 +22,7 @@ E2E chatを新しく作っただけでは`e2e` laneをclaimしない。tested co
 Canonicalなsuccessful closure handoffは、必ず次の順序で行う。
 
 ```text
-nuinui-e2e-prepare cleanup
+nuinui-e2e-prepare cleanup <Issue> <tested-ref> <e2e-root>
 nuinui e2e-release <Issue> <tested-ref>
 nuinui-e2e-prepare closure-check <Issue>
 ```
