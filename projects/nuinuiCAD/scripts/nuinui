@@ -228,7 +228,110 @@ release_restore_checkout() {
   [ "$(bn "$r")" = "$q" ] && [ "$(hh "$r")" = "$h" ] && cn "$r" || return 1
 }
 cl(){ local l r i s k q h d z n a;l=$1;r=$2;i=$(ip "$r");s=$(sp "$r");k=$(kp "$r");q=$(bn "$r");h=$(git -C "$r" rev-parse HEAD 2>/dev/null||true);d=$(git -C "$r" status --porcelain 2>/dev/null);echo "$l path=$r";echo "  branch=${q:-DETACHED}";echo "  head=$h";echo "  clean=$([ -z "$d" ]&&echo yes||echo no)";if [ -e "$k" ];then set -- $(nuinui_ownership_parse_lock "$k/state");[ $# = 6 ]&&echo "  state=BLOCKED reason=mutation-in-progress operation=$1 claim=$6"||echo '  state=BLOCKED reason=invalid-mutation-lock';return 1;fi;z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ -e "$s" ];then [ "$n" = 0 ]||{ echo '  state=BLOCKED reason=active-and-releasing-state-coexist';return 1;};set -- $(nuinui_ownership_parse_slot "$s/state");[ $# = 4 ]||{ echo '  state=BLOCKED reason=invalid-active-slot';return 1;};echo "  owner_issue=$1 owner_branch=$2 base=$3 claim=$4";[ "$q" = "$2" ]&&an "$r" "$3" "$h" 2>/dev/null||{ echo '  state=BLOCKED reason=claim-checkout-mismatch';return 1;};echo '  state=BUSY';return 0;fi;if [ "$n" != 0 ];then [ "$n" = 1 ]||{ echo '  state=BLOCKED reason=multiple-release-states';return 1;};set -- $(nuinui_ownership_parse_releasing "$z");[ $# = 5 ]||{ echo '  state=BLOCKED reason=invalid-release-state';return 1;};echo "  state=RELEASE-PENDING claim=$4 checkpoint=$5";return 0;fi;nuinui_ownership_validate_initialization "$i"||{ echo '  state=BLOCKED reason=durable-ownership-initialization-required';return 1;};a=$(am "$r");nuinui_ownership_valid_sha "$a"&&id "$l" "$r" "$a"||{ echo "  state=BLOCKED reason=invalid-idle-state origin_main=$a";return 1;};echo "  state=FREE origin_main=$a";}
-wt(){ a=$(printf "%s\n" "$(CDPATH= cd -- "$M"&&pwd -P)" "$(CDPATH= cd -- "$S"&&pwd -P)" "$(CDPATH= cd -- "$E"&&pwd -P)"|sort)||return 1;t=$(git -C "$M" worktree list --porcelain|sed -n "s/^worktree //p"|sort);echo worktrees:;git -C "$M" worktree list|sed "s/^/  /";[ "$a" = "$t" ];};pf(){  printf '%s\n' '===== NUINUI PREFLIGHT RESULT =====';z=0;gr "$M"&&cl main "$M"||z=1;gr "$S"&&cl sub "$S"||z=1;echo "e2e path=$E";gr "$E"||z=1;if [ "$z" = 0 ];then q=$(bn "$E");d=$(git -C "$E" status --porcelain);echo "  branch=${q:-DETACHED}";echo "  head=$(hh "$E")";echo "  clean=$([ -z "$d" ]&&echo yes||echo no) marker=$([ -f "$(mp "$E")" ]&&echo present||echo none)";[ ! -f "$(mp "$E")" ]||sed "s/^/    /" "$(mp "$E")";[ -z "$d" ]||z=1;fi;wt||z=1;[ "$z" = 0 ]&&{ echo 'PREFLIGHT PASS';return 0;};echo 'PREFLIGHT BLOCKED';return 1;}
+nuinui_validate_forensic_worktree() {
+  local f physical fixed_main fixed_sub fixed_e2e registered expected actual
+  f=$1
+  nuinui_forensic_reason=
+
+  case "$f" in
+    /*) ;;
+    *) nuinui_forensic_reason=non-absolute-path; return 1 ;;
+  esac
+  [ -d "$f" ] || {
+    nuinui_forensic_reason=missing-or-not-directory
+    return 1
+  }
+  physical=$(CDPATH= cd -- "$f" && pwd -P) || {
+    nuinui_forensic_reason=non-canonical-path
+    return 1
+  }
+  [ "$physical" = "$f" ] || {
+    nuinui_forensic_reason=non-canonical-path
+    return 1
+  }
+
+  fixed_main=$(CDPATH= cd -- "$M" && pwd -P) || {
+    nuinui_forensic_reason=registered-inventory-mismatch
+    return 1
+  }
+  fixed_sub=$(CDPATH= cd -- "$S" && pwd -P) || {
+    nuinui_forensic_reason=registered-inventory-mismatch
+    return 1
+  }
+  fixed_e2e=$(CDPATH= cd -- "$E" && pwd -P) || {
+    nuinui_forensic_reason=registered-inventory-mismatch
+    return 1
+  }
+  case "$physical" in
+    "$fixed_main"|"$fixed_sub"|"$fixed_e2e")
+      nuinui_forensic_reason=fixed-lane-path
+      return 1
+      ;;
+  esac
+
+  gr "$f" || {
+    nuinui_forensic_reason=not-registered-worktree
+    return 1
+  }
+  registered=$(git -C "$M" worktree list --porcelain | sed -n 's/^worktree //p')
+  if ! printf '%s\n' "$registered" | grep -Fqx "$f"; then
+    nuinui_forensic_reason=not-registered-worktree
+    return 1
+  fi
+  expected=$(printf '%s\n' "$fixed_main" "$fixed_sub" "$fixed_e2e" "$f" | sort)
+  actual=$(printf '%s\n' "$registered" | sort)
+  [ "$actual" = "$expected" ] || {
+    nuinui_forensic_reason=registered-inventory-mismatch
+    return 1
+  }
+}
+
+wt(){
+  a=$(printf "%s\n" "$(CDPATH= cd -- "$M"&&pwd -P)" "$(CDPATH= cd -- "$S"&&pwd -P)" "$(CDPATH= cd -- "$E"&&pwd -P)"|sort)||return 1
+  t=$(git -C "$M" worktree list --porcelain|sed -n "s/^worktree //p"|sort)
+  echo worktrees:
+  git -C "$M" worktree list|sed "s/^/  /"
+  if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
+    [ "${nuinui_forensic_preflight_result:-1}" = 0 ]
+  else
+    [ "$a" = "$t" ]
+  fi
+}
+
+pf(){
+  printf '%s\n' '===== NUINUI PREFLIGHT RESULT ====='
+  z=0
+  nuinui_forensic_preflight_result=0
+  if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
+    nuinui_validate_forensic_worktree "${nuinui_forensic_worktree:-}" || nuinui_forensic_preflight_result=1
+  fi
+  gr "$M"&&cl main "$M"||z=1
+  gr "$S"&&cl sub "$S"||z=1
+  echo "e2e path=$E"
+  gr "$E"||z=1
+  if [ "$z" = 0 ];then
+    q=$(bn "$E");d=$(git -C "$E" status --porcelain)
+    echo "  branch=${q:-DETACHED}"
+    echo "  head=$(hh "$E")"
+    echo "  clean=$([ -z "$d" ]&&echo yes||echo no) marker=$([ -f "$(mp "$E")" ]&&echo present||echo none)"
+    [ ! -f "$(mp "$E")" ]||sed "s/^/    /" "$(mp "$E")"
+    [ -z "$d" ]||z=1
+  fi
+  wt||z=1
+  if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
+    if [ "$nuinui_forensic_preflight_result" = 0 ]; then
+      echo 'forensic_exception=active'
+    else
+      echo 'forensic_exception=BLOCKED'
+      echo "forensic_reason=$nuinui_forensic_reason"
+    fi
+    echo "forensic_worktree=$nuinui_forensic_worktree"
+    [ "$nuinui_forensic_preflight_result" = 0 ] || z=1
+  fi
+  [ "$z" = 0 ]&&{ echo 'PREFLIGHT PASS';return 0;}
+  echo 'PREFLIGHT BLOCKED'
+  return 1
+}
 cv(){ local l i a q r z h; l=$1;i=$2;a=$3;q=$4;il "$l"&&nuinui_ownership_valid_issue "$i"&&nuinui_ownership_valid_sha "$a"&&nuinui_ownership_validate_issue_branch "$i" "$q"||return 2;r=$(lr "$l");gr "$r"&&ao "$r" "$RT"&&cn "$r"||return 1;z=$(bn "$r");case $l in main)[ "$z" = main ];;sub)[ -z "$z" ];;esac||return 1;fm "$r"&&[ "$(om "$r")" = "$a" ]||return 1;git -C "$r" show-ref --verify --quiet "refs/heads/$q"&&return 1;[ -z "$(ab "$r" "$q")" ]||return 1;h=$(hh "$r");[ "$h" = "$a" ]||an "$r" "$h" "$a"||return 1;echo VERIFIED;};vr(){  r=$(lr "$1")||return 2;nuinui_ownership_validate_initialization "$(ip "$r")"&&[ ! -e "$(sp "$r")" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;cv "$@";};li(){  l=$1;il "$l"||return;r=$(lr "$l");gr "$r"&&ao "$r" "$RT"||return 1;i=$(ip "$r");if [ -e "$i" ];then nuinui_ownership_validate_initialization "$i"&&{ echo 'ALREADY INITIALIZED';return 0;};return 1;fi;[ ! -e "$(sp "$r")" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;c=$(gc);lo "$r" init "$c" - - - -||return 1;fm "$r"||return 1;a=$(om "$r");id "$l" "$r" "$a"||return 1;wa "$i" 'version=1\n'&&ul "$r" "$c"||return 1;echo 'LANE INITIALIZED';}
 cs(){  l=$1;i=$2;a=$3;q=$4;r=$(lr "$l");cv "$@" >/dev/null||return $?;fm "$r"||return 1;[ "$(om "$r")" = "$a" ]||return 1;h=$(hh "$r");if [ "$h" != "$a" ];then if [ "$l" = main ];then git -C "$r" merge --ff-only origin/main >/dev/null;else sd "$r" "$a";fi||return 1;fi;git -C "$r" switch -c "$q" "$a" >/dev/null||return 1;echo STARTED;};st(){ local l i a q r c s; l=$1;i=$2;a=$3;q=$4;vr "$@" >/dev/null||return $?;r=$(lr "$l");c=$(gc);lo "$r" start "$c" "$i" "$q" "$a" -||return 1;s=$(sp "$r");mkdir "$s"||return 1;wa "$s/state" "version=1\nissue=$i\nbranch=$q\nbase=$a\nclaim=$c\n"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = start-after-slot ]&&return 97;cs "$@"||{ id "$l" "$r" "$a"&&! git -C "$r" show-ref --verify --quiet "refs/heads/$q"&&{ rm -rf "$s";ul "$r" "$c" >/dev/null 2>&1;};return 1;};ul "$r" "$c"||return 1;echo "  claim=$c";}
 rt(){ local r q h t s remote_head remote_ref; r=$1;q=$2;h=$3;t=$(git -C "$r" ls-remote --exit-code --heads origin "refs/heads/$q" 2>/dev/null);s=$?;case $s in 0)remote_head=$(printf '%s\n' "$t"|awk 'NR==1{print $1}');remote_ref=$(printf '%s\n' "$t"|awk 'NR==1{print $2}');[ "$remote_head" = "$h" ]&&[ "$remote_ref" = "refs/heads/$q" ]&&[ -z "$(printf '%s\n' "$t"|awk 'NR>1{print}')" ]||return 1;echo pushed;;2)[ -z "$t" ]&&echo absent||return 1;;*)return 1;;esac;};
@@ -2681,7 +2784,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.14
+V=1.6.15
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
 
 nuinui_validate_public_issue_branch() {
@@ -2755,6 +2858,14 @@ nuinui_run_public() {
   nuinui_public_output=
   nuinui_public_rc=0
   nuinui_public_output=$( "$@" 2>&1 ) || nuinui_public_rc=$?
+  if [ "$nuinui_public_rc" = 0 ] && [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
+    case "$nuinui_public_name" in
+      begin|start)
+        nuinui_public_output=$(printf '%s\nforensic_exception=active\nforensic_worktree=%s' \
+          "$nuinui_public_output" "$nuinui_forensic_worktree")
+        ;;
+    esac
+  fi
   if [ -n "$nuinui_public_output" ]; then
     printf '%s\n' "$nuinui_public_output"
   else
@@ -2762,6 +2873,9 @@ nuinui_run_public() {
   fi
   return "$nuinui_public_rc"
 }
+
+nuinui_forensic_worktree=
+nuinui_forensic_option_active=0
 
 case "$1" in
   version)
@@ -2774,7 +2888,13 @@ case "$1" in
     [ -n "$1" ] && exit 0 || exit 2
     ;;
   preflight)
-    [ "$#" = 1 ] || { echo 'Usage: nuinui preflight'; exit 2; }
+    if [ "$#" = 3 ] && [ "$2" = --forensic-worktree ]; then
+      nuinui_forensic_worktree=$3
+      nuinui_forensic_option_active=1
+    elif [ "$#" != 1 ]; then
+      echo 'Usage: nuinui preflight [--forensic-worktree <absolute-path>]'
+      exit 2
+    fi
     nuinui_run_public preflight pf
     exit $?
     ;;
@@ -2790,13 +2910,25 @@ case "$1" in
     exit $?
     ;;
   begin)
-    [ "$#" = 6 ] || { echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>'; exit 2; }
+    if [ "$#" = 8 ] && [ "$7" = --forensic-worktree ]; then
+      nuinui_forensic_worktree=$8
+      nuinui_forensic_option_active=1
+    elif [ "$#" != 6 ]; then
+      echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123> [--forensic-worktree <absolute-path>]'
+      exit 2
+    fi
     nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public begin lifecycle_begin "$2" "$3" "$4" "$5" "$6"
     exit $?
     ;;
   start)
-    [ "$#" = 5 ] || { echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    if [ "$#" = 7 ] && [ "$6" = --forensic-worktree ]; then
+      nuinui_forensic_worktree=$7
+      nuinui_forensic_option_active=1
+    elif [ "$#" != 5 ]; then
+      echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]'
+      exit 2
+    fi
     nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public start lifecycle_start_command "$2" "$3" "$4" "$5"
     exit $?

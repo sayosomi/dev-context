@@ -20,10 +20,24 @@ Hard limits:
 
 - implementationは同時に最大2 track。`main`と`sub`を各1 trackだけ使う。
 - Manual E2Eは同時に最大1 track。`e2e`だけを使う。
-- 4つ目のworktree / clone / CI-repro checkoutを作らない。
+- 4つ目のexecution / implementation / E2E laneを作らない。下記のHuman-authorized forensic worktree exceptionだけはinventory上の1つの追加worktreeを許可する。
 - `e2e`をimplementationへ転用しない。
 - `main` / `sub`が両方BUSYなら、新しいimplementationは開始しない。
 - implementation lane数はcapacity上限でありutilization targetではない。parallel admissionを満たすWorkがなければFREE laneをidleのまま残す。
+
+## Human-authorized forensic worktree exception
+
+通常policyは引き続き、次の3つのfixed execution laneだけを許可する。
+
+- `main` implementation lane;
+- `sub` implementation lane;
+- `e2e` Manual E2E lane。
+
+forensic checkoutの作成・利用には、事前の明示的なHuman authorizationが必要である。`--forensic-worktree <absolute-path>` flagは、既にHumanがauthorizedしたcheckoutをcurrent invocationのinventory exceptionとして認識するだけであり、作成・利用をauthorizeしない。
+
+current `preflight` / `begin` / `start` invocationで認識できるsupplied registered forensic worktreeは正確に1つだけである。persistent allowlist、marker、config、receipt、environment settingは存在せず、directory nameやbranch nameのnaming conventionもexceptionを付与しない。forensic worktreeは`main` / `sub` / `e2e`にならず、execution capacity・implementation capacity・E2E capacityを消費も追加もしない。また、durable implementation metadataをownerできない。
+
+exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、fixed lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、main/sub/e2eに対する通常のlane safety checkはすべて引き続き適用される。
 
 ## Human terminal operations
 

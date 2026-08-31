@@ -60,9 +60,11 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.14`。
+current standalone helper version: `1.6.15`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
+
+`preflight`、`begin`、`start`だけは、末尾のone-shot `--forensic-worktree <absolute-path>` pairを受け付ける。これはHuman-authorizedな、同じnuinuiCAD repositoryにregisteredされた正確に1つのextra worktreeをcurrent invocationのinventory exceptionとして認識するだけで、allowlistやmarkerなどのdurable stateを作らず、worktreeをexecution laneにはしない。pathはcanonical absolute directoryで、fixed laneではなく、registered worktree inventoryがfixed main / sub / e2e + supplied pathと完全一致しなければならない。default no-option behaviorは引き続きexact three-worktree strictnessであり、継承環境変数やdirectory nameだけでexceptionを有効化しない。成功したactive invocationは`forensic_exception=active`とsupplied pathを表示し、invalid requestはmutation前にactionableな`forensic_exception=BLOCKED`としてfail closedする。
 
 `nuinui preflight`のHuman copy boundaryは、`===== NUINUI PREFLIGHT RESULT =====`からコピーを開始し、`PREFLIGHT PASS`または`PREFLIGHT BLOCKED`の直後で停止する。ヘッダはplain-textの出力境界だけを示し、lane / preflight semanticsは変更しない。
 
@@ -145,11 +147,11 @@ current commands:
 
 | Command | Purpose |
 | --- | --- |
-| `nuinui preflight` | fixed main / sub / e2e 3-lane stateとdurable ownershipのread-only audit |
+| `nuinui preflight [--forensic-worktree <absolute-path>]` | fixed main / sub / e2e 3-lane stateとdurable ownershipをread-only auditし、必要な場合だけHuman-authorized forensic inventory exceptionをone-shotで認識 |
 | `nuinui verify <main\|sub> <SAY-123> <expected-base-sha> <branch>` | initialized FREE laneのstart preconditionをread-only検証 |
 | `nuinui lane-init <main\|sub>` | proven exact idle fixed laneへpermanent v1 ownership schema markerをbootstrap |
-| `nuinui begin <main\|sub> <SAY-123> <expected-base-sha> <branch> <FREE\|SAY-123>` | full 3-lane audit、target FREE、exact peer occupancy確認とnew generation startを1 Human handoffで実行。直後の同一requestだけはexact duplicateとしてread-only認識 |
-| `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch>` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始 |
+| `nuinui begin <main\|sub> <SAY-123> <expected-base-sha> <branch> <FREE\|SAY-123> [--forensic-worktree <absolute-path>]` | full 3-lane audit、target FREE、exact peer occupancy確認とnew generation startを1 Human handoffで実行。直後の同一requestだけはexact duplicateとしてread-only認識。末尾optionはone-shot inventory exception |
+| `nuinui start <main\|sub> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始。末尾optionはone-shot inventory exception |
 | `nuinui resume <main\|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
 | `nuinui release <main\|sub> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <main\|sub> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |

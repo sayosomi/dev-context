@@ -61,7 +61,7 @@ Hard rule:
 - implementationはLuna xhighでmain/sub最大2 track;
 - Manual E2Eはe2e最大1 track;
 - Manual E2EのExecutorはHumanのみ。LunaをE2E executionに使わない;
-- 4つ目のworktree / clone / checkoutを作らない;
+- 4つ目のexecution lane / implementation lane / E2E laneは作らない。Human-authorized forensic worktreeは[`CHECKOUTS.md`](./CHECKOUTS.md)の明示的なspecial inventory exceptionで認識される場合に限り1つだけ存在できるが、3つのfixed laneにcapacityを追加しない;
 - active implementation sliceはBase checkpoint SHAを固定し、integration checkpointまで他lane / remote mainの変更を取り込まない;
 - E2Eでimplementation failureが出たらmain/subのFREE laneへfixを戻し、e2e checkoutでは修正しない。
 

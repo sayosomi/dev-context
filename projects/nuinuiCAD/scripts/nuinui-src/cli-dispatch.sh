@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.14
+V=1.6.15
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
 
 nuinui_validate_public_issue_branch() {
@@ -74,6 +74,14 @@ nuinui_run_public() {
   nuinui_public_output=
   nuinui_public_rc=0
   nuinui_public_output=$( "$@" 2>&1 ) || nuinui_public_rc=$?
+  if [ "$nuinui_public_rc" = 0 ] && [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
+    case "$nuinui_public_name" in
+      begin|start)
+        nuinui_public_output=$(printf '%s\nforensic_exception=active\nforensic_worktree=%s' \
+          "$nuinui_public_output" "$nuinui_forensic_worktree")
+        ;;
+    esac
+  fi
   if [ -n "$nuinui_public_output" ]; then
     printf '%s\n' "$nuinui_public_output"
   else
@@ -81,6 +89,9 @@ nuinui_run_public() {
   fi
   return "$nuinui_public_rc"
 }
+
+nuinui_forensic_worktree=
+nuinui_forensic_option_active=0
 
 case "$1" in
   version)
@@ -93,7 +104,13 @@ case "$1" in
     [ -n "$1" ] && exit 0 || exit 2
     ;;
   preflight)
-    [ "$#" = 1 ] || { echo 'Usage: nuinui preflight'; exit 2; }
+    if [ "$#" = 3 ] && [ "$2" = --forensic-worktree ]; then
+      nuinui_forensic_worktree=$3
+      nuinui_forensic_option_active=1
+    elif [ "$#" != 1 ]; then
+      echo 'Usage: nuinui preflight [--forensic-worktree <absolute-path>]'
+      exit 2
+    fi
     nuinui_run_public preflight pf
     exit $?
     ;;
@@ -109,13 +126,25 @@ case "$1" in
     exit $?
     ;;
   begin)
-    [ "$#" = 6 ] || { echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>'; exit 2; }
+    if [ "$#" = 8 ] && [ "$7" = --forensic-worktree ]; then
+      nuinui_forensic_worktree=$8
+      nuinui_forensic_option_active=1
+    elif [ "$#" != 6 ]; then
+      echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123> [--forensic-worktree <absolute-path>]'
+      exit 2
+    fi
     nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public begin lifecycle_begin "$2" "$3" "$4" "$5" "$6"
     exit $?
     ;;
   start)
-    [ "$#" = 5 ] || { echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    if [ "$#" = 7 ] && [ "$6" = --forensic-worktree ]; then
+      nuinui_forensic_worktree=$7
+      nuinui_forensic_option_active=1
+    elif [ "$#" != 5 ]; then
+      echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]'
+      exit 2
+    fi
     nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public start lifecycle_start_command "$2" "$3" "$4" "$5"
     exit $?
