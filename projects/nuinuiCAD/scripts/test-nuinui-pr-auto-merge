@@ -19,6 +19,7 @@ fake_gh() {
 
   if [ "$1" = pr ] && [ "$2" = view ]; then
     n=$(next_count view)
+    url_pr=$PR_NUMBER
     case "$scenario" in
       api-error)
         echo 'fake gh: pull request API unavailable' >&2
@@ -87,6 +88,15 @@ fake_gh() {
         mergeability=MERGEABLE
         auto=none
         ;;
+      duplicate|duplicate-checks-pass|reserved-integration-mismatch|reserved-wrong-main|reserved-wrong-head|reserved-wrong-pr|auto-squash|closed|merged|draft|non-main-base)
+        actual_head=$HEAD
+        actual_main=$MAIN
+        state=OPEN
+        draft=false
+        base=main
+        mergeability=MERGEABLE
+        auto=none
+        ;;
       failure-*|checks-api-error|empty-actions-pending|empty-actions-complete|empty-none-required|empty-unresolved)
         actual_head=$HEAD
         actual_main=$MAIN
@@ -101,18 +111,28 @@ fake_gh() {
         return 42
         ;;
     esac
+    case "$scenario" in
+      auto-squash) auto=SQUASH ;;
+      closed) state=CLOSED;auto=MERGE ;;
+      merged) state=MERGED;auto=MERGE ;;
+      draft) draft=true;auto=MERGE ;;
+      non-main-base) base=develop;auto=MERGE ;;
+      reserved-integration-mismatch|reserved-wrong-main|reserved-wrong-head) auto=MERGE ;;
+      reserved-wrong-pr) url_pr=418;auto=MERGE ;;
+      *) ;;
+    esac
     if [ "$scenario" = toctou-complete ] && [ "$n" -ge 2 ]; then
       :
     elif [ "$scenario" = mutation-race ] && [ -f "$root/mutation-complete" ]; then
       :
-    elif { [ "$scenario" = success ] || [ "$scenario" = up-to-date-pending ] || [ "$scenario" = empty-actions-pending ]; } && [ "$n" -ge 3 ]; then
+    elif { [ "$scenario" = success ] || [ "$scenario" = up-to-date-pending ] || [ "$scenario" = empty-actions-pending ] || [ "$scenario" = duplicate ] || [ "$scenario" = duplicate-checks-pass ]; } && [ "$n" -ge 3 ]; then
       auto=MERGE
     elif [ "$scenario" = readback-fails ] && [ "$n" -ge 3 ]; then
       echo 'fake gh: read-back API unavailable' >&2
       return 43
     fi
-    printf 'PR_ID\t%s\t%s\t%s\t%s\t%s\t%s\t%s\thttps://github.example/pr/%s\n' \
-      "$state" "$draft" "$base" "$actual_main" "$actual_head" "$mergeability" "$auto" "$PR_NUMBER"
+    printf 'PR_ID\t%s\t%s\t%s\t%s\t%s\t%s\t%s\thttps://github.example/pull/%s\n' \
+      "$state" "$draft" "$base" "$actual_main" "$actual_head" "$mergeability" "$auto" "$url_pr"
     return 0
   fi
 
@@ -135,7 +155,15 @@ fake_gh() {
           printf 'CI\tpending\n'
         fi
         ;;
-      mutation-error|success|up-to-date-pending|main-advances-before-mutation|readback-fails)
+      duplicate-checks-pass)
+        checks_count=$(next_count checks)
+        if [ "$checks_count" -le 2 ]; then
+          printf 'CI\tpending\n'
+        else
+          printf 'CI\tpass\n'
+        fi
+        ;;
+      mutation-error|success|up-to-date-pending|main-advances-before-mutation|readback-fails|duplicate)
         printf 'CI\tpending\n'
         ;;
       failure-failure|failure-cancelled|failure-skipped|failure-unknown)
@@ -177,7 +205,7 @@ fake_gh() {
         ;;
       repos/sayosomi/nuinuiCAD/compare/*)
         case "$scenario" in
-          pr-behind-current-main)
+          pr-behind-current-main|reserved-integration-mismatch)
             printf 'behind\t%s\t%s\t0\t1\n' "$MAIN" "$BASE_EVIDENCE"
             ;;
           *)
@@ -261,7 +289,7 @@ fake_gh() {
         echo 'fake gh: reservation mutation unavailable' >&2
         return 48
         ;;
-      success|up-to-date-pending|readback-fails|empty-actions-pending)
+      success|up-to-date-pending|readback-fails|empty-actions-pending|duplicate|duplicate-checks-pass)
         printf '{"data":{"enablePullRequestAutoMerge":{"clientMutationId":"fake"}}}\n'
         return 0
         ;;
@@ -298,6 +326,8 @@ HEAD=1111111111111111111111111111111111111111
 MAIN=2222222222222222222222222222222222222222
 ADVANCED_MAIN=3333333333333333333333333333333333333333
 BASE_EVIDENCE=4444444444444444444444444444444444444444
+OTHER_HEAD=5555555555555555555555555555555555555555
+OTHER_MAIN=6666666666666666666666666666666666666666
 
 fail() { echo "SELFTEST FAIL: $*" >&2; exit 1; }
 assert_contains() {
@@ -380,6 +410,72 @@ run_failure() {
   cat "$CASE_ROOT/ops"
 }
 
+run_failure_with_args() {
+  name=$1
+  scenario=$2
+  expected=$3
+  expected_head=$4
+  expected_main=$5
+  prepare_case "$scenario"
+  if output=$(NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$CASE_ROOT/context" NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+    FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
+    "$HELPER" pr-auto-merge "$PR_NUMBER" "$expected_head" "$expected_main" 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    rc=$?
+  fi
+  [ "$rc" -ne 0 ] || fail "$name returned zero"
+  [ -n "$output" ] || fail "$name produced no diagnostic"
+  assert_first_line_classified "$output" "$name"
+  assert_contains "$output" "$expected" "$name did not include expected diagnostic"
+  if printf '%s\n' "$output" | grep -Fq 'AUTO-MERGE ALREADY RESERVED'; then
+    fail "$name reported already-reserved success despite a nonzero exit"
+  fi
+  assert_no_direct_merge "$CASE_ROOT/ops" "$name"
+  assert_no_graphql "$CASE_ROOT/ops" "$name"
+}
+
+run_duplicate() {
+  name=$1
+  scenario=$2
+  prepare_case "$scenario"
+  if output=$(NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$CASE_ROOT/context" NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+    FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
+    "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
+    :
+  else
+    printf '%s\n' "$output"
+    fail "$name initial reservation failed"
+  fi
+  assert_success_envelope "$name initial reservation" "$output"
+  [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name initial reservation did not invoke GraphQL exactly once"
+  checks_before=$(grep -Ec '^pr checks([[:space:]]|$)' "$CASE_ROOT/ops" || true)
+  if output=$(NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$ROOT" NUINUI_SUB_WT="$ROOT" NUINUI_E2E_WT="$ROOT" \
+    NUINUI_SELFTEST_RESULT_REPO="$CASE_ROOT/context" NUINUI_GH_BIN="$FAKE_GH" NUINUI_FAKE_GH=1 FAKE_GH_ROOT="$CASE_ROOT" \
+    FAKE_GH_SCENARIO="$scenario" PR_NUMBER="$PR_NUMBER" HEAD="$HEAD" MAIN="$MAIN" \
+    ADVANCED_MAIN="$ADVANCED_MAIN" BASE_EVIDENCE="$BASE_EVIDENCE" \
+    "$HELPER" pr-auto-merge "$PR_NUMBER" "$HEAD" "$MAIN" 2>&1); then
+    :
+  else
+    printf '%s\n' "$output"
+    fail "$name duplicate unexpectedly failed"
+  fi
+  expected=$(printf 'AUTO-MERGE ALREADY RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE\nmutation=no-op' \
+    "$PR_NUMBER" "$HEAD" "$MAIN")
+  [ "$(without_command_result_footer "$output")" = "$expected" ] || fail "$name duplicate envelope mismatch"
+  [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name duplicate invoked GraphQL"
+  checks_after=$(grep -Ec '^pr checks([[:space:]]|$)' "$CASE_ROOT/ops" || true)
+  [ "$checks_after" = "$checks_before" ] || fail "$name duplicate invoked required-check discovery"
+  assert_no_direct_merge "$CASE_ROOT/ops" "$name duplicate"
+  duplicate_last_result=$(last_result_for_case "$scenario")
+  assert_contains "$duplicate_last_result" 'mutation=no' "$name duplicate durable result was not classified as no mutation"
+}
+
 run_success() {
   name=$1
   scenario=$2
@@ -440,6 +536,9 @@ run_failure 'already complete at command start' complete-start \
   'BLOCKED: all required checks are already complete'
 assert_no_graphql "$ROOT/complete-start/ops" 'already complete at command start'
 
+run_duplicate 'exact duplicate reservation' duplicate
+run_duplicate 'duplicate after required checks progress' duplicate-checks-pass
+
 run_failure 'TOCTOU pending to complete' toctou-complete \
   'BLOCKED: Auto-merge reservation precondition changed before mutation'
 assert_contains "$output" 'BLOCKED: all required checks are already complete' 'TOCTOU output did not identify completion'
@@ -473,6 +572,33 @@ run_failure 'reviewed head mismatch' head-mismatch \
   "expected_head=$HEAD"
 assert_contains "$output" 'actual_head=9999999999999999999999999999999999999999' 'head mismatch did not expose actual head'
 assert_contains "$(cat "$ROOT/head-mismatch/ops")" 'pr view' 'head mismatch did not inspect the PR'
+
+run_failure 'existing non-MERGE reservation' auto-squash \
+  'BLOCKED: Auto-merge already configured'
+
+run_failure 'already-reserved wrong PR number' reserved-wrong-pr \
+  'BLOCKED: PR number mismatch'
+
+run_failure_with_args 'already-reserved wrong expected head' reserved-wrong-head \
+  "expected_head=$OTHER_HEAD" "$OTHER_HEAD" "$MAIN"
+
+run_failure_with_args 'already-reserved wrong expected main' reserved-wrong-main \
+  "expected_main=$OTHER_MAIN" "$HEAD" "$OTHER_MAIN"
+
+run_failure 'already-reserved closed PR' closed \
+  'BLOCKED: PR is not OPEN'
+
+run_failure 'already-reserved merged PR' merged \
+  'BLOCKED: PR is not OPEN'
+
+run_failure 'already-reserved draft PR' draft \
+  'BLOCKED: PR is a draft'
+
+run_failure 'already-reserved non-main base' non-main-base \
+  'BLOCKED: PR base branch mismatch'
+
+run_failure 'already-reserved integration mismatch' reserved-integration-mismatch \
+  'BLOCKED: PR is behind current main; integration required'
 
 run_failure 'expected main mismatch' main-mismatch \
   "expected_main=$MAIN"
