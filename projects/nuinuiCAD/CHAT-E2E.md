@@ -42,14 +42,15 @@ confirmed Manual E2E implementation failureは次のtransitionで処理する。
 E2E FAIL confirmed
 -> preserve Manual E2E: Failed evidence
 -> remove `manual_e2e_only`
--> Linear status = Todo while no new implementation lane is assigned
+-> Linear status = Todo
+-> remain Todo during fix contract / re-audit / dependency organization / rerun-plan synchronization
 -> synchronize focused contract / fix / rerun requirements
 -> later select a currently FREE main/sub lane
 -> start a new durable implementation generation
 -> only after canonical begin/start success change status to In Progress
 ```
 
-pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後は新しいimplementation laneが未割当の間`Todo`に保ち、focused contract / prerequisite自体がPending / Blockedなら既存のreadiness precedenceに従って`Backlog`とする。fixはFREEなmain/sub implementation laneで新しいgenerationとして開始し、successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
+pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後は、fix contract、re-audit、dependency organization、rerun-plan synchronizationを行っている間も`Todo`に保つ。laterにFREEなmain/sub implementation laneを選択し、新しいgenerationをcanonical begin/startで開始する。successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
 
 ## Human E2E closure handoff
 

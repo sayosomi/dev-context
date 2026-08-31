@@ -221,10 +221,12 @@ confirmed Manual E2E implementation failure:
 1. `manual_e2e_only`を外す;
 2. `Manual E2E: Failed` evidence維持;
 3. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
-4. new implementation laneが未割当の間は、Ready / unblockedなretryのstatusを`Todo`にする。focused contract / prerequisite自体がPending / Blockedなら既存のreadiness precedenceに従い`Backlog`とし、いずれも`In Progress`にはしない;
+4. new implementation laneが未割当の間はstatusを`Todo`に保ち、fix contract / re-audit / dependency organization / rerun-plan synchronization中も`Todo`とする;
 5. laterにcurrently `FREE`なmain/sub laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
 6. fix merge後にrequired E2Eだけが残れば`manual_e2e_only` + `In Review`へ戻し、同じrelease-before-E2E barrierを適用;
 7. new exact tested commitでaffected E2E rerun。
+
+これはconfirmed Manual E2E implementation failureからnew generation startまでのnarrow #129 exceptionであり、unrelated Pending / Blocked Issueの既存Backlog readiness precedenceを変更しない。
 
 E2E failure / re-auditだけでIn Progressへ進めない。e2e checkoutをimplementationへ変えない。
 
