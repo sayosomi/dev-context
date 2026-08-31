@@ -176,6 +176,28 @@ git -C "$S" diff --name-only -z "$MAIN_HEAD" "$SUCCESS_HEAD" > "$effective_files
 cmp -s "$effective_files" "$MANIFEST_OK" || fail 'success effective file set mismatch'
 [ -z "$(git -C "$S" status --porcelain)" ] || fail 'success worktree dirty'
 
+setup_case receipt-write-failure
+RECEIPT_FAILURE_PATH=$(git -C "$S" rev-parse --absolute-git-dir)/nuinui-integrate-clean-receipt-v1
+mkdir "$RECEIPT_FAILURE_PATH"
+run_failure receipt-write-failure 'ERROR: pushed integration lane state could not be proven' \
+  helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK"
+assert_contains "$LAST_OUTPUT" 'reason=completed integration receipt could not be persisted' \
+  'receipt persistence failure reason missing'
+RECEIPT_FAILURE_HEAD=$(git -C "$S" rev-parse HEAD)
+[ "$RECEIPT_FAILURE_HEAD" != "$TOPIC" ] || fail 'receipt persistence failure did not preserve local merge commit'
+set -- $(git -C "$S" rev-list --parents -n 1 "$RECEIPT_FAILURE_HEAD")
+[ "$#" = 3 ] || fail 'receipt persistence failure local commit is not a merge'
+[ "$2" = "$TOPIC" ] || fail 'receipt persistence failure first parent mismatch'
+[ "$3" = "$MAIN_HEAD" ] || fail 'receipt persistence failure second parent mismatch'
+remote_topic=$(git -C "$S" ls-remote --heads origin refs/heads/sayosomi/say-89-integration-clean-test |
+  awk 'NR==1{print $1}')
+[ "$remote_topic" = "$RECEIPT_FAILURE_HEAD" ] || fail 'receipt persistence failure changed remote topic unexpectedly'
+[ -d "$RECEIPT_FAILURE_PATH" ] || fail 'receipt persistence failure rewrote receipt target'
+[ -z "$(git -C "$S" status --porcelain)" ] || fail 'receipt persistence failure worktree dirty'
+LAST_RESULT_OUT=$(helper last-result) || fail 'receipt persistence failure last-result failed'
+assert_contains "$LAST_RESULT_OUT" 'command=integrate-clean' 'receipt persistence failure command result missing'
+assert_contains "$LAST_RESULT_OUT" 'mutation=yes' 'receipt persistence failure mutation classification missing'
+
 setup_case exact-rerun
 make_counting_verifier
 EXACT_SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK") ||

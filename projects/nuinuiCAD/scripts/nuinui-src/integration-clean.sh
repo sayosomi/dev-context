@@ -661,7 +661,8 @@ integration_clean_command() {
   if ! integration_clean_receipt_write "$repo" "$lane" "$issue" "$claim" \
     "$branch" "$base" "$expected_topic" "$expected_main" "$head" \
     "$verifier" "$manifest" "$file_set"; then
-    echo 'ERROR: completed integration receipt could not be persisted'
+    echo 'ERROR: pushed integration lane state could not be proven'
+    echo 'reason=completed integration receipt could not be persisted'
     printf 'lane=%s\nissue=%s\nbranch=%s\nprior_topic=%s\nhead=%s\nintegration_watermark=%s\nclaim=%s\ntopic_remote=%s\nclean=yes\n' \
       "$lane" "$issue" "$branch" "$expected_topic" "$head" \
       "$expected_main" "$claim" "$post_topic"
