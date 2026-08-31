@@ -473,6 +473,19 @@ lifecycle_release_prove_drift_checkout() {
   an "$lifecycle_release_repo" "$lifecycle_release_topic_checkpoint" "$authoritative_main" || return 1
 }
 
+lifecycle_release_discover_tombstones() {
+  local discovered
+
+  lifecycle_release_tombstones=
+  lifecycle_release_tombstone_discovery_ok=
+  [ -n "$lifecycle_release_git_dir" ] || return 1
+  discovered=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  if [ -n "$discovered" ]; then
+    lifecycle_release_tombstones=$(printf '%s\n' "$discovered" | LC_ALL=C sort) || return 1
+  fi
+  lifecycle_release_tombstone_discovery_ok=yes
+}
+
 lifecycle_release_prove_duplicate() {
   local receipt receipt_lane receipt_issue receipt_branch receipt_base receipt_checkpoint receipt_claim
   local current_branch current_head authoritative_main
@@ -487,7 +500,9 @@ lifecycle_release_prove_duplicate() {
   [ -n "$lifecycle_release_git_dir" ] || return 1
   [ ! -e "$lifecycle_release_slot_dir" ] || return 1
   [ ! -e "$lifecycle_release_lock_dir" ] || return 1
-  [ -z "$(rds "$lifecycle_release_repo")" ] || return 1
+  [ "$lifecycle_release_tombstone_discovery_ok" = yes ] || return 1
+  [ -z "$lifecycle_release_tombstones" ] || return 1
+  nuinui_ownership_validate_initialization "$(ip "$lifecycle_release_repo")" || return 1
 
   receipt=$(rr "$lifecycle_release_repo") || return 1
   [ -f "$receipt" ] || return 1
@@ -535,7 +550,15 @@ lifecycle_release_validate() {
   fi
   lifecycle_release_tombstones=
   lifecycle_release_duplicate_proven=
-  [ -z "$lifecycle_release_git_dir" ] || lifecycle_release_tombstones=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null)
+  lifecycle_release_tombstone_discovery_ok=
+  if [ -n "$lifecycle_release_git_dir" ]; then
+    lifecycle_release_discover_tombstones || {
+      echo 'BLOCKED: release-pending state discovery failed'
+      printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' \
+        "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+      return 1
+    }
+  fi
 
   if [ -n "$lifecycle_release_tombstones" ]; then
     echo 'BLOCKED: mutation lock/state conflict'

@@ -51,6 +51,7 @@ release_snapshot() {
   printf 'slot=%s\n' "$(read_optional_file "$(slot_state "$release_snapshot_lane")")"
   printf 'lock=%s\n' "$(read_optional_file "$(gitdir "$release_snapshot_lane")/nuinui-implementation-lock/state")"
   printf 'tombstones=%s\n' "$(tombstone_state "$release_snapshot_lane")"
+  printf 'initialization=%s\n' "$(read_optional_file "$(gitdir "$release_snapshot_lane")/nuinui-implementation-v1")"
   printf 'receipt=%s\n' "$(read_optional_file "$(release_receipt "$release_snapshot_lane")")"
 }
 assert_release_receipt() {
@@ -365,6 +366,37 @@ expect_duplicate_blocked() {
     fail "$name did not fail closed"
   }
   after=$(release_snapshot "$duplicate_blocked_repo")
+  [ "$before" = "$after" ] || fail "$name changed durable or Git state"
+  echo "PASS: $name"
+}
+
+expect_duplicate_find_failure() {
+  name=$1
+  lane=$2
+  checkpoint=$3
+  claim=$4
+  case "$lane" in
+    main) duplicate_find_failure_repo=$MAIN ;;
+    sub) duplicate_find_failure_repo=$SUB ;;
+    *) fail "$name has an invalid lane" ;;
+  esac
+  before=$(release_snapshot "$duplicate_find_failure_repo")
+  if output=$(PATH="$DUPLICATE_FIND_FAILURE_BIN:$PATH" "$HELPER" release "$lane" "$checkpoint" "$claim" 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    duplicate_find_failure_rc=$?
+  fi
+  [ "$duplicate_find_failure_rc" -ne 0 ] || fail "$name returned zero"
+  if printf '%s\n' "$output" | grep -q '^IMPLEMENTATION ALREADY RELEASED$'; then
+    printf '%s\n' "$output"
+    fail "$name was classified as a duplicate"
+  fi
+  printf '%s\n' "$output" | grep -q '^BLOCKED:' || {
+    printf '%s\n' "$output"
+    fail "$name did not fail closed"
+  }
+  after=$(release_snapshot "$duplicate_find_failure_repo")
   [ "$before" = "$after" ] || fail "$name changed durable or Git state"
   echo "PASS: $name"
 }
@@ -832,7 +864,22 @@ cp "$ROOT/valid-release-slot" "$SLOT_PATH"
 release_main "$ADVANCED_CHECKPOINT" "$CLAIM1" "$BRANCH1"
 sync_free_lanes
 
+MAIN_INITIALIZATION_MARKER="$(gitdir "$MAIN")/nuinui-implementation-v1"
+cp "$MAIN_INITIALIZATION_MARKER" "$ROOT/valid-initialization-marker"
+rm "$MAIN_INITIALIZATION_MARKER"
+expect_duplicate_blocked 'missing initialization marker rejects duplicate' main "$ADVANCED_CHECKPOINT" "$CLAIM1"
+cp "$ROOT/valid-initialization-marker" "$MAIN_INITIALIZATION_MARKER"
+printf 'version=2\n' > "$MAIN_INITIALIZATION_MARKER"
+expect_duplicate_blocked 'malformed initialization marker rejects duplicate' main "$ADVANCED_CHECKPOINT" "$CLAIM1"
+cp "$ROOT/valid-initialization-marker" "$MAIN_INITIALIZATION_MARKER"
 expect_release_duplicate 'immediate exact duplicate release' main SAY-201 "$BASE" "$ADVANCED_CHECKPOINT" "$CLAIM1" "$BRANCH1"
+
+DUPLICATE_FIND_FAILURE_BIN="$ROOT/duplicate-find-failure-bin"
+mkdir "$DUPLICATE_FIND_FAILURE_BIN"
+printf '%s\n' '#!/bin/sh' 'exit 91' > "$DUPLICATE_FIND_FAILURE_BIN/find"
+chmod 755 "$DUPLICATE_FIND_FAILURE_BIN/find"
+expect_duplicate_find_failure 'tombstone discovery failure rejects duplicate' main "$ADVANCED_CHECKPOINT" "$CLAIM1"
+
 expect_duplicate_blocked 'same checkpoint with wrong claim' main "$ADVANCED_CHECKPOINT" wrong-claim-201
 expect_duplicate_blocked 'same claim with wrong checkpoint' main "$BASE" "$CLAIM1"
 

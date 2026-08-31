@@ -194,7 +194,6 @@ else
   printf '%s\n' "$baseline_output"
   fail 'current repository source baseline failed'
 fi
-assert_contains "$baseline_output" "largest=$script_dir/nuinui-e2e-prepare" 'baseline omitted standalone nuinui-e2e-prepare'
 echo "$baseline_output"
 
 source_budget_test_root=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-source-budget-test.XXXXXX")" && pwd -P)
@@ -219,9 +218,13 @@ make_bytes 32769 "$handoff_path"
 run_expected_failure 'nuinui-handoff-check-src over-budget source' "$handoff_fixture/scripts/test-nuinui-source-budget" "$handoff_path"
 
 standalone_fixture=$(make_fixture standalone)
-standalone_path=$standalone_fixture/scripts/new-standalone-helper
+standalone_path=$standalone_fixture/scripts/nuinui-e2e-prepare
 make_bytes 32769 "$standalone_path"
-run_expected_failure 'top-level standalone helper over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$standalone_path"
+run_expected_failure 'top-level nuinui-e2e-prepare over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$standalone_path"
+
+generic_standalone_path=$standalone_fixture/scripts/new-standalone-helper
+make_bytes 32769 "$generic_standalone_path"
+run_expected_failure 'top-level standalone helper over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$generic_standalone_path"
 
 discovery_fixture=$(make_fixture discovery-failure)
 discovery_bin=$discovery_fixture/bin
