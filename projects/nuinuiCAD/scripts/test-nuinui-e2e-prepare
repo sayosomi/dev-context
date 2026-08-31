@@ -287,6 +287,26 @@ fi
 [[ "$(cat "$session")" != "$session_before" ]] || fail "malformed-session setup did not take effect"
 printf '%s\n' "$session_before" > "$session"
 
+echo "TEST: invalid current source_fixture is blocked without mutation"
+invalid_source_before="issue=SAY-999
+ref=$tested_ref
+source_fixture=relative/fixture.nui
+root=$root
+handoff=$handoff
+cdp_port=9555
+launch_pid=$launch_pid"
+printf '%s\n' "$invalid_source_before" > "$session"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
+  fail "relative source_fixture qualified for duplicate prepare"
+fi
+status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status 2>&1)" || true
+print -r -- "$status_out" | grep -Fq 'session=INVALID' || fail "invalid source_fixture was not reported as INVALID"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null 2>&1; then
+  fail "cleanup accepted invalid current source_fixture"
+fi
+[[ "$(cat "$session")" == "$invalid_source_before" ]] || fail "invalid source_fixture cleanup mutated session"
+printf '%s\n' "$session_before" > "$session"
+
 legacy_session="issue=SAY-999
 ref=$tested_ref
 root=$root
@@ -297,6 +317,24 @@ printf '%s\n' "$legacy_session" > "$session"
 if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
   fail "legacy session qualified for duplicate prepare"
 fi
+printf '%s\n' "$session_before" > "$session"
+
+echo "TEST: malformed legacy handoff is blocked before mutation"
+legacy_handoff_before="$(cat "$handoff")"
+legacy_session_before="issue=SAY-999
+ref=$tested_ref
+root=$root
+handoff=$handoff
+cdp_port=9555
+launch_pid=$launch_pid"
+printf '%s\n' "$legacy_session_before" > "$session"
+printf 'ISSUE=SAY-998\n' > "$handoff"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$root" >/dev/null 2>&1; then
+  fail "malformed legacy handoff unexpectedly cleaned"
+fi
+[[ "$(cat "$session")" == "$legacy_session_before" && -d "$root" && "$(cat "$handoff")" == 'ISSUE=SAY-998' ]] || fail "malformed legacy handoff cleanup mutated state"
+kill -0 "$launch_pid" >/dev/null 2>&1 || fail "malformed legacy handoff cleanup stopped the owned process"
+printf '%s\n' "$legacy_handoff_before" > "$handoff"
 printf '%s\n' "$session_before" > "$session"
 
 echo "TEST: cleanup identity mismatches are blocked without mutation"

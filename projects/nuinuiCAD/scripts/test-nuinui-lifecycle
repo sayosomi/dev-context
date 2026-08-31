@@ -1127,9 +1127,12 @@ printf '%s\n' "$E2E_MARKER_CONTENT" > "$E2E_MARKER"
 
 E2E_PREPARED_ROOT="$(mktemp -d "$E2E_CLOSURE_TEMP/nuinui-vscode-e2e.XXXXXX")"
 E2E_PREPARED_HANDOFF="$E2E_CLOSURE_TEMP/nuinui-SAY-299-human-e2e.env"
-printf 'ISSUE=SAY-299\n' > "$E2E_PREPARED_HANDOFF"
 E2E_SOURCE_FIXTURE="$ROOT/source fixture.nui"
 printf 'fixture\n' > "$E2E_SOURCE_FIXTURE"
+E2E_PREPARED_FIXTURE="$E2E_PREPARED_ROOT/$(basename "$E2E_SOURCE_FIXTURE")"
+cp "$E2E_SOURCE_FIXTURE" "$E2E_PREPARED_FIXTURE"
+printf "ISSUE='SAY-299'\nTESTED_REF='%s'\nCHECKOUT='%s'\nE2E_ROOT='%s'\nFIXTURE='%s'\nCDP_PORT='9223'\nRUST_BIN='%s'\n" \
+  "$E2E_TESTED_REF" "$E2E" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_FIXTURE" "$ROOT/rust-bin" > "$E2E_PREPARED_HANDOFF"
 printf 'issue=SAY-299\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
   "$E2E_TESTED_REF" "$E2E_SOURCE_FIXTURE" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
 E2E_DUPLICATE_SESSION_BEFORE=$(e2e_snapshot "$E2E")
@@ -1151,14 +1154,15 @@ printf 'issue=SAY-299\nref=%s\n' "$E2E_TESTED_REF" > "$E2E_SESSION"
 expect_e2e_blocked_no_mutation 'partial E2E session duplicate start' e2e-start SAY-299 "$E2E_TESTED_REF"
 rm "$E2E_SESSION"
 
-printf 'issue=SAY-299\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
-  "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
+printf 'issue=SAY-299\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
+  "$E2E_TESTED_REF" "$E2E_SOURCE_FIXTURE" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
 expect_e2e_blocked_no_mutation 'active E2E release with session metadata' e2e-release SAY-299 "$E2E_TESTED_REF"
 e2e_cleanup SAY-299 "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" >/dev/null || fail 'canonical E2E cleanup failed'
 [ ! -e "$E2E_SESSION" ] || fail 'canonical E2E cleanup retained session'
 [ "$(cat "$(e2e_cleanup_receipt)")" = "$(printf 'version=1\nissue=SAY-299\nref=%s\nroot=%s' "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT")" ] || fail 'canonical E2E cleanup wrote the wrong receipt'
 [ ! -e "$E2E_PREPARED_ROOT" ] || fail 'canonical E2E cleanup retained root'
 [ ! -e "$E2E_PREPARED_HANDOFF" ] || fail 'canonical E2E cleanup retained handoff'
+[ -f "$E2E_SOURCE_FIXTURE" ] || fail 'canonical E2E cleanup removed the source fixture'
 [ -f "$E2E_MARKER" ] || fail 'canonical E2E cleanup removed marker'
 
 E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release SAY-299 "$E2E_TESTED_REF")

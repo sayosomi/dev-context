@@ -16,6 +16,7 @@ E2E chatを新しく作っただけでは`e2e` laneをclaimしない。tested co
 - VS Code hostなら[`VS-CODE-E2E.md`](./VS-CODE-E2E.md)、ExecutorがLunaなら[`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md)も読む。
 - Human向けVS Code host preparationでは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned Human E2E preparation helperがcurrent local cloneで利用可能なら、そのhelperをhandoffに使う。ChatGPTが同じlaunch / session lifecycleをinline shellとして再実装しない。
 - versioned preparation helperの実行がunexpected error / hang / state mismatchになった場合、まずhelperの`status`とowner documentのrepair / fallback ruleで状態を分類する。session rootやtemporary artifactをad-hoc shellで探索・推測して別launcherへ迂回しない。
+- `nuinui-e2e-prepare prepare`の`E2E SETUP ALREADY READY` / `mutation=no-op` / `READY FOR HUMAN E2E`、および`cleanup`の`E2E CLEANUP ALREADY COMPLETE` / `mutation=no-op`は、read-onlyでexact duplicateを証明したterminal no-opである。これらが返った場合は通常workflowを直接継続し、Humanへstatus、session / marker / process state、初回invocationの成功確認、またはduplicateだけを理由にしたprepare / cleanup再実行を求めない。near-match、stale、ambiguous stateは`BLOCKED`として扱う。
 
 ## Human E2E closure handoff
 

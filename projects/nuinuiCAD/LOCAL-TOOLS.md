@@ -252,6 +252,23 @@ nuinui-e2e-prepare closure-check <SAY-123>
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。
 
+healthyなexact duplicate `prepare`は、active session、handoff、prepared fixture、owned process、CDPをread-onlyで完全一致検証した場合だけ次の成功 envelopeを返す。
+
+```text
+E2E SETUP ALREADY READY
+mutation=no-op
+READY FOR HUMAN E2E
+```
+
+exact duplicate `cleanup`は、active session authorityがない場合に限り、matchingなcleanup receipt、root不在、handoff不在、owned process不在をread-onlyで完全一致検証した場合だけ次を返す。
+
+```text
+E2E CLEANUP ALREADY COMPLETE
+mutation=no-op
+```
+
+active session authorityはcleanup receiptより常に優先される。near-match、stale、ambiguousなsession / handoff / receipt stateは`BLOCKED`であり、cleanup receiptからactive sessionを推測しない。この二つのexact duplicate success envelopeが返った場合、ChatGPTは通常workflowを直接継続し、Humanにstatus実行、session / marker / process stateの貼り付け、最初のinvocation成功確認、またはduplicateだけを理由にしたprepare / cleanup再実行を求めない。
+
 Human E2Eのcanonical successful closureは、次の順序に固定する。
 
 ```text

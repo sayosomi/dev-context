@@ -23,6 +23,8 @@ Closure order:
   nuinui e2e-release <SAY-123> <tested-ref>
   nuinui-e2e-prepare closure-check <Issue>
 
+Exact duplicate prepare/cleanup: no-op; no status/confirmation. Near-match: BLOCKED.
+
 EOF
 }
 resolve_existing_path() {
@@ -94,17 +96,15 @@ load_session() {
   SESSION_ISSUE="$(metadata_value "$metadata" issue)" || return 1; SESSION_REF="$(metadata_value "$metadata" ref)" || return 1
   SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1; SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
   SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
-  SESSION_SOURCE_FIXTURE=""
   if [[ "$SESSION_KIND" == current ]]; then
     SESSION_SOURCE_FIXTURE="$(metadata_value "$metadata" source_fixture)" || return 1
+    case "$SESSION_SOURCE_FIXTURE" in /*) ;; *) return 1 ;; esac
+    [[ "$SESSION_SOURCE_FIXTURE" != */ && "$SESSION_SOURCE_FIXTURE" != *'/./'* && "$SESSION_SOURCE_FIXTURE" != *'/../'* && "$SESSION_SOURCE_FIXTURE" != *//* ]] || return 1
+    [[ ! -e "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" || -f "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" && "$(resolve_existing_path "$SESSION_SOURCE_FIXTURE")" == "$SESSION_SOURCE_FIXTURE" ]] || return 1
   fi
-  [[ "$SESSION_ISSUE" =~ '^SAY-[0-9]+$' ]] || return 1
-  [[ "$SESSION_REF" =~ '^[0-9a-fA-F]{40}$' ]] || return 1
-  [[ -n "$SESSION_ROOT" && -n "$SESSION_HANDOFF" && -n "$SESSION_CDP_PORT" && -n "$SESSION_LAUNCH_PID" ]] || return 1
-  [[ "$SESSION_CDP_PORT" =~ '^[1-9][0-9]{0,4}$' ]] || return 1
-  (( SESSION_CDP_PORT <= 65535 )) || return 1
+  [[ "$SESSION_ISSUE" =~ '^SAY-[0-9]+$' && "$SESSION_REF" =~ '^[0-9a-fA-F]{40}$' && -n "$SESSION_ROOT" && -n "$SESSION_HANDOFF" && -n "$SESSION_CDP_PORT" && -n "$SESSION_LAUNCH_PID" ]] || return 1
+  assert_port "$SESSION_CDP_PORT" || return 1
   [[ "$SESSION_LAUNCH_PID" =~ '^[1-9][0-9]*$' ]] || return 1
-  [[ "$SESSION_KIND" == legacy || -n "$SESSION_SOURCE_FIXTURE" ]] || return 1
 }
 
 assert_marker() {
@@ -132,27 +132,23 @@ assert_session_root() {
 }
 
 assert_session_handoff() {
-  local issue="$1"
-  local handoff="$2"
-  local expected="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
-  [[ "$handoff" == "$expected" ]] || return 1
+  [[ "$2" == "$E2E_TEMP_PARENT/nuinui-${1}-human-e2e.env" ]]
 }
 
 assert_handoff_file() {
-  local handoff="$1" issue="$2" tested_ref="$3" root="$4" cdp_port="$5" source_fixture="$6" prepared_fixture checkout_real
+  local handoff="$1" issue="$2" tested_ref="$3" root="$4" cdp_port="$5" source_fixture="$6" prepared_fixture root_real
   [[ -f "$handoff" && ! -L "$handoff" ]] || return 1
   metadata_matches "$handoff" "$HANDOFF_KEYS" || return 1
-  prepared_fixture="$root/$(basename "$source_fixture")"
-  checkout_real="$(resolve_existing_path "$E2E_WT")" || return 1
+  prepared_fixture="$(handoff_value "$handoff" FIXTURE)" || return 1
+  [[ -z "$source_fixture" || "$prepared_fixture" == "$root/$(basename "$source_fixture")" ]] || return 1
+  [[ "$prepared_fixture" == "$root/"* && -f "$prepared_fixture" && ! -L "$prepared_fixture" ]] || return 1
+  root_real="$(resolve_existing_path "$root")" || return 1
   [[ "$(handoff_value "$handoff" ISSUE)" == "$issue" &&
     "$(handoff_value "$handoff" TESTED_REF)" == "$tested_ref" &&
-    "$(resolve_existing_path "$(handoff_value "$handoff" CHECKOUT)")" == "$checkout_real" &&
+    "$(resolve_existing_path "$(handoff_value "$handoff" CHECKOUT)")" == "$(resolve_existing_path "$E2E_WT")" &&
     "$(handoff_value "$handoff" E2E_ROOT)" == "$root" &&
-    "$(handoff_value "$handoff" FIXTURE)" == "$prepared_fixture" &&
-    "$(handoff_value "$handoff" CDP_PORT)" == "$cdp_port" ]] || {
-    return 1
-  }
-  [[ -f "$prepared_fixture" && ! -L "$prepared_fixture" ]] || return 1
+    "$(handoff_value "$handoff" CDP_PORT)" == "$cdp_port" ]] || return 1
+  [[ "$(resolve_existing_path "$prepared_fixture")" == "$root_real"/* ]] || return 1
   PREPARED_FIXTURE="$prepared_fixture"
 }
 
@@ -188,13 +184,9 @@ assert_cdp_reachable() {
 }
 
 stop_owned_processes() {
-  local root="$1"
-  local launch_pid="$2"
-  local pid=""
-  local command_line=""
+  local root="$1" launch_pid="$2" pid command_line remaining
   local -a pids
   local -a matching_pids
-
   assert_process_ownership "$root" "$launch_pid" 0 || return 1
   matching_pids=()
   if [[ -n "$launch_pid" ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
@@ -208,25 +200,18 @@ stop_owned_processes() {
     (( ${matching_pids[(Ie)$pid]} == 0 )) && matching_pids+=("$pid")
   done
 
-  for pid in "${matching_pids[@]}"; do
-    kill -TERM "$pid" >/dev/null 2>&1 || return 1
-  done
-
+  for pid in "${matching_pids[@]}"; do kill -TERM "$pid" >/dev/null 2>&1 || return 1; done
   for _ in $(seq 1 10); do
-    local remaining=0
+    remaining=0
     for pid in "${matching_pids[@]}"; do
-      if kill -0 "$pid" >/dev/null 2>&1; then
-        remaining=1
-      fi
+      kill -0 "$pid" >/dev/null 2>&1 && remaining=1
     done
     (( remaining == 0 )) && return 0
     sleep 0.2
   done
-
   for pid in "${matching_pids[@]}"; do
-    if kill -0 "$pid" >/dev/null 2>&1; then
-      kill -KILL "$pid" >/dev/null 2>&1 || return 1
-    fi
+    kill -0 "$pid" >/dev/null 2>&1 || continue
+    kill -KILL "$pid" >/dev/null 2>&1 || return 1
   done
   return 0
 }
@@ -426,7 +411,7 @@ write_session() {
 
 status() {
   setopt local_options null_glob
-  local repo="$E2E_WT" session marker head branch dirty issue tested_ref source_fixture root handoff cdp_port launch_pid command_line candidate
+  local repo="$E2E_WT" session marker head branch dirty issue tested_ref source_fixture root handoff launch_pid command_line candidate
   local result=0 session_valid=0
   local -a root_candidates handoff_candidates
   [[ -d "$repo" ]] && git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "BLOCKED: e2e checkout is unavailable"; return 1; }
@@ -454,7 +439,7 @@ status() {
     echo "  session=none"
   elif [[ -f "$session" && ! -L "$session" ]] && load_session "$session"; then
     issue="$SESSION_ISSUE"; tested_ref="$SESSION_REF"; source_fixture="$SESSION_SOURCE_FIXTURE"
-    root="$SESSION_ROOT"; handoff="$SESSION_HANDOFF"; cdp_port="$SESSION_CDP_PORT"; launch_pid="$SESSION_LAUNCH_PID"
+    root="$SESSION_ROOT"; handoff="$SESSION_HANDOFF"; launch_pid="$SESSION_LAUNCH_PID"
     if assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
       session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
       echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"; echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
@@ -591,25 +576,20 @@ cleanup() {
     return $?
   fi
   [[ -f "$session" && ! -L "$session" ]] || {
-    echo "BLOCKED: E2E session metadata is not a regular file"
+    echo "BLOCKED: invalid E2E session metadata"
     return 1
   }
-  load_session "$session" || { echo "BLOCKED: E2E session metadata is malformed"; return 1; }
+  load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
-    echo "BLOCKED: active E2E session does not match caller Issue/ref/root"
+    echo "BLOCKED: active session identity mismatch"
     return 1
   }
   assert_session_root "$SESSION_ROOT" || return 1
   assert_session_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" || return 1
   if path_exists "$SESSION_HANDOFF"; then
-    [[ -f "$SESSION_HANDOFF" && ! -L "$SESSION_HANDOFF" ]] || {
-      echo "BLOCKED: E2E handoff is not a regular file"
-      return 1
-    }
-    [[ "$SESSION_KIND" == legacy ]] || assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
+    assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
   fi
   assert_checkout "$SESSION_ISSUE" "$SESSION_REF" >/dev/null || return $?
-  assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 0 || return 1
   stop_owned_processes "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || return 1
   assert_no_owned_processes "$SESSION_ROOT" || return 1
   if path_exists "$SESSION_ROOT"; then
@@ -691,12 +671,12 @@ resolve_code_bin() {
 
 prepare_duplicate() {
   local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5"
-  [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: E2E session metadata is not a regular file"; return 1; }
-  load_session "$session" || { echo "BLOCKED: E2E session metadata is malformed"; return 1; }
+  [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
+  load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   [[ "$SESSION_KIND" == current ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
   [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
     "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" ]] || {
-    echo "BLOCKED: active E2E session does not match caller Issue/ref/fixture/port"
+    echo "BLOCKED: active session identity mismatch"
     return 1
   }
   assert_session_root "$SESSION_ROOT" || return 1
@@ -705,7 +685,7 @@ prepare_duplicate() {
   assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" \
     "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
   assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 1 || return 1
-  assert_cdp_reachable "$SESSION_CDP_PORT" || { echo "BLOCKED: prepared host is not reachable through the recorded CDP port"; return 1; }
+  assert_cdp_reachable "$SESSION_CDP_PORT" || { echo "BLOCKED: recorded CDP host is unreachable"; return 1; }
   printf 'E2E SETUP ALREADY READY\nissue=%s\ntested_ref=%s\ne2e_root=%s\nfixture=%s\nsource_fixture=%s\ncdp_port=%s\nhandoff=%s\nsession=%s\nmutation=no-op\nREADY FOR HUMAN E2E\n' \
     "$issue" "$tested_ref" "$SESSION_ROOT" "$PREPARED_FIXTURE" "$source_fixture" \
     "$cdp_port" "$SESSION_HANDOFF" "$session"
