@@ -50,11 +50,39 @@ release_snapshot() {
   printf 'head=%s\n' "$(git -C "$release_snapshot_lane" rev-parse HEAD)"
   printf 'status=%s\n' "$(git -C "$release_snapshot_lane" status --porcelain)"
   printf 'refs=%s\n' "$(lane_refs "$release_snapshot_lane")"
+  printf 'local-refs=%s\n' "$(local_lane_refs "$release_snapshot_lane")"
   printf 'slot=%s\n' "$(read_optional_file "$(slot_state "$release_snapshot_lane")")"
   printf 'lock=%s\n' "$(read_optional_file "$(gitdir "$release_snapshot_lane")/nuinui-implementation-lock/state")"
   printf 'tombstones=%s\n' "$(tombstone_state "$release_snapshot_lane")"
   printf 'initialization=%s\n' "$(read_optional_file "$(gitdir "$release_snapshot_lane")/nuinui-implementation-v1")"
   printf 'receipt=%s\n' "$(read_optional_file "$(release_receipt "$release_snapshot_lane")")"
+}
+public_lifecycle_snapshot() {
+  printf 'main\n'
+  release_snapshot "$MAIN"
+  printf 'sub\n'
+  release_snapshot "$SUB"
+  printf 'e2e\n'
+  e2e_snapshot "$E2E"
+}
+expect_public_request_rejected() {
+  name=$1
+  shift
+  before=$(public_lifecycle_snapshot)
+  if output=$("$HELPER" "$@" 2>&1); then
+    printf '%s\n' "$output"
+    fail "$name unexpectedly succeeded"
+  else
+    rc=$?
+  fi
+  [ "$rc" -ne 0 ] || fail "$name returned zero"
+  if printf '%s\n' "$output" | grep -q '^ERROR: public command .* failed without a diagnostic$'; then
+    printf '%s\n' "$output"
+    fail "$name used the generic no-diagnostic fallback"
+  fi
+  after=$(public_lifecycle_snapshot)
+  [ "$before" = "$after" ] || fail "$name changed the complete lifecycle snapshot"
+  echo "PASS: $name"
 }
 e2e_snapshot() {
   e2e_snapshot_lane=$1
@@ -168,9 +196,9 @@ expect_begin_conflict() {
     begin_conflict_rc=$?
   fi
   [ "$begin_conflict_rc" -ne 0 ] || fail "$begin_conflict_name returned zero"
-  printf '%s\n' "$begin_conflict_output" | grep -q '^BLOCKED:' || {
+  printf '%s\n' "$begin_conflict_output" | grep -Eq '^(BLOCKED|ERROR):' || {
     printf '%s\n' "$begin_conflict_output"
-    fail "$begin_conflict_name did not fail closed"
+    fail "$begin_conflict_name did not report an actionable failure"
   }
   if printf '%s\n' "$begin_conflict_output" | grep -q '^IMPLEMENTATION ALREADY STARTED$'; then
     fail "$begin_conflict_name was classified as a duplicate"
@@ -641,6 +669,145 @@ export NUINUI_E2E_WT="$E2E"
 "$HELPER" lane-init sub >/dev/null
 BASE="$(git -C "$MAIN" rev-parse origin/main)"
 ALTERNATE_BASE="$(git -C "$SEED" commit-tree "$(git -C "$SEED" rev-parse HEAD^{tree})" -p "$BASE" -m 'alternate begin base')"
+
+VERIFY_MATCH_BRANCH=sayosomi/say-118-matching-branch
+VERIFY_MATCH_OUTPUT=$("$HELPER" verify main SAY-118 "$BASE" "$VERIFY_MATCH_BRANCH")
+[ "$VERIFY_MATCH_OUTPUT" = 'VERIFIED' ] || {
+  printf '%s\n' "$VERIFY_MATCH_OUTPUT"
+  fail 'matching public verify did not succeed normally'
+}
+echo 'PASS: public verify accepts one matching identifier'
+
+VERIFY_DUPLICATE_BRANCH=sayosomi/say-118-followup-say-118-diagnostics
+VERIFY_DUPLICATE_OUTPUT=$("$HELPER" verify main SAY-118 "$BASE" "$VERIFY_DUPLICATE_BRANCH")
+[ "$VERIFY_DUPLICATE_OUTPUT" = 'VERIFIED' ] || {
+  printf '%s\n' "$VERIFY_DUPLICATE_OUTPUT"
+  fail 'duplicate matching public verify did not succeed normally'
+}
+echo 'PASS: public verify accepts repeated matching identifiers'
+
+AMBIGUOUS_FORWARD_BRANCH=sayosomi/say-118-reference-post-say-249-fix
+expect_public_request_rejected 'forward ambiguous public verify' \
+  verify main SAY-118 "$BASE" "$AMBIGUOUS_FORWARD_BRANCH"
+AMBIGUOUS_FORWARD_OUTPUT=$output
+assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'forward ambiguous verify missed multiple-identifier diagnostic'
+assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^expected=SAY-118$' 'forward ambiguous verify omitted expected Issue'
+assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^found=SAY-118,SAY-249$' 'forward ambiguous verify omitted deterministic found identifiers'
+assert_line "$AMBIGUOUS_FORWARD_OUTPUT" "^branch=$AMBIGUOUS_FORWARD_BRANCH$" 'forward ambiguous verify omitted exact branch'
+if printf '%s\n' "$AMBIGUOUS_FORWARD_OUTPUT" | grep -q '^ERROR: public command .* failed without a diagnostic$'; then
+  fail 'forward ambiguous verify used the generic no-diagnostic fallback'
+fi
+echo 'PASS: forward ambiguous public verify is actionable'
+
+AMBIGUOUS_REVERSE_BRANCH=sayosomi/say-249-reference-for-say-118-fix
+expect_public_request_rejected 'reverse ambiguous public verify' \
+  verify main SAY-118 "$BASE" "$AMBIGUOUS_REVERSE_BRANCH"
+AMBIGUOUS_REVERSE_OUTPUT=$output
+assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'reverse ambiguous verify missed multiple-identifier diagnostic'
+assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^expected=SAY-118$' 'reverse ambiguous verify omitted expected Issue'
+assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^found=SAY-249,SAY-118$' 'reverse ambiguous verify omitted deterministic found identifiers'
+assert_line "$AMBIGUOUS_REVERSE_OUTPUT" "^branch=$AMBIGUOUS_REVERSE_BRANCH$" 'reverse ambiguous verify omitted exact branch'
+if printf '%s\n' "$AMBIGUOUS_REVERSE_OUTPUT" | grep -q '^ERROR: public command .* failed without a diagnostic$'; then
+  fail 'reverse ambiguous verify used the generic no-diagnostic fallback'
+fi
+echo 'PASS: reverse ambiguous public verify is actionable'
+
+expect_public_request_rejected 'public verify with only a different Issue' \
+  verify main SAY-118 "$BASE" sayosomi/say-249-only
+DIFFERENT_VERIFY_OUTPUT=$output
+assert_line "$DIFFERENT_VERIFY_OUTPUT" '^ERROR: branch issue identifier does not match requested Issue$' 'different-Issue verify missed mismatch diagnostic'
+assert_line "$DIFFERENT_VERIFY_OUTPUT" '^expected=SAY-118$' 'different-Issue verify omitted expected Issue'
+assert_line "$DIFFERENT_VERIFY_OUTPUT" '^found=SAY-249$' 'different-Issue verify omitted found Issue'
+assert_line "$DIFFERENT_VERIFY_OUTPUT" '^branch=sayosomi/say-249-only$' 'different-Issue verify omitted exact branch'
+expect_public_request_rejected 'public verify with no SAY identifier' \
+  verify main SAY-118 "$BASE" sayosomi/feature-without-issue
+NO_IDENTIFIER_VERIFY_OUTPUT=$output
+assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^ERROR: branch does not contain requested issue identifier$' 'no-identifier verify missed diagnostic'
+assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^expected=SAY-118$' 'no-identifier verify omitted expected Issue'
+assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^found=-$' 'no-identifier verify omitted empty found value'
+assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^branch=sayosomi/feature-without-issue$' 'no-identifier verify omitted exact branch'
+INVALID_REF_BRANCH=sayosomi/say-118-invalid..ref
+expect_public_request_rejected 'public verify with invalid Git ref syntax' \
+  verify main SAY-118 "$BASE" "$INVALID_REF_BRANCH"
+INVALID_REF_OUTPUT=$output
+assert_line "$INVALID_REF_OUTPUT" '^ERROR: invalid Git branch syntax$' 'invalid-ref verify missed branch-syntax diagnostic'
+assert_line "$INVALID_REF_OUTPUT" '^expected=SAY-118$' 'invalid-ref verify omitted caller Issue'
+assert_line "$INVALID_REF_OUTPUT" '^found=invalid$' 'invalid-ref verify omitted invalid marker'
+assert_line "$INVALID_REF_OUTPUT" "^branch=$INVALID_REF_BRANCH$" 'invalid-ref verify omitted exact branch'
+echo 'PASS: public verify rejects mismatch, missing identifier, and invalid ref actionably'
+
+expect_public_request_rejected 'public start with multiple distinct identifiers' \
+  start main SAY-118 "$BASE" "$AMBIGUOUS_FORWARD_BRANCH"
+START_AMBIGUOUS_OUTPUT=$output
+assert_line "$START_AMBIGUOUS_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'ambiguous start missed multiple-identifier diagnostic'
+assert_line "$START_AMBIGUOUS_OUTPUT" '^expected=SAY-118$' 'ambiguous start omitted expected Issue'
+assert_line "$START_AMBIGUOUS_OUTPUT" '^found=SAY-118,SAY-249$' 'ambiguous start omitted all found identifiers'
+assert_line "$START_AMBIGUOUS_OUTPUT" "^branch=$AMBIGUOUS_FORWARD_BRANCH$" 'ambiguous start omitted exact branch'
+expect_public_request_rejected 'public begin with multiple distinct identifiers' \
+  begin sub SAY-118 "$BASE" "$AMBIGUOUS_REVERSE_BRANCH" FREE
+BEGIN_AMBIGUOUS_OUTPUT=$output
+assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'ambiguous begin missed multiple-identifier diagnostic'
+assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^expected=SAY-118$' 'ambiguous begin omitted expected Issue'
+assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^found=SAY-249,SAY-118$' 'ambiguous begin omitted all found identifiers'
+assert_line "$BEGIN_AMBIGUOUS_OUTPUT" "^branch=$AMBIGUOUS_REVERSE_BRANCH$" 'ambiguous begin omitted exact branch'
+echo 'PASS: public start and begin reject ambiguous requests before mutation'
+
+PERSISTED_ACTIVE_CLAIM=compat-active-claim-118
+git -C "$MAIN" branch "$AMBIGUOUS_FORWARD_BRANCH" "$BASE"
+git -C "$MAIN" switch -q "$AMBIGUOUS_FORWARD_BRANCH"
+mkdir "$(gitdir "$MAIN")/nuinui-implementation-slot"
+printf 'version=1\nissue=SAY-249\nbranch=%s\nbase=%s\nclaim=%s\n' \
+  "$AMBIGUOUS_FORWARD_BRANCH" "$BASE" "$PERSISTED_ACTIVE_CLAIM" > "$(slot_state "$MAIN")"
+if PERSISTED_ACTIVE_PREFLIGHT=$("$HELPER" preflight 2>&1); then
+  :
+else
+  PERSISTED_ACTIVE_RC=$?
+fi
+assert_line "$PERSISTED_ACTIVE_PREFLIGHT" "^  owner_issue=SAY-249 owner_branch=$AMBIGUOUS_FORWARD_BRANCH" \
+  'ambiguous persisted active slot was not parsed by the historical selector'
+assert_line "$PERSISTED_ACTIVE_PREFLIGHT" '^  state=BUSY$' 'ambiguous persisted active slot was not classified BUSY'
+if printf '%s\n' "$PERSISTED_ACTIVE_PREFLIGHT" | grep -q 'invalid-active-slot'; then
+  fail 'ambiguous persisted active slot became invalid-active-slot'
+fi
+rm "$(slot_state "$MAIN")"
+rmdir "$(gitdir "$MAIN")/nuinui-implementation-slot"
+git -C "$MAIN" switch -q main
+git -C "$MAIN" branch -D "$AMBIGUOUS_FORWARD_BRANCH" >/dev/null
+echo 'PASS: ambiguous persisted active slot remains readable'
+
+PERSISTED_LOCK_CLAIM=compat-lock-claim-118
+mkdir "$(gitdir "$MAIN")/nuinui-implementation-lock"
+printf 'version=1\noperation=start\nissue=SAY-249\nbranch=%s\nbase=%s\ncheckpoint=-\nclaim=%s\n' \
+  "$AMBIGUOUS_FORWARD_BRANCH" "$BASE" "$PERSISTED_LOCK_CLAIM" > "$(gitdir "$MAIN")/nuinui-implementation-lock/state"
+if PERSISTED_LOCK_PREFLIGHT=$("$HELPER" preflight 2>&1); then
+  printf '%s\n' "$PERSISTED_LOCK_PREFLIGHT"
+  fail 'ambiguous persisted mutation lock unexpectedly passed preflight'
+else
+  PERSISTED_LOCK_RC=$?
+fi
+[ "$PERSISTED_LOCK_RC" -ne 0 ] || fail 'ambiguous persisted mutation lock returned zero'
+assert_line "$PERSISTED_LOCK_PREFLIGHT" \
+  "^  state=BLOCKED reason=mutation-in-progress operation=start claim=$PERSISTED_LOCK_CLAIM$" \
+  'ambiguous persisted mutation lock was not parsed as mutation-in-progress'
+if printf '%s\n' "$PERSISTED_LOCK_PREFLIGHT" | grep -q 'invalid-mutation-lock'; then
+  fail 'ambiguous persisted mutation lock became invalid-mutation-lock'
+fi
+rm "$(gitdir "$MAIN")/nuinui-implementation-lock/state"
+rmdir "$(gitdir "$MAIN")/nuinui-implementation-lock"
+echo 'PASS: ambiguous persisted mutation lock remains readable'
+
+PERSISTED_RECEIPT_CLAIM=compat-receipt-claim-118
+printf 'version=1\nlane=main\nissue=SAY-249\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$AMBIGUOUS_FORWARD_BRANCH" "$BASE" "$BASE" "$PERSISTED_RECEIPT_CLAIM" > "$(release_receipt main)"
+PERSISTED_RECEIPT_OUTPUT=$("$HELPER" release main "$BASE" "$PERSISTED_RECEIPT_CLAIM")
+assert_line "$PERSISTED_RECEIPT_OUTPUT" '^IMPLEMENTATION ALREADY RELEASED$' \
+  'ambiguous persisted release receipt did not use the completed-release path'
+assert_line "$PERSISTED_RECEIPT_OUTPUT" '^issue=SAY-249$' \
+  'ambiguous persisted release receipt was not parsed with its stored Issue'
+assert_line "$PERSISTED_RECEIPT_OUTPUT" "^released_branch=$AMBIGUOUS_FORWARD_BRANCH$" \
+  'ambiguous persisted release receipt was not parsed with its stored branch'
+rm "$(release_receipt main)"
+echo 'PASS: ambiguous persisted release receipt remains readable'
 
 PREFLIGHT_PASS_OUTPUT=$("$HELPER" preflight)
 assert_preflight_boundary "$PREFLIGHT_PASS_OUTPUT" 'PREFLIGHT PASS'

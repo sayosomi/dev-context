@@ -1,7 +1,67 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.13
+V=1.6.14
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test'
+
+nuinui_validate_public_issue_branch() {
+  local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
+  local nuinui_request_occurrence nuinui_request_identifier nuinui_request_identifiers
+  local nuinui_request_found
+
+  nuinui_request_issue=$1
+  nuinui_request_branch=$2
+
+  if ! nuinui_ownership_valid_issue "$nuinui_request_issue"; then
+    printf 'ERROR: requested Issue is invalid\n'
+    printf 'expected=SAY-<digits>\nfound=%s\nbranch=%s\n' \
+      "$nuinui_request_issue" "$nuinui_request_branch"
+    return 1
+  fi
+  if ! nuinui_ownership_valid_branch "$nuinui_request_branch"; then
+    printf 'ERROR: invalid Git branch syntax\n'
+    printf 'expected=%s\nfound=invalid\nbranch=%s\n' \
+      "$nuinui_request_issue" "$nuinui_request_branch"
+    return 1
+  fi
+
+  nuinui_request_identifiers=
+  nuinui_request_occurrences=$(printf '%s\n' "$nuinui_request_branch" | grep -Eio 'say-[0-9]+' || true)
+  for nuinui_request_occurrence in $nuinui_request_occurrences; do
+    nuinui_request_identifier=$(printf '%s\n' "$nuinui_request_occurrence" | tr '[:lower:]' '[:upper:]')
+    case " $nuinui_request_identifiers " in
+      *" $nuinui_request_identifier "*) ;;
+      *)
+        if [ -n "$nuinui_request_identifiers" ]; then
+          nuinui_request_identifiers="$nuinui_request_identifiers $nuinui_request_identifier"
+        else
+          nuinui_request_identifiers=$nuinui_request_identifier
+        fi
+        ;;
+    esac
+  done
+
+  set -- $nuinui_request_identifiers
+  case "$#" in
+    1)
+      [ "$1" = "$nuinui_request_issue" ] && return 0
+      printf 'ERROR: branch issue identifier does not match requested Issue\n'
+      printf 'expected=%s\nfound=%s\nbranch=%s\n' \
+        "$nuinui_request_issue" "$1" "$nuinui_request_branch"
+      ;;
+    0)
+      printf 'ERROR: branch does not contain requested issue identifier\n'
+      printf 'expected=%s\nfound=-\nbranch=%s\n' \
+        "$nuinui_request_issue" "$nuinui_request_branch"
+      ;;
+    *)
+      nuinui_request_found=$(printf '%s\n' "$nuinui_request_identifiers" | tr ' ' ',')
+      printf 'ERROR: branch contains multiple issue identifiers\n'
+      printf 'expected=%s\nfound=%s\nbranch=%s\n' \
+        "$nuinui_request_issue" "$nuinui_request_found" "$nuinui_request_branch"
+      ;;
+  esac
+  return 1
+}
 
 nuinui_usage() {
   echo "nuinui $V"
@@ -39,6 +99,7 @@ case "$1" in
     ;;
   verify)
     [ "$#" = 5 ] || { echo 'Usage: nuinui verify <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public verify vr "$2" "$3" "$4" "$5"
     exit $?
     ;;
@@ -49,11 +110,13 @@ case "$1" in
     ;;
   begin)
     [ "$#" = 6 ] || { echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>'; exit 2; }
+    nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public begin lifecycle_begin "$2" "$3" "$4" "$5" "$6"
     exit $?
     ;;
   start)
     [ "$#" = 5 ] || { echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    nuinui_validate_public_issue_branch "$3" "$5" || exit $?
     nuinui_run_public start lifecycle_start_command "$2" "$3" "$4" "$5"
     exit $?
     ;;
