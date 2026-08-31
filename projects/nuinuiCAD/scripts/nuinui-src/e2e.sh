@@ -363,10 +363,7 @@ ee() {
     echo 'BLOCKED: tested-ref must be a full commit SHA'
     return 1
   }
-  f="$(e2e_resolve_ref "$r" "$f")" || {
-    echo 'BLOCKED: tested-ref does not resolve to a commit in the E2E checkout'
-    return 1
-  }
+  f="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
   if e2e_path_exists "$k"; then
     e2e_release_active "$i" "$f"
   else

@@ -825,6 +825,33 @@ printf '%s\n' "$E2E_SESSION_CONTENT" > "$E2E_SESSION"
 expect_e2e_blocked_no_mutation 'duplicate E2E release with session metadata' e2e-release SAY-300 "$E2E_SECOND_REF"
 rm "$E2E_SESSION"
 
+E2E_GC_ISSUE=SAY-301
+E2E_GC_TESTED_REF="$(git -C "$E2E" commit-tree "$(git -C "$E2E" rev-parse HEAD^{tree})" -p "$E2E_RELEASE_B_REF" -m 'prunable E2E tested ref')"
+git -C "$E2E" update-ref refs/heads/e2e-gc-tested "$E2E_GC_TESTED_REF"
+E2E_GC_START_OUTPUT=$("$HELPER" e2e-start "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")
+[ "$E2E_GC_START_OUTPUT" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_GC_START_OUTPUT"; fail 'prunable E2E generation did not start'; }
+E2E_GC_RELEASE_OUTPUT=$("$HELPER" e2e-release "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")
+[ "$E2E_GC_RELEASE_OUTPUT" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_GC_RELEASE_OUTPUT"; fail 'prunable E2E generation did not release'; }
+[ "$(cat "$E2E_RECEIPT")" = "$(printf 'version=1\nissue=%s\nref=%s\n' "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")" ] || fail 'prunable E2E release wrote the wrong receipt'
+git -C "$E2E" update-ref -d refs/heads/e2e-gc-tested "$E2E_GC_TESTED_REF"
+git -C "$E2E" reflog expire --expire=now --all
+git -C "$E2E" gc --prune=now --quiet
+if git -C "$E2E" cat-file -e "$E2E_GC_TESTED_REF^{commit}" 2>/dev/null; then
+  fail 'prunable E2E tested commit object remained locally reachable'
+fi
+[ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'prunable E2E release did not leave a detached checkout'
+[ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'prunable E2E release left a dirty checkout'
+[ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_RELEASE_B_REF" ] || fail 'prunable E2E release did not leave authoritative origin/main checked out'
+E2E_GC_DUPLICATE_BEFORE=$(e2e_snapshot "$E2E")
+E2E_GC_DUPLICATE_OUTPUT=$("$HELPER" e2e-release "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")
+E2E_GC_DUPLICATE_AFTER=$(e2e_snapshot "$E2E")
+[ "$E2E_GC_DUPLICATE_OUTPUT" = "$(printf 'E2E ALREADY RELEASED\nissue=%s\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE' "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF" "$E2E_RELEASE_B_REF")" ] || {
+  printf '%s\n' "$E2E_GC_DUPLICATE_OUTPUT"
+  fail 'duplicate E2E release did not use the durable receipt after object pruning'
+}
+[ "$E2E_GC_DUPLICATE_BEFORE" = "$E2E_GC_DUPLICATE_AFTER" ] || fail 'pruned-object duplicate E2E release changed E2E state'
+echo 'PASS: pruned tested object duplicate E2E release uses durable receipt'
+
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'E2E final setup is not clean'
 
 expect_old_signature_rejected 'old claimless resume signature' resume main SAY-1 "$BASE" old-branch
