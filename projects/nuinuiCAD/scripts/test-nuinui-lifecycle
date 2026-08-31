@@ -578,6 +578,13 @@ setup_main_drift() {
   git -C "$MAIN" switch -q main
 }
 
+setup_main_spelling_drift() {
+  setup_main_drift "$1" "$2"
+  DRIFT_DRIFT_BRANCH=$3
+  git -C "$MAIN" switch -q "$DRIFT_BRANCH"
+  git -C "$MAIN" branch -m "$DRIFT_DRIFT_BRANCH"
+}
+
 setup_sub_drift() {
   DRIFT_LANE=sub
   DRIFT_ISSUE=$1
@@ -665,6 +672,18 @@ expect_release_blocked_drift() {
     *) fail "unknown drift lane: $DRIFT_LANE" ;;
   esac
   expect_release_blocked_command "$1" "$drift_repo" "$HELPER" release "$DRIFT_LANE" "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM"
+}
+
+assert_release_branch_mismatch() {
+  assert_line "$output" '^BLOCKED: release claimed branch mismatch$' "$1 missing branch mismatch classification"
+  assert_line "$output" "^lane=$DRIFT_LANE$" "$1 missing lane"
+  assert_line "$output" "^issue=$DRIFT_ISSUE$" "$1 missing Issue"
+  assert_line "$output" "^claimed_branch=$DRIFT_BRANCH$" "$1 changed durable branch identity"
+  assert_line "$output" "^actual_branch=$2$" "$1 reported the wrong current branch"
+  assert_line "$output" "^head=$3$" "$1 reported the wrong HEAD"
+  assert_line "$output" "^checkpoint=$DRIFT_CHECKPOINT$" "$1 reported the wrong checkpoint"
+  assert_line "$output" "^claim=$DRIFT_CLAIM$" "$1 reported the wrong claim"
+  assert_line "$output" "^reason=$4$" "$1 reported the wrong reason"
 }
 
 mkdir -p "$(dirname "$REMOTE")"
@@ -1586,20 +1605,72 @@ sync_free_lanes
 
 setup_main_drift SAY-304 sayosomi/say-304-release-missing-topic
 git -C "$MAIN" branch -D "$DRIFT_BRANCH"
+DRIFT_MISSING_HEAD="$(git -C "$MAIN" rev-parse HEAD)"
 expect_release_blocked_drift 'release drift missing local topic'
+assert_release_branch_mismatch 'release drift missing local topic' main "$DRIFT_MISSING_HEAD" missing-claimed-local-ref
 git -C "$MAIN" branch "$DRIFT_BRANCH" "$DRIFT_CHECKPOINT"
+release_drift_main
+sync_free_lanes
+
+setup_main_spelling_drift SAY-319 sayosomi/say-319-release-vscode sayosomi/say-319-release-VS-Code
+release_drift_main
+if git -C "$MAIN" show-ref --verify --quiet "refs/heads/$DRIFT_BRANCH" ||
+  git -C "$MAIN" show-ref --verify --quiet "refs/heads/$DRIFT_DRIFT_BRANCH"; then
+  fail 'release spelling drift left a local topic branch behind'
+fi
+echo 'PASS: release repairs exact VS-Code/vscode spelling drift in one invocation'
+sync_free_lanes
+
+setup_main_drift SAY-320 sayosomi/say-320-release-existing-ref
+DRIFT_NAMED_BRANCH=sayosomi/say-320-release-VS-Code
+git -C "$MAIN" switch -q "$DRIFT_BRANCH"
+git -C "$MAIN" switch -q -c "$DRIFT_NAMED_BRANCH"
+DRIFT_NAMED_HEAD="$(git -C "$MAIN" rev-parse HEAD)"
+release_drift_main
+git -C "$MAIN" show-ref --verify --quiet "refs/heads/$DRIFT_NAMED_BRANCH" ||
+  fail 'existing-ref named branch was incorrectly deleted'
+[ "$(git -C "$MAIN" rev-parse "refs/heads/$DRIFT_NAMED_BRANCH")" = "$DRIFT_NAMED_HEAD" ] ||
+  fail 'existing-ref named branch changed during release'
+echo 'PASS: release switches an exact existing-ref named branch without deleting it'
+sync_free_lanes
+
+setup_main_drift SAY-321 sayosomi/say-321-release-wrong-head
+DRIFT_NAMED_BRANCH=sayosomi/say-321-release-VS-Code
+git -C "$MAIN" switch -q -c "$DRIFT_NAMED_BRANCH" "$DRIFT_BASE"
+DRIFT_NAMED_HEAD="$(git -C "$MAIN" rev-parse HEAD)"
+expect_release_blocked_drift 'release named branch at wrong HEAD'
+assert_release_branch_mismatch 'release named branch at wrong HEAD' "$DRIFT_NAMED_BRANCH" "$DRIFT_NAMED_HEAD" checkout-branch-drift
+git -C "$MAIN" switch -q main
+release_drift_main
+sync_free_lanes
+
+setup_main_drift SAY-322 sayosomi/say-322-release-dirty-named
+DRIFT_NAMED_BRANCH=sayosomi/say-322-release-VS-Code
+git -C "$MAIN" switch -q "$DRIFT_BRANCH"
+git -C "$MAIN" switch -q -c "$DRIFT_NAMED_BRANCH"
+DRIFT_NAMED_HEAD="$(git -C "$MAIN" rev-parse HEAD)"
+printf 'dirty named release drift\n' > "$MAIN/release-named-dirty"
+expect_release_blocked_drift 'release dirty named branch'
+assert_release_branch_mismatch 'release dirty named branch' "$DRIFT_NAMED_BRANCH" "$DRIFT_NAMED_HEAD" checkout-branch-drift
+rm "$MAIN/release-named-dirty"
+git -C "$MAIN" switch -q main
 release_drift_main
 sync_free_lanes
 
 setup_main_drift SAY-305 sayosomi/say-305-release-different-topic
 git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_BASE"
 expect_release_blocked_drift 'release drift local topic at different SHA'
+assert_line "$output" '^BLOCKED: checkpoint mismatch$' 'release drift local topic at different SHA was not a checkpoint mismatch'
+if printf '%s\n' "$output" | grep -q '^BLOCKED: release claimed branch mismatch$'; then
+  fail 'release drift local topic at different SHA was classified as branch drift'
+fi
 git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_CHECKPOINT"
 release_drift_main
 sync_free_lanes
 
 setup_main_unmerged_drift SAY-306 sayosomi/say-306-release-unmerged
 expect_release_blocked_drift 'release drift checkpoint not contained in origin main'
+assert_release_branch_mismatch 'release drift checkpoint not contained in origin main' main "$(git -C "$MAIN" rev-parse HEAD)" checkout-branch-drift
 merge_topic_into_main "$DRIFT_BRANCH"
 git -C "$SEED" push -q origin ":$DRIFT_BRANCH"
 release_drift_main
@@ -1623,6 +1694,7 @@ sync_free_lanes
 setup_main_drift SAY-309 sayosomi/say-309-release-other-worktree
 git -C "$SUB" switch -q "$DRIFT_BRANCH"
 expect_release_blocked_drift 'release drift topic checked out in another worktree'
+assert_release_branch_mismatch 'release drift topic checked out in another worktree' main "$(git -C "$MAIN" rev-parse HEAD)" claimed-branch-checked-out-elsewhere
 git -C "$SUB" switch -q --detach "$DRIFT_BASE"
 release_drift_main
 sync_free_lanes
