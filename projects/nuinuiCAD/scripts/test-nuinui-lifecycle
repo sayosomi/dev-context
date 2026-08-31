@@ -5,7 +5,7 @@ HELPER="${1:-$(cd "$(dirname "$0")" && pwd -P)/nuinui}"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-lifecycle.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 
-REMOTE="$ROOT/remote.git"
+REMOTE="$ROOT/sayosomi/nuinuiCAD.git"
 SEED="$ROOT/seed"
 MAIN="$ROOT/main"
 SUB="$ROOT/sub"
@@ -38,7 +38,9 @@ release_receipt() {
   esac
   printf '%s/nuinui-implementation-release-receipt\n' "$(gitdir "$release_receipt_repo")"
 }
+e2e_receipt() { printf '%s/nuinui-e2e-release-receipt\n' "$(gitdir "$E2E")"; }
 read_optional_file() { if [ -e "$1" ]; then cat "$1"; else echo absent; fi; }
+e2e_optional_file() { if [ -f "$1" ]; then cat "$1"; elif [ -e "$1" ]; then echo non-file; else echo absent; fi; }
 tombstone_state() { find "$(gitdir "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort; }
 lane_refs() { git -C "$1" for-each-ref --format='%(refname) %(objectname)' | sort; }
 local_lane_refs() { git -C "$1" for-each-ref refs/heads --format='%(refname) %(objectname)' | sort; }
@@ -53,6 +55,32 @@ release_snapshot() {
   printf 'tombstones=%s\n' "$(tombstone_state "$release_snapshot_lane")"
   printf 'initialization=%s\n' "$(read_optional_file "$(gitdir "$release_snapshot_lane")/nuinui-implementation-v1")"
   printf 'receipt=%s\n' "$(read_optional_file "$(release_receipt "$release_snapshot_lane")")"
+}
+e2e_snapshot() {
+  e2e_snapshot_lane=$1
+  printf 'branch=%s\n' "$(git -C "$e2e_snapshot_lane" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  printf 'head=%s\n' "$(git -C "$e2e_snapshot_lane" rev-parse HEAD)"
+  printf 'status=%s\n' "$(git -C "$e2e_snapshot_lane" status --porcelain)"
+  printf 'refs=%s\n' "$(lane_refs "$e2e_snapshot_lane")"
+  printf 'marker=%s\n' "$(e2e_optional_file "$(gitdir "$e2e_snapshot_lane")/nuinui-slot")"
+  printf 'session=%s\n' "$(e2e_optional_file "$(gitdir "$e2e_snapshot_lane")/nuinui-e2e-session")"
+  printf 'receipt=%s\n' "$(e2e_optional_file "$(e2e_receipt)")"
+}
+expect_e2e_blocked_no_mutation() {
+  expect_e2e_case=$1
+  shift
+  expect_e2e_before=$(e2e_snapshot "$E2E")
+  if expect_e2e_output=$("$HELPER" "$@" 2>&1); then
+    printf '%s\n' "$expect_e2e_output"
+    fail "$expect_e2e_case unexpectedly succeeded"
+  else
+    expect_e2e_rc=$?
+  fi
+  [ "$expect_e2e_rc" -ne 0 ] || fail "$expect_e2e_case returned zero"
+  assert_line "$expect_e2e_output" '^BLOCKED:' "$expect_e2e_case did not report BLOCKED"
+  expect_e2e_after=$(e2e_snapshot "$E2E")
+  [ "$expect_e2e_before" = "$expect_e2e_after" ] || fail "$expect_e2e_case mutated E2E state"
+  echo "PASS: $expect_e2e_case is blocked without mutation"
 }
 assert_release_receipt() {
   assert_release_receipt_lane=$1
@@ -157,6 +185,12 @@ e2e_closure_check() {
     NUINUI_E2E_TEMP_PARENT="$E2E_CLOSURE_TEMP" \
     TMPDIR="$E2E_CLOSURE_TMPDIR" \
     zsh "$E2E_PREPARE_HELPER" closure-check "$1"
+}
+e2e_cleanup() {
+  env \
+    NUINUI_E2E_PREPARE_WT="$E2E" \
+    NUINUI_E2E_TEMP_PARENT="$E2E_CLOSURE_TEMP" \
+    zsh "$E2E_PREPARE_HELPER" cleanup
 }
 
 expect_begin_blocked() {
@@ -580,6 +614,7 @@ expect_release_blocked_drift() {
   expect_release_blocked_command "$1" "$drift_repo" "$HELPER" release "$DRIFT_LANE" "$DRIFT_CHECKPOINT" "$DRIFT_CLAIM"
 }
 
+mkdir -p "$(dirname "$REMOTE")"
 git init -q --bare "$REMOTE"
 git -C "$REMOTE" symbolic-ref HEAD refs/heads/main
 git init -q -b main "$SEED"
@@ -630,19 +665,33 @@ echo 'PASS: public preflight BLOCKED has fixed result boundary'
 rm "$E2E/preflight-blocked"
 
 E2E_MARKER="$(gitdir "$E2E")/nuinui-slot"
+E2E_SESSION="$(gitdir "$E2E")/nuinui-e2e-session"
+E2E_RECEIPT="$(e2e_receipt)"
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'E2E setup is not detached'
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'E2E setup is not clean'
 [ ! -e "$E2E_MARKER" ] || fail 'E2E setup has a marker'
+[ ! -e "$E2E_SESSION" ] || fail 'E2E setup has a session'
+[ ! -e "$E2E_RECEIPT" ] || fail 'E2E setup has a release receipt'
 E2E_TESTED_REF="$(git -C "$E2E" rev-parse origin/main)"
 [ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_TESTED_REF" ] || fail 'E2E setup is not at origin/main'
+E2E_SECOND_REF="$(git -C "$E2E" commit-tree "$(git -C "$E2E" rev-parse HEAD^{tree})" -p "$E2E_TESTED_REF" -m 'second E2E tested ref')"
+if E2E_OLD_RELEASE_OUTPUT=$("$HELPER" e2e-release 2>&1); then
+  printf '%s\n' "$E2E_OLD_RELEASE_OUTPUT"
+  fail 'old zero-argument E2E release unexpectedly succeeded'
+else
+  E2E_OLD_RELEASE_RC=$?
+fi
+[ "$E2E_OLD_RELEASE_RC" = 2 ] || fail 'old zero-argument E2E release did not return usage status'
+[ "$E2E_OLD_RELEASE_OUTPUT" = 'Usage: nuinui e2e-release <SAY-123> <tested-ref>' ] || fail 'old zero-argument E2E release did not return exact usage'
 E2E_START_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
-[ "$(printf '%s\n' "$E2E_START_OUTPUT" | tail -n 1)" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_START_OUTPUT"; fail 'normal E2E start did not return exact success output'; }
+[ "$E2E_START_OUTPUT" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_START_OUTPUT"; fail 'normal E2E start did not return exact success output'; }
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'normal E2E start attached the checkout'
 [ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_TESTED_REF" ] || fail 'normal E2E start changed the tested ref'
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E start dirtied the checkout'
 [ -f "$E2E_MARKER" ] || fail 'normal E2E start did not create the marker'
-[ ! -e "$(gitdir "$E2E")/nuinui-e2e-session" ] || fail 'release-ready E2E state has prep session metadata'
+[ ! -e "$E2E_SESSION" ] || fail 'release-ready E2E state has prep session metadata'
 [ "$(cat "$E2E_MARKER")" = "$(printf 'issue=SAY-299\nref=%s\n' "$E2E_TESTED_REF")" ] || fail 'normal E2E start wrote the wrong marker'
+[ ! -e "$E2E_RECEIPT" ] || fail 'normal E2E start unexpectedly changed the release receipt'
 echo 'PASS: release-ready E2E state preserves marker until e2e-release'
 if E2E_CLOSURE_OUTPUT=$(e2e_closure_check SAY-299 2>&1); then
   printf '%s\n' "$E2E_CLOSURE_OUTPUT"
@@ -654,19 +703,129 @@ fi
 assert_line "$E2E_CLOSURE_OUTPUT" '^  marker=BLOCKING-SAME-ISSUE$' 'release-ready closure-check did not block on the marker'
 assert_line "$E2E_CLOSURE_OUTPUT" '^  session=none-for-requested-issue$' 'release-ready closure-check did not prove no prep session'
 assert_line "$E2E_CLOSURE_OUTPUT" '^E2E CLOSURE BLOCKED$' 'release-ready closure-check did not report BLOCKED'
-E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release)
-[ "$(printf '%s\n' "$E2E_RELEASE_OUTPUT" | tail -n 1)" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_OUTPUT"; fail 'normal E2E release did not return exact success output'; }
+
+E2E_DUPLICATE_BEFORE=$(e2e_snapshot "$E2E")
+E2E_DUPLICATE_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
+E2E_DUPLICATE_AFTER=$(e2e_snapshot "$E2E")
+[ "$E2E_DUPLICATE_OUTPUT" = "$(printf 'E2E ALREADY STARTED\nissue=SAY-299\nref=%s\nclean=yes\nmutation=no-op\nstate=BUSY' "$E2E_TESTED_REF")" ] || {
+  printf '%s\n' "$E2E_DUPLICATE_OUTPUT"
+  fail 'exact duplicate E2E start did not return the required no-op envelope'
+}
+[ "$E2E_DUPLICATE_BEFORE" = "$E2E_DUPLICATE_AFTER" ] || fail 'exact duplicate E2E start changed E2E state'
+echo 'PASS: exact duplicate E2E start is read-only'
+expect_e2e_blocked_no_mutation 'duplicate E2E start with different Issue' e2e-start SAY-300 "$E2E_TESTED_REF"
+expect_e2e_blocked_no_mutation 'duplicate E2E start with different ref' e2e-start SAY-299 "$E2E_SECOND_REF"
+
+E2E_MARKER_CONTENT="$(cat "$E2E_MARKER")"
+printf 'issue=SAY-299\nref=%s\nextra=value\n' "$E2E_TESTED_REF" > "$E2E_MARKER"
+expect_e2e_blocked_no_mutation 'malformed E2E marker duplicate start' e2e-start SAY-299 "$E2E_TESTED_REF"
+printf '%s\n' "$E2E_MARKER_CONTENT" > "$E2E_MARKER"
+
+E2E_PREPARED_ROOT="$(mktemp -d "$E2E_CLOSURE_TEMP/nuinui-vscode-e2e.XXXXXX")"
+E2E_PREPARED_HANDOFF="$E2E_CLOSURE_TEMP/nuinui-SAY-299-human-e2e.env"
+printf 'ISSUE=SAY-299\n' > "$E2E_PREPARED_HANDOFF"
+printf 'issue=SAY-299\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
+  "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
+E2E_DUPLICATE_SESSION_BEFORE=$(e2e_snapshot "$E2E")
+E2E_DUPLICATE_WITH_SESSION=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
+E2E_DUPLICATE_SESSION_AFTER=$(e2e_snapshot "$E2E")
+[ "$E2E_DUPLICATE_WITH_SESSION" = "$(printf 'E2E ALREADY STARTED\nissue=SAY-299\nref=%s\nclean=yes\nmutation=no-op\nstate=BUSY' "$E2E_TESTED_REF")" ] || fail 'duplicate E2E start rejected a valid matching session'
+[ "$E2E_DUPLICATE_SESSION_BEFORE" = "$E2E_DUPLICATE_SESSION_AFTER" ] || fail 'duplicate E2E start changed valid session state'
+printf 'issue=SAY-998\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
+  "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
+expect_e2e_blocked_no_mutation 'conflicting E2E session duplicate start' e2e-start SAY-299 "$E2E_TESTED_REF"
+rm "$E2E_SESSION"
+printf 'issue=SAY-299\nref=%s\n' "$E2E_TESTED_REF" > "$E2E_SESSION"
+expect_e2e_blocked_no_mutation 'partial E2E session duplicate start' e2e-start SAY-299 "$E2E_TESTED_REF"
+rm "$E2E_SESSION"
+
+printf 'issue=SAY-299\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
+  "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
+expect_e2e_blocked_no_mutation 'active E2E release with session metadata' e2e-release SAY-299 "$E2E_TESTED_REF"
+e2e_cleanup >/dev/null || fail 'canonical E2E cleanup failed'
+[ ! -e "$E2E_SESSION" ] || fail 'canonical E2E cleanup retained session'
+[ ! -e "$E2E_PREPARED_ROOT" ] || fail 'canonical E2E cleanup retained root'
+[ ! -e "$E2E_PREPARED_HANDOFF" ] || fail 'canonical E2E cleanup retained handoff'
+[ -f "$E2E_MARKER" ] || fail 'canonical E2E cleanup removed marker'
+
+E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release SAY-299 "$E2E_TESTED_REF")
+[ "$E2E_RELEASE_OUTPUT" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_OUTPUT"; fail 'normal E2E release did not return exact success output'; }
 [ ! -e "$E2E_MARKER" ] || fail 'normal E2E release retained the marker'
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'normal E2E release attached the checkout'
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E release dirtied the checkout'
 E2E_RELEASE_REF="$(git -C "$E2E" rev-parse origin/main)"
 [ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_RELEASE_REF" ] || fail 'normal E2E release did not return to origin/main'
+[ "$(cat "$E2E_RECEIPT")" = "$(printf 'version=1\nissue=SAY-299\nref=%s\n' "$E2E_TESTED_REF")" ] || fail 'normal E2E release wrote the wrong receipt'
 E2E_CLOSURE_OUTPUT=$(e2e_closure_check SAY-299) || {
   printf '%s\n' "$E2E_CLOSURE_OUTPUT"
   fail 'post-release closure-check did not become clean'
 }
 assert_line "$E2E_CLOSURE_OUTPUT" '^E2E CLOSURE CLEAN$' 'post-release closure-check did not report clean'
-echo 'PASS: normal E2E start/release regression'
+echo 'PASS: normal E2E start/release and closure regression'
+
+E2E_DUPLICATE_RELEASE_BEFORE=$(e2e_snapshot "$E2E")
+E2E_DUPLICATE_RELEASE_OUTPUT=$("$HELPER" e2e-release SAY-299 "$E2E_TESTED_REF")
+E2E_DUPLICATE_RELEASE_AFTER=$(e2e_snapshot "$E2E")
+[ "$E2E_DUPLICATE_RELEASE_OUTPUT" = "$(printf 'E2E ALREADY RELEASED\nissue=SAY-299\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE' "$E2E_TESTED_REF" "$E2E_RELEASE_REF")" ] || {
+  printf '%s\n' "$E2E_DUPLICATE_RELEASE_OUTPUT"
+  fail 'exact duplicate E2E release did not return the required no-op envelope'
+}
+[ "$E2E_DUPLICATE_RELEASE_BEFORE" = "$E2E_DUPLICATE_RELEASE_AFTER" ] || fail 'exact duplicate E2E release changed E2E state'
+echo 'PASS: exact duplicate E2E release is read-only'
+expect_e2e_blocked_no_mutation 'duplicate E2E release with different Issue' e2e-release SAY-300 "$E2E_TESTED_REF"
+expect_e2e_blocked_no_mutation 'duplicate E2E release with different ref' e2e-release SAY-299 "$E2E_SECOND_REF"
+printf 'dirty duplicate-release checkout\n' > "$E2E/e2e-duplicate-dirty"
+expect_e2e_blocked_no_mutation 'dirty duplicate E2E release checkout' e2e-release SAY-299 "$E2E_TESTED_REF"
+rm "$E2E/e2e-duplicate-dirty"
+git -C "$E2E" branch e2e-duplicate-attached "$E2E_RELEASE_REF"
+git -C "$E2E" switch e2e-duplicate-attached >/dev/null
+expect_e2e_blocked_no_mutation 'attached duplicate E2E release checkout' e2e-release SAY-299 "$E2E_TESTED_REF"
+git -C "$E2E" switch --detach origin/main >/dev/null
+git -C "$E2E" branch -d e2e-duplicate-attached >/dev/null
+git -C "$E2E" switch --detach "$E2E_SECOND_REF" >/dev/null
+expect_e2e_blocked_no_mutation 'wrong-head duplicate E2E release checkout' e2e-release SAY-299 "$E2E_TESTED_REF"
+git -C "$E2E" switch --detach origin/main >/dev/null
+
+E2E_RECEIPT_CONTENT="$(cat "$E2E_RECEIPT")"
+printf 'version=1\nissue=SAY-299\n' > "$E2E_RECEIPT"
+expect_e2e_blocked_no_mutation 'malformed E2E release receipt duplicate release' e2e-release SAY-299 "$E2E_TESTED_REF"
+printf '%s\n' "$E2E_RECEIPT_CONTENT" > "$E2E_RECEIPT"
+rm "$E2E_RECEIPT"
+expect_e2e_blocked_no_mutation 'missing E2E release receipt duplicate release' e2e-release SAY-299 "$E2E_TESTED_REF"
+printf '%s\n' "$E2E_RECEIPT_CONTENT" > "$E2E_RECEIPT"
+
+E2E_START_B_OUTPUT=$("$HELPER" e2e-start SAY-300 "$E2E_SECOND_REF")
+[ "$E2E_START_B_OUTPUT" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_START_B_OUTPUT"; fail 'second E2E start did not succeed'; }
+[ "$(cat "$E2E_RECEIPT")" = "$E2E_RECEIPT_CONTENT" ] || fail 'starting a new E2E generation changed the prior receipt'
+expect_e2e_blocked_no_mutation 'stale E2E release against active newer marker' e2e-release SAY-299 "$E2E_TESTED_REF"
+
+rm "$E2E_RECEIPT"
+mkdir "$E2E_RECEIPT"
+expect_e2e_blocked_no_mutation 'E2E receipt write failure retains marker' e2e-release SAY-300 "$E2E_SECOND_REF"
+rmdir "$E2E_RECEIPT"
+printf '%s\n' "$E2E_RECEIPT_CONTENT" > "$E2E_RECEIPT"
+
+E2E_RELEASE_B_OUTPUT=$("$HELPER" e2e-release SAY-300 "$E2E_SECOND_REF")
+[ "$E2E_RELEASE_B_OUTPUT" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_B_OUTPUT"; fail 'second E2E release did not succeed'; }
+[ "$(cat "$E2E_RECEIPT")" = "$(printf 'version=1\nissue=SAY-300\nref=%s\n' "$E2E_SECOND_REF")" ] || fail 'second E2E release did not replace the receipt'
+E2E_RELEASE_B_REF="$(git -C "$E2E" rev-parse origin/main)"
+E2E_DUPLICATE_RELEASE_B_BEFORE=$(e2e_snapshot "$E2E")
+E2E_DUPLICATE_RELEASE_B_OUTPUT=$("$HELPER" e2e-release SAY-300 "$E2E_SECOND_REF")
+E2E_DUPLICATE_RELEASE_B_AFTER=$(e2e_snapshot "$E2E")
+[ "$E2E_DUPLICATE_RELEASE_B_OUTPUT" = "$(printf 'E2E ALREADY RELEASED\nissue=SAY-300\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE' "$E2E_SECOND_REF" "$E2E_RELEASE_B_REF")" ] || fail 'second exact duplicate E2E release did not succeed'
+[ "$E2E_DUPLICATE_RELEASE_B_BEFORE" = "$E2E_DUPLICATE_RELEASE_B_AFTER" ] || fail 'second exact duplicate E2E release changed E2E state'
+
+E2E_SESSION_CONTENT="issue=SAY-300
+ref=$E2E_SECOND_REF
+root=/tmp/nuinui-vscode-e2e.test
+handoff=/tmp/nuinui-SAY-300-human-e2e.env
+cdp_port=9223
+launch_pid=123"
+printf '%s\n' "$E2E_SESSION_CONTENT" > "$E2E_SESSION"
+expect_e2e_blocked_no_mutation 'duplicate E2E release with session metadata' e2e-release SAY-300 "$E2E_SECOND_REF"
+rm "$E2E_SESSION"
+
+[ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'E2E final setup is not clean'
 
 expect_old_signature_rejected 'old claimless resume signature' resume main SAY-1 "$BASE" old-branch
 expect_old_signature_rejected 'old claimless release signature' release main "$BASE"

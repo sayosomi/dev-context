@@ -357,10 +357,12 @@ format:
 
 ```text
 issue=SAY-123
-ref=<exact tested commit or stable ref>
+ref=<40-character tested commit SHA>
 ```
 
 markerはworking treeへ置かない。E2E releaseの最後に削除する。
+
+active markerがある間は、そのIssue/ref generationがauthorityであり、古いcompleted receiptから別callerが新しいmarkerを採用・releaseしてはならない。exact duplicate startはstrict marker、caller identity、clean detached checkout、HEAD、optional sessionをread-onlyで証明した場合だけno-op成功する。receiptはmarkerとsessionがないidle stateで、caller identityとcurrent authoritative `origin/main` HEADが完全一致するときだけcompleted-release authorityになる。
 
 ### e2e start
 
@@ -378,13 +380,15 @@ Canonicalなsuccessful Human E2E closure handoffは、必ず次の順序で行�
 
 ```text
 nuinui-e2e-prepare cleanup
-nuinui e2e-release
+nuinui e2e-release <Issue> <tested-ref>
 nuinui-e2e-prepare closure-check <Issue>
 ```
 
 `cleanup`はprepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
 
-`e2e-release`はmarkerの存在とsession metadataの不在をpreconditionとして要求し、cleanを確認してcurrent authoritative `origin/main` detached HEADへ安全に戻した後、markerを削除する。
+`e2e-release <Issue> <tested-ref>`はcaller identityをmarkerと照合し、session metadataの不在、valid repository/origin、clean detached checkout、tested HEADをmutation前に要求する。fetch/prune後に同じproofを再検証し、current authoritative `origin/main`を取得する。Git dirへstrictな`version=1 / issue / ref`の`nuinui-e2e-release-receipt`をatomically write/replaceしてから安全に`origin/main`へdetachし、最後にmarkerを削除する。receipt writeに失敗した場合はmarkerを保持してBLOCKEDで停止する。
+
+markerがない場合、同じcaller Issue/ref、strict receipt、session metadata不在、clean detached checkout、current authoritative `origin/main` HEADをread-onlyで完全一致証明できる場合だけ、`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先され、staleなreceiptから別Issueのreleaseを推測しない。
 
 `nuinui-e2e-prepare closure-check <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
 

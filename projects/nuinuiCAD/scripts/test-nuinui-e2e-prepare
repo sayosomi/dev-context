@@ -103,6 +103,15 @@ common_env=(
   "PATH=$fake_bin:$PATH"
 )
 
+echo "TEST: version and help expose the identity-bearing release lifecycle"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.2.2" ]] || fail "unexpected preparation helper version"
+help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
+print -r -- "$help_out" | grep -Fq "nuinui e2e-release <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
+cleanup_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
+release_line="$(print -r -- "$help_out" | grep -n "nuinui e2e-release <SAY-123> <tested-ref>" | head -n 1 | cut -d: -f1)"
+closure_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare closure-check <Issue>" | head -n 1 | cut -d: -f1)"
+[[ -n "$cleanup_line" && -n "$release_line" && -n "$closure_line" && "$cleanup_line" -lt "$release_line" && "$release_line" -lt "$closure_line" ]] || fail "help does not preserve cleanup -> release -> closure order"
+
 echo "TEST: status reports no session and unmanaged artifact candidates without mutation"
 mkdir -p "$temp_parent/nuinui-vscode-e2e.orphan" || fail "orphan root setup"
 print -r -- orphan > "$temp_parent/nuinui-SAY-888-human-e2e.env"

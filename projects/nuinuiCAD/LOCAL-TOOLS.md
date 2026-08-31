@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.12`。
+current standalone helper version: `1.6.13`。
 
 `nuinui preflight`のHuman copy boundaryは、`===== NUINUI PREFLIGHT RESULT =====`からコピーを開始し、`PREFLIGHT PASS`または`PREFLIGHT BLOCKED`の直後で停止する。ヘッダはplain-textの出力境界だけを示し、lane / preflight semanticsは変更しない。
 
@@ -109,7 +109,7 @@ integration-clean.sh
   conflict-free merge-only Human integration refresh
 
 e2e.sh
-  e2e-start / e2e-start-local-main / e2e-release mechanics
+  e2e-start / e2e-start-local-main / identity-safe e2e-release mechanics
 
 context-sync.sh
   context-audit / guarded context-sync / persistent dev-context audit and transition
@@ -155,7 +155,7 @@ current commands:
 | `nuinui integrate-clean <main\|sub> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | ChatGPT-authorized NON-INTERFERING merge-gate refreshをactive laneでconflict-free merge-only実行し、verify後にnormal push |
 | `nuinui e2e-start <SAY-123> <tested-ref>` | idle e2e laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main <SAY-123> <tested-ref>` | Active interim workflow時だけlocal main checkpointをe2eへ安全に固定 |
-| `nuinui e2e-release` | verified e2e stateをlatest `origin/main` detachedへ戻しmarker削除 |
+| `nuinui e2e-release <SAY-123> <tested-ref>` | caller identityを照合し、verified e2e stateをlatest `origin/main` detachedへ戻し、durable receipt後にmarker削除。exact duplicateはread-only no-op |
 | `nuinui context-audit <expected-main> <expected-artifact-blob>` | GitHub authoritative mainを照合するstandard cloneのstrict read-only audit。behind local HEAD / artifactは許容 |
 | `nuinui context-sync <expected-main> <expected-artifact-blob>` | fresh fetch後にexpected-main treeのartifact blobを検証し、cleanなstandard clone `main`だけをff-only sync |
 | `nuinui context-dev-audit <expected-branch> <expected-head>` | canonical `/Users/yosomi/Code/dev-context-dev`のregistered worktree / repository / clean / branch / HEADをstrict read-only audit |
@@ -234,6 +234,8 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
+current Human E2E preparation helper version: `1.2.2`。
+
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はdedicated e2e laneでHuman Manual E2E hostを準備するversioned helper。
 
 ```text
@@ -250,15 +252,17 @@ Human E2Eのcanonical successful closureは、次の順序に固定する。
 
 ```text
 nuinui-e2e-prepare cleanup
-nuinui e2e-release
+nuinui e2e-release <SAY-123> <tested-ref>
 nuinui-e2e-prepare closure-check <SAY-123>
 ```
 
-session metadataはexact E2E root / handoff / launch PIDを保持する。`cleanup`はmetadataとtested markerを再検証し、owned process / temporary root / handoff / session metadataだけを削除する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。markerを削除するのは`nuinui e2e-release`だけである。session metadataが残る間はe2e laneをreleaseしない。
+session metadataはexact E2E root / handoff / launch PIDを保持する。`cleanup`はmetadataとtested markerを再検証し、owned process / temporary root / handoff / session metadataだけを削除する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
 
-`status`と`closure-check`はread-only。unmanaged artifactや別Issue stateを勝手にcleanupしない。`closure-check`はe2e-release後だけに行うfinal read-only closure proofであり、cleanupとe2e-releaseの間の通常のrelease-precondition checkではない。同一Issue markerが残っている間はclosure-checkが`BLOCKED`になるfail-closed semanticsを維持する。
+`status`と`closure-check`はread-only。unmanaged artifactや別Issue stateを勝手にcleanupしない。`closure-check`はe2e-release後だけに行うfinal read-only closure proofであり、cleanupとe2e-releaseの間の通常のrelease-precondition checkではない。同一Issue markerが残っている間は`closure-check`が`BLOCKED`になるfail-closed semanticsを維持する。markerがない場合も、matchingなstrict E2E release receipt、idle clean detached checkout、current authoritative `origin/main`を証明できるexact duplicate releaseだけを`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先される。
 
 `projects/nuinuiCAD/scripts/test-nuinui-e2e-prepare`はtemporary Git checkoutとfake hostでisolated self-testを行う。実機VS Code / dependency / CDP lifecycleはactual e2e preparation時に別途確認する。
+
+active E2E markerはcurrent generationのauthorityである。markerがある間のexact duplicate `e2e-start`はcaller Issue/ref、strict marker、clean detached checkout、HEAD、optional sessionをread-onlyで照合し、`E2E ALREADY STARTED` / `mutation=no-op`を返す。markerがない場合のexact duplicate `e2e-release`も、matching receiptとcurrent authoritative `origin/main` idle proofをread-onlyで満たすときだけ成功する。同じcommandの再実行に対して追加のHuman handback、preflight、status、confirmationは要求しない。
 
 Humanへhelper commandを渡す場合、Issue、Base、checkpoint、claim、branch、tested ref、fixture path等、ChatGPT側で確定できる値を埋めたcopy/paste-ready commandにする。
 

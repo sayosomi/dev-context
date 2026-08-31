@@ -1,6 +1,6 @@
 #!/bin/zsh
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 SCRIPT_PATH="${ZSH_SCRIPT:-$0}"
 E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
@@ -25,12 +25,12 @@ The tested ref and e2e marker must already be fixed by the E2E lane helper.
 
 Successful Human E2E closure is:
   1. nuinui-e2e-prepare cleanup
-  2. nuinui e2e-release
+  2. nuinui e2e-release <SAY-123> <tested-ref>
   3. nuinui-e2e-prepare closure-check <Issue>
 
 cleanup removes the prepared session's owned process, temporary root, handoff,
 and session metadata, but intentionally preserves the tested same-Issue marker.
-The marker is removed by nuinui e2e-release; closure-check is a post-release
+The marker is removed by nuinui e2e-release <SAY-123> <tested-ref>; closure-check is a post-release
 final read-only gate only.
 EOF
 }
