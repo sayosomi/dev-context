@@ -133,7 +133,9 @@ lane_execution__lock() {
 }
 
 lane_execution__remote_branch() {
-  git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null | awk 'NR == 1 {print $1}'
+  lane_execution_remote_branch_listing=$(git -C "$1" ls-remote --heads origin \
+    "refs/heads/$2" 2>/dev/null) || return 1
+  printf '%s\n' "$lane_execution_remote_branch_listing" | awk 'NR == 1 {print $1}'
 }
 
 lane_execution__branch_on_other_worktree() {
@@ -182,8 +184,9 @@ lane_execution__start_mutation() {
     "$lane_execution_mutation_base" ] || return 1
   git -C "$lane_execution_mutation_repo" show-ref --verify --quiet \
     "refs/heads/$lane_execution_mutation_branch" && return 1
-  [ -z "$(lane_execution__remote_branch "$lane_execution_mutation_repo" \
-    "$lane_execution_mutation_branch")" ] || return 1
+  lane_execution_mutation_remote_branch=$(lane_execution__remote_branch \
+    "$lane_execution_mutation_repo" "$lane_execution_mutation_branch") || return 1
+  [ -z "$lane_execution_mutation_remote_branch" ] || return 1
   [ -z "$(lane_execution__branch_on_other_worktree "$lane_execution_mutation_repo" \
     "$lane_execution_mutation_branch")" ] || return 1
 
