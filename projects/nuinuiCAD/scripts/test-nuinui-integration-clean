@@ -129,7 +129,7 @@ run_failure() {
   [ -n "$output" ] || fail "$name produced no diagnostic"
   first=$(printf '%s\n' "$output" | sed -n '1p')
   case "$first" in
-    BLOCKED:*|ERROR:*) ;;
+    '⛔ BLOCKED:'*|'❌ ERROR:'*) ;;
     *) fail "$name first line was not classified: $first" ;;
   esac
   assert_contains "$output" "$expected" "$name missing expected diagnostic"
@@ -154,7 +154,7 @@ setup_case success
 SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
   fail 'success case failed'
 first=$(printf '%s\n' "$SUCCESS_OUT" | sed -n '1p')
-[ "$first" = 'INTEGRATION PUSHED' ] || fail 'success first line mismatch'
+[ "$first" = '🧩 INTEGRATION PUSHED' ] || fail 'success first line mismatch'
 SUCCESS_HEAD=$(printf '%s\n' "$SUCCESS_OUT" | sed -n 's/^head=//p')
 [ -n "$SUCCESS_HEAD" ] || fail 'success head missing'
 assert_contains "$SUCCESS_OUT" "lane=sub" 'success lane missing'
@@ -210,7 +210,7 @@ printf '\043!/bin/sh\nprintf push > "%s"\nexit 13\n' "$PUSH_MARKER" > "$O/hooks/
 chmod 755 "$O/hooks/pre-receive"
 EXACT_DUP_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_COUNT_SCRIPT" "$MANIFEST_OK") ||
   fail 'exact duplicate did not succeed'
-[ "$(printf '%s\n' "$EXACT_DUP_OUT" | sed -n '1p')" = 'INTEGRATION ALREADY PUSHED' ] ||
+[ "$(printf '%s\n' "$EXACT_DUP_OUT" | sed -n '1p')" = '♻️ INTEGRATION ALREADY PUSHED' ] ||
   fail 'exact duplicate first line mismatch'
 assert_contains "$EXACT_DUP_OUT" "lane=sub" 'exact duplicate lane missing'
 assert_contains "$EXACT_DUP_OUT" "issue=SAY-89" 'exact duplicate issue missing'
@@ -255,7 +255,7 @@ NO_MANIFEST_SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$
   fail 'no-manifest duplicate setup success failed'
 NO_MANIFEST_DUP_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -) ||
   fail 'no-manifest duplicate did not succeed'
-[ "$(printf '%s\n' "$NO_MANIFEST_DUP_OUT" | sed -n '1p')" = 'INTEGRATION ALREADY PUSHED' ] ||
+[ "$(printf '%s\n' "$NO_MANIFEST_DUP_OUT" | sed -n '1p')" = '♻️ INTEGRATION ALREADY PUSHED' ] ||
   fail 'no-manifest duplicate first line mismatch'
 assert_contains "$NO_MANIFEST_DUP_OUT" 'file_set=NOT_REQUESTED' 'no-manifest duplicate did not report NOT_REQUESTED'
 assert_contains "$NO_MANIFEST_DUP_OUT" 'mutation=no-op' 'no-manifest duplicate mutation marker missing'
