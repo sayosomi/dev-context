@@ -1,10 +1,9 @@
-#!/bin/sh
-
-# Canonical durable ownership metadata semantics.  This fragment is assembled
-# before each standalone consumer; it is never sourced at runtime.
+# Canonical durable ownership metadata semantics for a fixed 2+1 profile.
+# This fragment is assembled before each standalone consumer; it is never
+# sourced at runtime.
 
 nuinui_ownership_valid_issue() {
-  printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'
+  fixed_2plus1_profile_valid_work_id "$1"
 }
 
 nuinui_ownership_valid_sha() {
@@ -16,7 +15,7 @@ nuinui_ownership_valid_claim() {
 }
 
 nuinui_ownership_issue_from_branch() {
-  printf '%s\n' "$1" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p'
+  fixed_2plus1_profile_work_id_from_branch "$1"
 }
 
 nuinui_ownership_valid_branch() {
@@ -24,9 +23,7 @@ nuinui_ownership_valid_branch() {
 }
 
 nuinui_ownership_validate_issue_branch() {
-  nuinui_ownership_valid_issue "$1" || return 1
-  nuinui_ownership_valid_branch "$2" || return 1
-  [ "$(nuinui_ownership_issue_from_branch "$2")" = "$1" ]
+  fixed_2plus1_profile_validate_issue_branch "$1" "$2"
 }
 
 nuinui_ownership_read_fields() {
@@ -114,10 +111,7 @@ nuinui_ownership_parse_release_receipt() {
   set -- $(nuinui_ownership_read_fields "$1" version,lane,issue,branch,base,checkpoint,claim) || return 1
   [ "$#" = 7 ] || return 1
   [ "$1" = 1 ] || return 1
-  case "$2" in
-    main|sub) ;;
-    *) return 1 ;;
-  esac
+  fixed_2plus1_profile_is_implementation_lane "$2" || return 1
   nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
   nuinui_ownership_valid_sha "$5" || return 1
   nuinui_ownership_valid_sha "$6" || return 1
@@ -136,9 +130,7 @@ nuinui_ownership_parse_lock() {
   case "$3:$4" in
     -:-) ;;
     -:*|*:-) return 1 ;;
-    *)
-      nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
-      ;;
+    *) nuinui_ownership_validate_issue_branch "$3" "$4" || return 1 ;;
   esac
   [ "$5" = - ] || nuinui_ownership_valid_sha "$5" || return 1
   [ "$6" = - ] || nuinui_ownership_valid_sha "$6" || return 1

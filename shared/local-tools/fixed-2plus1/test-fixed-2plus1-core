@@ -1,0 +1,165 @@
+#!/bin/sh
+set -eu
+
+source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$source_dir/../../.." && pwd -P)
+fixture_root=$(mktemp -d "/tmp/fixed-2plus1-core.XXXXXX")
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$fixture_root"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "FIXED 2+1 CORE TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  case "$1" in
+    *"$2"*) ;;
+    *) fail "$3 missing=$2 output=$1" ;;
+  esac
+}
+
+expect_failure() {
+  test_label=$1
+  shift
+  if test_output=$("$@" 2>&1); then
+    fail "$test_label unexpectedly passed"
+  fi
+  echo "PASS: $test_label"
+}
+
+remote_path=$fixture_root/dummy/repository.git
+seed_path=$fixture_root/seed
+alpha_path=$fixture_root/alpha
+beta_path=$fixture_root/beta
+verify_path=$fixture_root/verify
+mkdir -p "$(dirname "$remote_path")"
+git init -q --bare "$remote_path"
+git init -q -b trunk "$seed_path"
+git -C "$seed_path" config user.name test
+git -C "$seed_path" config user.email test@example.invalid
+printf '%s\n' base > "$seed_path/file"
+git -C "$seed_path" add file
+git -C "$seed_path" commit -qm base
+git -C "$seed_path" remote add origin "$remote_path"
+git -C "$seed_path" push -qu origin trunk
+git -C "$remote_path" symbolic-ref HEAD refs/heads/trunk
+git clone -q "$remote_path" "$alpha_path"
+git clone -q "$remote_path" "$beta_path"
+git clone -q "$remote_path" "$verify_path"
+for checkout_path in "$alpha_path" "$beta_path" "$verify_path"; do
+  git -C "$checkout_path" config user.name test
+  git -C "$checkout_path" config user.email test@example.invalid
+done
+git -C "$beta_path" switch --detach origin/trunk >/dev/null
+git -C "$verify_path" switch --detach origin/trunk >/dev/null
+
+profile_path=$fixture_root/dummy-profile.sh
+cat > "$profile_path" <<'PROFILE'
+#!/bin/sh
+
+fixed_2plus1_profile_implementation_lane_a_name() { printf '%s\n' alpha; }
+fixed_2plus1_profile_implementation_lane_b_name() { printf '%s\n' beta; }
+fixed_2plus1_profile_human_test_lane_name() { printf '%s\n' verify; }
+fixed_2plus1_profile_is_implementation_lane() { [ "$1" = alpha ] || [ "$1" = beta ]; }
+fixed_2plus1_profile_peer_lane() { case "$1" in alpha) echo beta;; beta) echo alpha;; *) return 2;; esac; }
+fixed_2plus1_profile_lane_path() { case "$1" in alpha) echo "$FIXED_2PLUS1_TEST_ROOT/alpha";; beta) echo "$FIXED_2PLUS1_TEST_ROOT/beta";; verify) echo "$FIXED_2PLUS1_TEST_ROOT/verify";; *) return 2;; esac; }
+fixed_2plus1_profile_repository_identity() { echo dummy/repository; }
+fixed_2plus1_profile_default_branch() { echo trunk; }
+fixed_2plus1_profile_idle_checkout_form() { case "$1" in alpha) echo branch;; beta) echo detached;; *) return 2;; esac; }
+fixed_2plus1_profile_valid_work_id() { printf '%s\n' "$1" | grep -Eq '^TASK-[0-9]+$'; }
+fixed_2plus1_profile_work_id_from_branch() { printf '%s\n' "$1" | sed -n 's/.*\(TASK-[0-9][0-9]*\).*/\1/p'; }
+fixed_2plus1_profile_validate_issue_branch() { fixed_2plus1_profile_valid_work_id "$1" && git check-ref-format --branch "$2" >/dev/null 2>&1 && [ "$(fixed_2plus1_profile_work_id_from_branch "$2")" = "$1" ]; }
+fixed_2plus1_profile_human_test_marker_path() { echo "$(gd "$1")/fixed-human-marker"; }
+fixed_2plus1_profile_human_test_session_path() { echo "$(gd "$1")/fixed-human-session"; }
+fixed_2plus1_profile_human_test_receipt_path() { echo "$(gd "$1")/fixed-human-receipt"; }
+PROFILE
+
+helper_path=$fixture_root/fixed-2plus1-helper
+{
+  cat "$profile_path" \
+    "$source_dir/profile-contract.sh" \
+    "$source_dir/ownership-schema.sh" \
+    "$source_dir/implementation-core.sh" \
+    "$source_dir/lifecycle-facade.sh" \
+    "$source_dir/release-facade.sh" \
+    "$source_dir/human-test-core.sh"
+  printf '%s\n' 'case "$1" in'
+  printf '%s\n' '  init) li "$2" ;;'
+  printf '%s\n' '  classify) cl "$2" "$(lr "$2")" ;;'
+  printf '%s\n' '  begin) lifecycle_begin "$2" "$3" "$4" "$5" "$6" ;;'
+  printf '%s\n' '  resume) rs "$2" "$3" "$4" "$5" "$6" "$7" ;;'
+  printf '%s\n' '  release) lifecycle_release_command "$2" "$3" "$4" ;;'
+  printf '%s\n' '  human-start) fixed_2plus1_human_test_start "$2" "$3" HUMAN-STARTED HUMAN-ALREADY-STARTED ;;'
+  printf '%s\n' '  human-release) fixed_2plus1_human_test_release "$2" "$3" HUMAN-RELEASED HUMAN-ALREADY-RELEASED ;;'
+  printf '%s\n' 'esac'
+} > "$helper_path"
+chmod 755 "$helper_path"
+
+export FIXED_2PLUS1_TEST_ROOT="$fixture_root"
+base=$(git -C "$alpha_path" rev-parse origin/trunk)
+
+"$helper_path" init alpha >/dev/null
+"$helper_path" init beta >/dev/null
+assert_contains "$("$helper_path" classify alpha)" 'state=FREE' 'alpha initialized FREE state'
+assert_contains "$("$helper_path" classify beta)" 'state=FREE' 'beta initialized FREE state'
+
+alpha_branch=work/TASK-1-core
+begin_output=$("$helper_path" begin alpha TASK-1 "$base" "$alpha_branch" FREE)
+assert_contains "$begin_output" 'IMPLEMENTATION STARTED' 'begin alpha'
+assert_contains "$("$helper_path" classify alpha)" 'state=BUSY' 'BUSY classification'
+alpha_claim=$(sed -n 's/^claim=//p' "$(git -C "$alpha_path" rev-parse --absolute-git-dir)/nuinui-implementation-slot/state")
+
+peer_output=$("$helper_path" begin beta TASK-2 "$base" work/TASK-2-core FREE 2>&1 || true)
+assert_contains "$peer_output" 'BLOCKED: begin peer occupancy does not match caller expectation' 'peer occupancy validation'
+
+printf '%s\n' alpha-change >> "$alpha_path/file"
+git -C "$alpha_path" add file
+git -C "$alpha_path" commit -qm alpha-change
+checkpoint=$(git -C "$alpha_path" rev-parse HEAD)
+git -C "$alpha_path" push -qu origin "$alpha_branch"
+resume_output=$("$helper_path" resume alpha TASK-1 "$base" "$checkpoint" "$alpha_branch" "$alpha_claim")
+assert_contains "$resume_output" 'RESUMED' 'resume exact Base/checkpoint/claim'
+
+git -C "$seed_path" fetch -q origin "$alpha_branch"
+git -C "$seed_path" merge --ff-only -q "origin/$alpha_branch"
+git -C "$seed_path" push -qu origin trunk
+release_output=$("$helper_path" release alpha "$checkpoint" "$alpha_claim")
+assert_contains "$release_output" 'IMPLEMENTATION RELEASED' 'release exact checkpoint/claim'
+duplicate_release=$("$helper_path" release alpha "$checkpoint" "$alpha_claim")
+assert_contains "$duplicate_release" 'IMPLEMENTATION ALREADY RELEASED' 'implementation duplicate no-op'
+
+git -C "$beta_path" fetch -q origin
+git -C "$beta_path" switch --detach origin/trunk >/dev/null
+blocked_branch=work/TASK-3-core
+"$helper_path" begin alpha TASK-3 "$checkpoint" "$blocked_branch" FREE >/dev/null
+git -C "$alpha_path" switch --detach "$checkpoint" >/dev/null
+expect_failure 'checkout mismatch is BLOCKED' "$helper_path" classify alpha
+
+git -C "$verify_path" fetch -q origin
+human_start=$("$helper_path" human-start TASK-4 "$checkpoint")
+assert_contains "$human_start" 'HUMAN-STARTED' 'Human-test exact-ref start'
+human_release=$("$helper_path" human-release TASK-4 "$checkpoint")
+assert_contains "$human_release" 'HUMAN-RELEASED' 'Human-test release to authoritative trunk'
+human_duplicate=$("$helper_path" human-release TASK-4 "$checkpoint")
+assert_contains "$human_duplicate" 'HUMAN-ALREADY-RELEASED' 'Human-test duplicate no-op'
+
+for forbidden in \
+  '/Users/yosomi/Code/nuinuiCAD' \
+  '/Users/yosomi/Code/nuinuiCAD-sub' \
+  '/Users/yosomi/Code/nuinuiCAD-e2e' \
+  'sayosomi/nuinuiCAD' \
+  'SAY-[0-9]' \
+  'main|sub' \
+  'origin/main'; do
+  if rg -n --fixed-strings "$forbidden" "$source_dir"/*.sh >/dev/null 2>&1; then
+    fail "shared source requires forbidden project identity or alias: $forbidden"
+  fi
+done
+
+echo 'FIXED 2+1 CORE TEST PASS'

@@ -28,5 +28,6 @@ root README は repository overview / router であり、詳細な development w
 - [Implementation Coding Agent Workflow](./shared/CODING-AGENT-WORKFLOW.md)
 - [Agent Skills](./shared/AGENT-SKILLS.md)
 - [Autonomous ChatGPT Runner Pattern](./shared/AUTONOMOUS-RUNNER-PATTERN.md)
+- [Fixed 2+1 Execution Model](./shared/FIXED-2PLUS1-EXECUTION.md)
 
 この repository には current task の commit SHA、branch、進捗、個別 implementation plan などの一時情報を置かない。そうした情報は各 project の repository または work-management system で管理する。

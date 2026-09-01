@@ -6,9 +6,21 @@ script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
 
 source_budget_check() {
   source_budget_script_dir=$1
+  source_budget_search_root=$source_budget_script_dir
+  source_budget_shared_root=
+  while [ "$source_budget_search_root" != / ]; do
+    if [ -d "$source_budget_search_root/shared/local-tools/fixed-2plus1" ]; then
+      source_budget_shared_root=$source_budget_search_root/shared/local-tools/fixed-2plus1
+      break
+    fi
+    source_budget_next_root=$(CDPATH= cd -- "$source_budget_search_root/.." && pwd -P) || break
+    [ "$source_budget_next_root" != "$source_budget_search_root" ] || break
+    source_budget_search_root=$source_budget_next_root
+  done
   for source_root in \
     "$source_budget_script_dir/nuinui-src" \
-    "$source_budget_script_dir/nuinui-handoff-check-src"; do
+    "$source_budget_script_dir/nuinui-handoff-check-src" \
+    "$source_budget_shared_root"; do
     [ -d "$source_root" ] || {
       echo "SOURCE BUDGET BLOCKED: missing guarded source root path=$source_root" >&2
       return 1
@@ -18,6 +30,7 @@ source_budget_check() {
   source_budget_workspace=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-source-budget.XXXXXX")
   source_budget_nuinui_list=$source_budget_workspace/nuinui-src
   source_budget_handoff_list=$source_budget_workspace/nuinui-handoff-check-src
+  source_budget_shared_list=$source_budget_workspace/fixed-2plus1
   source_budget_top_level_list=$source_budget_workspace/top-level
   source_budget_unsorted_list=$source_budget_workspace/unsorted
   source_budget_list=$source_budget_workspace/sorted
@@ -32,6 +45,11 @@ source_budget_check() {
     rm -rf "$source_budget_workspace"
     return 1
   fi
+  if ! find "$source_budget_shared_root" -type f -print > "$source_budget_shared_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=shared-fixed-2plus1 path=$source_budget_shared_root" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
   if ! find "$source_budget_script_dir" -maxdepth 1 -type f -print > "$source_budget_top_level_list"; then
     echo "SOURCE BUDGET BLOCKED: discovery=top-level path=$source_budget_script_dir" >&2
     rm -rf "$source_budget_workspace"
@@ -39,6 +57,17 @@ source_budget_check() {
   fi
   if ! cat "$source_budget_nuinui_list" "$source_budget_handoff_list" > "$source_budget_unsorted_list"; then
     echo "SOURCE BUDGET BLOCKED: discovery=combine path=$source_budget_workspace" >&2
+    rm -rf "$source_budget_workspace"
+    return 1
+  fi
+  if ! while IFS= read -r source_path || [ -n "$source_path" ]; do
+    source_name=${source_path##*/}
+    case "$source_name" in
+      test-*) continue ;;
+    esac
+    printf '%s\n' "$source_path"
+  done < "$source_budget_shared_list" >> "$source_budget_unsorted_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=shared-fixed-2plus1-classification path=$source_budget_shared_root" >&2
     rm -rf "$source_budget_workspace"
     return 1
   fi
@@ -122,7 +151,8 @@ make_fixture() {
   source_budget_fixture=$source_budget_test_root/$1
   mkdir -p \
     "$source_budget_fixture/scripts/nuinui-src" \
-    "$source_budget_fixture/scripts/nuinui-handoff-check-src"
+    "$source_budget_fixture/scripts/nuinui-handoff-check-src" \
+    "$source_budget_fixture/shared/local-tools/fixed-2plus1"
   cp "$budget_script" "$source_budget_fixture/scripts/test-nuinui-source-budget"
   chmod 755 "$source_budget_fixture/scripts/test-nuinui-source-budget"
   printf '%s\n' "$source_budget_fixture"
@@ -216,6 +246,11 @@ handoff_path=$handoff_fixture/scripts/nuinui-handoff-check-src/nested/new-handof
 mkdir -p "$(dirname "$handoff_path")"
 make_bytes 32769 "$handoff_path"
 run_expected_failure 'nuinui-handoff-check-src over-budget source' "$handoff_fixture/scripts/test-nuinui-source-budget" "$handoff_path"
+
+shared_fixture=$(make_fixture shared-root)
+shared_path=$shared_fixture/shared/local-tools/fixed-2plus1/new-shared-core.sh
+make_bytes 32769 "$shared_path"
+run_expected_failure 'shared fixed-2plus1 over-budget source' "$shared_fixture/scripts/test-nuinui-source-budget" "$shared_path"
 
 standalone_fixture=$(make_fixture standalone)
 standalone_path=$standalone_fixture/scripts/nuinui-e2e-prepare

@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.6.21`。
+current standalone helper version: `1.6.22`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -91,11 +91,30 @@ projects/nuinuiCAD/scripts/nuinui
 source ownership map:
 
 ```text
-ownership-schema.sh
-  canonical durable ownership schema semantics
+projects/nuinuiCAD/scripts/nuinui-src/project-profile.sh
+  nuinuiCAD profile: main/sub/e2e aliases, fixed paths, repository/default-branch identity,
+  SAY-<digits> validation, and Manual E2E project policy hooks
+
+shared/local-tools/fixed-2plus1/profile-contract.sh
+  shared profile contract and fail-closed contract validation
+
+shared/local-tools/fixed-2plus1/ownership-schema.sh
+  canonical project-independent durable ownership schema semantics
+
+shared/local-tools/fixed-2plus1/implementation-core.sh
+  fixed 2+1 low-level lifecycle mechanics
+
+shared/local-tools/fixed-2plus1/lifecycle-facade.sh
+  shared begin/start/resume façade and envelopes
+
+shared/local-tools/fixed-2plus1/release-facade.sh
+  shared release drift proof, duplicate proof, and release envelopes
+
+shared/local-tools/fixed-2plus1/human-test-core.sh
+  shared exact-ref Human-test fixation, release, receipt, and duplicate mechanics
 
 nuinui-body.sh
-  shared runtime / low-level lifecycle primitives
+  narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks
 
 github-pr.sh
   GitHub PR transport boundary
@@ -106,14 +125,12 @@ required-checks.sh
 pr-auto-merge.sh
   reservation state machine
 
-lifecycle-facade.sh
-  public lifecycle façade/envelopes
-
 integration-clean.sh
   conflict-free merge-only Human integration refresh
 
 e2e.sh
-  e2e-start / e2e-start-local-main / identity-safe e2e-release mechanics
+  nuinuiCAD E2E adapter: presentation, session integration, and e2e-start-local-main interim semantics;
+  ordinary exact-ref start/release delegates to the shared Human-test core
 
 context-sync.sh
   context-audit / guarded context-sync / persistent dev-context audit and transition
@@ -131,7 +148,7 @@ cli-dispatch.sh
   public command membership / usage / validation / dispatch
 ```
 
-これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
+これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`generate-nuinui`はproject profile、shared fixed 2+1 modulesをexplicit orderでassembleし、その後に残りのnuinuiCAD adapterを連結してstandalone helperを生成する。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
 ### Source-size architecture budget
 
@@ -143,6 +160,8 @@ projects/nuinuiCAD/scripts/nuinui-handoff-check-src/
 ```
 
 It also guards every regular file directly under `projects/nuinuiCAD/scripts/` as a standalone implementation source. This includes `nuinui-e2e-prepare`; future standalone helpers are included automatically. Top-level discovery is sorted with `LC_ALL=C` and excludes only the generated artifacts `nuinui` and `nuinui-handoff-check`, generators named `generate-*`, and focused regression scripts named `test-*`.
+
+The shared fixed 2+1 implementation sources under `shared/local-tools/fixed-2plus1/` are guarded by the same per-file limit. The focused `test-fixed-2plus1-core` is excluded from that implementation cap, while the source-budget test fails closed if the shared source root cannot be discovered.
 
 The hard limit is exactly `32768` bytes per guarded source, measured with `wc -c`; a source is over budget only when its actual byte count is greater than the limit. There is no current exception. Future exceptions require an exact tracked path and non-empty rationale. Threshold and exception changes must remain review-visible tracked changes. `nuinui self-test` aggregates this source-budget regression.
 
