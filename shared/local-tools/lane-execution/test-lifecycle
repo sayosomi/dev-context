@@ -1,0 +1,302 @@
+#!/bin/sh
+set -eu
+
+source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+LANE_EXECUTION_SOURCE_DIR=$source_dir
+. "$source_dir/preflight.sh"
+. "$source_dir/inventory.sh"
+. "$source_dir/lifecycle.sh"
+
+# The fixture adapter is deliberately project-shaped: generic topology code
+# receives Work-ID validation through a callback rather than embedding SAY-N.
+lane_execution_validate_work_id() {
+  case "$1" in SAY-[0-9]*) ;; *) return 1 ;; esac
+}
+
+lane_execution_validate_issue_branch() {
+  lane_execution_test_issue=$1
+  lane_execution_test_branch=$2
+  lane_execution_validate_work_id "$lane_execution_test_issue" || return 1
+  case "$lane_execution_test_branch" in topic/say-*) ;; *) return 1 ;; esac
+  git check-ref-format --branch "$lane_execution_test_branch" >/dev/null 2>&1
+}
+
+test_root=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/lane-lifecycle-test.XXXXXX")" && pwd -P)
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$test_root"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "LANE LIFECYCLE TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  case "$1" in
+    *"$2"*) ;;
+    *) fail "$3 missing=$2" ;;
+  esac
+}
+
+capture_begin() {
+  lifecycle_test_output=
+  lifecycle_test_rc=0
+  lifecycle_test_output=$(lane_execution_begin "$@" 2>&1) || lifecycle_test_rc=$?
+}
+
+capture_start() {
+  lifecycle_test_output=
+  lifecycle_test_rc=0
+  lifecycle_test_output=$(lane_execution_start "$@" 2>&1) || lifecycle_test_rc=$?
+}
+
+new_repository() {
+  lifecycle_test_repository_root=$1
+  lifecycle_test_repository_identity=$2
+  mkdir -p "$lifecycle_test_repository_root/remote/$(dirname "$lifecycle_test_repository_identity")"
+  git init -q --bare "$lifecycle_test_repository_root/remote/$lifecycle_test_repository_identity.git"
+  git init -q -b main "$lifecycle_test_repository_root/root"
+  printf 'fixture\n' >"$lifecycle_test_repository_root/root/file"
+  git -C "$lifecycle_test_repository_root/root" add file
+  git -C "$lifecycle_test_repository_root/root" -c user.name=fixture \
+    -c user.email=fixture@example.invalid commit -qm fixture
+  git -C "$lifecycle_test_repository_root/root" remote add origin \
+    "$lifecycle_test_repository_root/remote/$lifecycle_test_repository_identity.git"
+  git -C "$lifecycle_test_repository_root/root" push -q origin main
+}
+
+add_detached_lane() {
+  git -C "$lifecycle_test_repository_root/root" worktree add -q --detach \
+    "$1" origin/main
+}
+
+initialize_lane() {
+  lifecycle_test_lane_git_dir=$(git -C "$1" rev-parse --absolute-git-dir)
+  printf 'version=1\n' >"$lifecycle_test_lane_git_dir/nuinui-implementation-v1"
+}
+
+append_lane() {
+  printf '\n[lane %s]\nrole=implementation\npath=%s\nidle=%s\n' \
+    "$1" "$2" "$3" >>"$lifecycle_test_manifest"
+}
+
+fixture_setup() {
+  lifecycle_test_fixture_root=$1
+  lifecycle_test_implementation_count=$2
+  lifecycle_test_human_count=$3
+  lifecycle_test_repository_root=$lifecycle_test_fixture_root
+  new_repository "$lifecycle_test_fixture_root" example/project
+  mkdir -p "$lifecycle_test_fixture_root/lanes"
+  lifecycle_test_alpha=$lifecycle_test_fixture_root/root
+  initialize_lane "$lifecycle_test_alpha"
+  lifecycle_test_manifest=$lifecycle_test_fixture_root/lanes.conf
+  printf 'version=1\nrepository=example/project\ndefault_branch=main\n' \
+    >"$lifecycle_test_manifest"
+  append_lane alpha "$lifecycle_test_alpha" branch
+
+  if [ "$lifecycle_test_implementation_count" -ge 2 ]; then
+    lifecycle_test_beta=$lifecycle_test_fixture_root/lanes/beta
+    add_detached_lane "$lifecycle_test_beta"
+    initialize_lane "$lifecycle_test_beta"
+    append_lane beta "$lifecycle_test_beta" detached
+  fi
+  if [ "$lifecycle_test_implementation_count" -ge 3 ]; then
+    lifecycle_test_gamma=$lifecycle_test_fixture_root/lanes/gamma
+    add_detached_lane "$lifecycle_test_gamma"
+    initialize_lane "$lifecycle_test_gamma"
+    append_lane gamma "$lifecycle_test_gamma" detached
+  fi
+  lifecycle_test_human_index=1
+  while [ "$lifecycle_test_human_index" -le "$lifecycle_test_human_count" ]; do
+    lifecycle_test_human_path=$lifecycle_test_fixture_root/lanes/verify$lifecycle_test_human_index
+    add_detached_lane "$lifecycle_test_human_path"
+    printf '\n[lane verify%s]\nrole=human-test\npath=%s\nidle=detached\n' \
+      "$lifecycle_test_human_index" "$lifecycle_test_human_path" >>"$lifecycle_test_manifest"
+    lifecycle_test_human_index=$((lifecycle_test_human_index + 1))
+  done
+}
+
+make_busy() {
+  lifecycle_test_busy_repo=$1
+  lifecycle_test_busy_issue=$2
+  lifecycle_test_busy_base=$3
+  lifecycle_test_busy_branch=$4
+  git -C "$lifecycle_test_busy_repo" switch -q -c "$lifecycle_test_busy_branch" \
+    "$lifecycle_test_busy_base"
+  lifecycle_test_busy_git_dir=$(git -C "$lifecycle_test_busy_repo" rev-parse --absolute-git-dir)
+  mkdir "$lifecycle_test_busy_git_dir/nuinui-implementation-slot"
+  printf 'version=1\nissue=%s\nbranch=%s\nbase=%s\nclaim=claim-12345678\n' \
+    "$lifecycle_test_busy_issue" "$lifecycle_test_busy_branch" \
+    "$lifecycle_test_busy_base" >"$lifecycle_test_busy_git_dir/nuinui-implementation-slot/state"
+}
+
+one_root=$test_root/one
+fixture_setup "$one_root" 1 0
+one_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+capture_begin "$lifecycle_test_manifest" alpha SAY-101 "$one_base" topic/say-101 alpha=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "1-lane begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION STARTED' '1-lane begin'
+assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=SAY-101' '1-lane inventory'
+[ "$(git -C "$lifecycle_test_alpha" symbolic-ref --short HEAD)" = topic/say-101 ] ||
+  fail '1-lane target did not become BUSY'
+capture_begin "$lifecycle_test_manifest" alpha SAY-101 "$one_base" topic/say-101 alpha=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "1-lane duplicate failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION ALREADY STARTED' '1-lane duplicate'
+assert_contains "$lifecycle_test_output" 'mutation=no-op' '1-lane duplicate mutation'
+capture_begin "$lifecycle_test_manifest" alpha SAY-101 "$one_base" topic/say-101 alpha=FREE, 2>/dev/null || true
+[ "$lifecycle_test_rc" != 0 ] || fail 'malformed trailing inventory passed'
+echo 'PASS: one implementation lane begin, BUSY state, duplicate, and malformed expectation'
+
+start_root=$test_root/start
+fixture_setup "$start_root" 1 0
+start_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+capture_start "$lifecycle_test_manifest" alpha SAY-102 "$start_base" topic/say-102
+[ "$lifecycle_test_rc" = 0 ] || fail "direct start failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION STARTED' 'direct start'
+assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=SAY-102' 'direct start inventory'
+echo 'PASS: lower-level direct start does not require caller inventory and reports complete occupancy'
+
+two_root=$test_root/two
+fixture_setup "$two_root" 2 1
+two_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+capture_begin "$lifecycle_test_manifest" beta SAY-202 "$two_base" topic/say-202 alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "2-lane beta begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=FREE,beta=SAY-202' '2-lane BUSY/FREE inventory'
+capture_begin "$lifecycle_test_manifest" alpha SAY-201 "$two_base" topic/say-201 alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'stale other-lane expectation passed'
+assert_contains "$lifecycle_test_output" 'lane=beta expected=FREE actual=SAY-202' '2-lane stale diagnostic'
+capture_begin "$lifecycle_test_manifest" alpha SAY-201 "$two_base" topic/say-201 alpha=FREE,beta=SAY-202
+[ "$lifecycle_test_rc" = 0 ] || fail "2-lane begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=SAY-201,beta=SAY-202' '2-lane complete inventory'
+capture_begin "$lifecycle_test_manifest" alpha SAY-201 "$two_base" topic/say-201 alpha=FREE,beta=SAY-202
+[ "$lifecycle_test_rc" = 0 ] || fail "2-lane duplicate failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'mutation=no-op' '2-lane duplicate'
+capture_begin "$lifecycle_test_manifest" alpha SAY-201 "$two_base" topic/say-other alpha=FREE,beta=SAY-202
+[ "$lifecycle_test_rc" != 0 ] || fail 'same Work-ID different branch duplicate passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-201 \
+  0000000000000000000000000000000000000000 topic/say-201 alpha=FREE,beta=SAY-202
+[ "$lifecycle_test_rc" != 0 ] || fail 'same Work-ID different Base duplicate passed'
+echo 'PASS: current 2+1 topology has complete inventory, stale-lane protection, and duplicate proofs'
+
+three_root=$test_root/three
+fixture_setup "$three_root" 3 1
+three_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+capture_begin "$lifecycle_test_manifest" alpha SAY-301 "$three_base" topic/say-301 \
+  alpha=FREE,beta=FREE,gamma=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "3-lane begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=SAY-301,beta=FREE,gamma=FREE' '3-lane complete inventory'
+capture_begin "$lifecycle_test_manifest" beta SAY-302 "$three_base" topic/say-302 \
+  alpha=SAY-999,beta=FREE,gamma=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'second implementation mismatch passed'
+assert_contains "$lifecycle_test_output" 'lane=alpha expected=SAY-999 actual=SAY-301' 'second-lane diagnostic'
+capture_begin "$lifecycle_test_manifest" beta SAY-302 "$three_base" topic/say-302 \
+  alpha=SAY-301,beta=FREE,gamma=SAY-999
+[ "$lifecycle_test_rc" != 0 ] || fail 'third implementation mismatch passed'
+assert_contains "$lifecycle_test_output" 'lane=gamma expected=SAY-999 actual=FREE' 'third-lane diagnostic'
+capture_begin "$lifecycle_test_manifest" beta SAY-302 "$three_base" topic/say-302 \
+  alpha=SAY-301,beta=FREE,gamma=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "3-lane second begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=SAY-301,beta=SAY-302,gamma=FREE' '3-lane second result'
+echo 'PASS: 3+1 topology audits and admits every implementation lane without A/B truncation'
+
+race_root=$test_root/race
+fixture_setup "$race_root" 3 0
+race_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+race_manifest=$lifecycle_test_manifest
+lane_execution_before_mutation_revalidate() {
+  [ "$1" = "$race_manifest" ] && [ "$2" = alpha ] || return 0
+  [ -z "$(git -C "$lifecycle_test_gamma" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || return 0
+  make_busy "$lifecycle_test_gamma" SAY-399 "$race_base" topic/say-399
+}
+capture_begin "$race_manifest" alpha SAY-398 "$race_base" topic/say-398 \
+  alpha=FREE,beta=FREE,gamma=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'third-lane pre-mutation race passed'
+assert_contains "$lifecycle_test_output" 'lane=gamma expected=FREE actual=SAY-399' 'third-lane race diagnostic'
+[ "$(git -C "$lifecycle_test_alpha" symbolic-ref --short HEAD)" = main ] ||
+  fail 'race mutated the target checkout'
+race_target_git_dir=$(git -C "$lifecycle_test_alpha" rev-parse --absolute-git-dir)
+[ ! -e "$race_target_git_dir/nuinui-implementation-slot" ] || fail 'race created target slot'
+echo 'PASS: deterministic third-lane mutation blocks before target mutation'
+
+post_root=$test_root/post
+fixture_setup "$post_root" 3 0
+post_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+post_manifest=$lifecycle_test_manifest
+lane_execution_after_mutation() {
+  [ "$1" = "$post_manifest" ] && [ "$2" = alpha ] || return 0
+  printf 'post-audit drift\n' >"$lifecycle_test_gamma/unexpected-file"
+}
+capture_begin "$post_manifest" alpha SAY-401 "$post_base" topic/say-401 \
+  alpha=FREE,beta=FREE,gamma=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "proven-complete post-audit result failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'mutation_state=COMPLETED' 'post-audit completed state'
+assert_contains "$lifecycle_test_output" 'lane=alpha' 'post-audit target proof'
+[ "$(git -C "$lifecycle_test_alpha" symbolic-ref --short HEAD)" = topic/say-401 ] ||
+  fail 'post-audit test did not preserve completed target mutation'
+echo 'PASS: proven completed mutation remains explicit when post-audit drift is detected'
+
+uncertain_root=$test_root/uncertain
+fixture_setup "$uncertain_root" 1 0
+uncertain_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+NUINUI_SELFTEST_CRASH_AT=start-after-slot capture_begin "$lifecycle_test_manifest" alpha \
+  SAY-402 "$uncertain_base" topic/say-402 alpha=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'uncertain generic mutation passed'
+assert_contains "$lifecycle_test_output" 'mutation_state=UNKNOWN' 'uncertain mutation state'
+uncertain_git_dir=$(git -C "$lifecycle_test_alpha" rev-parse --absolute-git-dir)
+[ -e "$uncertain_git_dir/nuinui-implementation-lock" ] &&
+  [ -e "$uncertain_git_dir/nuinui-implementation-slot" ] ||
+  fail 'uncertain generic mutation did not retain durable recovery state'
+echo 'PASS: uncertain generic mutation completion remains BLOCKED with durable state retained'
+
+invalid_root=$test_root/invalid
+fixture_setup "$invalid_root" 2 1
+invalid_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 alpha=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'missing implementation expectation passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 \
+  alpha=FREE,alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'duplicate inventory entry passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 \
+  alpha=FREE,beta=FREE,unknown=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'unknown inventory entry passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 \
+  alpha=FREE,beta=FREE,verify1=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'Human-test inventory entry passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 alpha=
+[ "$lifecycle_test_rc" != 0 ] || fail 'empty inventory value passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 alpha=NOPE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'invalid occupancy passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-X "$invalid_base" topic/say-X alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'project-invalid Work-ID passed'
+capture_begin "$lifecycle_test_manifest" verify1 SAY-501 "$invalid_base" topic/say-501 alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'Human-test target passed'
+capture_begin "$lifecycle_test_manifest" absent SAY-501 "$invalid_base" topic/say-501 alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'missing target passed'
+capture_begin "$lifecycle_test_manifest" alpha SAY-501 "$invalid_base" topic/say-501 \
+  alpha=SAY-501,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'non-FREE new target expectation passed'
+invalid_manifest=$invalid_root/invalid.conf
+sed 's/version=1/version=2/' "$lifecycle_test_manifest" >"$invalid_manifest"
+capture_begin "$invalid_manifest" alpha SAY-501 "$invalid_base" topic/say-501 alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'invalid manifest passed'
+echo 'PASS: inventory, target, role, Work-ID, and manifest validation fail closed'
+
+pending_root=$test_root/pending
+fixture_setup "$pending_root" 1 0
+pending_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+pending_git_dir=$(git -C "$lifecycle_test_alpha" rev-parse --absolute-git-dir)
+pending_claim=claim-12345678
+mkdir "$pending_git_dir/nuinui-implementation-slot.releasing.$pending_claim"
+printf 'version=1\nissue=SAY-601\nbranch=topic/say-601\nbase=%s\nclaim=%s\n' \
+  "$pending_base" "$pending_claim" >"$pending_git_dir/nuinui-implementation-slot.releasing.$pending_claim/state"
+printf '%s\n' "$pending_base" >"$pending_git_dir/nuinui-implementation-slot.releasing.$pending_claim/checkpoint"
+capture_begin "$lifecycle_test_manifest" alpha SAY-602 "$pending_base" topic/say-602 alpha=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'RELEASE-PENDING state satisfied an occupancy expectation'
+assert_contains "$lifecycle_test_output" 'RELEASE-PENDING' 'release-pending evidence'
+echo 'PASS: RELEASE-PENDING preflight state cannot satisfy implementation inventory'
+
+echo 'LANE LIFECYCLE TEST PASS'
