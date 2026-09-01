@@ -378,7 +378,6 @@ case "$1" in
       echo 'Usage: nuinui doctor [--full]'
       exit 2
     fi
-    shift
     nuinui_run_public doctor doctor "$@"
     exit $?
     ;;

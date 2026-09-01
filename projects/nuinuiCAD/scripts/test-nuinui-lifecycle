@@ -741,11 +741,19 @@ if printf '%s\n' "$DEFAULT_THREE_OUTPUT" | grep -q '^forensic_'; then
 fi
 echo 'PASS: default three-worktree preflight remains strict and quiet'
 
-DOCTOR_OUTPUT=$($HELPER doctor)
+DOCTOR_STATUS_PROBE="$ROOT/doctor-status-probe"
+printf '%s\n' \
+  '#!/bin/sh' \
+  '[ "${1:-}" = status ] || exit 1' \
+  'printf "%s\\n" DOCTOR_FULL_STATUS_PROBE=invoked' > "$DOCTOR_STATUS_PROBE"
+chmod 755 "$DOCTOR_STATUS_PROBE"
+DOCTOR_OUTPUT=$(NUINUI_E2E_STATUS_HELPER="$DOCTOR_STATUS_PROBE" $HELPER doctor --full)
 assert_exact_line "$DOCTOR_OUTPUT" '🩺 NUINUI DOCTOR' 'doctor did not prepend its Human heading'
 [ "$(printf '%s\n' "$DOCTOR_OUTPUT" | grep -Fc '🩺 NUINUI DOCTOR')" = 1 ] ||
   fail 'doctor emitted more than one Human heading'
-echo 'PASS: doctor uses one Human heading at the public boundary'
+assert_exact_line "$DOCTOR_OUTPUT" 'DOCTOR_FULL_STATUS_PROBE=invoked' \
+  'doctor --full did not reach the isolated E2E status probe'
+echo 'PASS: doctor --full uses one Human heading and reaches the full diagnostic path'
 
 git -C "$MAIN" worktree add -q --detach "$FORENSIC" origin/main
 git -C "$FORENSIC" switch -q -c sayosomi/forensic-arbitrary
