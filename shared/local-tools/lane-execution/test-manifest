@@ -1,0 +1,259 @@
+#!/bin/sh
+set -eu
+
+source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+. "$source_dir/manifest.sh"
+
+fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/lane-manifest-test.XXXXXX")
+marker_path=
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$fixture_root"
+  [ -z "$marker_path" ] || rm -f "$marker_path"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "LANE MANIFEST TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_equal() {
+  actual=$1
+  expected=$2
+  label=$3
+  [ "$actual" = "$expected" ] || fail "$label expected=$(printf '%s' "$expected" | sed 's/$/\\n/' | tr '\n' ' ') actual=$(printf '%s' "$actual" | sed 's/$/\\n/' | tr '\n' ' ')"
+}
+
+expect_failure() {
+  label=$1
+  shift
+  if "$@" >/dev/null 2>&1; then
+    fail "$label unexpectedly passed"
+  fi
+  echo "PASS: $label"
+}
+
+write_manifest() {
+  manifest_path=$1
+  manifest_body=$2
+  printf '%s\n' "$manifest_body" > "$manifest_path"
+}
+
+current_manifest=$fixture_root/current.conf
+write_manifest "$current_manifest" 'version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane main]
+role=implementation
+path=/Users/yosomi/Code/nuinuiCAD
+idle=branch
+
+[lane sub]
+role=implementation
+path=/Users/yosomi/Code/nuinuiCAD-sub
+idle=detached
+
+[lane e2e]
+role=human-test
+path=/Users/yosomi/Code/nuinuiCAD-e2e
+idle=detached'
+
+lane_manifest_validate "$current_manifest"
+assert_equal "$(lane_manifest_all_lanes "$current_manifest")" "main
+sub
+e2e" 'valid current 2+1 all-lane enumeration'
+assert_equal "$(lane_manifest_lanes_by_role "$current_manifest" implementation)" "main
+sub" 'role-filtered implementation enumeration'
+assert_equal "$(lane_manifest_lanes_by_role "$current_manifest" human-test)" e2e 'role-filtered Human-test enumeration'
+lane_manifest_validate_lane_name "$current_manifest" main
+expect_failure 'unknown lane name rejection' lane_manifest_validate_lane_name "$current_manifest" missing
+assert_equal "$(lane_manifest_lane_role "$current_manifest" sub)" implementation 'lane role lookup'
+assert_equal "$(lane_manifest_lane_path "$current_manifest" e2e)" /Users/yosomi/Code/nuinuiCAD-e2e 'lane path lookup'
+assert_equal "$(lane_manifest_lane_idle_policy "$current_manifest" main)" branch 'idle policy lookup'
+assert_equal "$(lane_manifest_repository_identity "$current_manifest")" sayosomi/nuinuiCAD 'repository identity lookup'
+assert_equal "$(lane_manifest_default_branch "$current_manifest")" main 'default branch lookup'
+echo 'PASS: valid current 2+1 manifest'
+
+one_lane_manifest=$fixture_root/one-lane.conf
+write_manifest "$one_lane_manifest" 'version=1
+repository=example/project
+default_branch=trunk
+
+[lane only]
+role=implementation
+path=/tmp/only
+idle=detached'
+lane_manifest_validate "$one_lane_manifest"
+assert_equal "$(lane_manifest_all_lanes "$one_lane_manifest")" only 'valid one-lane manifest'
+echo 'PASS: valid one-lane manifest'
+
+three_impl_manifest=$fixture_root/three-implementation.conf
+write_manifest "$three_impl_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha
+idle=branch
+
+[lane beta]
+role=implementation
+path=/tmp/beta
+idle=detached
+
+[lane gamma]
+role=implementation
+path=/tmp/gamma
+idle=detached'
+lane_manifest_validate "$three_impl_manifest"
+assert_equal "$(lane_manifest_lanes_by_role "$three_impl_manifest" implementation)" "alpha
+beta
+gamma" 'valid 3+ implementation enumeration'
+echo 'PASS: valid manifest with 3+ implementation lanes'
+
+duplicate_manifest=$fixture_root/duplicate.conf
+write_manifest "$duplicate_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha
+idle=branch
+
+[lane alpha]
+role=implementation
+path=/tmp/other
+idle=detached'
+expect_failure 'duplicate lane rejection' lane_manifest_validate "$duplicate_manifest"
+
+unsupported_version_manifest=$fixture_root/unsupported-version.conf
+write_manifest "$unsupported_version_manifest" 'version=2
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha
+idle=branch'
+expect_failure 'unsupported version rejection' lane_manifest_validate "$unsupported_version_manifest"
+
+missing_field_manifest=$fixture_root/missing-field.conf
+write_manifest "$missing_field_manifest" 'version=1
+repository=example/project
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha
+idle=branch'
+expect_failure 'missing required field rejection' lane_manifest_validate "$missing_field_manifest"
+
+missing_lane_field_manifest=$fixture_root/missing-lane-field.conf
+write_manifest "$missing_lane_field_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha'
+expect_failure 'missing required lane field rejection' lane_manifest_validate "$missing_lane_field_manifest"
+
+invalid_role_manifest=$fixture_root/invalid-role.conf
+write_manifest "$invalid_role_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=worker
+path=/tmp/alpha
+idle=branch'
+expect_failure 'invalid role rejection' lane_manifest_validate "$invalid_role_manifest"
+
+invalid_idle_manifest=$fixture_root/invalid-idle.conf
+write_manifest "$invalid_idle_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha
+idle=workspace'
+expect_failure 'invalid idle policy rejection' lane_manifest_validate "$invalid_idle_manifest"
+
+duplicate_key_manifest=$fixture_root/duplicate-key.conf
+write_manifest "$duplicate_key_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+role=human-test
+path=/tmp/alpha
+idle=branch'
+expect_failure 'duplicate lane key rejection' lane_manifest_validate "$duplicate_key_manifest"
+
+relative_path_manifest=$fixture_root/relative-path.conf
+write_manifest "$relative_path_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=relative/path
+idle=branch'
+expect_failure 'relative checkout path rejection' lane_manifest_validate "$relative_path_manifest"
+
+empty_path_manifest=$fixture_root/empty-path.conf
+write_manifest "$empty_path_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=
+idle=branch'
+expect_failure 'empty checkout path rejection' lane_manifest_validate "$empty_path_manifest"
+
+marker_path=/tmp/lane-manifest-should-not-exist-$$
+data_manifest=$fixture_root/data-only.conf
+write_manifest "$data_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/lane-manifest-data-$$/\$(touch\$IFS$marker_path)
+idle=branch"
+assert_equal "$(lane_manifest_lane_path "$data_manifest" alpha)" "/tmp/lane-manifest-data-$$/\$(touch\$IFS$marker_path)" 'manifest value remains data'
+[ ! -e "$marker_path" ] || fail 'manifest content was executed while parsing'
+echo 'PASS: manifest contents are parsed as data'
+
+malformed_key_manifest=$fixture_root/malformed-key.conf
+write_manifest "$malformed_key_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=/tmp/alpha
+unknown=value
+idle=branch'
+expect_failure 'malformed key rejection' lane_manifest_validate "$malformed_key_manifest"
+
+malformed_section_manifest=$fixture_root/malformed-section.conf
+write_manifest "$malformed_section_manifest" 'version=1
+repository=example/project
+default_branch=main
+
+[lanes alpha]
+role=implementation
+path=/tmp/alpha
+idle=branch'
+expect_failure 'malformed section rejection' lane_manifest_validate "$malformed_section_manifest"
+
+echo 'LANE MANIFEST TEST PASS'

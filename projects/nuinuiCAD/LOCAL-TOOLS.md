@@ -113,6 +113,9 @@ shared/local-tools/fixed-2plus1/release-facade.sh
 shared/local-tools/fixed-2plus1/human-test-core.sh
   shared exact-ref Human-test fixation, release, receipt, and duplicate mechanics
 
+shared/local-tools/lane-execution/manifest.sh
+  project-declared lane topology manifest grammar, validation, and data-only lookup API
+
 nuinui-body.sh
   narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks
 
@@ -162,6 +165,8 @@ projects/nuinuiCAD/scripts/nuinui-handoff-check-src/
 It also guards every regular file directly under `projects/nuinuiCAD/scripts/` as a standalone implementation source. This includes `nuinui-e2e-prepare`; future standalone helpers are included automatically. Top-level discovery is sorted with `LC_ALL=C` and excludes only the generated artifacts `nuinui` and `nuinui-handoff-check`, generators named `generate-*`, and focused regression scripts named `test-*`.
 
 The shared fixed 2+1 implementation sources under `shared/local-tools/fixed-2plus1/` are guarded by the same per-file limit. The focused `test-fixed-2plus1-core` is excluded from that implementation cap, while the source-budget test fails closed if the shared source root cannot be discovered.
+
+The shared lane topology manifest sources under `shared/local-tools/lane-execution/` are guarded by the same per-file limit. Focused `test-*` files are excluded from the implementation cap, while the source-budget test fails closed if either shared source root cannot be discovered.
 
 The hard limit is exactly `32768` bytes per guarded source, measured with `wc -c`; a source is over budget only when its actual byte count is greater than the limit. There is no current exception. Future exceptions require an exact tracked path and non-empty rationale. Threshold and exception changes must remain review-visible tracked changes. `nuinui self-test` aggregates this source-budget regression.
 
