@@ -1,0 +1,350 @@
+#!/bin/sh
+set -eu
+
+source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+LANE_EXECUTION_SOURCE_DIR=$source_dir
+. "$source_dir/preflight.sh"
+. "$source_dir/render.sh"
+
+test_root=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/lane-preflight-test.XXXXXX")" && pwd -P)
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$test_root"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "LANE PREFLIGHT TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  case "$1" in
+    *"$2"*) ;;
+    *) fail "$3 missing=$2" ;;
+  esac
+}
+
+assert_not_contains() {
+  case "$1" in
+    *"$2"*) fail "$3 unexpectedly contained=$2" ;;
+    *) ;;
+  esac
+}
+
+assert_line_order() {
+  lane_preflight_order_output=$1
+  shift
+  lane_preflight_order_previous=0
+  for lane_preflight_order_token in "$@"; do
+    lane_preflight_order_current=$(printf '%s\n' "$lane_preflight_order_output" | grep -n -F "$lane_preflight_order_token" | sed -n '1p' | cut -d: -f1)
+    [ -n "$lane_preflight_order_current" ] || fail "missing ordered token=$lane_preflight_order_token"
+    [ "$lane_preflight_order_current" -gt "$lane_preflight_order_previous" ] || fail "wrong order token=$lane_preflight_order_token"
+    lane_preflight_order_previous=$lane_preflight_order_current
+  done
+}
+
+write_manifest() {
+  lane_preflight_manifest_path=$1
+  lane_preflight_manifest_body=$2
+  printf '%s\n' "$lane_preflight_manifest_body" > "$lane_preflight_manifest_path"
+}
+
+new_repository() {
+  lane_preflight_repository_root=$1
+  lane_preflight_repository_identity=$2
+  mkdir -p "$lane_preflight_repository_root/remote/$(dirname "$lane_preflight_repository_identity")"
+  git init -q --bare "$lane_preflight_repository_root/remote/$lane_preflight_repository_identity.git"
+  git init -q -b main "$lane_preflight_repository_root/root"
+  printf 'fixture\n' > "$lane_preflight_repository_root/root/file"
+  git -C "$lane_preflight_repository_root/root" add file
+  git -C "$lane_preflight_repository_root/root" -c user.name=fixture -c user.email=fixture@example.invalid commit -qm fixture
+  git -C "$lane_preflight_repository_root/root" remote add origin "$lane_preflight_repository_root/remote/$lane_preflight_repository_identity.git"
+  git -C "$lane_preflight_repository_root/root" push -q origin main
+}
+
+add_detached_lane() {
+  lane_preflight_lane_path=$1
+  git -C "$lane_preflight_repository_root/root" worktree add -q --detach "$lane_preflight_lane_path" origin/main
+}
+
+initialize_lane() {
+  lane_preflight_lane_git_dir=$(git -C "$1" rev-parse --absolute-git-dir)
+  printf 'version=1\n' > "$lane_preflight_lane_git_dir/nuinui-implementation-v1"
+}
+
+lane_execution_human_test_preflight() {
+  lane_preflight_human_lane=$1
+  lane_preflight_human_repo=$2
+  lane_preflight_human_manifest=$3
+  lane_preflight_human_branch=$(git -C "$lane_preflight_human_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  lane_preflight_human_head=$(git -C "$lane_preflight_human_repo" rev-parse HEAD)
+  lane_preflight_human_dirty=$(git -C "$lane_preflight_human_repo" status --porcelain)
+  printf '  branch=%s\n  head=%s\n  clean=%s\n  human_hook=fixture lane=%s manifest=%s\n  state=%s\n' \
+    "${lane_preflight_human_branch:-DETACHED}" "$lane_preflight_human_head" \
+    "$([ -z "$lane_preflight_human_dirty" ] && echo yes || echo no)" \
+    "$lane_preflight_human_lane" "$lane_preflight_human_manifest" \
+    "$([ -z "$lane_preflight_human_dirty" ] && echo FREE || echo BLOCKED)"
+  [ -z "$lane_preflight_human_dirty" ]
+}
+
+fixture_root=$test_root/current
+lane_preflight_repository_root=$fixture_root
+new_repository "$fixture_root" example/project
+mkdir -p "$fixture_root/lanes"
+add_detached_lane "$fixture_root/lanes/sub"
+add_detached_lane "$fixture_root/lanes/e2e"
+initialize_lane "$fixture_root/root"
+initialize_lane "$fixture_root/lanes/sub"
+current_manifest=$fixture_root/current.conf
+write_manifest "$current_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane main]
+role=implementation
+path=$fixture_root/root
+idle=branch
+
+[lane sub]
+role=implementation
+path=$fixture_root/lanes/sub
+idle=detached
+
+[lane e2e]
+role=human-test
+path=$fixture_root/lanes/e2e
+idle=detached"
+current_output=$(lane_execution_preflight "$current_manifest") || fail 'current 2+1 preflight failed'
+assert_contains "$current_output" 'PREFLIGHT PASS' 'current 2+1 preflight'
+assert_contains "$current_output" 'lane name=main role=implementation' 'current implementation role evidence'
+assert_contains "$current_output" 'lane name=e2e role=human-test' 'current Human-test role evidence'
+assert_contains "$current_output" 'inventory_state=PASS' 'current inventory evidence'
+assert_line_order "$current_output" 'lane name=main' 'lane name=sub' 'lane name=e2e'
+echo 'PASS: current 2+1 topology audits all lanes in declaration order'
+
+one_root=$test_root/one
+lane_preflight_repository_root=$one_root
+new_repository "$one_root" example/project
+initialize_lane "$one_root/root"
+one_manifest=$one_root/one.conf
+write_manifest "$one_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane only]
+role=implementation
+path=$one_root/root
+idle=branch"
+one_output=$(lane_execution_preflight "$one_manifest") || fail '1+0 preflight failed'
+assert_contains "$one_output" 'PREFLIGHT PASS' '1+0 preflight'
+assert_not_contains "$one_output" 'human-test' '1+0 implicit Human-test lane'
+echo 'PASS: 1+0 topology has no implicit Human-test lane'
+
+three_root=$test_root/three
+lane_preflight_repository_root=$three_root
+new_repository "$three_root" example/project
+mkdir -p "$three_root/lanes"
+add_detached_lane "$three_root/lanes/beta"
+add_detached_lane "$three_root/lanes/gamma"
+add_detached_lane "$three_root/lanes/verify"
+initialize_lane "$three_root/root"
+initialize_lane "$three_root/lanes/beta"
+initialize_lane "$three_root/lanes/gamma"
+three_manifest=$three_root/three.conf
+write_manifest "$three_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=$three_root/root
+idle=branch
+
+[lane beta]
+role=implementation
+path=$three_root/lanes/beta
+idle=detached
+
+[lane gamma]
+role=implementation
+path=$three_root/lanes/gamma
+idle=detached
+
+[lane verify]
+role=human-test
+path=$three_root/lanes/verify
+idle=detached"
+three_output=$(lane_execution_preflight "$three_manifest") || fail '3+1 preflight failed'
+assert_contains "$three_output" 'PREFLIGHT PASS' '3+1 preflight'
+assert_line_order "$three_output" 'lane name=alpha' 'lane name=beta' 'lane name=gamma' 'lane name=verify'
+assert_contains "$three_output" 'lane name=gamma role=implementation' 'third implementation evidence'
+echo 'PASS: 3+1 topology audits every implementation lane and Human-test lane'
+
+renamed_output=$(printf '%s\n' "$three_output" | lane_execution_render_human)
+assert_contains "$renamed_output" '🧩 lane name=alpha role=implementation' 'implementation human decoration'
+assert_contains "$renamed_output" '🧪 lane name=verify role=human-test' 'Human-test human decoration'
+assert_not_contains "$renamed_output" 'main path=' 'literal main rendering rule'
+echo 'PASS: human rendering is role-based and topology-neutral'
+
+duplicate_path_manifest=$test_root/duplicate-path.conf
+write_manifest "$duplicate_path_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane first]
+role=implementation
+path=$fixture_root/root
+idle=branch
+
+[lane second]
+role=implementation
+path=$fixture_root/root
+idle=branch"
+if lane_execution_preflight "$duplicate_path_manifest" >/dev/null 2>&1; then fail 'duplicate physical paths passed'; fi
+echo 'PASS: duplicate physical paths block'
+
+missing_worktree_manifest=$test_root/missing-worktree.conf
+mkdir -p "$test_root/unregistered"
+git init -q -b main "$test_root/unregistered"
+git -C "$test_root/unregistered" remote add origin "$fixture_root/remote/example/project.git"
+write_manifest "$missing_worktree_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane only]
+role=implementation
+path=$test_root/unregistered
+idle=branch"
+if lane_execution_preflight "$missing_worktree_manifest" >/dev/null 2>&1; then fail 'missing configured worktree passed'; fi
+echo 'PASS: missing configured worktree blocks'
+
+unexpected_extra=$test_root/extra
+git -C "$one_root/root" worktree add -q --detach "$unexpected_extra" origin/main
+if lane_execution_preflight "$one_manifest" >/dev/null 2>&1; then fail 'unexpected registered worktree passed'; fi
+forensic_output=$(lane_execution_preflight "$one_manifest" --forensic-worktree "$unexpected_extra") || fail 'authorized forensic worktree was rejected'
+assert_contains "$forensic_output" 'PREFLIGHT PASS' 'forensic exception preflight'
+echo 'PASS: exactly one authorized forensic worktree is accepted'
+
+second_extra=$test_root/extra-two
+git -C "$one_root/root" worktree add -q --detach "$second_extra" origin/main
+if lane_execution_preflight "$one_manifest" --forensic-worktree "$unexpected_extra" >/dev/null 2>&1; then fail 'two undeclared extras passed'; fi
+echo 'PASS: two undeclared extras remain blocked'
+
+bad_repository_manifest=$test_root/repository-mismatch.conf
+write_manifest "$bad_repository_manifest" "version=1
+repository=other/project
+default_branch=main
+
+[lane only]
+role=implementation
+path=$one_root/root
+idle=branch"
+if lane_execution_preflight "$bad_repository_manifest" >/dev/null 2>&1; then fail 'repository mismatch passed'; fi
+echo 'PASS: repository mismatch blocks'
+
+bad_manifest=$test_root/invalid.conf
+write_manifest "$bad_manifest" "version=2
+repository=example/project
+default_branch=main
+
+[lane only]
+role=implementation
+path=$fixture_root/root
+idle=branch"
+if lane_execution_preflight "$bad_manifest" >/dev/null 2>&1; then fail 'invalid manifest passed'; fi
+echo 'PASS: invalid manifest blocks'
+
+bad_human=${current_manifest%.conf}-bad-human.conf
+write_manifest "$bad_human" "version=1
+repository=example/project
+default_branch=main
+
+[lane main]
+role=implementation
+path=$fixture_root/root
+idle=branch
+
+[lane verify]
+role=human-test
+path=$fixture_root/lanes/e2e
+idle=detached"
+lane_execution_human_test_preflight() {
+  [ "$1" = verify ] || fail 'fixture Human-test hook received wrong lane'
+  [ "$2" = "$fixture_root/lanes/e2e" ] || fail 'fixture Human-test hook received wrong path'
+  [ "$3" = "$bad_human" ] || fail 'fixture Human-test hook received wrong manifest'
+  echo '  state=BLOCKED reason=malformed-human-status'
+  return 1
+}
+if lane_execution_preflight "$bad_human" >/dev/null 2>&1; then fail 'malformed Human-test state passed'; fi
+echo 'PASS: malformed Human-test status blocks through explicit hook'
+
+busy_root=$test_root/busy
+lane_preflight_repository_root=$busy_root
+new_repository "$busy_root" example/project
+busy_lane=$busy_root/root
+busy_base=$(git -C "$busy_lane" rev-parse HEAD)
+git -C "$busy_lane" switch -q -c topic/say-9
+busy_git_dir=$(git -C "$busy_lane" rev-parse --absolute-git-dir)
+mkdir "$busy_git_dir/nuinui-implementation-slot"
+printf 'version=1\nissue=SAY-9\nbranch=topic/say-9\nbase=%s\nclaim=claim-12345678\n' "$busy_base" > "$busy_git_dir/nuinui-implementation-slot/state"
+busy_manifest=$busy_root/busy.conf
+write_manifest "$busy_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane arbitrary]
+role=implementation
+path=$busy_lane
+idle=branch"
+busy_output=$(lane_execution_preflight "$busy_manifest") || fail 'valid v1 BUSY metadata blocked'
+assert_contains "$busy_output" 'state=BUSY' 'v1 BUSY compatibility'
+assert_contains "$busy_output" 'owner_issue=SAY-9' 'v1 ownership evidence'
+echo 'PASS: existing v1 implementation ownership remains readable'
+
+printf 'version=1\nissue=SAY-9\nbranch=topic/say-9\nbase=%s\n' "$busy_base" > "$busy_git_dir/nuinui-implementation-slot/state"
+if lane_execution_preflight "$busy_manifest" >/dev/null 2>&1; then fail 'malformed implementation state passed'; fi
+echo 'PASS: malformed implementation durable state blocks'
+
+data_root=$test_root/data
+lane_preflight_repository_root=$data_root
+new_repository "$data_root" example/project
+initialize_lane "$data_root/root"
+data_manifest=$data_root/data.conf
+marker=$test_root/manifest-must-not-execute
+write_manifest "$data_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane data]
+role=implementation
+path=$data_root/root/\$(touch\$IFS$marker)
+idle=branch"
+if lane_execution_preflight "$data_manifest" >/dev/null 2>&1; then :; fi
+[ ! -e "$marker" ] || fail 'manifest content executed as shell'
+echo 'PASS: manifest values are parsed as data, never executed'
+
+project_hook=$source_dir/../../../projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
+. "$project_hook"
+project_hook_output=$(lane_execution_human_test_preflight e2e "$fixture_root/lanes/e2e" "$current_manifest") ||
+  fail 'nuinuiCAD explicit Human-test hook rejected a valid checkout'
+assert_contains "$project_hook_output" 'marker=none' 'nuinuiCAD Human-test marker evidence'
+assert_contains "$project_hook_output" 'session=none' 'nuinuiCAD Human-test session evidence'
+echo 'PASS: project Human-test hook consumes explicit lane/path/manifest context'
+
+. "$source_dir/../../../projects/nuinuiCAD/scripts/nuinui-src/project-profile.sh"
+lane_execution_validate_issue_branch SAY-9 sayosomi/say-9 ||
+  fail 'nuinuiCAD project Work-ID/branch adapter rejected a valid pair'
+if lane_execution_validate_issue_branch SAY-9 unrelated/topic; then
+  fail 'nuinuiCAD project Work-ID/branch adapter accepted a mismatched pair'
+fi
+echo 'PASS: project-specific Work-ID/branch validation remains outside topology data'
+
+direct_output=$(LANE_EXECUTION_PREFLIGHT_EXECUTE=1 "$source_dir/preflight.sh" "$current_manifest") ||
+  fail 'direct generic preflight command rejected a valid topology'
+assert_contains "$direct_output" 'PREFLIGHT PASS' 'direct generic preflight command'
+echo 'PASS: generic preflight is directly executable'
+
+echo 'LANE PREFLIGHT TEST PASS'
