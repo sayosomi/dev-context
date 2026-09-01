@@ -115,11 +115,12 @@ main/subは互いの途中変更を取り込まない。
 7. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`。該当する場合Shared / nuinuiCAD Agent Skillsも読む。
 8. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`。
 9. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`。詳細は`LINEAR.md`のroutingに従う。
-10. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`。VS Code hostなら`VS-CODE-E2E.md`。Manual E2E executorはHuman固定。`LUNA-E2E-PLAYBOOK.md`はInactiveで、HumanがLuna E2Eの再有効化を明示的に検討・指示した場合だけ読む。
-11. **Shared CI incident suspicion / local reproduction:** strong signalがある場合だけ`CI-INCIDENTS.md`。reproductionにもFREEなmain/sub laneだけを使う。
-12. **User-facing command追加・surface変更:** `COMMAND-CONTRACTS.md`。
-13. **Legacy履歴または移行中例外:** 必要なときだけ`NOTION-LEGACY.md`。
-14. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
+10. **PR create / review / merge / Auto-merge / PR authorization judgment:** [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)。
+11. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`。VS Code hostなら`VS-CODE-E2E.md`。Manual E2E executorはHuman固定。`LUNA-E2E-PLAYBOOK.md`はInactiveで、HumanがLuna E2Eの再有効化を明示的に検討・指示した場合だけ読む。
+12. **Shared CI incident suspicion / local reproduction:** strong signalがある場合だけ`CI-INCIDENTS.md`。reproductionにもFREEなmain/sub laneだけを使う。
+13. **User-facing command追加・surface変更:** `COMMAND-CONTRACTS.md`。
+14. **Legacy履歴または移行中例外:** 必要なときだけ`NOTION-LEGACY.md`。
+15. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
 
 ## Maintenance rule
 
