@@ -8,6 +8,10 @@ lane_execution_validate_issue_branch() {
   fixed_2plus1_profile_validate_issue_branch "$1" "$2"
 }
 
+lane_execution_validate_work_id() {
+  fixed_2plus1_profile_valid_work_id "$1"
+}
+
 lane_execution_human_test_preflight() {
   lane_execution_nuinui_human_lane=$1
   lane_execution_nuinui_human_repo=$2

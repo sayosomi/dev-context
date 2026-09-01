@@ -34,6 +34,16 @@ lane_execution_validate_issue_branch() {
   git check-ref-format --branch "$lane_execution_branch" >/dev/null 2>&1
 }
 
+lane_execution_validate_work_id() {
+  # Project adapters replace this callback with their Work-ID policy.  It is
+  # intentionally separate from topology parsing: a manifest never contains
+  # project expressions or executable validation rules.
+  lane_execution_work_id=$1
+  case "$lane_execution_work_id" in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+}
+
 lane_execution_human_test_preflight() {
   # Project adapters replace this hook.  The generic fallback proves only the
   # common checkout boundary and emits role-specific evidence.
