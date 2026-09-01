@@ -1,8 +1,8 @@
 #!/bin/sh
 
-# Staged nuinuiCAD adapter for the topology-neutral Human-test lifecycle.
-# This source is deliberately outside the current generator input.  #145 will
-# assemble it with the generic lane-execution sources.
+# nuinuiCAD adapter for the topology-neutral Human-test lifecycle.
+# Human-test/session/local-main behavior is project policy; lane topology is
+# resolved by the generic manifest runtime.
 
 lane_execution_human_test_marker_path() {
   printf '%s/nuinui-slot\n' "$(lane_execution__git_dir "$1")"

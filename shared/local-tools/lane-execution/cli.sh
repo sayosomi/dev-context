@@ -2,10 +2,11 @@
 
 # Staged topology-neutral command router.
 #
-# The manifest path is explicit until #145 defines the standalone runtime
-# location.  This router owns lane role validation and E2E lane selection;
-# operation-specific implementation adapters receive the validated lane and
-# manifest and keep their existing durable semantics.
+# The development CLI keeps the manifest explicit.  The standalone public
+# wrapper resolves its versioned project manifest before calling this router.
+# This router owns lane role validation and E2E lane selection; operation-
+# specific adapters receive the validated lane and manifest and keep their
+# existing durable semantics.
 
 lane_execution_cli_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_cli_source_dir" ] &&
@@ -182,6 +183,8 @@ lane_execution_cli_command() {
     echo 'BLOCKED: lane manifest is invalid'
     return 1
   }
+  NUINUI_RUNTIME_MANIFEST=$lane_execution_cli_command_manifest
+  export NUINUI_RUNTIME_MANIFEST
   case "$lane_execution_cli_command_name" in
     e2e-start)
       lane_execution_cli_e2e_start "$lane_execution_cli_command_manifest" "$@"

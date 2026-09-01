@@ -1,1 +1,58 @@
-doctor(){ [ $# = 0 ]||[ "$1" = --full ]||return 2;z=0;pf||z=1;[ "${1:-}" != --full ]||{ [ -x "$EH" ]&&NUINUI_E2E_PREPARE_WT="$E" "$EH" status||z=1;};dc||z=1;[ "$z" = 0 ];};cc(){ [ -d "$C" ]||return 1;z=0;find "$C" -type f -name '*.md'|while read -r f;do grep -oE '\]\([^)]+\)' "$f" 2>/dev/null|sed -E 's/^\]\(([^)#]+).*$/\1/'|while read -r x;do case $x in ''|'#'*|http://*|https://*|mailto:*)continue;;/*)t=$x;;*)t=$(dirname "$f")/$x;;esac;[ -e "$t" ]||exit 17;done||exit 17;grep -q 'ONLY-CHATGPT\.md' "$f"&&exit 17||:;done||z=1;for x in $K;do grep -q "\`nuinui $x" "$C/projects/nuinuiCAD/LOCAL-TOOLS.md"||z=1;done;echo "nuinui $V";[ "$z" = 0 ]&&{ echo 'CONTEXT CHECK PASS';return;};echo 'CONTEXT CHECK BLOCKED';return 1;};ta(){ p=$C/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md;echo 'TRANSITION AUDIT (read-only)';grep -q 'Status: \*\*Active\*\*' "$p" 2>/dev/null||return 1;m=$(am "$M");nuinui_ownership_valid_sha "$m"&&[ "$(om "$M" 2>/dev/null)" = "$m" ]&&[ "$(bn "$M")" = codex/interim-sequential ]&&cn "$M"||return 1;h=$(hh "$M");an "$M" "$h" "$m" 2>/dev/null||[ -z "$(git -C "$M" cherry "$m" "$h"|grep '^+'||true)" ]||return 1;wt&&[ ! -e "$(mp "$E")" ]&&[ ! -e "$(ep "$E")" ]&&[ -x "$EH" ]&&NUINUI_E2E_PREPARE_WT="$E" "$EH" status||return 1;echo 'TRANSITION AUDIT PREPARED';}
+doctor() {
+  [ "$#" = 0 ] || [ "$#" = 1 ] || return 2
+  [ "$#" = 0 ] || [ "$1" = --full ] || return 2
+  nuinui_require_runtime_manifest || return 1
+  nuinui_doctor_result=0
+  lane_execution_preflight "$NUINUI_RUNTIME_MANIFEST" >/dev/null || nuinui_doctor_result=1
+  if [ "${1:-}" = --full ]; then
+    nuinui_doctor_human_lanes=$(lane_manifest_lanes_by_role "$NUINUI_RUNTIME_MANIFEST" human-test)
+    while IFS= read -r nuinui_doctor_human_lane || [ -n "$nuinui_doctor_human_lane" ]; do
+      [ -n "$nuinui_doctor_human_lane" ] || continue
+      nuinui_doctor_human_path=$(lane_manifest_lane_path "$NUINUI_RUNTIME_MANIFEST" "$nuinui_doctor_human_lane") || nuinui_doctor_result=1
+      [ -x "$EH" ] && NUINUI_E2E_PREPARE_WT="$nuinui_doctor_human_path" "$EH" status || nuinui_doctor_result=1
+    done <<EOF
+$nuinui_doctor_human_lanes
+EOF
+  fi
+  dc || nuinui_doctor_result=1
+  [ "$nuinui_doctor_result" = 0 ]
+}
+cc() {
+  [ -d "$C" ] || return 1
+  nuinui_context_result=0
+  find "$C" -type f -name '*.md' | while IFS= read -r nuinui_context_file; do
+    grep -oE '\]\([^)]+\)' "$nuinui_context_file" 2>/dev/null |
+      sed -E 's/^\]\(([^)#]+).*$/\1/' |
+      while IFS= read -r nuinui_context_link; do
+        case "$nuinui_context_link" in
+          ''|'#'*|http://*|https://*|mailto:*) continue ;;
+          /*) nuinui_context_target=$nuinui_context_link ;;
+          *) nuinui_context_target=$(dirname "$nuinui_context_file")/$nuinui_context_link ;;
+        esac
+        [ -e "$nuinui_context_target" ] || exit 17
+      done || nuinui_context_result=1
+    grep -q 'ONLY-CHATGPT\.md' "$nuinui_context_file" && nuinui_context_result=1 || :
+  done
+  for nuinui_context_command in $K; do
+    grep -q '`nuinui '"$nuinui_context_command" \
+      "$C/projects/nuinuiCAD/LOCAL-TOOLS.md" || nuinui_context_result=1
+  done
+  echo "nuinui $V"
+  if [ "$nuinui_context_result" = 0 ]; then echo 'CONTEXT CHECK PASS'; else echo 'CONTEXT CHECK BLOCKED'; return 1; fi
+}
+
+ta() {
+  nuinui_require_runtime_manifest || return 1
+  nuinui_transition_source_lane=$(lane_manifest_lanes_by_role "$NUINUI_RUNTIME_MANIFEST" implementation | while IFS= read -r lane; do
+    [ "$(lane_manifest_lane_idle_policy "$NUINUI_RUNTIME_MANIFEST" "$lane")" = branch ] && printf '%s\n' "$lane"
+  done)
+  [ "$(printf '%s\n' "$nuinui_transition_source_lane" | grep -c . || true)" = 1 ] || return 1
+  nuinui_transition_source=$(lr "$nuinui_transition_source_lane") || return 1
+  echo 'TRANSITION AUDIT (read-only)'
+  [ -f "$C/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md" ] || return 1
+  grep -q 'Status: \\*\\*Active\\*\\*' "$C/projects/nuinuiCAD/CODEX-ONLY-INTERIM.md" || return 1
+  fm "$nuinui_transition_source" || return 1
+  [ "$(bn "$nuinui_transition_source")" = codex/interim-sequential ] || return 1
+  cn "$nuinui_transition_source" || return 1
+  echo 'TRANSITION AUDIT PREPARED'
+}

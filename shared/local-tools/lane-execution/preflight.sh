@@ -2,9 +2,9 @@
 
 # Generic manifest-driven lane preflight and registered-worktree inventory.
 #
-# This source is deliberately separate from the legacy Fixed 2+1 runtime.  It
-# consumes the data-only manifest API and adapts the existing v1 ownership
-# readers/classification rules without assigning meaning to lane names.
+# This source consumes the data-only manifest API and adapts the existing v1
+# ownership readers/classification rules without assigning meaning to lane
+# names.
 
 lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_source_dir" ] && [ "${LANE_EXECUTION_PREFLIGHT_EXECUTE:-0}" = 1 ]; then
@@ -19,7 +19,7 @@ fi
 # generic parser below supplies the lane-independent slot/lock checks while
 # keeping project Work-ID / branch policy in an explicit callback.
 if ! command -v nuinui_ownership_read_fields >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
-  . "$lane_execution_source_dir/../fixed-2plus1/ownership-schema.sh"
+  . "$lane_execution_source_dir/ownership.sh"
 fi
 
 lane_execution_validate_issue_branch() {

@@ -2,9 +2,9 @@
 
 # Generic manifest-driven implementation lifecycle façade.
 #
-# This is the staged N-lane admission/mutation path for later runtime
-# assembly.  The checked-in standalone nuinui continues to use the legacy
-# Fixed 2+1 façade until #145.
+# This is the generic N-lane admission/mutation path used by the standalone
+# runtime. The manifest supplies topology; this source supplies lifecycle
+# mechanics.
 
 lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_source_dir" ] && {

@@ -1,0 +1,254 @@
+#!/bin/sh
+set -eu
+
+SOURCE_HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-runtime.XXXXXX")" && pwd -P)
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() { echo "RUNTIME TEST FAIL: $*" >&2; exit 1; }
+assert_contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
+assert_not_contains() { if printf '%s\n' "$1" | grep -Fq -- "$2"; then fail "$3"; fi; }
+assert_line() { printf '%s\n' "$1" | grep -Eq -- "$2" || fail "$3"; }
+
+PROJECT=$ROOT/project
+HELPER=$PROJECT/scripts/nuinui
+mkdir -p "$PROJECT/scripts" "$ROOT/cwd"
+cp "$SOURCE_HELPER" "$HELPER"
+chmod 755 "$HELPER"
+[ -f "$SCRIPT_DIR/nuinui-e2e-prepare" ] &&
+  cp "$SCRIPT_DIR/nuinui-e2e-prepare" "$PROJECT/scripts/nuinui-e2e-prepare"
+
+REMOTE=$ROOT/sayosomi/nuinuiCAD.git
+SEED=$ROOT/seed
+PRIMARY=$ROOT/primary
+IMPLEMENTATION=$ROOT/implementation
+HUMAN=$ROOT/human
+THIRD=$ROOT/implementation-2
+CONTEXT=$ROOT/context
+MANIFEST=$PROJECT/LANES.conf
+SENTINEL=$ROOT/manifest-command-executed
+
+git init -q --bare "$REMOTE"
+git init -q -b main "$SEED"
+git -C "$SEED" config user.name test
+git -C "$SEED" config user.email test@example.invalid
+printf '%s\n' base > "$SEED/base.txt"
+git -C "$SEED" add base.txt
+git -C "$SEED" commit -qm base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -qu origin main
+git clone -q "$REMOTE" "$PRIMARY"
+git -C "$PRIMARY" config user.name test
+git -C "$PRIMARY" config user.email test@example.invalid
+git -C "$PRIMARY" worktree add -q --detach "$IMPLEMENTATION" origin/main
+git -C "$PRIMARY" worktree add -q --detach "$HUMAN" origin/main
+git -C "$IMPLEMENTATION" config user.name test
+git -C "$IMPLEMENTATION" config user.email test@example.invalid
+
+git init -q "$CONTEXT"
+
+write_manifest_21() {
+  printf '%s\n' \
+    'version=1' \
+    'repository=sayosomi/nuinuiCAD' \
+    'default_branch=main' \
+    '' \
+    '[lane primary]' \
+    'role=implementation' \
+    "path=$PRIMARY" \
+    'idle=branch' \
+    '' \
+    '[lane implementation]' \
+    'role=implementation' \
+    "path=$IMPLEMENTATION" \
+    'idle=detached' \
+    '' \
+    '[lane human]' \
+    'role=human-test' \
+    "path=$HUMAN" \
+    'idle=detached' > "$MANIFEST"
+}
+
+write_manifest_31() {
+  write_manifest_21
+  awk -v third="$THIRD" '
+    /^\[lane human\]$/ {
+      print "[lane implementation-2]"
+      print "role=implementation"
+      print "path=" third
+      print "idle=detached"
+      print ""
+    }
+    { print }
+  ' "$MANIFEST" > "$MANIFEST.next"
+  mv "$MANIFEST.next" "$MANIFEST"
+}
+
+write_manifest_21
+export NUINUI_SELFTEST=1
+export NUINUI_DEV_CONTEXT_WT=$CONTEXT
+export NUINUI_DEV_CONTEXT_DEV_WT=$CONTEXT
+export NUINUI_SELFTEST_RESULT_REPO=$CONTEXT
+unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
+
+cd "$ROOT/cwd"
+VERSION_OUTPUT=$($HELPER version)
+[ "$VERSION_OUTPUT" = 1.7.0 ] || fail "version output changed: $VERSION_OUTPUT"
+$HELPER lane-init primary >/dev/null
+$HELPER lane-init implementation >/dev/null
+NEIGHBORING_MANIFEST=$ROOT/cwd/LANES.conf
+printf '%s\n' 'version=1' 'repository=wrong/repository' 'default_branch=wrong' > "$NEIGHBORING_MANIFEST"
+PREFLIGHT_OUTPUT=$($HELPER preflight)
+assert_contains "$PREFLIGHT_OUTPUT" "manifest=$MANIFEST" 'preflight did not resolve the manifest beside the helper project'
+assert_contains "$PREFLIGHT_OUTPUT" 'lane name=implementation role=implementation' 'renamed implementation lane was not audited'
+assert_contains "$PREFLIGHT_OUTPUT" 'lane name=human role=human-test' 'renamed Human-test lane was not audited'
+assert_contains "$PREFLIGHT_OUTPUT" '⭕ PREFLIGHT PASS' 'production-style preflight did not pass'
+echo 'PASS: helper resolves its versioned manifest independently of CWD and lane names'
+
+BASE=$(git -C "$PRIMARY" rev-parse origin/main)
+VERIFY_OUTPUT=$($HELPER verify primary SAY-145 "$BASE" codex/SAY-145-verify)
+assert_contains "$VERIFY_OUTPUT" '🔎 VERIFIED' 'verify did not accept the renamed implementation lane'
+
+BEGIN_OUTPUT=$($HELPER begin implementation SAY-145 "$BASE" \
+  codex/SAY-145-runtime 'primary=FREE,implementation=FREE')
+assert_contains "$BEGIN_OUTPUT" '🚀 IMPLEMENTATION STARTED' 'begin did not start the declared implementation lane'
+assert_contains "$BEGIN_OUTPUT" 'implementation_inventory=primary=FREE,implementation=SAY-145' \
+  'begin did not report the complete declared inventory'
+CLAIM=$(printf '%s\n' "$BEGIN_OUTPUT" | sed -n 's/^claim=//p')
+[ -n "$CLAIM" ] || fail 'begin did not expose its claim'
+RESUME_OUTPUT=$($HELPER resume implementation SAY-145 "$BASE" "$BASE" \
+  codex/SAY-145-runtime "$CLAIM")
+assert_contains "$RESUME_OUTPUT" '▶️ IMPLEMENTATION RESUMED' 'resume did not prove the exact lane/claim'
+DUPLICATE_RELEASE_OUTPUT=$($HELPER release implementation "$BASE" "$CLAIM")
+assert_contains "$DUPLICATE_RELEASE_OUTPUT" '🏁 IMPLEMENTATION RELEASED' 'release did not complete the implementation lifecycle'
+DUPLICATE_RELEASE_OUTPUT=$($HELPER release implementation "$BASE" "$CLAIM")
+assert_contains "$DUPLICATE_RELEASE_OUTPUT" '♻️ IMPLEMENTATION ALREADY RELEASED' \
+  'release duplicate was not proven from the receipt'
+assert_contains "$DUPLICATE_RELEASE_OUTPUT" 'issue=SAY-145' 'release duplicate reported the wrong Issue'
+echo 'PASS: verify, lane-init, begin, resume, release, and release receipt duplicate'
+
+CRASH_BRANCH=codex/SAY-146-recovery
+if CRASH_OUTPUT=$(NUINUI_SELFTEST_CRASH_AT=start-after-slot \
+  "$HELPER" start primary SAY-146 "$BASE" "$CRASH_BRANCH" 2>&1); then
+  printf '%s\n' "$CRASH_OUTPUT"
+  fail 'crash-after-slot start unexpectedly succeeded'
+fi
+LOCK_STATE=$(git -C "$PRIMARY" rev-parse --absolute-git-dir)/nuinui-implementation-lock/state
+[ -f "$LOCK_STATE" ] || fail 'uncertain start did not retain its durable lock'
+RECOVERY_CLAIM=$(sed -n 's/^claim=//p' "$LOCK_STATE")
+[ -n "$RECOVERY_CLAIM" ] || fail 'uncertain start lock did not retain its claim'
+RECOVERY_OUTPUT=$($HELPER recover primary "$RECOVERY_CLAIM")
+assert_contains "$RECOVERY_OUTPUT" '🛟 RECOVERED operation=start' \
+  'start recovery did not complete the operation-specific recovery'
+RECOVERED_RELEASE=$($HELPER release primary "$BASE" "$RECOVERY_CLAIM")
+assert_contains "$RECOVERED_RELEASE" '🏁 IMPLEMENTATION RELEASED' \
+  'recovered start could not complete release'
+echo 'PASS: uncertain start retains state and recover completes it fail-closed'
+
+E2E_START_OUTPUT=$($HELPER e2e-start SAY-147 "$BASE")
+assert_contains "$E2E_START_OUTPUT" '🖐️ E2E STARTED' 'short E2E start did not select the unique Human-test lane'
+E2E_DUPLICATE_OUTPUT=$($HELPER e2e-start human SAY-147 "$BASE")
+assert_contains "$E2E_DUPLICATE_OUTPUT" '♻️ E2E ALREADY STARTED' 'explicit E2E duplicate was not proven'
+E2E_RELEASE_OUTPUT=$($HELPER e2e-release human SAY-147 "$BASE")
+assert_contains "$E2E_RELEASE_OUTPUT" '🖐️ E2E RELEASED' 'explicit E2E release did not complete'
+git -C "$PRIMARY" switch -q -c codex/interim-sequential "$BASE"
+LOCAL_MAIN_START_OUTPUT=$($HELPER e2e-start-local-main human SAY-148 "$BASE")
+assert_contains "$LOCAL_MAIN_START_OUTPUT" '🖐️ E2E STARTED' \
+  'local-main E2E start did not use the project source-lane policy'
+LOCAL_MAIN_RELEASE_OUTPUT=$($HELPER e2e-release human SAY-148 "$BASE")
+assert_contains "$LOCAL_MAIN_RELEASE_OUTPUT" '🖐️ E2E RELEASED' \
+  'local-main E2E release did not complete'
+git -C "$PRIMARY" switch -q main
+if WRONG_ROLE_OUTPUT=$($HELPER lane-init human 2>&1); then
+  printf '%s\n' "$WRONG_ROLE_OUTPUT"
+  fail 'Human-test lane was accepted by implementation lane-init'
+fi
+assert_contains "$WRONG_ROLE_OUTPUT" 'BLOCKED' 'wrong-role rejection was not actionable'
+echo 'PASS: E2E short/explicit forms and wrong-role rejection'
+
+HELPER_SHA_BEFORE=$(shasum -a 256 "$HELPER" | awk 'NR == 1 {print $1}')
+HELPER_BLOB_BEFORE=$(git hash-object "$HELPER")
+git -C "$PRIMARY" worktree add -q --detach "$THIRD" origin/main
+write_manifest_31
+$HELPER lane-init 'implementation-2' >/dev/null
+THREE_OUTPUT=$($HELPER preflight)
+assert_contains "$THREE_OUTPUT" 'lane name=implementation-2 role=implementation' \
+  'unchanged helper did not audit the newly declared implementation lane'
+assert_contains "$THREE_OUTPUT" 'inventory_state=PASS' '3+1 topology preflight did not pass'
+THREE_HELPER_SHA=$(shasum -a 256 "$HELPER" | awk 'NR == 1 {print $1}')
+THREE_HELPER_BLOB=$(git hash-object "$HELPER")
+[ "$HELPER_SHA_BEFORE" = "$THREE_HELPER_SHA" ] || fail 'topology-only edit changed helper SHA-256'
+[ "$HELPER_BLOB_BEFORE" = "$THREE_HELPER_BLOB" ] || fail 'topology-only edit changed helper Git blob'
+echo 'PASS: unchanged helper observes valid 3+1 topology and renamed lanes'
+
+mv "$MANIFEST" "$MANIFEST.saved"
+if MISSING_OUTPUT=$($HELPER preflight 2>&1); then
+  printf '%s\n' "$MISSING_OUTPUT"
+  fail 'missing authoritative manifest unexpectedly passed'
+fi
+assert_contains "$MISSING_OUTPUT" 'authoritative project lane manifest is missing' \
+  'missing manifest did not fail with an actionable location diagnostic'
+mv "$MANIFEST.saved" "$MANIFEST"
+
+printf '%s\n' \
+  'version=1' \
+  'repository=sayosomi/nuinuiCAD' \
+  'default_branch=main' \
+  '' \
+  '[lane primary]' \
+  'role=implementation' \
+  "path=$PRIMARY" \
+  'idle=branch' \
+  '' \
+  '[lane implementation]' \
+  'role=implementation' \
+  'path=/tmp/$(touch '"$SENTINEL"')' \
+  'idle=detached' > "$MANIFEST"
+if MALFORMED_OUTPUT=$($HELPER preflight 2>&1); then
+  printf '%s\n' "$MALFORMED_OUTPUT"
+  fail 'malformed manifest unexpectedly passed'
+fi
+[ ! -e "$SENTINEL" ] || fail 'malformed manifest executed command substitution text'
+assert_contains "$MALFORMED_OUTPUT" 'LANE MANIFEST BLOCKED' \
+  'malformed manifest did not produce parser evidence'
+echo 'PASS: malformed manifest text is inert and never executes'
+
+printf '%s\n' \
+  'version=2' \
+  'repository=sayosomi/nuinuiCAD' \
+  'default_branch=main' \
+  '' \
+  '[lane primary]' \
+  'role=implementation' \
+  "path=$PRIMARY" \
+  'idle=branch' > "$MANIFEST"
+if UNSUPPORTED_OUTPUT=$($HELPER preflight 2>&1); then
+  printf '%s\n' "$UNSUPPORTED_OUTPUT"
+  fail 'unsupported manifest version unexpectedly passed'
+fi
+assert_contains "$UNSUPPORTED_OUTPUT" 'unsupported version' \
+  'unsupported manifest version did not report the version failure'
+write_manifest_31
+
+RELOCATED=$ROOT/relocated/nuinui
+mkdir -p "$(dirname "$RELOCATED")"
+cp "$HELPER" "$RELOCATED"
+chmod 755 "$RELOCATED"
+if RELOCATED_OUTPUT=$(NUINUI_SELFTEST=1 NUINUI_SELFTEST_MANIFEST="$MANIFEST" \
+  "$RELOCATED" preflight 2>&1); then
+  :
+else
+  printf '%s\n' "$RELOCATED_OUTPUT"
+  fail 'test-only manifest override was not accepted behind the self-test gate'
+fi
+if PRODUCTION_RELOCATED_OUTPUT=$(NUINUI_SELFTEST=0 \
+  NUINUI_SELFTEST_MANIFEST="$MANIFEST" "$RELOCATED" preflight 2>&1); then
+  printf '%s\n' "$PRODUCTION_RELOCATED_OUTPUT"
+  fail 'production honored a manifest override for an unproven relocation'
+fi
+assert_contains "$PRODUCTION_RELOCATED_OUTPUT" 'generated helper' \
+  'production relocation failure was not fail-closed'
+echo 'PASS: missing, unsupported, and test-only override manifest gates'
+
+echo 'NUINUI RUNTIME TEST PASS'

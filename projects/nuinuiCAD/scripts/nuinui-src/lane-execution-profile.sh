@@ -1,15 +1,16 @@
 #!/bin/sh
 
-# nuinuiCAD adapter contract for the generic lane-execution preflight.  This
-# source is intentionally not part of the current standalone generator input;
-# #145 will assemble the generic runtime and this explicit project hook.
+# nuinuiCAD executable policy for the generic lane-execution runtime.  Lane
+# topology remains in LANES.conf; this file contains only project semantics.
 
 lane_execution_validate_issue_branch() {
-  fixed_2plus1_profile_validate_issue_branch "$1" "$2"
+  lane_execution_validate_work_id "$1" || return 1
+  git check-ref-format --branch "$2" >/dev/null 2>&1 || return 1
+  [ "$(nuinui_ownership_issue_from_branch "$2")" = "$1" ]
 }
 
 lane_execution_validate_work_id() {
-  fixed_2plus1_profile_valid_work_id "$1"
+  printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'
 }
 
 lane_execution_human_test_preflight() {
