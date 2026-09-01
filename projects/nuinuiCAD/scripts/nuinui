@@ -1,10 +1,173 @@
 #!/bin/sh
 
-# Canonical durable ownership metadata semantics.  This fragment is assembled
-# before each standalone consumer; it is never sourced at runtime.
+# nuinuiCAD adapter for the shared fixed 2+1 execution core.
+
+fixed_2plus1_profile_implementation_lane_a_name() { printf '%s\n' main; }
+fixed_2plus1_profile_implementation_lane_b_name() { printf '%s\n' sub; }
+fixed_2plus1_profile_human_test_lane_name() { printf '%s\n' e2e; }
+
+fixed_2plus1_profile_is_implementation_lane() {
+  [ "$1" = main ] || [ "$1" = sub ]
+}
+
+fixed_2plus1_profile_peer_lane() {
+  case "$1" in
+    main) printf '%s\n' sub ;;
+    sub) printf '%s\n' main ;;
+    *) return 2 ;;
+  esac
+}
+
+fixed_2plus1_profile_lane_path() {
+  case "$1" in
+    main)
+      if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+        printf '%s\n' "${NUINUI_MAIN_WT:?NUINUI_MAIN_WT is required}"
+      else
+        printf '%s\n' /Users/yosomi/Code/nuinuiCAD
+      fi
+      ;;
+    sub)
+      if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+        printf '%s\n' "${NUINUI_SUB_WT:?NUINUI_SUB_WT is required}"
+      else
+        printf '%s\n' /Users/yosomi/Code/nuinuiCAD-sub
+      fi
+      ;;
+    e2e)
+      if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+        printf '%s\n' "${NUINUI_E2E_WT:?NUINUI_E2E_WT is required}"
+      else
+        printf '%s\n' /Users/yosomi/Code/nuinuiCAD-e2e
+      fi
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+fixed_2plus1_profile_repository_identity() { printf '%s\n' sayosomi/nuinuiCAD; }
+fixed_2plus1_profile_default_branch() { printf '%s\n' main; }
+
+fixed_2plus1_profile_origin_matches() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    return 0
+  fi
+  git -C "$1" remote get-url origin 2>/dev/null | grep -Fq "$2"
+}
+
+fixed_2plus1_profile_idle_checkout_form() {
+  case "$1" in
+    main) printf '%s\n' branch ;;
+    sub) printf '%s\n' detached ;;
+    *) return 2 ;;
+  esac
+}
+
+fixed_2plus1_profile_valid_work_id() {
+  printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'
+}
+
+fixed_2plus1_profile_work_id_from_branch() {
+  printf '%s\n' "$1" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p'
+}
+
+fixed_2plus1_profile_validate_issue_branch() {
+  fixed_2plus1_profile_valid_work_id "$1" || return 1
+  git check-ref-format --branch "$2" >/dev/null 2>&1 || return 1
+  [ "$(fixed_2plus1_profile_work_id_from_branch "$2")" = "$1" ]
+}
+
+fixed_2plus1_profile_human_test_marker_path() {
+  printf '%s/nuinui-slot\n' "$(gd "$1")"
+}
+
+fixed_2plus1_profile_human_test_session_path() {
+  printf '%s/nuinui-e2e-session\n' "$(gd "$1")"
+}
+
+fixed_2plus1_profile_human_test_receipt_path() {
+  printf '%s/nuinui-e2e-release-receipt\n' "$(gd "$1")"
+}
+#!/bin/sh
+
+# Fixed 2+1 profile contract.
+#
+# A project profile is assembled before this fragment.  The contract keeps
+# the shared implementation independent from project names, paths, and
+# work-management syntax.  Optional hooks are deliberately no-ops unless a
+# profile or project adapter supplies them.
+
+fixed_2plus1_profile_contract_ready() {
+  local function_name lane_a lane_b human_lane default_branch lane path form
+
+  for function_name in \
+    fixed_2plus1_profile_implementation_lane_a_name \
+    fixed_2plus1_profile_implementation_lane_b_name \
+    fixed_2plus1_profile_human_test_lane_name \
+    fixed_2plus1_profile_is_implementation_lane \
+    fixed_2plus1_profile_lane_path \
+    fixed_2plus1_profile_repository_identity \
+    fixed_2plus1_profile_default_branch \
+    fixed_2plus1_profile_idle_checkout_form \
+    fixed_2plus1_profile_human_test_marker_path \
+    fixed_2plus1_profile_human_test_session_path \
+    fixed_2plus1_profile_human_test_receipt_path \
+    fixed_2plus1_profile_valid_work_id \
+    fixed_2plus1_profile_work_id_from_branch \
+    fixed_2plus1_profile_validate_issue_branch; do
+    command -v "$function_name" >/dev/null 2>&1 || return 1
+  done
+
+  lane_a=$(fixed_2plus1_profile_implementation_lane_a_name) || return 1
+  lane_b=$(fixed_2plus1_profile_implementation_lane_b_name) || return 1
+  human_lane=$(fixed_2plus1_profile_human_test_lane_name) || return 1
+  default_branch=$(fixed_2plus1_profile_default_branch) || return 1
+  [ -n "$lane_a" ] && [ -n "$lane_b" ] && [ -n "$human_lane" ] || return 1
+  [ "$lane_a" != "$lane_b" ] && [ "$lane_a" != "$human_lane" ] &&
+    [ "$lane_b" != "$human_lane" ] || return 1
+  [ -n "$(fixed_2plus1_profile_repository_identity)" ] || return 1
+  fixed_2plus1_profile_valid_branch_name "$default_branch" || return 1
+
+  for lane in "$lane_a" "$lane_b" "$human_lane"; do
+    path=$(fixed_2plus1_profile_lane_path "$lane") || return 1
+    case "$path" in /*) ;; *) return 1 ;; esac
+  done
+  for lane in "$lane_a" "$lane_b"; do
+    form=$(fixed_2plus1_profile_idle_checkout_form "$lane") || return 1
+    case "$form" in branch|detached) ;; *) return 1 ;; esac
+  done
+}
+
+fixed_2plus1_profile_valid_branch_name() {
+  git check-ref-format --branch "$1" >/dev/null 2>&1
+}
+
+if ! command -v fixed_2plus1_profile_inventory_guard >/dev/null 2>&1; then
+  fixed_2plus1_profile_inventory_guard() { return 0; }
+fi
+if ! command -v fixed_2plus1_profile_human_test_preflight >/dev/null 2>&1; then
+  fixed_2plus1_profile_human_test_preflight() { return 0; }
+fi
+if ! command -v fixed_2plus1_profile_human_test_start_guard >/dev/null 2>&1; then
+  fixed_2plus1_profile_human_test_start_guard() { return 0; }
+fi
+if ! command -v fixed_2plus1_profile_human_test_release_guard >/dev/null 2>&1; then
+  fixed_2plus1_profile_human_test_release_guard() { return 0; }
+fi
+if ! command -v fixed_2plus1_profile_after_begin_start >/dev/null 2>&1; then
+  fixed_2plus1_profile_after_begin_start() { return 0; }
+fi
+if ! command -v fixed_2plus1_profile_origin_matches >/dev/null 2>&1; then
+  fixed_2plus1_profile_origin_matches() {
+    [ -z "$2" ] || git -C "$1" remote get-url origin 2>/dev/null | grep -Fq "$2"
+  }
+fi
+# Canonical durable ownership metadata semantics for a fixed 2+1 profile.
+# This fragment is assembled before each standalone consumer; it is never
+# sourced at runtime.
 
 nuinui_ownership_valid_issue() {
-  printf '%s\n' "$1" | grep -Eq '^SAY-[0-9]+$'
+  fixed_2plus1_profile_valid_work_id "$1"
 }
 
 nuinui_ownership_valid_sha() {
@@ -16,7 +179,7 @@ nuinui_ownership_valid_claim() {
 }
 
 nuinui_ownership_issue_from_branch() {
-  printf '%s\n' "$1" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p'
+  fixed_2plus1_profile_work_id_from_branch "$1"
 }
 
 nuinui_ownership_valid_branch() {
@@ -24,9 +187,7 @@ nuinui_ownership_valid_branch() {
 }
 
 nuinui_ownership_validate_issue_branch() {
-  nuinui_ownership_valid_issue "$1" || return 1
-  nuinui_ownership_valid_branch "$2" || return 1
-  [ "$(nuinui_ownership_issue_from_branch "$2")" = "$1" ]
+  fixed_2plus1_profile_validate_issue_branch "$1" "$2"
 }
 
 nuinui_ownership_read_fields() {
@@ -114,10 +275,7 @@ nuinui_ownership_parse_release_receipt() {
   set -- $(nuinui_ownership_read_fields "$1" version,lane,issue,branch,base,checkpoint,claim) || return 1
   [ "$#" = 7 ] || return 1
   [ "$1" = 1 ] || return 1
-  case "$2" in
-    main|sub) ;;
-    *) return 1 ;;
-  esac
+  fixed_2plus1_profile_is_implementation_lane "$2" || return 1
   nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
   nuinui_ownership_valid_sha "$5" || return 1
   nuinui_ownership_valid_sha "$6" || return 1
@@ -136,9 +294,7 @@ nuinui_ownership_parse_lock() {
   case "$3:$4" in
     -:-) ;;
     -:*|*:-) return 1 ;;
-    *)
-      nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
-      ;;
+    *) nuinui_ownership_validate_issue_branch "$3" "$4" || return 1 ;;
   esac
   [ "$5" = - ] || nuinui_ownership_valid_sha "$5" || return 1
   [ "$6" = - ] || nuinui_ownership_valid_sha "$6" || return 1
@@ -156,235 +312,1682 @@ nuinui_ownership_parse_releasing() {
   [ "${nuinui_ownership_releasing_dir##*/}" = "nuinui-implementation-slot.releasing.$4" ] || return 1
   printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$nuinui_ownership_releasing_checkpoint"
 }
-V=1.6.12;P=$0;D=$(CDPATH= cd -- "$(dirname -- "$P")"&&pwd -P);EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
-if [ "${NUINUI_SELFTEST:-0}" = 1 ];then M=${NUINUI_MAIN_WT:?};S=${NUINUI_SUB_WT:?};E=${NUINUI_E2E_WT:?};C=${NUINUI_DEV_CONTEXT_WT:-};RT=;CT=;else M=/Users/yosomi/Code/nuinuiCAD;S=/Users/yosomi/Code/nuinuiCAD-sub;E=/Users/yosomi/Code/nuinuiCAD-e2e;C=/Users/yosomi/Code/dev-context;RT=sayosomi/nuinuiCAD;CT=sayosomi/dev-context;fi
-if [ "${NUINUI_SELFTEST:-0}" = 1 ];then CD=${NUINUI_DEV_CONTEXT_DEV_WT:-};[ -z "${NUINUI_SELFTEST_EXPECTED_ORIGIN:-}" ]||CT=$NUINUI_SELFTEST_EXPECTED_ORIGIN;else CD=/Users/yosomi/Code/dev-context-dev;fi
-lr(){ case $1 in main)echo "$M";;sub)echo "$S";;e2e)echo "$E";;*)return 2;;esac;};il(){ case $1 in main|sub);;*)return 2;;esac;};gr(){ [ -d "$1" ]&&git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1;};ao(){ [ -z "$2" ]||git -C "$1" remote get-url origin 2>/dev/null|grep -Fq "$2";};cn(){ [ -z "$(git -C "$1" status --porcelain)" ];};bn(){ git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null||true;};hh(){ git -C "$1" rev-parse HEAD;};om(){ git -C "$1" rev-parse origin/main;};fm(){ git -C "$1" fetch origin main >/dev/null 2>&1;};fp(){ git -C "$1" fetch origin --prune >/dev/null 2>&1;};an(){ git -C "$1" merge-base --is-ancestor "$2" "$3";};sd(){ git -C "$1" switch --detach "$2" >/dev/null;};gd(){ git -C "$1" rev-parse --absolute-git-dir 2>/dev/null;};ip(){ echo "$(gd "$1")/nuinui-implementation-v1";};sp(){ echo "$(gd "$1")/nuinui-implementation-slot";};kp(){ echo "$(gd "$1")/nuinui-implementation-lock";};rp(){ echo "$(gd "$1")/nuinui-implementation-slot.releasing.$2";};rds(){ find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null|sort;};mp(){ echo "$(gd "$1")/nuinui-slot";};ep(){ echo "$(gd "$1")/nuinui-e2e-session";}
-wa(){  t=${1}.tmp.$$;(umask 077;printf '%b' "$2">"$t")&&mv -- "$t" "$1";};gc(){ command -v uuidgen >/dev/null 2>&1&&uuidgen|tr A-Z a-z||printf '%s:%s:%s\n' $$ "$(date +%s)" "${RANDOM:-0}"|git hash-object --stdin;};lo(){  k=$(kp "$1");mkdir "$k" 2>/dev/null||return 1;wa "$k/state" "version=1\noperation=$2\nissue=$4\nbranch=$5\nbase=$6\ncheckpoint=$7\nclaim=$3\n";};ul(){ r=$1;e=$2;set -- $(nuinui_ownership_parse_lock "$(kp "$r")/state")||return 1;[ "$6" = "$e" ]&&rm "$(kp "$r")/state"&&rmdir "$(kp "$r")";};am(){ git -C "$1" ls-remote origin refs/heads/main 2>/dev/null|awk 'NR==1{print $1}';};ab(){ git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null|awk 'NR==1{print $1}';};id(){ local r a q; r=$2;a=$3;cn "$r"&&[ "$(hh "$r")" = "$a" ]||return 1;q=$(bn "$r");case $1 in main)[ "$q" = main ];;sub)[ -z "$q" ];;esac;};nr(){ [ -z "$(rds "$1")" ];};bo(){  x=$(CDPATH= cd -- "$1"&&pwd -P);git -C "$1" worktree list --porcelain|awk -v b="refs/heads/$2" -v x="$x" '/^worktree /{p=substr($0,10)}/^branch /&&substr($0,8)==b&&p!=x{print p;exit}';}
-release_restore_checkout() {
-  local l r i q a c h b x m n n2 m2 t mode branch_head initial_branch initial_head
-  l=$1
-  r=$2
-  q=$3
-  a=$4
-  h=$5
-  release_restore_checkout_mutated=no
+# Project-independent fixed 2+1 implementation lifecycle primitives.
+# The short helper names below are retained for the existing standalone CLI
+# callers; their lane and repository semantics come from the profile.
 
-  [ -e "$(sp "$r")/state" ] || return 1
-  set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state") || return 1
-  i=$1
-  c=$4
-  [ "$1 $2 $3 $4" = "$i $q $a $c" ] || return 1
-  set -- $(nuinui_ownership_parse_lock "$(kp "$r")/state") || return 1
-  [ "$1 $2 $3 $4 $5 $6" = "release $i $q $a $h $c" ] || return 1
-  nr "$r" || return 1
+fixed_2plus1_profile_guard() {
+  fixed_2plus1_profile_contract_ready
+}
 
-  b=$(bn "$r")
-  x=$(hh "$r" 2>/dev/null) || return 1
-  initial_branch=$b
-  initial_head=$x
-  if [ "$b" = "$q" ] && [ "$x" = "$h" ]; then
-    [ -z "$(git -C "$r" status --porcelain 2>/dev/null)" ] || return 1
-    [ -z "$(bo "$r" "$q")" ] || return 1
+lr() { fixed_2plus1_profile_lane_path "$1"; }
+il() { fixed_2plus1_profile_is_implementation_lane "$1"; }
+gr() { [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+ao() {
+  fixed_2plus1_profile_origin_matches "$1" "$2"
+}
+cn() { [ -z "$(git -C "$1" status --porcelain)" ]; }
+bn() { git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true; }
+hh() { git -C "$1" rev-parse HEAD; }
+om() { git -C "$1" rev-parse "origin/$(fixed_2plus1_profile_default_branch)"; }
+fm() { git -C "$1" fetch origin "$(fixed_2plus1_profile_default_branch)" >/dev/null 2>&1; }
+fp() { git -C "$1" fetch origin --prune >/dev/null 2>&1; }
+an() { git -C "$1" merge-base --is-ancestor "$2" "$3"; }
+sd() { git -C "$1" switch --detach "$2" >/dev/null; }
+gd() { git -C "$1" rev-parse --absolute-git-dir 2>/dev/null; }
+ip() { printf '%s/nuinui-implementation-v1\n' "$(gd "$1")"; }
+sp() { printf '%s/nuinui-implementation-slot\n' "$(gd "$1")"; }
+kp() { printf '%s/nuinui-implementation-lock\n' "$(gd "$1")"; }
+rp() { printf '%s/nuinui-implementation-slot.releasing.%s\n' "$(gd "$1")" "$2"; }
+rds() {
+  find "$(gd "$1")" -maxdepth 1 -type d \
+    -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort
+}
+mp() { fixed_2plus1_profile_human_test_marker_path "$1"; }
+ep() { fixed_2plus1_profile_human_test_session_path "$1"; }
+
+wa() {
+  fixed_2plus1_write_target=$1.tmp.$$
+  (umask 077; printf '%b' "$2" >"$fixed_2plus1_write_target") &&
+    mv -- "$fixed_2plus1_write_target" "$1"
+}
+
+gc() {
+  command -v uuidgen >/dev/null 2>&1 && uuidgen | tr A-Z a-z ||
+    printf '%s:%s:%s\n' $$ "$(date +%s)" "${RANDOM:-0}" | git hash-object --stdin
+}
+
+lo() {
+  fixed_2plus1_lock_dir=$(kp "$1")
+  mkdir "$fixed_2plus1_lock_dir" 2>/dev/null || return 1
+  wa "$fixed_2plus1_lock_dir/state" \
+    "version=1\noperation=$2\nissue=$4\nbranch=$5\nbase=$6\ncheckpoint=$7\nclaim=$3\n"
+}
+
+ul() {
+  fixed_2plus1_unlock_repo=$1
+  fixed_2plus1_unlock_claim=$2
+  set -- $(nuinui_ownership_parse_lock "$(kp "$fixed_2plus1_unlock_repo")/state") || return 1
+  [ "$6" = "$fixed_2plus1_unlock_claim" ] || return 1
+  rm "$(kp "$fixed_2plus1_unlock_repo")/state" &&
+    rmdir "$(kp "$fixed_2plus1_unlock_repo")"
+}
+
+am() {
+  git -C "$1" ls-remote origin \
+    "refs/heads/$(fixed_2plus1_profile_default_branch)" 2>/dev/null |
+    awk 'NR == 1 {print $1}'
+}
+
+ab() {
+  git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null |
+    awk 'NR == 1 {print $1}'
+}
+
+id() {
+  fixed_2plus1_idle_lane=$1
+  fixed_2plus1_idle_repo=$2
+  fixed_2plus1_idle_head=$3
+  cn "$fixed_2plus1_idle_repo" || return 1
+  [ "$(hh "$fixed_2plus1_idle_repo")" = "$fixed_2plus1_idle_head" ] || return 1
+  case "$(fixed_2plus1_profile_idle_checkout_form "$fixed_2plus1_idle_lane")" in
+    branch)
+      [ "$(bn "$fixed_2plus1_idle_repo")" = \
+        "$(fixed_2plus1_profile_default_branch)" ]
+      ;;
+    detached) [ -z "$(bn "$fixed_2plus1_idle_repo")" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+nr() { [ -z "$(rds "$1")" ]; }
+
+bo() {
+  fixed_2plus1_branch_path=$(CDPATH= cd -- "$1" && pwd -P) || return 1
+  git -C "$1" worktree list --porcelain |
+    awk -v branch="refs/heads/$2" -v path="$fixed_2plus1_branch_path" '
+      /^worktree / {worktree=substr($0, 10)}
+      /^branch / && substr($0, 8) == branch && worktree != path {
+        print worktree
+        exit
+      }
+    '
+}
+
+cl() {
+  local lane repo initialization slot lock branch head dirty releasing_count
+  local releasing_paths origin_main
+  lane=$1
+  repo=$2
+  initialization=$(ip "$repo")
+  slot=$(sp "$repo")
+  lock=$(kp "$repo")
+  branch=$(bn "$repo")
+  head=$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)
+  dirty=$(git -C "$repo" status --porcelain 2>/dev/null)
+  printf '%s path=%s\n' "$lane" "$repo"
+  printf '  branch=%s\n' "${branch:-DETACHED}"
+  printf '  head=%s\n' "$head"
+  printf '  clean=%s\n' "$([ -z "$dirty" ] && echo yes || echo no)"
+
+  if [ -e "$lock" ]; then
+    set -- $(nuinui_ownership_parse_lock "$lock/state")
+    if [ "$#" = 6 ]; then
+      printf '  state=BLOCKED reason=mutation-in-progress operation=%s claim=%s\n' "$1" "$6"
+    else
+      echo '  state=BLOCKED reason=invalid-mutation-lock'
+    fi
+    return 1
+  fi
+
+  releasing_paths=$(rds "$repo")
+  releasing_count=$(printf '%s\n' "$releasing_paths" | grep -c . || true)
+  if [ -e "$slot" ]; then
+    [ "$releasing_count" = 0 ] || {
+      echo '  state=BLOCKED reason=active-and-releasing-state-coexist'
+      return 1
+    }
+    set -- $(nuinui_ownership_parse_slot "$slot/state") || {
+      echo '  state=BLOCKED reason=invalid-active-slot'
+      return 1
+    }
+    [ "$#" = 4 ] || {
+      echo '  state=BLOCKED reason=invalid-active-slot'
+      return 1
+    }
+    printf '  owner_issue=%s owner_branch=%s base=%s claim=%s\n' "$1" "$2" "$3" "$4"
+    [ "$branch" = "$2" ] && an "$repo" "$3" "$head" 2>/dev/null || {
+      echo '  state=BLOCKED reason=claim-checkout-mismatch'
+      return 1
+    }
+    echo '  state=BUSY'
     return 0
   fi
 
-  [ -z "$(git -C "$r" status --porcelain 2>/dev/null)" ] || return 1
-  nuinui_ownership_valid_sha "$x" || return 1
+  if [ "$releasing_count" != 0 ]; then
+    [ "$releasing_count" = 1 ] || {
+      echo '  state=BLOCKED reason=multiple-release-states'
+      return 1
+    }
+    set -- $(nuinui_ownership_parse_releasing "$releasing_paths") || {
+      echo '  state=BLOCKED reason=invalid-release-state'
+      return 1
+    }
+    [ "$#" = 5 ] || {
+      echo '  state=BLOCKED reason=invalid-release-state'
+      return 1
+    }
+    printf '  state=RELEASE-PENDING claim=%s checkpoint=%s\n' "$4" "$5"
+    return 0
+  fi
 
-  t=$(git -C "$r" rev-parse --verify --quiet "refs/heads/$q^{commit}" 2>/dev/null || true)
+  nuinui_ownership_validate_initialization "$initialization" || {
+    echo '  state=BLOCKED reason=durable-ownership-initialization-required'
+    return 1
+  }
+  origin_main=$(am "$repo")
+  nuinui_ownership_valid_sha "$origin_main" && id "$lane" "$repo" "$origin_main" || {
+    printf '  state=BLOCKED reason=invalid-idle-state origin_main=%s\n' "$origin_main"
+    return 1
+  }
+  printf '  state=FREE origin_main=%s\n' "$origin_main"
+}
+
+pf() {
+  local lane_a lane_b human_lane result
+  fixed_2plus1_profile_guard || {
+    echo '===== FIXED 2+1 PREFLIGHT RESULT ====='
+    echo 'PREFLIGHT BLOCKED'
+    return 1
+  }
+  printf '%s\n' '===== NUINUI PREFLIGHT RESULT ====='
+  result=0
+  lane_a=$(fixed_2plus1_profile_implementation_lane_a_name)
+  lane_b=$(fixed_2plus1_profile_implementation_lane_b_name)
+  human_lane=$(fixed_2plus1_profile_human_test_lane_name)
+  gr "$(lr "$lane_a")" && cl "$lane_a" "$(lr "$lane_a")" || result=1
+  gr "$(lr "$lane_b")" && cl "$lane_b" "$(lr "$lane_b")" || result=1
+  fixed_2plus1_profile_human_test_preflight "$human_lane" || result=1
+  fixed_2plus1_profile_inventory_guard \
+    "$(lr "$lane_a")" "$(lr "$lane_b")" "$(lr "$human_lane")" || result=1
+  [ "$result" = 0 ] && { echo 'PREFLIGHT PASS'; return 0; }
+  echo 'PREFLIGHT BLOCKED'
+  return 1
+}
+
+cv() {
+  local lane issue base branch repo current_head
+  lane=$1
+  issue=$2
+  base=$3
+  branch=$4
+  il "$lane" && nuinui_ownership_valid_issue "$issue" &&
+    nuinui_ownership_valid_sha "$base" &&
+    nuinui_ownership_validate_issue_branch "$issue" "$branch" || return 2
+  repo=$(lr "$lane")
+  gr "$repo" && ao "$repo" "$(fixed_2plus1_profile_repository_identity)" &&
+    cn "$repo" || return 1
+  id "$lane" "$repo" "$base" || {
+    fm "$repo" || return 1
+    [ "$(om "$repo")" = "$base" ] || return 1
+    current_head=$(hh "$repo")
+    id "$lane" "$repo" "$current_head" || return 1
+  }
+  fm "$repo" && [ "$(om "$repo")" = "$base" ] || return 1
+  git -C "$repo" show-ref --verify --quiet "refs/heads/$branch" && return 1
+  [ -z "$(ab "$repo" "$branch")" ] || return 1
+  current_head=$(hh "$repo")
+  [ "$current_head" = "$base" ] || an "$repo" "$current_head" "$base" || return 1
+  echo VERIFIED
+}
+
+vr() {
+  local repo
+  repo=$(lr "$1") || return 2
+  nuinui_ownership_validate_initialization "$(ip "$repo")" &&
+    [ ! -e "$(sp "$repo")" ] && [ ! -e "$(kp "$repo")" ] && nr "$repo" || return 1
+  cv "$@"
+}
+
+li() {
+  local lane repo marker claim origin_main
+  lane=$1
+  il "$lane" || return 2
+  repo=$(lr "$lane")
+  gr "$repo" && ao "$repo" "$(fixed_2plus1_profile_repository_identity)" || return 1
+  marker=$(ip "$repo")
+  if [ -e "$marker" ]; then
+    nuinui_ownership_validate_initialization "$marker" && {
+      echo 'ALREADY INITIALIZED'
+      return 0
+    }
+    return 1
+  fi
+  [ ! -e "$(sp "$repo")" ] && [ ! -e "$(kp "$repo")" ] && nr "$repo" || return 1
+  claim=$(gc)
+  lo "$repo" init "$claim" - - - - || return 1
+  fm "$repo" || return 1
+  origin_main=$(om "$repo")
+  id "$lane" "$repo" "$origin_main" || return 1
+  wa "$marker" 'version=1\n' && ul "$repo" "$claim" || return 1
+  echo 'LANE INITIALIZED'
+}
+
+cs() {
+  local lane issue base branch repo head default_branch
+  lane=$1
+  issue=$2
+  base=$3
+  branch=$4
+  repo=$(lr "$lane")
+  cv "$@" >/dev/null || return $?
+  fm "$repo" || return 1
+  [ "$(om "$repo")" = "$base" ] || return 1
+  head=$(hh "$repo")
+  if [ "$head" != "$base" ]; then
+    case "$(fixed_2plus1_profile_idle_checkout_form "$lane")" in
+      branch) git -C "$repo" merge --ff-only "origin/$(fixed_2plus1_profile_default_branch)" >/dev/null || return 1 ;;
+      detached) sd "$repo" "$base" || return 1 ;;
+      *) return 1 ;;
+    esac
+  fi
+  git -C "$repo" switch -c "$branch" "$base" >/dev/null || return 1
+  echo STARTED
+}
+
+st() {
+  local lane issue base branch repo claim slot
+  lane=$1
+  issue=$2
+  base=$3
+  branch=$4
+  vr "$@" >/dev/null || return $?
+  repo=$(lr "$lane")
+  claim=$(gc)
+  lo "$repo" start "$claim" "$issue" "$branch" "$base" - || return 1
+  slot=$(sp "$repo")
+  mkdir "$slot" || return 1
+  wa "$slot/state" "version=1\nissue=$issue\nbranch=$branch\nbase=$base\nclaim=$claim\n" || return 1
+  [ "${NUINUI_SELFTEST_CRASH_AT:-}" = start-after-slot ] && return 97
+  cs "$@" || {
+    if id "$lane" "$repo" "$base" &&
+      ! git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+      rm -rf "$slot"
+      ul "$repo" "$claim" >/dev/null 2>&1 || true
+    fi
+    return 1
+  }
+  ul "$repo" "$claim" || return 1
+  printf '  claim=%s\n' "$claim"
+}
+
+rt() {
+  local repo branch head topic topic_rc remote_head remote_ref
+  repo=$1
+  branch=$2
+  head=$3
+  topic=$(git -C "$repo" ls-remote --exit-code --heads origin "refs/heads/$branch" 2>/dev/null)
+  topic_rc=$?
+  case "$topic_rc" in
+    0)
+      remote_head=$(printf '%s\n' "$topic" | awk 'NR == 1 {print $1}')
+      remote_ref=$(printf '%s\n' "$topic" | awk 'NR == 1 {print $2}')
+      [ "$remote_head" = "$head" ] && [ "$remote_ref" = "refs/heads/$branch" ] &&
+        [ -z "$(printf '%s\n' "$topic" | awk 'NR > 1 {print}')" ] || return 1
+      echo pushed
+      ;;
+    2) [ -z "$topic" ] && echo absent || return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
+cr() {
+  local lane issue base head branch claim repo mode main_branch
+  lane=$1
+  issue=$2
+  base=$3
+  head=$4
+  branch=$5
+  claim=$6
+  repo=$(lr "$lane")
+  set -- $(nuinui_ownership_parse_slot "$(sp "$repo")/state") || return 1
+  [ "$1 $2 $3 $4" = "$issue $branch $base $claim" ] || return 1
+  cn "$repo" &&
+    [ "$(git -C "$repo" rev-parse "refs/heads/$branch^{commit}" 2>/dev/null)" = "$head" ] &&
+    an "$repo" "$base" "$head" && [ -z "$(bo "$repo" "$branch")" ] || return 1
+  mode=$(rt "$repo" "$branch" "$head") || return 1
+  [ "$mode" != absent ] || [ "$head" = "$base" ] || return 1
+  fm "$repo" || return 1
+  main_branch=$(om "$repo")
+  current_branch=$(bn "$repo")
+  current_head=$(hh "$repo")
+  if [ "$current_branch" != "$branch" ] || [ "$current_head" != "$head" ]; then
+    fixed_2plus1_profile_idle_checkout_form "$lane" >/dev/null || return 1
+    id "$lane" "$repo" "$main_branch" || return 1
+    [ "$current_head" = "$main_branch" ] || an "$repo" "$current_head" "$main_branch" || return 1
+    [ "$(rt "$repo" "$branch" "$head")" = "$mode" ] || return 1
+    git -C "$repo" switch "$branch" >/dev/null || return 1
+  fi
+  [ "$(hh "$repo")" = "$head" ] && cn "$repo" || return 1
+  echo RESUMED
+}
+
+rs() {
+  local lane issue base head branch claim repo old_branch old_head
+  lane=$1
+  issue=$2
+  base=$3
+  head=$4
+  branch=$5
+  claim=$6
+  il "$lane" && nuinui_ownership_valid_issue "$issue" &&
+    nuinui_ownership_valid_sha "$base" && nuinui_ownership_valid_sha "$head" &&
+    nuinui_ownership_valid_claim "$claim" || return 2
+  repo=$(lr "$lane")
+  set -- $(nuinui_ownership_parse_slot "$(sp "$repo")/state") || return 1
+  [ "$1 $2 $3 $4" = "$issue $branch $base $claim" ] &&
+    [ ! -e "$(kp "$repo")" ] && nr "$repo" || return 1
+  old_branch=$(bn "$repo")
+  old_head=$(hh "$repo")
+  lo "$repo" resume "$claim" "$issue" "$branch" "$base" "$head" || return 1
+  cr "$lane" "$issue" "$base" "$head" "$branch" "$claim" || {
+    [ "$(bn "$repo")" = "$old_branch" ] && [ "$(hh "$repo")" = "$old_head" ] &&
+      ul "$repo" "$claim" >/dev/null 2>&1 || true
+    return 1
+  }
+  ul "$repo" "$claim" || return 1
+  printf '  base=%s\n  claim=%s\n' "$base" "$claim"
+}
+
+dl() {
+  local lane head branch repo current_branch current_head delete_branch form default_branch
+  lane=$1
+  head=$2
+  branch=$3
+  repo=$(lr "$lane")
+  cn "$repo" || return 1
+  current_branch=$(bn "$repo")
+  current_head=$(hh "$repo")
+  delete_branch=
+  [ "$current_branch" = "$branch" ] && [ "$current_head" = "$head" ] && delete_branch=$branch
+  form=$(fixed_2plus1_profile_idle_checkout_form "$lane")
+  default_branch=$(fixed_2plus1_profile_default_branch)
+  case "$form" in
+    branch)
+      [ "$current_branch" = "$branch" ] || [ "$current_branch" = "$default_branch" ] || return 1
+      git -C "$repo" switch "$default_branch" >/dev/null &&
+        git -C "$repo" merge --ff-only "origin/$default_branch" >/dev/null || return 1
+      ;;
+    detached)
+      [ "$current_branch" = "$branch" ] || [ -z "$current_branch" ] || return 1
+      [ "$current_head" = "$head" ] || an "$repo" "$current_head" "origin/$default_branch" || return 1
+      sd "$repo" "origin/$default_branch" || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  if [ -n "$delete_branch" ]; then
+    [ "$(git -C "$repo" rev-parse "refs/heads/$delete_branch^{commit}" 2>/dev/null)" = "$head" ] &&
+      [ -z "$(bo "$repo" "$delete_branch")" ] &&
+      git -C "$repo" update-ref -d "refs/heads/$delete_branch" "$head" || return 1
+  fi
+  echo RELEASED
+}
+
+rr() { printf '%s/nuinui-implementation-release-receipt\n' "$(gd "$1")"; }
+
+write_release_receipt() {
+  local repo lane issue branch base head claim receipt
+  repo=$1
+  lane=$2
+  issue=$3
+  branch=$4
+  base=$5
+  head=$6
+  claim=$7
+  receipt=$(rr "$repo")
+  wa "$receipt" \
+    "version=1\nlane=$lane\nissue=$issue\nbranch=$branch\nbase=$base\ncheckpoint=$head\nclaim=$claim\n" || return 1
+  set -- $(nuinui_ownership_parse_release_receipt "$receipt") || return 1
+  [ "$1 $2 $3 $4 $5 $6" = "$lane $issue $branch $base $head $claim" ]
+}
+
+release_restore_checkout() {
+  local lane repo issue topic base claim head before_branch before_head
+  local topic_head mode branch_head current_branch current_head default_branch
+  local main_head main_head2 remote_state remote_state2 target_head target_head2
+  lane=$1
+  repo=$2
+  topic=$3
+  base=$4
+  head=$5
+  release_restore_checkout_mutated=no
+  set -- $(nuinui_ownership_parse_slot "$(sp "$repo")/state") || return 1
+  issue=$1
+  claim=$4
+  [ "$1 $2 $3 $4" = "$issue $topic $base $claim" ] || return 1
+  set -- $(nuinui_ownership_parse_lock "$(kp "$repo")/state") || return 1
+  [ "$1 $2 $3 $4 $5 $6" = "release $issue $topic $base $head $claim" ] || return 1
+  nr "$repo" || return 1
+  before_branch=$(bn "$repo")
+  before_head=$(hh "$repo") || return 1
+  if [ "$before_branch" = "$topic" ] && [ "$before_head" = "$head" ]; then
+    cn "$repo" && [ -z "$(bo "$repo" "$topic")" ] || return 1
+    return 0
+  fi
+  cn "$repo" || return 1
+  nuinui_ownership_valid_sha "$before_head" || return 1
+  topic_head=$(git -C "$repo" rev-parse --verify --quiet "refs/heads/$topic^{commit}" 2>/dev/null || true)
   mode=
-  if [ -n "$b" ] && [ "$b" != "$q" ] && [ "$x" = "$h" ]; then
-    branch_head=$(git -C "$r" rev-parse "refs/heads/$b^{commit}" 2>/dev/null || true)
-    if [ "$branch_head" = "$h" ]; then
-      if [ "$t" = "$h" ]; then
+  if [ -n "$before_branch" ] && [ "$before_branch" != "$topic" ] && [ "$before_head" = "$head" ]; then
+    branch_head=$(git -C "$repo" rev-parse "refs/heads/$before_branch^{commit}" 2>/dev/null || true)
+    if [ "$branch_head" = "$head" ]; then
+      if [ "$topic_head" = "$head" ]; then
         mode=switch
-      elif [ -z "$t" ] && [ "$b" != main ]; then
+      elif [ -z "$topic_head" ] && [ "$before_branch" != "$(fixed_2plus1_profile_default_branch)" ]; then
         mode=rename
       fi
     fi
   fi
   if [ -z "$mode" ]; then
-    case "$l" in
-      main) [ "$b" = main ] || return 1 ;;
-      sub) [ -z "$b" ] || return 1 ;;
-      *) return 1 ;;
-    esac
-    [ "$t" = "$h" ] || return 1
+    id "$lane" "$repo" "$before_head" || return 1
+    [ "$topic_head" = "$head" ] || return 1
     mode=canonical
   fi
-
-  fp "$r" || return 1
-  m=$(om "$r" 2>/dev/null) || return 1
-  nuinui_ownership_valid_sha "$m" || return 1
-  an "$r" "$x" "$m" || return 1
-  an "$r" "$h" "$m" || return 1
-  [ "$a" = "$h" ] || an "$r" "$a" "$h" || return 1
+  fp "$repo" || return 1
+  main_head=$(om "$repo") || return 1
+  nuinui_ownership_valid_sha "$main_head" || return 1
+  an "$repo" "$before_head" "$main_head" || return 1
+  an "$repo" "$head" "$main_head" || return 1
+  [ "$base" = "$head" ] || an "$repo" "$base" "$head" || return 1
   case "$mode" in
-    switch) [ "$t" = "$h" ] || return 1 ;;
-    rename) [ -z "$t" ] || return 1 ;;
-    canonical) [ "$t" = "$h" ] || return 1 ;;
+    switch|canonical) [ "$topic_head" = "$head" ] || return 1 ;;
+    rename) [ -z "$topic_head" ] || return 1 ;;
     *) return 1 ;;
   esac
-  [ -z "$(bo "$r" "$q")" ] || return 1
-  n=$(rt "$r" "$q" "$h") || return 1
-
-  fp "$r" || return 1
-  m2=$(om "$r" 2>/dev/null) || return 1
-  [ "$m2" = "$m" ] || return 1
-  n2=$(rt "$r" "$q" "$h") || return 1
-  [ "$n2" = "$n" ] || return 1
-  b=$(bn "$r")
-  x=$(hh "$r" 2>/dev/null) || return 1
-  [ -z "$(git -C "$r" status --porcelain 2>/dev/null)" ] || return 1
-  [ "$b" = "$initial_branch" ] && [ "$x" = "$initial_head" ] || return 1
-  an "$r" "$x" "$m2" || return 1
-  an "$r" "$h" "$m2" || return 1
-  [ "$b" = "$(bn "$r")" ] || return 1
+  [ -z "$(bo "$repo" "$topic")" ] || return 1
+  remote_state=$(rt "$repo" "$topic" "$head") || return 1
+  fp "$repo" || return 1
+  main_head2=$(om "$repo") || return 1
+  [ "$main_head2" = "$main_head" ] || return 1
+  remote_state2=$(rt "$repo" "$topic" "$head") || return 1
+  [ "$remote_state2" = "$remote_state" ] || return 1
+  current_branch=$(bn "$repo")
+  current_head=$(hh "$repo") || return 1
+  [ "$current_branch" = "$before_branch" ] && [ "$current_head" = "$before_head" ] || return 1
+  cn "$repo" && an "$repo" "$current_head" "$main_head2" &&
+    an "$repo" "$head" "$main_head2" || return 1
   case "$mode" in
     switch|rename)
-      [ -n "$b" ] && [ "$b" != "$q" ] || return 1
-      [ "$x" = "$h" ] || return 1
-      branch_head=$(git -C "$r" rev-parse "refs/heads/$b^{commit}" 2>/dev/null || true)
-      [ "$branch_head" = "$h" ] || return 1
+      [ -n "$current_branch" ] && [ "$current_branch" != "$topic" ] || return 1
+      [ "$current_head" = "$head" ] || return 1
+      branch_head=$(git -C "$repo" rev-parse "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
       ;;
-    canonical)
-      case "$l" in
-        main) [ "$b" = main ] || return 1 ;;
-        sub) [ -z "$b" ] || return 1 ;;
-        *) return 1 ;;
-      esac
-      ;;
+    canonical) id "$lane" "$repo" "$current_head" || return 1 ;;
     *) return 1 ;;
   esac
-  t=$(git -C "$r" rev-parse --verify --quiet "refs/heads/$q^{commit}" 2>/dev/null || true)
+  target_head=$(git -C "$repo" rev-parse --verify --quiet "refs/heads/$topic^{commit}" 2>/dev/null || true)
   case "$mode" in
-    switch|canonical) [ "$t" = "$h" ] || return 1 ;;
-    rename) [ -z "$t" ] || return 1 ;;
+    switch|canonical) [ "$target_head" = "$head" ] || return 1 ;;
+    rename) [ -z "$target_head" ] || return 1 ;;
   esac
-  [ -z "$(bo "$r" "$q")" ] || return 1
-
-  set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state") || return 1
-  [ "$1 $2 $3 $4" = "$i $q $a $c" ] || return 1
-  set -- $(nuinui_ownership_parse_lock "$(kp "$r")/state") || return 1
-  [ "$1 $2 $3 $4 $5 $6" = "release $i $q $a $h $c" ] || return 1
-  nr "$r" || return 1
-
+  [ -z "$(bo "$repo" "$topic")" ] || return 1
   case "$mode" in
     switch)
       release_restore_checkout_mutated=potential
-      git -C "$r" switch "$q" >/dev/null || return 1
+      git -C "$repo" switch "$topic" >/dev/null || return 1
       release_restore_checkout_mutated=yes
       ;;
     rename)
       release_restore_checkout_mutated=potential
-      git -C "$r" branch -m "$q" >/dev/null || return 1
+      git -C "$repo" branch -m "$topic" >/dev/null || return 1
       release_restore_checkout_mutated=yes
       ;;
     canonical) return 0 ;;
     *) return 1 ;;
   esac
-
-  [ "$(bn "$r")" = "$q" ] && [ "$(hh "$r")" = "$h" ] &&
-    [ "$(git -C "$r" rev-parse --verify --quiet "refs/heads/$q^{commit}" 2>/dev/null || true)" = "$h" ] &&
-    cn "$r" || return 1
-  set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state") || return 1
-  [ "$1 $2 $3 $4" = "$i $q $a $c" ] || return 1
-  set -- $(nuinui_ownership_parse_lock "$(kp "$r")/state") || return 1
-  [ "$1 $2 $3 $4 $5 $6" = "release $i $q $a $h $c" ] || return 1
-  nr "$r"
+  [ "$(bn "$repo")" = "$topic" ] && [ "$(hh "$repo")" = "$head" ] && cn "$repo" || return 1
+  set -- $(nuinui_ownership_parse_slot "$(sp "$repo")/state") || return 1
+  [ "$1 $2 $3 $4" = "$issue $topic $base $claim" ] || return 1
+  set -- $(nuinui_ownership_parse_lock "$(kp "$repo")/state") || return 1
+  [ "$1 $2 $3 $4 $5 $6" = "release $issue $topic $base $head $claim" ] || return 1
+  nr "$repo"
 }
-cl(){ local l r i s k q h d z n a;l=$1;r=$2;i=$(ip "$r");s=$(sp "$r");k=$(kp "$r");q=$(bn "$r");h=$(git -C "$r" rev-parse HEAD 2>/dev/null||true);d=$(git -C "$r" status --porcelain 2>/dev/null);echo "$l path=$r";echo "  branch=${q:-DETACHED}";echo "  head=$h";echo "  clean=$([ -z "$d" ]&&echo yes||echo no)";if [ -e "$k" ];then set -- $(nuinui_ownership_parse_lock "$k/state");[ $# = 6 ]&&echo "  state=BLOCKED reason=mutation-in-progress operation=$1 claim=$6"||echo '  state=BLOCKED reason=invalid-mutation-lock';return 1;fi;z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ -e "$s" ];then [ "$n" = 0 ]||{ echo '  state=BLOCKED reason=active-and-releasing-state-coexist';return 1;};set -- $(nuinui_ownership_parse_slot "$s/state");[ $# = 4 ]||{ echo '  state=BLOCKED reason=invalid-active-slot';return 1;};echo "  owner_issue=$1 owner_branch=$2 base=$3 claim=$4";[ "$q" = "$2" ]&&an "$r" "$3" "$h" 2>/dev/null||{ echo '  state=BLOCKED reason=claim-checkout-mismatch';return 1;};echo '  state=BUSY';return 0;fi;if [ "$n" != 0 ];then [ "$n" = 1 ]||{ echo '  state=BLOCKED reason=multiple-release-states';return 1;};set -- $(nuinui_ownership_parse_releasing "$z");[ $# = 5 ]||{ echo '  state=BLOCKED reason=invalid-release-state';return 1;};echo "  state=RELEASE-PENDING claim=$4 checkpoint=$5";return 0;fi;nuinui_ownership_validate_initialization "$i"||{ echo '  state=BLOCKED reason=durable-ownership-initialization-required';return 1;};a=$(am "$r");nuinui_ownership_valid_sha "$a"&&id "$l" "$r" "$a"||{ echo "  state=BLOCKED reason=invalid-idle-state origin_main=$a";return 1;};echo "  state=FREE origin_main=$a";}
-nuinui_validate_forensic_worktree() {
-  local f physical fixed_main fixed_sub fixed_e2e registered expected actual
-  f=$1
-  nuinui_forensic_reason=
 
-  case "$f" in
-    /*) ;;
-    *) nuinui_forensic_reason=non-absolute-path; return 1 ;;
-  esac
-  [ -d "$f" ] || {
-    nuinui_forensic_reason=missing-or-not-directory
-    return 1
-  }
-  physical=$(CDPATH= cd -- "$f" && pwd -P) || {
-    nuinui_forensic_reason=non-canonical-path
-    return 1
-  }
-  [ "$physical" = "$f" ] || {
-    nuinui_forensic_reason=non-canonical-path
-    return 1
-  }
-
-  fixed_main=$(CDPATH= cd -- "$M" && pwd -P) || {
-    nuinui_forensic_reason=registered-inventory-mismatch
-    return 1
-  }
-  fixed_sub=$(CDPATH= cd -- "$S" && pwd -P) || {
-    nuinui_forensic_reason=registered-inventory-mismatch
-    return 1
-  }
-  fixed_e2e=$(CDPATH= cd -- "$E" && pwd -P) || {
-    nuinui_forensic_reason=registered-inventory-mismatch
-    return 1
-  }
-  case "$physical" in
-    "$fixed_main"|"$fixed_sub"|"$fixed_e2e")
-      nuinui_forensic_reason=fixed-lane-path
-      return 1
-      ;;
-  esac
-
-  gr "$f" || {
-    nuinui_forensic_reason=not-registered-worktree
-    return 1
-  }
-  registered=$(git -C "$M" worktree list --porcelain | sed -n 's/^worktree //p')
-  if ! printf '%s\n' "$registered" | grep -Fqx "$f"; then
-    nuinui_forensic_reason=not-registered-worktree
+rl() {
+  local lane head claim repo slot issue topic base tombstone
+  release_restore_checkout_mutated=no
+  lane=$1
+  head=$2
+  claim=$3
+  il "$lane" && nuinui_ownership_valid_sha "$head" &&
+    nuinui_ownership_valid_claim "$claim" || return 2
+  repo=$(lr "$lane")
+  slot=$(sp "$repo")
+  set -- $(nuinui_ownership_parse_slot "$slot/state") || return 1
+  issue=$1
+  topic=$2
+  base=$3
+  [ "$4" = "$claim" ] && [ ! -e "$(kp "$repo")" ] && nr "$repo" || return 1
+  lo "$repo" release "$claim" "$issue" "$topic" "$base" "$head" || return 1
+  if ! release_restore_checkout "$lane" "$repo" "$topic" "$base" "$head"; then
+    [ "$release_restore_checkout_mutated" = no ] && ul "$repo" "$claim"
     return 1
   fi
-  expected=$(printf '%s\n' "$fixed_main" "$fixed_sub" "$fixed_e2e" "$f" | sort)
+  if ! fp "$repo" || ! git -C "$repo" merge-base --is-ancestor "$head" \
+    "origin/$(fixed_2plus1_profile_default_branch)"; then
+    [ "$release_restore_checkout_mutated" = no ] && ul "$repo" "$claim"
+    return 1
+  fi
+  wa "$slot/checkpoint" "$head\n" || {
+    [ "$release_restore_checkout_mutated" = no ] && ul "$repo" "$claim"
+    return 1
+  }
+  tombstone=$(rp "$repo" "$claim")
+  mv "$slot" "$tombstone" || return 1
+  [ "${NUINUI_SELFTEST_CRASH_AT:-}" = release-after-rename ] && return 97
+  dl "$lane" "$head" "$topic" || return 1
+  write_release_receipt "$repo" "$lane" "$issue" "$topic" "$base" "$head" "$claim" || return 1
+  rm "$tombstone/checkpoint" "$tombstone/state" && rmdir "$tombstone" &&
+    ul "$repo" "$claim" || return 1
+  [ "${NUINUI_SELFTEST_STALE_RESULT:-}" = release ] && return 98
+  printf '  claim=%s\n' "$claim"
+}
+
+rc() {
+  local lane claim repo lock slot releasing state_count operation issue topic base head
+  local claim_dir
+  lane=$1
+  claim=$2
+  il "$lane" && nuinui_ownership_valid_claim "$claim" || return 2
+  repo=$(lr "$lane")
+  lock=$(kp "$repo")
+  slot=$(sp "$repo")
+  releasing=$(rds "$repo")
+  state_count=$(printf '%s\n' "$releasing" | grep -c . || true)
+  if [ ! -e "$lock" ]; then
+    [ "$state_count" = 1 ] && set -- $(nuinui_ownership_parse_releasing "$releasing") &&
+      [ "$4" = "$claim" ] || return 1
+    lo "$repo" release "$claim" "$1" "$2" "$3" "$5" || return 1
+  fi
+  set -- $(nuinui_ownership_parse_lock "$lock/state") || return 1
+  operation=$1
+  issue=$2
+  topic=$3
+  base=$4
+  head=$5
+  [ "$6" = "$claim" ] || return 1
+  case "$operation" in
+    init)
+      fm "$repo" || return 1
+      origin_main=$(om "$repo")
+      id "$lane" "$repo" "$origin_main" || return 1
+      [ -e "$(ip "$repo")" ] || wa "$(ip "$repo")" 'version=1\n'
+      nuinui_ownership_validate_initialization "$(ip "$repo")" && ul "$repo" "$claim"
+      ;;
+    start)
+      set -- $(nuinui_ownership_parse_slot "$slot/state") || return 1
+      [ "$1 $2 $3 $4" = "$issue $topic $base $claim" ] || return 1
+      if [ "$(bn "$repo")" = "$topic" ] && [ "$(hh "$repo")" = "$base" ] && cn "$repo"; then
+        ul "$repo" "$claim"
+      else
+        cs "$lane" "$issue" "$base" "$topic" >/dev/null && ul "$repo" "$claim"
+      fi
+      ;;
+    resume) cr "$lane" "$issue" "$base" "$head" "$topic" "$claim" >/dev/null && ul "$repo" "$claim" ;;
+    release)
+      if [ "$state_count" = 0 ] && [ -e "$slot" ]; then
+        set -- $(nuinui_ownership_parse_slot "$slot/state") || return 1
+        [ "$1 $2 $3 $4" = "$issue $topic $base $claim" ] || return 1
+        if [ -f "$slot/checkpoint" ]; then
+          [ "$(cat "$slot/checkpoint")" = "$head" ] || return 1
+        else
+          wa "$slot/checkpoint" "$head\n" || return 1
+        fi
+        claim_dir=$(rp "$repo" "$claim")
+        mv "$slot" "$claim_dir" || return 1
+      elif [ "$state_count" = 1 ]; then
+        claim_dir=$releasing
+      else
+        return 1
+      fi
+      set -- $(nuinui_ownership_parse_releasing "$claim_dir") || return 1
+      [ "$1 $2 $3 $4 $5" = "$issue $topic $base $claim $head" ] || return 1
+      fp "$repo" && git -C "$repo" merge-base --is-ancestor "$head" \
+        "origin/$(fixed_2plus1_profile_default_branch)" &&
+        dl "$lane" "$head" "$topic" >/dev/null || return 1
+      write_release_receipt "$repo" "$lane" "$issue" "$topic" "$base" "$head" "$claim" || return 1
+      rm "$claim_dir/checkpoint" "$claim_dir/state" && rmdir "$claim_dir" && ul "$repo" "$claim"
+      ;;
+    *) return 1 ;;
+  esac || return 1
+  printf 'RECOVERED operation=%s\n' "$operation"
+}
+# Public implementation lifecycle façade for the fixed two-lane core.
+# Release-specific façade logic lives in release-facade.sh.
+
+lifecycle_repo() { lr "$1"; }
+lifecycle_peer_lane() { fixed_2plus1_profile_peer_lane "$1"; }
+lifecycle_git_dir() { gd "$1"; }
+lifecycle_slot_state() { printf '%s/state\n' "$(sp "$1")"; }
+lifecycle_valid_peer() {
+  [ "$1" = FREE ] || nuinui_ownership_valid_issue "$1"
+}
+
+lifecycle_preflight() {
+  NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=
+  NUINUI_LIFECYCLE_PREFLIGHT_RC=0
+  NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=$(pf 2>&1) ||
+    NUINUI_LIFECYCLE_PREFLIGHT_RC=$?
+  [ "$NUINUI_LIFECYCLE_PREFLIGHT_RC" = 0 ]
+}
+
+lifecycle_lane_state() {
+  printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
+    $0 ~ ("^" lane " path=") {seen_lane=1; next}
+    seen_lane && $0 ~ /^  state=/ {sub(/^  state=/,""); sub(/ .*/,""); print; exit}
+    seen_lane && $0 !~ /^ / {exit}
+  '
+}
+
+lifecycle_lane_issue() {
+  printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
+    $0 ~ ("^" lane " path=") {seen_lane=1; next}
+    seen_lane && $0 ~ /^  owner_issue=/ {sub(/^  owner_issue=/,""); sub(/ .*/,""); print; exit}
+    seen_lane && $0 !~ /^ / {exit}
+  '
+}
+
+lifecycle_expect_lane() {
+  local expected_lane expected_occupancy actual_state actual_issue
+  expected_lane=$1
+  expected_occupancy=$2
+  actual_state=$(lifecycle_lane_state "$expected_lane")
+  actual_issue=$(lifecycle_lane_issue "$expected_lane")
+  case "$expected_occupancy" in
+    FREE) [ "$actual_state" = FREE ] && [ -z "$actual_issue" ] ;;
+    *) nuinui_ownership_valid_issue "$expected_occupancy" &&
+      [ "$actual_state" = BUSY ] && [ "$actual_issue" = "$expected_occupancy" ] ;;
+  esac
+}
+
+lifecycle_blocked_occupancy() {
+  local peer_state peer_issue
+  peer_state=$5
+  peer_issue=$6
+  [ -n "$peer_state" ] || peer_state=-
+  [ -n "$peer_issue" ] || peer_issue=-
+  printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+  printf 'BLOCKED: begin %s\nlane=%s\nexpected_peer=%s\npeer_lane=%s\n' \
+    "$1" "$2" "$3" "$4"
+  printf 'peer_state=%s\npeer_issue=%s\n' "$peer_state" "$peer_issue"
+}
+
+lifecycle_prove_busy() {
+  local lane expected_issue expected_branch expected_base expected_claim expected_checkpoint
+  local repo slot issue branch base claim head current_branch branch_head
+  lane=$1
+  expected_issue=$2
+  expected_branch=$3
+  expected_base=$4
+  expected_claim=$5
+  expected_checkpoint=$6
+  lifecycle_proven_issue=
+  lifecycle_proven_branch=
+  lifecycle_proven_base=
+  lifecycle_proven_claim=
+  lifecycle_proven_checkpoint=
+  lifecycle_proven_clean=
+  lifecycle_proven_state=
+  repo=$(lifecycle_repo "$lane") || return 1
+  [ ! -e "$(gd "$repo")/nuinui-implementation-lock" ] || return 1
+  [ -z "$(rds "$repo")" ] || return 1
+  slot=$(lifecycle_slot_state "$repo")
+  [ -f "$slot" ] || return 1
+  set -- $(nuinui_ownership_parse_slot "$slot") || return 1
+  [ "$#" = 4 ] || return 1
+  issue=$1; branch=$2; base=$3; claim=$4
+  [ "$issue" = "$expected_issue" ] && [ "$branch" = "$expected_branch" ] &&
+    [ "$base" = "$expected_base" ] || return 1
+  [ -z "$expected_claim" ] || [ "$claim" = "$expected_claim" ] || return 1
+  [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || return 1
+  current_branch=$(bn "$repo")
+  [ "$current_branch" = "$branch" ] || return 1
+  head=$(hh "$repo" 2>/dev/null) || return 1
+  nuinui_ownership_valid_sha "$head" || return 1
+  [ -z "$expected_checkpoint" ] || [ "$head" = "$expected_checkpoint" ] || return 1
+  branch_head=$(git -C "$repo" rev-parse "refs/heads/$branch^{commit}" 2>/dev/null) || return 1
+  [ "$branch_head" = "$head" ] && an "$repo" "$base" "$head" || return 1
+  nuinui_ownership_valid_claim "$claim" || return 1
+  lifecycle_proven_issue=$issue
+  lifecycle_proven_branch=$branch
+  lifecycle_proven_base=$base
+  lifecycle_proven_claim=$claim
+  lifecycle_proven_checkpoint=$head
+  lifecycle_proven_clean=yes
+  lifecycle_proven_state=BUSY
+}
+
+lifecycle_prove_busy_retry() {
+  local attempt
+  for attempt in 1 2 3; do lifecycle_prove_busy "$@" && return 0; done
+  return 1
+}
+
+lifecycle_prove_begin_duplicate() {
+  local lane issue branch base peer expected_peer
+  lane=$1; issue=$2; branch=$3; base=$4; peer=$5; expected_peer=$6
+  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base" || return 1
+  lifecycle_preflight || return 1
+  lifecycle_expect_lane "$lane" "$issue" || return 1
+  lifecycle_expect_lane "$peer" "$expected_peer" || return 1
+  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base"
+}
+
+lifecycle_prove_idle() {
+  local lane repo head origin branch clean
+  lane=$1
+  lifecycle_idle_branch=
+  lifecycle_idle_head=
+  lifecycle_idle_origin=
+  lifecycle_idle_clean=
+  repo=$(lifecycle_repo "$lane") || return 1
+  [ ! -e "$(sp "$repo")" ] && [ ! -e "$(kp "$repo")" ] || return 1
+  [ -z "$(rds "$repo")" ] || return 1
+  fp "$repo" || return 1
+  head=$(hh "$repo" 2>/dev/null) || return 1
+  origin=$(om "$repo" 2>/dev/null) || return 1
+  branch=$(bn "$repo")
+  clean=$(git -C "$repo" status --porcelain 2>/dev/null)
+  [ -z "$clean" ] && nuinui_ownership_valid_sha "$head" &&
+    nuinui_ownership_valid_sha "$origin" || return 1
+  id "$lane" "$repo" "$origin" || return 1
+  lifecycle_idle_branch=${branch:-DETACHED}
+  lifecycle_idle_head=$head
+  lifecycle_idle_origin=$origin
+  lifecycle_idle_clean=yes
+}
+
+lifecycle_prove_idle_retry() {
+  local attempt
+  for attempt in 1 2 3; do lifecycle_prove_idle "$@" && return 0; done
+  return 1
+}
+
+lifecycle_emit_busy_envelope() {
+  printf '%s\nlane=%s\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\nclean=%s\nstate=%s\n' \
+    "$1" "$2" "$lifecycle_proven_issue" "$lifecycle_proven_branch" \
+    "$lifecycle_proven_base" "$lifecycle_proven_checkpoint" \
+    "$lifecycle_proven_claim" "$lifecycle_proven_clean" "$lifecycle_proven_state"
+}
+
+lifecycle_begin() {
+  local lane issue base branch expected_peer peer peer_issue
+  lane=$1; issue=$2; base=$3; branch=$4; expected_peer=$5
+  lifecycle_begin_lane=$lane
+  lifecycle_begin_issue=$issue
+  lifecycle_begin_base=$base
+  lifecycle_begin_branch=$branch
+  lifecycle_begin_expected_peer=$expected_peer
+  lifecycle_begin_peer=
+  lifecycle_begin_claim=
+  lifecycle_begin_checkpoint=
+  lifecycle_begin_peer_state=
+  lifecycle_begin_peer_issue=
+  lifecycle_begin_start_output=
+  lifecycle_begin_post_output=
+  lifecycle_begin_post_rc=0
+  peer=$(lifecycle_peer_lane "$lane") || {
+    echo 'ERROR: lane must be an implementation lane'
+    return 2
+  }
+  lifecycle_begin_peer=$peer
+  nuinui_ownership_valid_issue "$issue" || {
+    echo 'ERROR: Work-ID is invalid'
+    return 2
+  }
+  nuinui_ownership_valid_sha "$base" || {
+    echo 'ERROR: expected base must be a full 40-character commit SHA'
+    return 2
+  }
+  lifecycle_valid_peer "$expected_peer" || {
+    echo 'ERROR: expected peer must be FREE or a valid Work-ID'
+    return 2
+  }
+  lifecycle_preflight || {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+    echo 'BLOCKED: begin fixed-lane preflight failed'
+    return 1
+  }
+  if ! lifecycle_expect_lane "$lane" FREE; then
+    if [ "$(lifecycle_lane_state "$lane")" = BUSY ] &&
+      lifecycle_prove_begin_duplicate "$lane" "$issue" "$branch" "$base" "$peer" "$expected_peer"; then
+      lifecycle_begin_peer_state=$(lifecycle_lane_state "$peer")
+      lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$peer")
+      lifecycle_emit_busy_envelope 'IMPLEMENTATION ALREADY STARTED' "$lane"
+      printf 'peer_lane=%s\npeer_state=%s\n' "$peer" "$lifecycle_begin_peer_state"
+      peer_issue=$lifecycle_begin_peer_issue; [ -n "$peer_issue" ] || peer_issue=-
+      printf 'peer_issue=%s\nmutation=no-op\npreflight=PASS\n' "$peer_issue"
+      return 0
+    fi
+    lifecycle_blocked_occupancy 'target lane is not FREE' "$lane" FREE "$peer" \
+      "$(lifecycle_lane_state "$lane")" "$(lifecycle_lane_issue "$lane")"
+    return 1
+  fi
+  lifecycle_expect_lane "$peer" "$expected_peer" || {
+    lifecycle_blocked_occupancy 'peer occupancy does not match caller expectation' \
+      "$lane" "$expected_peer" "$peer" "$(lifecycle_lane_state "$peer")" \
+      "$(lifecycle_lane_issue "$peer")"
+    return 1
+  }
+  lifecycle_preflight || {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+    echo 'BLOCKED: begin pre-mutation revalidation failed'
+    return 1
+  }
+  lifecycle_expect_lane "$lane" FREE || {
+    lifecycle_blocked_occupancy 'target changed before mutation' "$lane" FREE "$peer" \
+      "$(lifecycle_lane_state "$lane")" "$(lifecycle_lane_issue "$lane")"
+    return 1
+  }
+  lifecycle_expect_lane "$peer" "$expected_peer" || {
+    lifecycle_blocked_occupancy 'peer changed before mutation' "$lane" "$expected_peer" \
+      "$peer" "$(lifecycle_lane_state "$peer")" "$(lifecycle_lane_issue "$peer")"
+    return 1
+  }
+  lifecycle_begin_start_output=$(st "$lane" "$issue" "$base" "$branch" 2>&1)
+  lifecycle_begin_start_rc=$?
+  fixed_2plus1_profile_after_begin_start "$lane" "$peer" || true
+  lifecycle_preflight
+  lifecycle_begin_post_rc=$?
+  lifecycle_begin_post_output=$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT
+  if lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' ''; then
+    lifecycle_begin_claim=$lifecycle_proven_claim
+    lifecycle_begin_checkpoint=$lifecycle_proven_checkpoint
+    if [ "$lifecycle_begin_post_rc" = 0 ]; then
+      lifecycle_begin_peer_state=$(lifecycle_lane_state "$peer")
+      lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$peer")
+      if lifecycle_expect_lane "$peer" "$expected_peer"; then
+        lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
+        printf 'peer_lane=%s\npeer_state=%s\n' "$peer" "$lifecycle_begin_peer_state"
+        peer_issue=$lifecycle_begin_peer_issue; [ -n "$peer_issue" ] || peer_issue=-
+        printf 'peer_issue=%s\npreflight=PASS\n' "$peer_issue"
+        return 0
+      fi
+    fi
+    lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
+    printf 'mutation_state=COMPLETED\n'
+    if [ -n "$lifecycle_begin_post_output" ]; then
+      printf 'audit_evidence:\n%s\n' "$lifecycle_begin_post_output"
+    else
+      printf 'audit_evidence=unavailable\n'
+    fi
+    return 0
+  fi
+  printf 'BLOCKED: begin start mutation completion could not be proven\nmutation_state=UNKNOWN\n'
+  printf 'lane=%s\nissue=%s\nbranch=%s\nbase=%s\n' "$lane" "$issue" "$branch" "$base"
+  [ -z "$lifecycle_begin_start_output" ] || printf 'mutation_output:\n%s\n' "$lifecycle_begin_start_output"
+  [ -z "$lifecycle_begin_post_output" ] || printf 'audit_evidence:\n%s\n' "$lifecycle_begin_post_output"
+  return 1
+}
+
+lifecycle_start_command() {
+  local lane issue base branch peer
+  lane=$1; issue=$2; base=$3; branch=$4
+  lifecycle_preflight || {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+    echo 'BLOCKED: start fixed-lane preflight failed'
+    return 1
+  }
+  lifecycle_expect_lane "$lane" FREE || {
+    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
+    echo 'BLOCKED: start target lane is not FREE'
+    return 1
+  }
+  lifecycle_start_output=
+  lifecycle_start_rc=0
+  lifecycle_start_output=$(st "$lane" "$issue" "$base" "$branch" 2>&1) || lifecycle_start_rc=$?
+  lifecycle_preflight
+  lifecycle_start_post_rc=$?
+  lifecycle_start_post_output=$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT
+  if lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' ''; then
+    peer=$(lifecycle_peer_lane "$lane")
+    lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
+    printf 'peer_lane=%s\npeer_state=%s\n' "$peer" "$(lifecycle_lane_state "$peer")"
+    lifecycle_start_peer_issue=$(lifecycle_lane_issue "$peer")
+    [ -n "$lifecycle_start_peer_issue" ] || lifecycle_start_peer_issue=-
+    printf 'peer_issue=%s\n' "$lifecycle_start_peer_issue"
+    if [ "$lifecycle_start_post_rc" = 0 ]; then
+      printf 'preflight=PASS\n'
+    else
+      printf 'mutation_state=COMPLETED\n'
+      [ -z "$lifecycle_start_post_output" ] || printf 'audit_evidence:\n%s\n' "$lifecycle_start_post_output"
+    fi
+    return 0
+  fi
+  printf 'BLOCKED: start mutation completion could not be proven\nlane=%s\nissue=%s\nbase=%s\nbranch=%s\n' \
+    "$lane" "$issue" "$base" "$branch"
+  [ -z "$lifecycle_start_output" ] || printf 'mutation_output:\n%s\n' "$lifecycle_start_output"
+  [ -z "$lifecycle_start_post_output" ] || printf 'audit_evidence:\n%s\n' "$lifecycle_start_post_output"
+  return 1
+}
+
+lifecycle_resume_command() {
+  local lane issue base checkpoint branch claim
+  lane=$1; issue=$2; base=$3; checkpoint=$4; branch=$5; claim=$6
+  lifecycle_resume_output=
+  lifecycle_resume_rc=0
+  lifecycle_resume_output=$(rs "$lane" "$issue" "$base" "$checkpoint" "$branch" "$claim" 2>&1) ||
+    lifecycle_resume_rc=$?
+  if lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" "$claim" "$checkpoint"; then
+    lifecycle_emit_busy_envelope 'IMPLEMENTATION RESUMED' "$lane"
+    return 0
+  fi
+  printf 'BLOCKED: resume mutation completion could not be proven\n'
+  printf 'lane=%s\nissue=%s\nbase=%s\ncheckpoint=%s\nbranch=%s\nclaim=%s\n' \
+    "$lane" "$issue" "$base" "$checkpoint" "$branch" "$claim"
+  [ -z "$lifecycle_resume_output" ] || printf 'mutation_output:\n%s\n' "$lifecycle_resume_output"
+  return 1
+}
+# Release-specific façade for the fixed 2+1 implementation lifecycle.
+
+lifecycle_release_prove_drift_checkout() {
+  local mode current_branch current_head branch_head authoritative_main authoritative_main2
+  local target_head target_head2 remote_state remote_state2 initial_branch initial_head
+  mode=$1
+  current_branch=$(bn "$lifecycle_release_repo")
+  current_head=$lifecycle_release_head
+  initial_branch=$current_branch
+  initial_head=$current_head
+  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  case "$mode" in
+    named)
+      [ -n "$current_branch" ] && [ "$current_branch" != "$lifecycle_release_topic" ] || return 1
+      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+      branch_head=$(git -C "$lifecycle_release_repo" rev-parse "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
+      ;;
+    rename)
+      [ -n "$current_branch" ] &&
+        [ "$current_branch" != "$(fixed_2plus1_profile_default_branch)" ] &&
+        [ "$current_branch" != "$lifecycle_release_topic" ] || return 1
+      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+      branch_head=$(git -C "$lifecycle_release_repo" rev-parse "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
+      ;;
+    canonical) id "$lifecycle_release_lane" "$lifecycle_release_repo" "$current_head" || return 1 ;;
+    *) return 1 ;;
+  esac
+  [ "$lifecycle_release_base" = "$current_head" ] ||
+    an "$lifecycle_release_repo" "$lifecycle_release_base" "$current_head" || return 1
+  fp "$lifecycle_release_repo" || return 1
+  authoritative_main=$(om "$lifecycle_release_repo") || return 1
+  nuinui_ownership_valid_sha "$authoritative_main" || return 1
+  an "$lifecycle_release_repo" "$current_head" "$authoritative_main" || return 1
+  an "$lifecycle_release_repo" "$lifecycle_release_saved_checkpoint" "$authoritative_main" || return 1
+  target_head=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
+    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
+  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
+    [ -z "$target_head" ] || return 1
+  else
+    [ "$target_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+  fi
+  [ -z "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ] || return 1
+  remote_state=$(rt "$lifecycle_release_repo" "$lifecycle_release_topic" \
+    "$lifecycle_release_saved_checkpoint") || return 1
+  fp "$lifecycle_release_repo" || return 1
+  authoritative_main2=$(om "$lifecycle_release_repo") || return 1
+  [ "$authoritative_main2" = "$authoritative_main" ] || return 1
+  remote_state2=$(rt "$lifecycle_release_repo" "$lifecycle_release_topic" \
+    "$lifecycle_release_saved_checkpoint") || return 1
+  [ "$remote_state2" = "$remote_state" ] || return 1
+  current_branch=$(bn "$lifecycle_release_repo")
+  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null || true)
+  [ "$current_branch" = "$initial_branch" ] && [ "$current_head" = "$initial_head" ] || return 1
+  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
+  nuinui_ownership_valid_sha "$current_head" || return 1
+  an "$lifecycle_release_repo" "$current_head" "$authoritative_main2" || return 1
+  an "$lifecycle_release_repo" "$lifecycle_release_saved_checkpoint" "$authoritative_main2" || return 1
+  case "$mode" in
+    named|rename)
+      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
+      branch_head=$(git -C "$lifecycle_release_repo" rev-parse "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
+      [ "$branch_head" = "$current_head" ] || return 1
+      ;;
+    canonical) id "$lifecycle_release_lane" "$lifecycle_release_repo" "$current_head" || return 1 ;;
+  esac
+  target_head2=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
+    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
+  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
+    [ -z "$target_head2" ] || return 1
+  else
+    [ "$target_head2" = "$lifecycle_release_saved_checkpoint" ] || return 1
+  fi
+  [ -z "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]
+}
+
+lifecycle_release_emit_branch_mismatch() {
+  printf 'BLOCKED: release claimed branch mismatch\nlane=%s\nissue=%s\nclaimed_branch=%s\nactual_branch=%s\nhead=%s\n' \
+    "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" \
+    "${lifecycle_release_actual_branch:-DETACHED}" "$lifecycle_release_head"
+  printf 'checkpoint=%s\nclaim=%s\nreason=%s\n' \
+    "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim" "$lifecycle_release_branch_reason"
+}
+
+lifecycle_release_discover_tombstones() {
+  local discovered
+  lifecycle_release_tombstones=
+  lifecycle_release_tombstone_discovery_ok=
+  [ -n "$lifecycle_release_git_dir" ] || return 1
+  discovered=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d \
+    -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  [ -z "$discovered" ] || lifecycle_release_tombstones=$(printf '%s\n' "$discovered" | LC_ALL=C sort)
+  lifecycle_release_tombstone_discovery_ok=yes
+}
+
+lifecycle_release_prove_duplicate() {
+  local receipt receipt_lane receipt_issue receipt_branch receipt_base receipt_checkpoint receipt_claim
+  local current_head authoritative_main
+  lifecycle_release_duplicate_proven=
+  il "$lifecycle_release_lane" || return 1
+  nuinui_ownership_valid_sha "$lifecycle_release_saved_checkpoint" || return 1
+  nuinui_ownership_valid_claim "$lifecycle_release_claim" || return 1
+  [ -n "$lifecycle_release_git_dir" ] && [ ! -e "$lifecycle_release_slot_dir" ] &&
+    [ ! -e "$lifecycle_release_lock_dir" ] || return 1
+  [ "$lifecycle_release_tombstone_discovery_ok" = yes ] &&
+    [ -z "$lifecycle_release_tombstones" ] || return 1
+  nuinui_ownership_validate_initialization "$(ip "$lifecycle_release_repo")" || return 1
+  receipt=$(rr "$lifecycle_release_repo") || return 1
+  [ -f "$receipt" ] || return 1
+  set -- $(nuinui_ownership_parse_release_receipt "$receipt") || return 1
+  [ "$#" = 6 ] || return 1
+  receipt_lane=$1; receipt_issue=$2; receipt_branch=$3; receipt_base=$4
+  receipt_checkpoint=$5; receipt_claim=$6
+  [ "$receipt_lane" = "$lifecycle_release_lane" ] &&
+    [ "$receipt_checkpoint" = "$lifecycle_release_saved_checkpoint" ] &&
+    [ "$receipt_claim" = "$lifecycle_release_claim" ] || return 1
+  an "$lifecycle_release_repo" "$receipt_base" "$receipt_checkpoint" || return 1
+  cn "$lifecycle_release_repo" || return 1
+  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null) || return 1
+  id "$lifecycle_release_lane" "$lifecycle_release_repo" "$current_head" || return 1
+  authoritative_main=$(am "$lifecycle_release_repo") || return 1
+  nuinui_ownership_valid_sha "$authoritative_main" || return 1
+  [ "$current_head" = "$authoritative_main" ] || return 1
+  an "$lifecycle_release_repo" "$receipt_checkpoint" "$authoritative_main" || return 1
+  lifecycle_release_duplicate_issue=$receipt_issue
+  lifecycle_release_duplicate_branch=$receipt_branch
+  lifecycle_release_duplicate_base=$receipt_base
+  lifecycle_release_duplicate_origin_main=$authoritative_main
+  lifecycle_release_duplicate_proven=yes
+}
+
+lifecycle_release_validate() {
+  local lane_a lane_b default_branch
+  lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo" 2>/dev/null || true)
+  if [ -n "$lifecycle_release_git_dir" ]; then
+    lifecycle_release_slot_dir=$lifecycle_release_git_dir/nuinui-implementation-slot
+    lifecycle_release_lock_dir=$lifecycle_release_git_dir/nuinui-implementation-lock
+  else
+    lifecycle_release_slot_dir=
+    lifecycle_release_lock_dir=
+  fi
+  lifecycle_release_tombstones=
+  lifecycle_release_duplicate_proven=
+  lifecycle_release_tombstone_discovery_ok=
+  if [ -n "$lifecycle_release_git_dir" ]; then
+    lifecycle_release_discover_tombstones || {
+      echo 'BLOCKED: release-pending state discovery failed'
+      printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' "$lifecycle_release_lane" \
+        "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+      return 1
+    }
+  fi
+  if [ -n "$lifecycle_release_tombstones" ]; then
+    echo 'BLOCKED: mutation lock/state conflict'
+    printf 'lane=%s\nissue=-\ncheckpoint=%s\nclaim=%s\nreleasing_state=%s\n' \
+      "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" \
+      "$lifecycle_release_claim" "$lifecycle_release_tombstones"
+    return 1
+  fi
+  if [ -e "$lifecycle_release_lock_dir" ]; then
+    if [ -f "$lifecycle_release_lock_dir/state" ] &&
+      nuinui_ownership_parse_lock "$lifecycle_release_lock_dir/state" >/dev/null; then
+      printf 'BLOCKED: mutation lock/state conflict\nlane=%s\noperation=%s\nlock_claim=%s\n' \
+        "$lifecycle_release_lane" "$(nuinui_ownership_field "$lifecycle_release_lock_dir/state" operation)" \
+        "$(nuinui_ownership_field "$lifecycle_release_lock_dir/state" claim)"
+    else
+      echo 'BLOCKED: malformed durable ownership state'
+    fi
+    printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+    return 1
+  fi
+  if [ -n "$lifecycle_release_git_dir" ] && [ ! -e "$lifecycle_release_slot_dir" ] &&
+    lifecycle_release_prove_duplicate; then return 0; fi
+  if [ -z "$lifecycle_release_git_dir" ] || [ ! -d "$lifecycle_release_slot_dir" ] ||
+    [ ! -f "$lifecycle_release_slot_dir/state" ]; then
+    echo 'BLOCKED: invalid/missing active slot'
+    printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' "$lifecycle_release_lane" \
+      "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+    return 1
+  fi
+  nuinui_ownership_parse_slot "$lifecycle_release_slot_dir/state" >/dev/null || {
+    echo 'BLOCKED: malformed durable ownership state'
+    printf 'lane=%s\nslot=%s\n' "$lifecycle_release_lane" "$lifecycle_release_slot_dir/state"
+    return 1
+  }
+  lifecycle_release_issue=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" issue 2>/dev/null || true)
+  lifecycle_release_topic=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" branch 2>/dev/null || true)
+  lifecycle_release_base=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" base 2>/dev/null || true)
+  lifecycle_release_durable_claim=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" claim 2>/dev/null || true)
+  nuinui_ownership_valid_sha "$lifecycle_release_saved_checkpoint" || {
+    echo 'BLOCKED: checkpoint mismatch'
+    printf 'expected=-\nactual=%s\nlane=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" \
+      "$lifecycle_release_lane" "$lifecycle_release_claim"
+    return 1
+  }
+  nuinui_ownership_valid_claim "$lifecycle_release_claim" &&
+    [ "$lifecycle_release_durable_claim" = "$lifecycle_release_claim" ] || {
+    echo 'BLOCKED: claim mismatch'
+    printf 'expected=%s\nactual=%s\nlane=%s\nissue=%s\nbranch=%s\nbase=%s\n' \
+      "$lifecycle_release_durable_claim" "$lifecycle_release_claim" "$lifecycle_release_lane" \
+      "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_base"
+    return 1
+  }
+  lifecycle_release_topic_ref_missing=no
+  lifecycle_release_topic_checkpoint=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
+    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
+  if [ -z "$lifecycle_release_topic_checkpoint" ]; then
+    lifecycle_release_topic_ref_missing=yes
+  elif ! nuinui_ownership_valid_sha "$lifecycle_release_topic_checkpoint" ||
+    [ "$lifecycle_release_topic_checkpoint" != "$lifecycle_release_saved_checkpoint" ]; then
+    echo 'BLOCKED: checkpoint mismatch'
+    printf 'expected=%s\nactual=%s\nlane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
+      "$lifecycle_release_topic_checkpoint" "$lifecycle_release_saved_checkpoint" \
+      "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
+    return 1
+  fi
+  lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || true)
+  lifecycle_release_actual_branch=$(bn "$lifecycle_release_repo")
+  [ -n "$lifecycle_release_actual_branch" ] || lifecycle_release_actual_branch=DETACHED
+  lifecycle_release_branch_reason=
+  lane_a=$(fixed_2plus1_profile_implementation_lane_a_name) || return 1
+  lane_b=$(fixed_2plus1_profile_implementation_lane_b_name) || return 1
+  default_branch=$(fixed_2plus1_profile_default_branch) || return 1
+  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
+    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
+      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
+    else
+      lifecycle_release_branch_reason=missing-claimed-local-ref
+      if [ "$lifecycle_release_actual_branch" != DETACHED ] &&
+        lifecycle_release_prove_drift_checkout rename; then return 0; fi
+    fi
+    lifecycle_release_emit_branch_mismatch
+    return 1
+  fi
+  if [ "$lifecycle_release_actual_branch" = "$lifecycle_release_topic" ]; then
+    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
+      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
+      lifecycle_release_emit_branch_mismatch
+      return 1
+    fi
+  else
+    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
+      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
+      lifecycle_release_emit_branch_mismatch
+      return 1
+    fi
+    if { [ "$lifecycle_release_lane" = "$lane_a" ] &&
+      [ "$lifecycle_release_actual_branch" = "$default_branch" ]; } ||
+      { [ "$lifecycle_release_lane" = "$lane_b" ] &&
+        [ "$lifecycle_release_actual_branch" = DETACHED ]; }; then
+      lifecycle_release_prove_drift_checkout canonical || {
+        lifecycle_release_branch_reason=checkout-branch-drift
+        lifecycle_release_emit_branch_mismatch
+        return 1
+      }
+    else
+      lifecycle_release_prove_drift_checkout named || {
+        lifecycle_release_branch_reason=checkout-branch-drift
+        lifecycle_release_emit_branch_mismatch
+        return 1
+      }
+    fi
+  fi
+  if [ -n "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ]; then
+    echo 'BLOCKED: mutation lock/state conflict'
+    printf 'lane=%s\nissue=%s\nbranch=%s\ncheckpoint=%s\nclaim=%s\nclean=no\n' \
+      "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" \
+      "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
+    return 1
+  fi
+}
+
+lifecycle_emit_release_duplicate_envelope() {
+  printf 'IMPLEMENTATION ALREADY RELEASED\nlane=%s\nissue=%s\nbase=%s\nsaved_checkpoint=%s\nreleased_claim=%s\nreleased_branch=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE\n' \
+    "$lifecycle_release_lane" "$lifecycle_release_duplicate_issue" \
+    "$lifecycle_release_duplicate_base" "$lifecycle_release_saved_checkpoint" \
+    "$lifecycle_release_claim" "$lifecycle_release_duplicate_branch" \
+    "$lifecycle_release_duplicate_origin_main"
+}
+
+lifecycle_emit_release_envelope() {
+  printf 'IMPLEMENTATION RELEASED\nlane=%s\nissue=%s\nsaved_checkpoint=%s\nreleased_claim=%s\nreleased_branch=%s\nidle_branch=%s\nidle_head=%s\norigin_main=%s\nclean=%s\nstate=FREE\n' \
+    "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_saved_checkpoint" \
+    "$lifecycle_release_claim" "$lifecycle_release_topic" "$lifecycle_idle_branch" \
+    "$lifecycle_idle_head" "$lifecycle_idle_origin" "$lifecycle_idle_clean"
+}
+
+lifecycle_release_command() {
+  lifecycle_release_lane=$1
+  lifecycle_release_saved_checkpoint=$2
+  lifecycle_release_claim=$3
+  lifecycle_release_repo=
+  lifecycle_release_issue=
+  lifecycle_release_topic=
+  lifecycle_release_base=
+  lifecycle_release_durable_claim=
+  lifecycle_release_output=
+  lifecycle_release_rc=0
+  lifecycle_release_repo=$(lifecycle_repo "$lifecycle_release_lane") || {
+    echo 'ERROR: lane must be an implementation lane'
+    return 2
+  }
+  lifecycle_release_validate || return $?
+  if [ "$lifecycle_release_duplicate_proven" = yes ]; then
+    lifecycle_emit_release_duplicate_envelope
+    return 0
+  fi
+  lifecycle_release_output=$(rl "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" \
+    "$lifecycle_release_claim" 2>&1) || lifecycle_release_rc=$?
+  if lifecycle_prove_idle_retry "$lifecycle_release_lane"; then
+    lifecycle_emit_release_envelope
+    return 0
+  fi
+  printf 'BLOCKED: release mutation completion could not be proven\nlane=%s\nissue=%s\nsaved_checkpoint=%s\nreleased_claim=%s\nreleased_branch=%s\n' \
+    "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_saved_checkpoint" \
+    "$lifecycle_release_claim" "$lifecycle_release_topic"
+  [ -z "$lifecycle_release_output" ] || printf 'mutation_output:\n%s\n' "$lifecycle_release_output"
+  printf 'state=BLOCKED\n'
+  return 1
+}
+# Exact-ref Human-test lifecycle for the fixed Human-test lane.
+# Project adapters may use the guard hooks for session/process policy and
+# presentation.  The marker, tested-ref fixation, receipt, and idle release
+# mechanics remain here.
+
+fixed_2plus1_human_test_path_exists() {
+  [ -e "$1" ] || [ -L "$1" ]
+}
+
+fixed_2plus1_human_test_regular_file() {
+  [ -f "$1" ] && [ ! -L "$1" ]
+}
+
+fixed_2plus1_human_test_resolve_ref() {
+  local repo requested_ref resolved
+  repo=$1
+  requested_ref=$2
+  resolved=$(git -C "$repo" rev-parse "$requested_ref^{commit}" 2>/dev/null) || return 1
+  nuinui_ownership_valid_sha "$resolved" || return 1
+  printf '%s\n' "$resolved"
+}
+
+fixed_2plus1_human_test_read_marker() {
+  local path
+  path=$1
+  fixed_2plus1_human_test_regular_file "$path" || return 1
+  set -- $(nuinui_ownership_read_fields "$path" issue,ref) || return 1
+  [ "$#" = 2 ] || return 1
+  nuinui_ownership_valid_issue "$1" || return 1
+  nuinui_ownership_valid_sha "$2" || return 1
+  printf '%s %s\n' "$1" "$2"
+}
+
+fixed_2plus1_human_test_read_receipt() {
+  local path
+  path=$1
+  fixed_2plus1_human_test_regular_file "$path" || return 1
+  set -- $(nuinui_ownership_read_fields "$path" version,issue,ref) || return 1
+  [ "$#" = 3 ] || return 1
+  [ "$1" = 1 ] || return 1
+  nuinui_ownership_valid_issue "$2" || return 1
+  nuinui_ownership_valid_sha "$3" || return 1
+  printf '%s %s %s\n' "$1" "$2" "$3"
+}
+
+fixed_2plus1_human_test_checkout_identity() {
+  local repo
+  repo=$1
+  gr "$repo" &&
+    ao "$repo" "$(fixed_2plus1_profile_repository_identity)" &&
+    cn "$repo" && [ -z "$(bn "$repo")" ]
+}
+
+fixed_2plus1_human_test_checkout_matches() {
+  fixed_2plus1_human_test_checkout_identity "$1" && [ "$(hh "$1" 2>/dev/null)" = "$2" ]
+}
+
+fixed_2plus1_human_test_write_receipt() {
+  local repo issue ref receipt
+  repo=$1
+  issue=$2
+  ref=$3
+  receipt=$(fixed_2plus1_profile_human_test_receipt_path "$repo") || return 1
+  if fixed_2plus1_human_test_path_exists "$receipt" &&
+    ! fixed_2plus1_human_test_regular_file "$receipt"; then
+    return 1
+  fi
+  wa "$receipt" "version=1\nissue=$issue\nref=$ref\n" || return 1
+  set -- $(fixed_2plus1_human_test_read_receipt "$receipt") || return 1
+  [ "$1 $2 $3" = "1 $issue $ref" ]
+}
+
+fixed_2plus1_human_test_start() {
+  local issue requested_ref repo marker session tested_ref origin_main current_head
+  local marker_issue marker_ref started_label already_started_label
+  issue=$1
+  requested_ref=$2
+  started_label=$3
+  already_started_label=$4
+  fixed_2plus1_profile_guard || {
+    echo 'BLOCKED: Human-test profile contract is invalid'
+    return 1
+  }
+  nuinui_ownership_valid_issue "$issue" || {
+    echo 'BLOCKED: invalid Human-test Work-ID'
+    return 1
+  }
+  repo=$(fixed_2plus1_profile_lane_path \
+    "$(fixed_2plus1_profile_human_test_lane_name)") || return 1
+  marker=$(fixed_2plus1_profile_human_test_marker_path "$repo") || return 1
+  session=$(fixed_2plus1_profile_human_test_session_path "$repo") || return 1
+  tested_ref=$(fixed_2plus1_human_test_resolve_ref "$repo" "$requested_ref") || {
+    echo 'BLOCKED: tested-ref does not resolve to a commit in the Human-test checkout'
+    return 1
+  }
+
+  if fixed_2plus1_human_test_path_exists "$marker"; then
+    fixed_2plus1_profile_human_test_start_guard \
+      "$repo" "$issue" "$tested_ref" duplicate || return 1
+    set -- $(fixed_2plus1_human_test_read_marker "$marker") || {
+      echo 'BLOCKED: duplicate Human-test start marker is malformed'
+      return 1
+    }
+    marker_issue=$1
+    marker_ref=$2
+    if [ "$marker_issue" != "$issue" ] || [ "$marker_ref" != "$tested_ref" ]; then
+      echo 'BLOCKED: duplicate Human-test start marker does not match caller Work-ID/ref'
+      printf 'expected_issue=%s\nactual_issue=%s\nexpected_ref=%s\nactual_ref=%s\n' \
+        "$marker_issue" "$issue" "$marker_ref" "$tested_ref"
+      return 1
+    fi
+    fixed_2plus1_human_test_checkout_matches "$repo" "$tested_ref" || {
+      echo 'BLOCKED: duplicate Human-test start checkout identity does not match marker ref'
+      return 1
+    }
+    printf '%s\nissue=%s\nref=%s\nclean=yes\nmutation=no-op\nstate=BUSY\n' \
+      "$already_started_label" "$issue" "$tested_ref"
+    return 0
+  fi
+
+  fixed_2plus1_profile_human_test_start_guard \
+    "$repo" "$issue" "$tested_ref" active || return 1
+  gr "$repo" && ao "$repo" "$(fixed_2plus1_profile_repository_identity)" &&
+    cn "$repo" && [ -z "$(bn "$repo")" ] || {
+      echo 'BLOCKED: Human-test start requires a clean detached checkout'
+      return 1
+    }
+  fp "$repo" || {
+    echo 'BLOCKED: Human-test start fetch/prune failed'
+    return 1
+  }
+  origin_main=$(om "$repo") || {
+    echo 'BLOCKED: Human-test start could not read the authoritative default branch'
+    return 1
+  }
+  nuinui_ownership_valid_sha "$origin_main" || {
+    echo 'BLOCKED: Human-test start authoritative default branch is invalid'
+    return 1
+  }
+  tested_ref=$(fixed_2plus1_human_test_resolve_ref "$repo" "$requested_ref") || {
+    echo 'BLOCKED: tested-ref does not resolve to a commit in the Human-test checkout'
+    return 1
+  }
+  current_head=$(hh "$repo") || return 1
+  if [ "$current_head" != "$origin_main" ]; then
+    an "$repo" "$current_head" "$origin_main" && sd "$repo" "$origin_main" || {
+      echo 'BLOCKED: Human-test checkout cannot safely return to the authoritative default branch'
+      return 1
+    }
+  fi
+  sd "$repo" "$tested_ref" >/dev/null 2>&1 || {
+    echo 'BLOCKED: Human-test checkout cannot be fixed to tested-ref'
+    return 1
+  }
+  wa "$marker" "issue=$issue\nref=$tested_ref\n" || {
+    echo 'BLOCKED: could not atomically write the Human-test marker'
+    return 1
+  }
+  fixed_2plus1_human_test_read_marker "$marker" >/dev/null || {
+    echo 'BLOCKED: Human-test marker verification failed'
+    return 1
+  }
+  printf '%s\n' "$started_label"
+}
+
+fixed_2plus1_human_test_release() {
+  local issue tested_ref repo marker session receipt marker_issue marker_ref
+  local receipt_issue receipt_ref origin_main
+  local released_label already_released_label
+  issue=$1
+  tested_ref=$2
+  released_label=$3
+  already_released_label=$4
+  fixed_2plus1_profile_guard || {
+    echo 'BLOCKED: Human-test profile contract is invalid'
+    return 1
+  }
+  nuinui_ownership_valid_issue "$issue" || {
+    echo 'BLOCKED: invalid Human-test Work-ID'
+    return 1
+  }
+  nuinui_ownership_valid_sha "$tested_ref" || {
+    echo 'BLOCKED: tested-ref must be a full commit SHA'
+    return 1
+  }
+  tested_ref=$(printf '%s' "$tested_ref" | tr '[:upper:]' '[:lower:]')
+  repo=$(fixed_2plus1_profile_lane_path \
+    "$(fixed_2plus1_profile_human_test_lane_name)") || return 1
+  marker=$(fixed_2plus1_profile_human_test_marker_path "$repo") || return 1
+  session=$(fixed_2plus1_profile_human_test_session_path "$repo") || return 1
+  receipt=$(fixed_2plus1_profile_human_test_receipt_path "$repo") || return 1
+
+  if fixed_2plus1_human_test_path_exists "$marker"; then
+    fixed_2plus1_profile_human_test_release_guard \
+      "$repo" "$issue" "$tested_ref" active initial || return 1
+    set -- $(fixed_2plus1_human_test_read_marker "$marker") || {
+      echo 'BLOCKED: Human-test release marker is malformed'
+      return 1
+    }
+    marker_issue=$1
+    marker_ref=$2
+    if [ "$marker_issue" != "$issue" ] || [ "$marker_ref" != "$tested_ref" ]; then
+      echo 'BLOCKED: Human-test release marker does not match caller Work-ID/ref'
+      printf 'expected_issue=%s\nactual_issue=%s\nexpected_ref=%s\nactual_ref=%s\n' \
+        "$marker_issue" "$issue" "$marker_ref" "$tested_ref"
+      return 1
+    fi
+    fixed_2plus1_human_test_checkout_matches "$repo" "$tested_ref" || {
+      echo 'BLOCKED: Human-test release checkout identity is invalid'
+      return 1
+    }
+    fp "$repo" || {
+      echo 'BLOCKED: Human-test release fetch/prune failed'
+      return 1
+    }
+    set -- $(fixed_2plus1_human_test_read_marker "$marker") || {
+      echo 'BLOCKED: Human-test release marker changed or became malformed after fetch'
+      return 1
+    }
+    [ "$1" = "$issue" ] && [ "$2" = "$tested_ref" ] || {
+      echo 'BLOCKED: Human-test release marker changed after fetch'
+      return 1
+    }
+    fixed_2plus1_profile_human_test_release_guard \
+      "$repo" "$issue" "$tested_ref" active after-fetch || return 1
+    fixed_2plus1_human_test_checkout_matches "$repo" "$tested_ref" || {
+      echo 'BLOCKED: Human-test release checkout changed after fetch'
+      return 1
+    }
+    origin_main=$(am "$repo") || return 1
+    nuinui_ownership_valid_sha "$origin_main" || {
+      echo 'BLOCKED: Human-test release could not read the authoritative default branch'
+      return 1
+    }
+    fixed_2plus1_human_test_write_receipt "$repo" "$issue" "$tested_ref" || {
+      echo 'BLOCKED: could not atomically write the Human-test release receipt; marker retained'
+      return 1
+    }
+    sd "$repo" "$origin_main" >/dev/null 2>&1 || {
+      echo 'BLOCKED: could not detach Human-test checkout to the authoritative default branch; marker retained'
+      return 1
+    }
+    fixed_2plus1_human_test_checkout_matches "$repo" "$origin_main" || {
+      echo 'BLOCKED: Human-test checkout did not reach the authoritative default branch; marker retained'
+      return 1
+    }
+    rm "$marker" || {
+      echo 'BLOCKED: could not remove the Human-test marker; release receipt retained'
+      return 1
+    }
+    printf '%s\n' "$released_label"
+    return 0
+  fi
+
+  fixed_2plus1_profile_human_test_release_guard \
+    "$repo" "$issue" "$tested_ref" duplicate initial || return 1
+  fixed_2plus1_human_test_path_exists "$receipt" || {
+    echo 'BLOCKED: Human-test marker is absent and the release receipt is missing'
+    return 1
+  }
+  set -- $(fixed_2plus1_human_test_read_receipt "$receipt") || {
+    echo 'BLOCKED: Human-test release receipt is malformed'
+    return 1
+  }
+  receipt_issue=$2
+  receipt_ref=$3
+  if [ "$receipt_issue" != "$issue" ] || [ "$receipt_ref" != "$tested_ref" ]; then
+    echo 'BLOCKED: duplicate Human-test release receipt does not match caller Work-ID/ref'
+    printf 'expected_issue=%s\nactual_issue=%s\nexpected_ref=%s\nactual_ref=%s\n' \
+      "$receipt_issue" "$issue" "$receipt_ref" "$tested_ref"
+    return 1
+  fi
+  fixed_2plus1_human_test_checkout_identity "$repo" || {
+    echo 'BLOCKED: duplicate Human-test release checkout identity is invalid'
+    return 1
+  }
+  origin_main=$(am "$repo") || {
+    echo 'BLOCKED: duplicate Human-test release could not read the authoritative default branch'
+    return 1
+  }
+  nuinui_ownership_valid_sha "$origin_main" || return 1
+  [ "$(hh "$repo" 2>/dev/null)" = "$origin_main" ] || {
+    echo 'BLOCKED: duplicate Human-test release HEAD is not the authoritative default branch'
+    return 1
+  }
+  printf '%s\nissue=%s\nref=%s\norigin_default=%s\nclean=yes\nmutation=no-op\nstate=FREE\n' \
+    "$already_released_label" "$issue" "$tested_ref" "$origin_main"
+}
+# nuinuiCAD-specific remainder for the generated standalone helper.
+# Fixed implementation ownership and lifecycle mechanics live in the shared
+# fixed-2+1 source modules.
+
+V=1.6.22
+P=$0
+D=$(CDPATH= cd -- "$(dirname -- "$P")" && pwd -P)
+EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
+M=$(fixed_2plus1_profile_lane_path "$(fixed_2plus1_profile_implementation_lane_a_name)")
+S=$(fixed_2plus1_profile_lane_path "$(fixed_2plus1_profile_implementation_lane_b_name)")
+E=$(fixed_2plus1_profile_lane_path "$(fixed_2plus1_profile_human_test_lane_name)")
+RT=$(fixed_2plus1_profile_repository_identity)
+
+if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+  C=${NUINUI_DEV_CONTEXT_WT:-}
+else
+  C=/Users/yosomi/Code/dev-context
+fi
+if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+  CD=${NUINUI_DEV_CONTEXT_DEV_WT:-}
+  [ -z "${NUINUI_SELFTEST_EXPECTED_ORIGIN:-}" ] || CT=$NUINUI_SELFTEST_EXPECTED_ORIGIN
+else
+  CD=/Users/yosomi/Code/dev-context-dev
+  CT=sayosomi/dev-context
+fi
+
+nuinui_validate_forensic_worktree() {
+  local forensic physical fixed_a fixed_b fixed_h registered expected actual
+  forensic=$1
+  nuinui_forensic_reason=
+  case "$forensic" in /*) ;; *) nuinui_forensic_reason=non-absolute-path; return 1 ;; esac
+  [ -d "$forensic" ] || { nuinui_forensic_reason=missing-or-not-directory; return 1; }
+  physical=$(CDPATH= cd -- "$forensic" && pwd -P) || {
+    nuinui_forensic_reason=non-canonical-path; return 1;
+  }
+  [ "$physical" = "$forensic" ] || {
+    nuinui_forensic_reason=non-canonical-path; return 1;
+  }
+  fixed_a=$(CDPATH= cd -- "$M" && pwd -P) || {
+    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
+  }
+  fixed_b=$(CDPATH= cd -- "$S" && pwd -P) || {
+    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
+  }
+  fixed_h=$(CDPATH= cd -- "$E" && pwd -P) || {
+    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
+  }
+  case "$physical" in
+    "$fixed_a"|"$fixed_b"|"$fixed_h")
+      nuinui_forensic_reason=fixed-lane-path; return 1 ;;
+  esac
+  gr "$forensic" || { nuinui_forensic_reason=not-registered-worktree; return 1; }
+  registered=$(git -C "$M" worktree list --porcelain | sed -n 's/^worktree //p')
+  printf '%s\n' "$registered" | grep -Fqx "$forensic" || {
+    nuinui_forensic_reason=not-registered-worktree; return 1;
+  }
+  expected=$(printf '%s\n' "$fixed_a" "$fixed_b" "$fixed_h" "$forensic" | sort)
   actual=$(printf '%s\n' "$registered" | sort)
   [ "$actual" = "$expected" ] || {
-    nuinui_forensic_reason=registered-inventory-mismatch
-    return 1
+    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
   }
 }
 
-wt(){
-  a=$(printf "%s\n" "$(CDPATH= cd -- "$M"&&pwd -P)" "$(CDPATH= cd -- "$S"&&pwd -P)" "$(CDPATH= cd -- "$E"&&pwd -P)"|sort)||return 1
-  t=$(git -C "$M" worktree list --porcelain|sed -n "s/^worktree //p"|sort)
+wt() {
+  local lane_a lane_b human_lane expected actual
+  lane_a=$(CDPATH= cd -- "$M" && pwd -P) || return 1
+  lane_b=$(CDPATH= cd -- "$S" && pwd -P) || return 1
+  human_lane=$(CDPATH= cd -- "$E" && pwd -P) || return 1
+  expected=$(printf '%s\n' "$lane_a" "$lane_b" "$human_lane" | sort) || return 1
+  actual=$(git -C "$M" worktree list --porcelain | sed -n 's/^worktree //p' | sort)
   echo worktrees:
-  git -C "$M" worktree list|sed "s/^/  /"
+  git -C "$M" worktree list | sed 's/^/  /'
   if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
     [ "${nuinui_forensic_preflight_result:-1}" = 0 ]
   else
-    [ "$a" = "$t" ]
+    [ "$expected" = "$actual" ]
   fi
 }
 
-pf(){
-  printf '%s\n' '===== NUINUI PREFLIGHT RESULT ====='
-  z=0
+fixed_2plus1_profile_inventory_guard() {
+  local result=0
   nuinui_forensic_preflight_result=0
   if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
-    nuinui_validate_forensic_worktree "${nuinui_forensic_worktree:-}" || nuinui_forensic_preflight_result=1
+    nuinui_validate_forensic_worktree "${nuinui_forensic_worktree:-}" || {
+      nuinui_forensic_preflight_result=1
+      result=1
+    }
   fi
-  gr "$M"&&cl main "$M"||z=1
-  gr "$S"&&cl sub "$S"||z=1
-  echo "e2e path=$E"
-  gr "$E"||z=1
-  if [ "$z" = 0 ];then
-    q=$(bn "$E");d=$(git -C "$E" status --porcelain)
-    echo "  branch=${q:-DETACHED}"
-    echo "  head=$(hh "$E")"
-    echo "  clean=$([ -z "$d" ]&&echo yes||echo no) marker=$([ -f "$(mp "$E")" ]&&echo present||echo none)"
-    [ ! -f "$(mp "$E")" ]||sed "s/^/    /" "$(mp "$E")"
-    [ -z "$d" ]||z=1
-  fi
-  wt||z=1
+  wt || result=1
   if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
     if [ "$nuinui_forensic_preflight_result" = 0 ]; then
       echo 'forensic_exception=active'
@@ -393,22 +1996,21 @@ pf(){
       echo "forensic_reason=$nuinui_forensic_reason"
     fi
     echo "forensic_worktree=$nuinui_forensic_worktree"
-    [ "$nuinui_forensic_preflight_result" = 0 ] || z=1
+    [ "$nuinui_forensic_preflight_result" = 0 ] || result=1
   fi
-  [ "$z" = 0 ]&&{ echo 'PREFLIGHT PASS';return 0;}
-  echo 'PREFLIGHT BLOCKED'
-  return 1
+  return "$result"
 }
-cv(){ local l i a q r z h; l=$1;i=$2;a=$3;q=$4;il "$l"&&nuinui_ownership_valid_issue "$i"&&nuinui_ownership_valid_sha "$a"&&nuinui_ownership_validate_issue_branch "$i" "$q"||return 2;r=$(lr "$l");gr "$r"&&ao "$r" "$RT"&&cn "$r"||return 1;z=$(bn "$r");case $l in main)[ "$z" = main ];;sub)[ -z "$z" ];;esac||return 1;fm "$r"&&[ "$(om "$r")" = "$a" ]||return 1;git -C "$r" show-ref --verify --quiet "refs/heads/$q"&&return 1;[ -z "$(ab "$r" "$q")" ]||return 1;h=$(hh "$r");[ "$h" = "$a" ]||an "$r" "$h" "$a"||return 1;echo VERIFIED;};vr(){  r=$(lr "$1")||return 2;nuinui_ownership_validate_initialization "$(ip "$r")"&&[ ! -e "$(sp "$r")" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;cv "$@";};li(){  l=$1;il "$l"||return;r=$(lr "$l");gr "$r"&&ao "$r" "$RT"||return 1;i=$(ip "$r");if [ -e "$i" ];then nuinui_ownership_validate_initialization "$i"&&{ echo 'ALREADY INITIALIZED';return 0;};return 1;fi;[ ! -e "$(sp "$r")" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;c=$(gc);lo "$r" init "$c" - - - -||return 1;fm "$r"||return 1;a=$(om "$r");id "$l" "$r" "$a"||return 1;wa "$i" 'version=1\n'&&ul "$r" "$c"||return 1;echo 'LANE INITIALIZED';}
-cs(){  l=$1;i=$2;a=$3;q=$4;r=$(lr "$l");cv "$@" >/dev/null||return $?;fm "$r"||return 1;[ "$(om "$r")" = "$a" ]||return 1;h=$(hh "$r");if [ "$h" != "$a" ];then if [ "$l" = main ];then git -C "$r" merge --ff-only origin/main >/dev/null;else sd "$r" "$a";fi||return 1;fi;git -C "$r" switch -c "$q" "$a" >/dev/null||return 1;echo STARTED;};st(){ local l i a q r c s; l=$1;i=$2;a=$3;q=$4;vr "$@" >/dev/null||return $?;r=$(lr "$l");c=$(gc);lo "$r" start "$c" "$i" "$q" "$a" -||return 1;s=$(sp "$r");mkdir "$s"||return 1;wa "$s/state" "version=1\nissue=$i\nbranch=$q\nbase=$a\nclaim=$c\n"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = start-after-slot ]&&return 97;cs "$@"||{ id "$l" "$r" "$a"&&! git -C "$r" show-ref --verify --quiet "refs/heads/$q"&&{ rm -rf "$s";ul "$r" "$c" >/dev/null 2>&1;};return 1;};ul "$r" "$c"||return 1;echo "  claim=$c";}
-rt(){ local r q h t s remote_head remote_ref; r=$1;q=$2;h=$3;t=$(git -C "$r" ls-remote --exit-code --heads origin "refs/heads/$q" 2>/dev/null);s=$?;case $s in 0)remote_head=$(printf '%s\n' "$t"|awk 'NR==1{print $1}');remote_ref=$(printf '%s\n' "$t"|awk 'NR==1{print $2}');[ "$remote_head" = "$h" ]&&[ "$remote_ref" = "refs/heads/$q" ]&&[ -z "$(printf '%s\n' "$t"|awk 'NR>1{print}')" ]||return 1;echo pushed;;2)[ -z "$t" ]&&echo absent||return 1;;*)return 1;;esac;};
-cr(){ local l i a h q c r mode m z x; l=$1;i=$2;a=$3;h=$4;q=$5;c=$6;r=$(lr "$l");set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state")||return 1;[ "$1" = "$i" ]&&[ "$2" = "$q" ]&&[ "$3" = "$a" ]&&[ "$4" = "$c" ]||return 1;cn "$r"&&[ "$(git -C "$r" rev-parse "refs/heads/$q^{commit}" 2>/dev/null)" = "$h" ]&&an "$r" "$a" "$h"&&[ -z "$(bo "$r" "$q")" ]||return 1;mode=$(rt "$r" "$q" "$h")||return 1;if [ "$mode" = absent ];then [ "$h" = "$a" ]||return 1;fi;fm "$r"||return 1;m=$(om "$r");z=$(bn "$r");x=$(hh "$r");if [ "$z" != "$q" ]||[ "$x" != "$h" ];then case $l in main)[ "$z" = main ];;sub)[ -z "$z" ];;esac&&an "$r" "$x" "$m"&&[ "$(am "$r")" = "$m" ]&&[ "$(rt "$r" "$q" "$h")" = "$mode" ]||return 1;git -C "$r" switch "$q" >/dev/null||return 1;fi;[ "$(hh "$r")" = "$h" ]&&cn "$r"||return 1;echo RESUMED;};
-rs(){ local l i a h q c r z x; l=$1;i=$2;a=$3;h=$4;q=$5;c=$6;il "$l"&&nuinui_ownership_valid_issue "$i"&&nuinui_ownership_valid_sha "$a"&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");set -- $(nuinui_ownership_parse_slot "$(sp "$r")/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;z=$(bn "$r");x=$(hh "$r");lo "$r" resume "$c" "$i" "$q" "$a" "$h"||return 1;cr "$l" "$i" "$a" "$h" "$q" "$c"||{ [ "$(bn "$r")" = "$z" ]&&[ "$(hh "$r")" = "$x" ]&&ul "$r" "$c" >/dev/null 2>&1;return 1;};ul "$r" "$c"||return 1;echo "  base=$a";echo "  claim=$c";}
-dl(){ local l h q r z x d; l=$1;h=$2;q=$3;r=$(lr "$l");cn "$r"||return 1;z=$(bn "$r");x=$(hh "$r");d=;[ "$z" = "$q" ]&&[ "$x" = "$h" ]&&d=$q;if [ "$l" = main ];then [ "$z" = "$q" ]||[ "$z" = main ]||return 1;git -C "$r" switch main >/dev/null&&git -C "$r" merge --ff-only origin/main >/dev/null||return 1;else [ "$z" = "$q" ]||[ -z "$z" ]||return 1;[ "$x" = "$h" ]||git -C "$r" merge-base --is-ancestor "$x" origin/main||return 1;sd "$r" origin/main||return 1;fi;if [ -n "$d" ];then [ "$(git -C "$r" rev-parse "refs/heads/$d^{commit}" 2>/dev/null)" = "$h" ]&&[ -z "$(bo "$r" "$d")" ]&&git -C "$r" update-ref -d "refs/heads/$d" "$h"||return 1;fi;echo RELEASED;}
-rl(){ local l h c r s i q a t; l=$1;h=$2;c=$3;release_restore_checkout_mutated=no;il "$l"&&nuinui_ownership_valid_sha "$h"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");s=$(sp "$r");set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;i=$1;q=$2;a=$3;[ "$4" = "$c" ]&&[ ! -e "$(kp "$r")" ]&&nr "$r"||return 1;lo "$r" release "$c" "$i" "$q" "$a" "$h"||return 1;if ! release_restore_checkout "$l" "$r" "$q" "$a" "$h";then [ "$release_restore_checkout_mutated" = no ]&&ul "$r" "$c";return 1;fi;if ! fp "$r"||! git -C "$r" merge-base --is-ancestor "$h" origin/main;then [ "$release_restore_checkout_mutated" = no ]&&ul "$r" "$c";return 1;fi;if ! wa "$s/checkpoint" "$h\n";then [ "$release_restore_checkout_mutated" = no ]&&ul "$r" "$c";return 1;fi;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;[ "${NUINUI_SELFTEST_CRASH_AT:-}" = release-after-rename ]&&return 97;dl "$l" "$h" "$q"||return 1;write_release_receipt "$r" "$l" "$i" "$q" "$a" "$h" "$c"||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c"||return 1;[ "${NUINUI_SELFTEST_STALE_RESULT:-}" = release ]&&return 98;echo "  claim=$c";}
-rc(){ local l c r k s z n o i q a h m t; l=$1;c=$2;il "$l"&&nuinui_ownership_valid_claim "$c"||return 2;r=$(lr "$l");k=$(kp "$r");s=$(sp "$r");z=$(rds "$r");n=$(echo "$z"|grep -c .||true);if [ ! -e "$k" ];then [ "$n" = 1 ]&&set -- $(nuinui_ownership_parse_releasing "$z")&&[ "$4" = "$c" ]||return 1;lo "$r" release "$c" "$1" "$2" "$3" "$5"||return 1;fi;set -- $(nuinui_ownership_parse_lock "$k/state")||return 1;o=$1;i=$2;q=$3;a=$4;h=$5;[ "$6" = "$c" ]||return 1;case $o in init)fm "$r"||return 1;m=$(om "$r");id "$l" "$r" "$m"||return 1;[ -e "$(ip "$r")" ]||wa "$(ip "$r")" 'version=1\n';nuinui_ownership_validate_initialization "$(ip "$r")"&&ul "$r" "$c";;start)set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ "$(bn "$r")" = "$q" ]&&[ "$(hh "$r")" = "$a" ]&&cn "$r";then ul "$r" "$c";else cs "$l" "$i" "$a" "$q" >/dev/null&&ul "$r" "$c";fi;;resume)cr "$l" "$i" "$a" "$h" "$q" "$c" >/dev/null&&ul "$r" "$c";;release)if [ "$n" = 0 ]&&[ -e "$s" ];then set -- $(nuinui_ownership_parse_slot "$s/state")||return 1;[ "$1 $2 $3 $4" = "$i $q $a $c" ]||return 1;if [ -f "$s/checkpoint" ];then [ "$(cat "$s/checkpoint")" = "$h" ]||return 1;else wa "$s/checkpoint" "$h\n"||return 1;fi;t=$(rp "$r" "$c");mv "$s" "$t"||return 1;elif [ "$n" = 1 ];then t=$z;else return 1;fi;set -- $(nuinui_ownership_parse_releasing "$t")||return 1;[ "$1 $2 $3 $4 $5" = "$i $q $a $c $h" ]||return 1;fp "$r"&&git -C "$r" merge-base --is-ancestor "$h" origin/main&&dl "$l" "$h" "$q" >/dev/null||return 1;write_release_receipt "$r" "$l" "$i" "$q" "$a" "$h" "$c"||return 1;rm "$t/checkpoint" "$t/state"&&rmdir "$t"&&ul "$r" "$c";;esac||return 1;echo "RECOVERED operation=$o";}
-rr(){ echo "$(gd "$1")/nuinui-implementation-release-receipt";}
-write_release_receipt(){ local r l i q a h c p t; r=$1;l=$2;i=$3;q=$4;a=$5;h=$6;c=$7;p=$(rr "$r");wa "$p" "version=1\nlane=$l\nissue=$i\nbranch=$q\nbase=$a\ncheckpoint=$h\nclaim=$c\n"||return 1;set -- $(nuinui_ownership_parse_release_receipt "$p")||return 1;[ "$1 $2 $3 $4 $5 $6" = "$l $i $q $a $h $c" ]||return 1;}
+
+fixed_2plus1_profile_after_begin_start() {
+  local peer
+  peer=$2
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    case "${NUINUI_SELFTEST_BEGIN_AFTER_START:-}" in
+      dirty-peer) printf '%s\n' selftest > "$(lr "$peer")/nuinui-selftest-peer-dirty" ;;
+      dirty-e2e) printf '%s\n' selftest > "$E/nuinui-selftest-e2e-dirty" ;;
+    esac
+  fi
+}
 GH=${NUINUI_GH_BIN:-gh};PR=sayosomi/nuinuiCAD
 ps(){ "$GH" pr view "$1" -R "$PR" --json id,state,isDraft,baseRefName,baseRefOid,headRefOid,mergeable,autoMergeRequest,url --jq '[.id,.state,(.isDraft|tostring),.baseRefName,.baseRefOid,.headRefOid,.mergeable,(.autoMergeRequest.mergeMethod//"none"),.url]|@tsv'; }
 cm(){ "$GH" api "repos/$PR/commits/main" --jq '.sha'; }
@@ -907,851 +2509,6 @@ printf 'pr=%s\n' "$p"
 printf 'head=%s\n' "$h"
 printf 'main=%s\n' "$m"
 printf 'merge_method=MERGE\n'
-}
-# Lifecycle façade. Public lifecycle commands call the canonical low-level
-# state and mutation owners assembled earlier in this standalone artifact.
-#
-# This module intentionally has no process-reset or runtime source delegation.
-# Every command initializes scratch state before using it and reconciles
-# mutation results from fresh durable state before exposing a terminal outcome.
-
-lifecycle_repo() {
-  lr "$1"
-}
-
-lifecycle_peer_lane() {
-  case "$1" in
-    main) printf '%s\n' sub ;;
-    sub) printf '%s\n' main ;;
-    *) return 2 ;;
-  esac
-}
-
-lifecycle_git_dir() {
-  gd "$1"
-}
-
-lifecycle_slot_state() {
-  printf '%s/state\n' "$(sp "$1")"
-}
-
-lifecycle_valid_peer() {
-  [ "$1" = FREE ] || nuinui_ownership_valid_issue "$1"
-}
-
-lifecycle_preflight() {
-  NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=
-  NUINUI_LIFECYCLE_PREFLIGHT_RC=0
-  NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=$(pf 2>&1) ||
-    NUINUI_LIFECYCLE_PREFLIGHT_RC=$?
-  [ "$NUINUI_LIFECYCLE_PREFLIGHT_RC" = 0 ]
-}
-
-lifecycle_lane_state() {
-  printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
-    $0 ~ ("^" lane " path=") {seen_lane=1; next}
-    seen_lane && $0 ~ /^  state=/ {sub(/^  state=/,""); sub(/ .*/,""); print; exit}
-    seen_lane && $0 !~ /^ / {exit}
-  '
-}
-
-lifecycle_lane_issue() {
-  printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT" | awk -v lane="$1" '
-    $0 ~ ("^" lane " path=") {seen_lane=1; next}
-    seen_lane && $0 ~ /^  owner_issue=/ {sub(/^  owner_issue=/,""); sub(/ .*/,""); print; exit}
-    seen_lane && $0 !~ /^ / {exit}
-  '
-}
-
-lifecycle_expect_lane() {
-  local expected_lane expected_occupancy actual_state actual_issue
-  expected_lane=$1
-  expected_occupancy=$2
-  actual_state=$(lifecycle_lane_state "$expected_lane")
-  actual_issue=$(lifecycle_lane_issue "$expected_lane")
-  case "$expected_occupancy" in
-    FREE)
-      [ "$actual_state" = FREE ] && [ -z "$actual_issue" ]
-      ;;
-    SAY-*)
-      [ "$actual_state" = BUSY ] && [ "$actual_issue" = "$expected_occupancy" ]
-      ;;
-    *) return 2 ;;
-  esac
-}
-
-lifecycle_blocked_occupancy() {
-  local peer_state peer_issue
-  peer_state=$5
-  peer_issue=$6
-  [ -n "$peer_state" ] || peer_state=-
-  [ -n "$peer_issue" ] || peer_issue=-
-  printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
-  printf 'BLOCKED: begin %s\n' "$1"
-  printf 'lane=%s\n' "$2"
-  printf 'expected_peer=%s\n' "$3"
-  printf 'peer_lane=%s\n' "$4"
-  printf 'peer_state=%s\n' "$peer_state"
-  printf 'peer_issue=%s\n' "$peer_issue"
-}
-
-lifecycle_prove_busy() {
-  local lane expected_issue expected_branch expected_base expected_claim expected_checkpoint
-  local repo git_dir slot issue branch base claim head current_branch branch_head
-  lane=$1
-  expected_issue=$2
-  expected_branch=$3
-  expected_base=$4
-  expected_claim=$5
-  expected_checkpoint=$6
-
-  lifecycle_proven_issue=
-  lifecycle_proven_branch=
-  lifecycle_proven_base=
-  lifecycle_proven_claim=
-  lifecycle_proven_checkpoint=
-  lifecycle_proven_clean=
-  lifecycle_proven_state=
-
-  repo=$(lifecycle_repo "$lane") || return 1
-  git_dir=$(lifecycle_git_dir "$repo") || return 1
-  [ ! -e "$git_dir/nuinui-implementation-lock" ] || return 1
-  [ -z "$(rds "$repo")" ] || return 1
-  slot=$(lifecycle_slot_state "$repo") || return 1
-  [ -f "$slot" ] || return 1
-  set -- $(nuinui_ownership_parse_slot "$slot") || return 1
-  [ "$#" = 4 ] || return 1
-  issue=$1
-  branch=$2
-  base=$3
-  claim=$4
-  [ "$issue" = "$expected_issue" ] || return 1
-  [ "$branch" = "$expected_branch" ] || return 1
-  [ "$base" = "$expected_base" ] || return 1
-  if [ -n "$expected_claim" ] && [ "$claim" != "$expected_claim" ]; then
-    return 1
-  fi
-  [ -z "$(git -C "$repo" status --porcelain 2>/dev/null)" ] || return 1
-  current_branch=$(bn "$repo")
-  [ "$current_branch" = "$branch" ] || return 1
-  head=$(hh "$repo" 2>/dev/null) || return 1
-  nuinui_ownership_valid_sha "$head" || return 1
-  if [ -n "$expected_checkpoint" ] && [ "$head" != "$expected_checkpoint" ]; then
-    return 1
-  fi
-  branch_head=$(git -C "$repo" rev-parse "refs/heads/$branch^{commit}" 2>/dev/null) || return 1
-  [ "$branch_head" = "$head" ] || return 1
-  an "$repo" "$base" "$head" || return 1
-  nuinui_ownership_valid_claim "$claim" || return 1
-
-  lifecycle_proven_issue=$issue
-  lifecycle_proven_branch=$branch
-  lifecycle_proven_base=$base
-  lifecycle_proven_claim=$claim
-  lifecycle_proven_checkpoint=$head
-  lifecycle_proven_clean=yes
-  lifecycle_proven_state=BUSY
-}
-
-lifecycle_prove_busy_retry() {
-  local attempt
-  for attempt in 1 2 3; do
-    lifecycle_prove_busy "$@" && return 0
-  done
-  return 1
-}
-
-lifecycle_prove_begin_duplicate() {
-  local lane issue branch base peer expected_peer
-  lane=$1
-  issue=$2
-  branch=$3
-  base=$4
-  peer=$5
-  expected_peer=$6
-
-  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base" || return 1
-  lifecycle_preflight || return 1
-  lifecycle_expect_lane "$lane" "$issue" || return 1
-  lifecycle_expect_lane "$peer" "$expected_peer" || return 1
-  lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' "$base"
-}
-
-lifecycle_prove_idle() {
-  local lane repo git_dir head origin branch clean
-  lane=$1
-  lifecycle_idle_branch=
-  lifecycle_idle_head=
-  lifecycle_idle_origin=
-  lifecycle_idle_clean=
-
-  repo=$(lifecycle_repo "$lane") || return 1
-  git_dir=$(lifecycle_git_dir "$repo") || return 1
-  [ ! -e "$git_dir/nuinui-implementation-slot" ] || return 1
-  [ ! -e "$git_dir/nuinui-implementation-lock" ] || return 1
-  [ -z "$(rds "$repo")" ] || return 1
-  fp "$repo" || return 1
-  head=$(hh "$repo" 2>/dev/null) || return 1
-  origin=$(om "$repo" 2>/dev/null) || return 1
-  branch=$(bn "$repo")
-  clean=$(git -C "$repo" status --porcelain 2>/dev/null)
-  [ -z "$clean" ] || return 1
-  nuinui_ownership_valid_sha "$head" || return 1
-  nuinui_ownership_valid_sha "$origin" || return 1
-  case "$lane" in
-    main) [ "$branch" = main ] || return 1 ;;
-    sub) [ -z "$branch" ] || return 1 ;;
-    *) return 2 ;;
-  esac
-  [ "$head" = "$origin" ] || return 1
-
-  lifecycle_idle_branch=$branch
-  [ -n "$lifecycle_idle_branch" ] || lifecycle_idle_branch=DETACHED
-  lifecycle_idle_head=$head
-  lifecycle_idle_origin=$origin
-  lifecycle_idle_clean=yes
-}
-
-lifecycle_prove_idle_retry() {
-  local attempt
-  for attempt in 1 2 3; do
-    lifecycle_prove_idle "$@" && return 0
-  done
-  return 1
-}
-
-lifecycle_emit_busy_envelope() {
-  printf '%s\n' "$1"
-  printf 'lane=%s\n' "$2"
-  printf 'issue=%s\n' "$lifecycle_proven_issue"
-  printf 'branch=%s\n' "$lifecycle_proven_branch"
-  printf 'base=%s\n' "$lifecycle_proven_base"
-  printf 'checkpoint=%s\n' "$lifecycle_proven_checkpoint"
-  printf 'claim=%s\n' "$lifecycle_proven_claim"
-  printf 'clean=%s\n' "$lifecycle_proven_clean"
-  printf 'state=%s\n' "$lifecycle_proven_state"
-}
-
-lifecycle_begin() {
-  local lane issue base branch expected_peer peer
-  lane=$1
-  issue=$2
-  base=$3
-  branch=$4
-  expected_peer=$5
-
-  lifecycle_begin_lane=$lane
-  lifecycle_begin_issue=$issue
-  lifecycle_begin_base=$base
-  lifecycle_begin_branch=$branch
-  lifecycle_begin_expected_peer=$expected_peer
-  lifecycle_begin_peer=
-  lifecycle_begin_claim=
-  lifecycle_begin_checkpoint=
-  lifecycle_begin_peer_state=
-  lifecycle_begin_peer_issue=
-  lifecycle_begin_start_output=
-  lifecycle_begin_post_output=
-  lifecycle_begin_post_rc=0
-
-  peer=$(lifecycle_peer_lane "$lane") || {
-    echo 'ERROR: lane must be main or sub'
-    return 2
-  }
-  lifecycle_begin_peer=$peer
-  nuinui_ownership_valid_issue "$issue" || {
-    echo 'ERROR: Issue must look like SAY-123'
-    return 2
-  }
-  nuinui_ownership_valid_sha "$base" || {
-    echo 'ERROR: expected base must be a full 40-character commit SHA'
-    return 2
-  }
-  lifecycle_valid_peer "$expected_peer" || {
-    echo 'ERROR: expected peer must be FREE or SAY-123'
-    return 2
-  }
-
-  lifecycle_preflight || {
-    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
-    echo 'BLOCKED: begin fixed-lane preflight failed'
-    return 1
-  }
-  if ! lifecycle_expect_lane "$lane" FREE; then
-    if [ "$(lifecycle_lane_state "$lane")" = BUSY ] &&
-      lifecycle_prove_begin_duplicate "$lane" "$issue" "$branch" "$base" "$peer" "$expected_peer"; then
-      lifecycle_begin_peer_state=$(lifecycle_lane_state "$peer")
-      lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$peer")
-      lifecycle_emit_busy_envelope 'IMPLEMENTATION ALREADY STARTED' "$lane"
-      printf 'peer_lane=%s\n' "$peer"
-      printf 'peer_state=%s\n' "$lifecycle_begin_peer_state"
-      peer_issue=$lifecycle_begin_peer_issue
-      [ -n "$peer_issue" ] || peer_issue=-
-      printf 'peer_issue=%s\n' "$peer_issue"
-      printf 'mutation=no-op\npreflight=PASS\n'
-      return 0
-    fi
-    lifecycle_blocked_occupancy 'target lane is not FREE' "$lane" FREE "$peer" \
-      "$(lifecycle_lane_state "$lane")" "$(lifecycle_lane_issue "$lane")"
-    return 1
-  fi
-  lifecycle_expect_lane "$peer" "$expected_peer" || {
-    lifecycle_blocked_occupancy 'peer occupancy does not match caller expectation' "$lane" \
-      "$expected_peer" "$peer" "$(lifecycle_lane_state "$peer")" \
-      "$(lifecycle_lane_issue "$peer")"
-    return 1
-  }
-
-  lifecycle_preflight || {
-    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
-    echo 'BLOCKED: begin pre-mutation revalidation failed'
-    return 1
-  }
-  lifecycle_expect_lane "$lane" FREE || {
-    lifecycle_blocked_occupancy 'target changed before mutation' "$lane" FREE "$peer" \
-      "$(lifecycle_lane_state "$lane")" "$(lifecycle_lane_issue "$lane")"
-    return 1
-  }
-  lifecycle_expect_lane "$peer" "$expected_peer" || {
-    lifecycle_blocked_occupancy 'peer changed before mutation' "$lane" "$expected_peer" \
-      "$peer" "$(lifecycle_lane_state "$peer")" "$(lifecycle_lane_issue "$peer")"
-    return 1
-  }
-
-  lifecycle_begin_start_output=$(st "$lane" "$issue" "$base" "$branch" 2>&1)
-  lifecycle_begin_start_rc=$?
-
-  if [ "$(printenv NUINUI_SELFTEST 2>/dev/null || true)" = 1 ]; then
-    case "$(printenv NUINUI_SELFTEST_BEGIN_AFTER_START 2>/dev/null || true)" in
-      dirty-peer)
-        printf '%s\n' selftest > "$(lifecycle_repo "$peer")/nuinui-selftest-peer-dirty"
-        ;;
-      dirty-e2e)
-        printf '%s\n' selftest > "$E/nuinui-selftest-e2e-dirty"
-        ;;
-    esac
-  fi
-
-  lifecycle_preflight
-  lifecycle_begin_post_rc=$?
-  lifecycle_begin_post_output=$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT
-  if lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' ''; then
-    lifecycle_begin_claim=$lifecycle_proven_claim
-    lifecycle_begin_checkpoint=$lifecycle_proven_checkpoint
-    if [ "$lifecycle_begin_post_rc" = 0 ]; then
-      lifecycle_begin_peer_state=$(lifecycle_lane_state "$peer")
-      lifecycle_begin_peer_issue=$(lifecycle_lane_issue "$peer")
-      if lifecycle_expect_lane "$peer" "$expected_peer"; then
-        lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
-        printf 'peer_lane=%s\n' "$peer"
-        printf 'peer_state=%s\n' "$lifecycle_begin_peer_state"
-        peer_issue=$lifecycle_begin_peer_issue
-        [ -n "$peer_issue" ] || peer_issue=-
-        printf 'peer_issue=%s\n' "$peer_issue"
-        printf 'preflight=PASS\n'
-        return 0
-      fi
-    fi
-    lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
-    printf 'mutation_state=COMPLETED\n'
-    if [ -n "$lifecycle_begin_post_output" ]; then
-      printf 'audit_evidence:\n%s\n' "$lifecycle_begin_post_output"
-    else
-      printf 'audit_evidence=unavailable\n'
-    fi
-    return 0
-  fi
-
-  printf 'BLOCKED: begin start mutation completion could not be proven\n'
-  printf 'mutation_state=UNKNOWN\n'
-  printf 'lane=%s\nissue=%s\nbranch=%s\nbase=%s\n' "$lane" "$issue" "$branch" "$base"
-  if [ -n "$lifecycle_begin_start_output" ]; then
-    printf 'mutation_output:\n%s\n' "$lifecycle_begin_start_output"
-  fi
-  if [ -n "$lifecycle_begin_post_output" ]; then
-    printf 'audit_evidence:\n%s\n' "$lifecycle_begin_post_output"
-  fi
-  return 1
-}
-
-lifecycle_start_command() {
-  local lane issue base branch peer peer_state peer_issue
-  lane=$1
-  issue=$2
-  base=$3
-  branch=$4
-  NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT=
-  NUINUI_LIFECYCLE_PREFLIGHT_RC=0
-
-  lifecycle_preflight || {
-    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
-    echo 'BLOCKED: start fixed-lane preflight failed'
-    return 1
-  }
-  lifecycle_expect_lane "$lane" FREE || {
-    printf '%s\n' "$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT"
-    echo 'BLOCKED: start target lane is not FREE'
-    return 1
-  }
-
-  lifecycle_start_output=
-  lifecycle_start_rc=0
-  lifecycle_start_output=$(st "$lane" "$issue" "$base" "$branch" 2>&1) ||
-    lifecycle_start_rc=$?
-  lifecycle_preflight
-  lifecycle_start_post_rc=$?
-  lifecycle_start_post_output=$NUINUI_LIFECYCLE_PREFLIGHT_OUTPUT
-
-  if lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" '' ''; then
-    lifecycle_start_peer=$(lifecycle_peer_lane "$lane")
-    if [ "$lifecycle_start_post_rc" = 0 ]; then
-      lifecycle_start_peer_state=$(lifecycle_lane_state "$lifecycle_start_peer")
-      lifecycle_start_peer_issue=$(lifecycle_lane_issue "$lifecycle_start_peer")
-      lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
-      printf 'peer_lane=%s\n' "$lifecycle_start_peer"
-      printf 'peer_state=%s\n' "$lifecycle_start_peer_state"
-      [ -n "$lifecycle_start_peer_issue" ] || lifecycle_start_peer_issue=-
-      printf 'peer_issue=%s\n' "$lifecycle_start_peer_issue"
-      printf 'preflight=PASS\n'
-      return 0
-    fi
-    lifecycle_emit_busy_envelope 'IMPLEMENTATION STARTED' "$lane"
-    printf 'mutation_state=COMPLETED\n'
-    if [ -n "$lifecycle_start_post_output" ]; then
-      printf 'audit_evidence:\n%s\n' "$lifecycle_start_post_output"
-    else
-      printf 'audit_evidence=unavailable\n'
-    fi
-    return 0
-  fi
-
-  printf 'BLOCKED: start mutation completion could not be proven\n'
-  printf 'lane=%s\nissue=%s\nbase=%s\nbranch=%s\n' "$lane" "$issue" "$base" "$branch"
-  if [ -n "$lifecycle_start_output" ]; then
-    printf 'mutation_output:\n%s\n' "$lifecycle_start_output"
-  fi
-  if [ -n "$lifecycle_start_post_output" ]; then
-    printf 'audit_evidence:\n%s\n' "$lifecycle_start_post_output"
-  fi
-  return 1
-}
-
-lifecycle_resume_command() {
-  local lane issue base checkpoint branch claim
-  lane=$1
-  issue=$2
-  base=$3
-  checkpoint=$4
-  branch=$5
-  claim=$6
-
-  lifecycle_resume_output=
-  lifecycle_resume_rc=0
-  lifecycle_resume_output=$(rs "$lane" "$issue" "$base" "$checkpoint" "$branch" "$claim" 2>&1) ||
-    lifecycle_resume_rc=$?
-
-  if lifecycle_prove_busy_retry "$lane" "$issue" "$branch" "$base" "$claim" "$checkpoint"; then
-    lifecycle_emit_busy_envelope 'IMPLEMENTATION RESUMED' "$lane"
-    return 0
-  fi
-
-  printf 'BLOCKED: resume mutation completion could not be proven\n'
-  printf 'lane=%s\nissue=%s\nbase=%s\ncheckpoint=%s\nbranch=%s\nclaim=%s\n' \
-    "$lane" "$issue" "$base" "$checkpoint" "$branch" "$claim"
-  if [ -n "$lifecycle_resume_output" ]; then
-    printf 'mutation_output:\n%s\n' "$lifecycle_resume_output"
-  fi
-  return 1
-}
-
-lifecycle_release_prove_drift_checkout() {
-  local mode current_branch current_head branch_head authoritative_main authoritative_main2
-  local target_head target_head2 remote_state remote_state2 initial_branch initial_head
-  mode=$1
-  current_branch=$(bn "$lifecycle_release_repo")
-  current_head=$lifecycle_release_head
-  initial_branch=$current_branch
-  initial_head=$current_head
-
-  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
-  nuinui_ownership_valid_sha "$current_head" || return 1
-  case "$mode" in
-    named)
-      [ -n "$current_branch" ] || return 1
-      [ "$current_branch" != "$lifecycle_release_topic" ] || return 1
-      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
-      branch_head=$(git -C "$lifecycle_release_repo" rev-parse \
-        "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
-      [ "$branch_head" = "$current_head" ] || return 1
-      ;;
-    rename)
-      [ -n "$current_branch" ] || return 1
-      [ "$current_branch" != main ] || return 1
-      [ "$current_branch" != "$lifecycle_release_topic" ] || return 1
-      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
-      branch_head=$(git -C "$lifecycle_release_repo" rev-parse \
-        "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
-      [ "$branch_head" = "$current_head" ] || return 1
-      ;;
-    canonical)
-      case "$lifecycle_release_lane" in
-        main) [ "$current_branch" = main ] || return 1 ;;
-        sub) [ -z "$current_branch" ] || return 1 ;;
-        *) return 1 ;;
-      esac
-      ;;
-    *) return 1 ;;
-  esac
-  [ "$lifecycle_release_base" = "$current_head" ] ||
-    an "$lifecycle_release_repo" "$lifecycle_release_base" "$current_head" || return 1
-
-  fp "$lifecycle_release_repo" || return 1
-  authoritative_main=$(om "$lifecycle_release_repo" 2>/dev/null) || return 1
-  nuinui_ownership_valid_sha "$authoritative_main" || return 1
-  an "$lifecycle_release_repo" "$current_head" "$authoritative_main" || return 1
-  an "$lifecycle_release_repo" "$lifecycle_release_saved_checkpoint" "$authoritative_main" || return 1
-  target_head=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
-    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
-  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
-    [ -z "$target_head" ] || return 1
-  else
-    [ "$target_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
-  fi
-  [ -z "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ] || return 1
-  remote_state=$(rt "$lifecycle_release_repo" "$lifecycle_release_topic" \
-    "$lifecycle_release_saved_checkpoint") || return 1
-
-  fp "$lifecycle_release_repo" || return 1
-  authoritative_main2=$(om "$lifecycle_release_repo" 2>/dev/null) || return 1
-  [ "$authoritative_main2" = "$authoritative_main" ] || return 1
-  remote_state2=$(rt "$lifecycle_release_repo" "$lifecycle_release_topic" \
-    "$lifecycle_release_saved_checkpoint") || return 1
-  [ "$remote_state2" = "$remote_state" ] || return 1
-  current_branch=$(bn "$lifecycle_release_repo")
-  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null || true)
-  [ "$current_branch" = "$initial_branch" ] && [ "$current_head" = "$initial_head" ] || return 1
-  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
-  nuinui_ownership_valid_sha "$current_head" || return 1
-  an "$lifecycle_release_repo" "$current_head" "$authoritative_main2" || return 1
-  an "$lifecycle_release_repo" "$lifecycle_release_saved_checkpoint" \
-    "$authoritative_main2" || return 1
-  case "$mode" in
-    named|rename)
-      [ "$current_head" = "$lifecycle_release_saved_checkpoint" ] || return 1
-      branch_head=$(git -C "$lifecycle_release_repo" rev-parse \
-        "refs/heads/$current_branch^{commit}" 2>/dev/null || true)
-      [ "$branch_head" = "$current_head" ] || return 1
-      ;;
-    canonical)
-      case "$lifecycle_release_lane" in
-        main) [ "$current_branch" = main ] || return 1 ;;
-        sub) [ -z "$current_branch" ] || return 1 ;;
-        *) return 1 ;;
-      esac
-      ;;
-  esac
-  target_head2=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
-    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
-  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
-    [ -z "$target_head2" ] || return 1
-  else
-    [ "$target_head2" = "$lifecycle_release_saved_checkpoint" ] || return 1
-  fi
-  [ -z "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]
-}
-
-lifecycle_release_emit_branch_mismatch() {
-  printf 'BLOCKED: release claimed branch mismatch\n'
-  printf 'lane=%s\nissue=%s\nclaimed_branch=%s\nactual_branch=%s\nhead=%s\n' \
-    "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" \
-    "${lifecycle_release_actual_branch:-DETACHED}" "$lifecycle_release_head"
-  printf 'checkpoint=%s\nclaim=%s\nreason=%s\n' \
-    "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim" \
-    "$lifecycle_release_branch_reason"
-}
-
-lifecycle_release_discover_tombstones() {
-  local discovered
-
-  lifecycle_release_tombstones=
-  lifecycle_release_tombstone_discovery_ok=
-  [ -n "$lifecycle_release_git_dir" ] || return 1
-  discovered=$(find "$lifecycle_release_git_dir" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
-  if [ -n "$discovered" ]; then
-    lifecycle_release_tombstones=$(printf '%s\n' "$discovered" | LC_ALL=C sort) || return 1
-  fi
-  lifecycle_release_tombstone_discovery_ok=yes
-}
-
-lifecycle_release_prove_duplicate() {
-  local receipt receipt_lane receipt_issue receipt_branch receipt_base receipt_checkpoint receipt_claim
-  local current_branch current_head authoritative_main
-
-  lifecycle_release_duplicate_proven=
-  case "$lifecycle_release_lane" in
-    main|sub) ;;
-    *) return 1 ;;
-  esac
-  nuinui_ownership_valid_sha "$lifecycle_release_saved_checkpoint" || return 1
-  nuinui_ownership_valid_claim "$lifecycle_release_claim" || return 1
-  [ -n "$lifecycle_release_git_dir" ] || return 1
-  [ ! -e "$lifecycle_release_slot_dir" ] || return 1
-  [ ! -e "$lifecycle_release_lock_dir" ] || return 1
-  [ "$lifecycle_release_tombstone_discovery_ok" = yes ] || return 1
-  [ -z "$lifecycle_release_tombstones" ] || return 1
-  nuinui_ownership_validate_initialization "$(ip "$lifecycle_release_repo")" || return 1
-
-  receipt=$(rr "$lifecycle_release_repo") || return 1
-  [ -f "$receipt" ] || return 1
-  set -- $(nuinui_ownership_parse_release_receipt "$receipt") || return 1
-  [ "$#" = 6 ] || return 1
-  receipt_lane=$1
-  receipt_issue=$2
-  receipt_branch=$3
-  receipt_base=$4
-  receipt_checkpoint=$5
-  receipt_claim=$6
-  [ "$receipt_lane" = "$lifecycle_release_lane" ] || return 1
-  [ "$receipt_checkpoint" = "$lifecycle_release_saved_checkpoint" ] || return 1
-  [ "$receipt_claim" = "$lifecycle_release_claim" ] || return 1
-  an "$lifecycle_release_repo" "$receipt_base" "$receipt_checkpoint" || return 1
-
-  [ -z "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ] || return 1
-  current_branch=$(bn "$lifecycle_release_repo")
-  case "$lifecycle_release_lane" in
-    main) [ "$current_branch" = main ] || return 1 ;;
-    sub) [ -z "$current_branch" ] || return 1 ;;
-  esac
-  current_head=$(hh "$lifecycle_release_repo" 2>/dev/null) || return 1
-  nuinui_ownership_valid_sha "$current_head" || return 1
-  authoritative_main=$(am "$lifecycle_release_repo") || return 1
-  nuinui_ownership_valid_sha "$authoritative_main" || return 1
-  [ "$current_head" = "$authoritative_main" ] || return 1
-  an "$lifecycle_release_repo" "$receipt_checkpoint" "$authoritative_main" || return 1
-
-  lifecycle_release_duplicate_issue=$receipt_issue
-  lifecycle_release_duplicate_branch=$receipt_branch
-  lifecycle_release_duplicate_base=$receipt_base
-  lifecycle_release_duplicate_origin_main=$authoritative_main
-  lifecycle_release_duplicate_proven=yes
-}
-
-lifecycle_release_validate() {
-  lifecycle_release_git_dir=$(lifecycle_git_dir "$lifecycle_release_repo" 2>/dev/null || true)
-  if [ -n "$lifecycle_release_git_dir" ]; then
-    lifecycle_release_slot_dir=$lifecycle_release_git_dir/nuinui-implementation-slot
-    lifecycle_release_lock_dir=$lifecycle_release_git_dir/nuinui-implementation-lock
-  else
-    lifecycle_release_slot_dir=
-    lifecycle_release_lock_dir=
-  fi
-  lifecycle_release_tombstones=
-  lifecycle_release_duplicate_proven=
-  lifecycle_release_tombstone_discovery_ok=
-  if [ -n "$lifecycle_release_git_dir" ]; then
-    lifecycle_release_discover_tombstones || {
-      echo 'BLOCKED: release-pending state discovery failed'
-      printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' \
-        "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
-      return 1
-    }
-  fi
-
-  if [ -n "$lifecycle_release_tombstones" ]; then
-    echo 'BLOCKED: mutation lock/state conflict'
-    printf 'lane=%s\n' "$lifecycle_release_lane"
-    printf 'issue=%s\n' '-'
-    printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
-    printf 'releasing_state=%s\n' "$lifecycle_release_tombstones"
-    return 1
-  fi
-  if [ -e "$lifecycle_release_lock_dir" ]; then
-    if [ -f "$lifecycle_release_lock_dir/state" ] &&
-      nuinui_ownership_parse_lock "$lifecycle_release_lock_dir/state" >/dev/null; then
-      printf 'BLOCKED: mutation lock/state conflict\nlane=%s\noperation=%s\nlock_claim=%s\n' \
-        "$lifecycle_release_lane" "$(nuinui_ownership_field "$lifecycle_release_lock_dir/state" operation)" \
-        "$(nuinui_ownership_field "$lifecycle_release_lock_dir/state" claim)"
-    else
-      echo 'BLOCKED: malformed durable ownership state'
-    fi
-    printf 'checkpoint=%s\nclaim=%s\n' "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
-    return 1
-  fi
-  if [ -n "$lifecycle_release_git_dir" ] && [ ! -e "$lifecycle_release_slot_dir" ] &&
-    lifecycle_release_prove_duplicate; then
-    return 0
-  fi
-  if [ -z "$lifecycle_release_git_dir" ] ||
-    [ ! -d "$lifecycle_release_slot_dir" ] ||
-    [ ! -f "$lifecycle_release_slot_dir/state" ]; then
-    echo 'BLOCKED: invalid/missing active slot'
-    printf 'lane=%s\ncheckpoint=%s\nclaim=%s\n' \
-      "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
-    return 1
-  fi
-  if ! nuinui_ownership_parse_slot "$lifecycle_release_slot_dir/state" >/dev/null; then
-    echo 'BLOCKED: malformed durable ownership state'
-    printf 'lane=%s\nslot=%s\n' "$lifecycle_release_lane" "$lifecycle_release_slot_dir/state"
-    return 1
-  fi
-
-  lifecycle_release_issue=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" issue 2>/dev/null || true)
-  lifecycle_release_topic=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" branch 2>/dev/null || true)
-  lifecycle_release_base=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" base 2>/dev/null || true)
-  lifecycle_release_durable_claim=$(nuinui_ownership_field "$lifecycle_release_slot_dir/state" claim 2>/dev/null || true)
-  if ! nuinui_ownership_valid_sha "$lifecycle_release_saved_checkpoint"; then
-    echo 'BLOCKED: checkpoint mismatch'
-    printf 'expected=%s\nactual=%s\n' '-' "$lifecycle_release_saved_checkpoint"
-    printf 'lane=%s\nclaim=%s\n' "$lifecycle_release_lane" "$lifecycle_release_claim"
-    return 1
-  fi
-  if ! nuinui_ownership_valid_claim "$lifecycle_release_claim"; then
-    echo 'BLOCKED: claim mismatch'
-    printf 'expected=%s\nactual=%s\n' "$lifecycle_release_durable_claim" "$lifecycle_release_claim"
-    printf 'lane=%s\nissue=%s\nbranch=%s\n' "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic"
-    return 1
-  fi
-  if [ "$lifecycle_release_durable_claim" != "$lifecycle_release_claim" ]; then
-    echo 'BLOCKED: claim mismatch'
-    printf 'expected=%s\nactual=%s\n' "$lifecycle_release_durable_claim" "$lifecycle_release_claim"
-    printf 'lane=%s\nissue=%s\nbranch=%s\nbase=%s\n' \
-      "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_base"
-    return 1
-  fi
-  lifecycle_release_topic_ref_missing=no
-  lifecycle_release_topic_checkpoint=$(git -C "$lifecycle_release_repo" rev-parse --verify --quiet \
-    "refs/heads/$lifecycle_release_topic^{commit}" 2>/dev/null || true)
-  if [ -z "$lifecycle_release_topic_checkpoint" ]; then
-    lifecycle_release_topic_ref_missing=yes
-  elif ! nuinui_ownership_valid_sha "$lifecycle_release_topic_checkpoint" ||
-    [ "$lifecycle_release_topic_checkpoint" != "$lifecycle_release_saved_checkpoint" ]; then
-    echo 'BLOCKED: checkpoint mismatch'
-    printf 'expected=%s\nactual=%s\n' "$lifecycle_release_topic_checkpoint" "$lifecycle_release_saved_checkpoint"
-    printf 'lane=%s\nissue=%s\nbranch=%s\nclaim=%s\n' \
-      "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" "$lifecycle_release_claim"
-    return 1
-  fi
-  lifecycle_release_head=$(git -C "$lifecycle_release_repo" rev-parse HEAD 2>/dev/null || true)
-  lifecycle_release_actual_branch=$(bn "$lifecycle_release_repo")
-  [ -n "$lifecycle_release_actual_branch" ] || lifecycle_release_actual_branch=DETACHED
-  lifecycle_release_branch_reason=
-  if [ "$lifecycle_release_topic_ref_missing" = yes ]; then
-    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
-      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
-    else
-      lifecycle_release_branch_reason=missing-claimed-local-ref
-      if [ "$lifecycle_release_actual_branch" != DETACHED ] &&
-        lifecycle_release_prove_drift_checkout rename; then
-        return 0
-      fi
-    fi
-    lifecycle_release_emit_branch_mismatch
-    return 1
-  fi
-  if [ "$lifecycle_release_actual_branch" = "$lifecycle_release_topic" ]; then
-    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
-      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
-      lifecycle_release_emit_branch_mismatch
-      return 1
-    fi
-  else
-    if [ -n "$(bo "$lifecycle_release_repo" "$lifecycle_release_topic")" ]; then
-      lifecycle_release_branch_reason=claimed-branch-checked-out-elsewhere
-      lifecycle_release_emit_branch_mismatch
-      return 1
-    fi
-    case "$lifecycle_release_lane:$lifecycle_release_actual_branch" in
-      main:main|sub:DETACHED)
-        lifecycle_release_prove_drift_checkout canonical || {
-          lifecycle_release_branch_reason=checkout-branch-drift
-          lifecycle_release_emit_branch_mismatch
-          return 1
-        }
-        ;;
-      *)
-        lifecycle_release_prove_drift_checkout named || {
-          lifecycle_release_branch_reason=checkout-branch-drift
-          lifecycle_release_emit_branch_mismatch
-          return 1
-        }
-        ;;
-    esac
-  fi
-  if [ -n "$(git -C "$lifecycle_release_repo" status --porcelain 2>/dev/null)" ]; then
-    echo 'BLOCKED: mutation lock/state conflict'
-    printf 'lane=%s\nissue=%s\nbranch=%s\ncheckpoint=%s\nclaim=%s\nclean=no\n' \
-      "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_topic" \
-      "$lifecycle_release_saved_checkpoint" "$lifecycle_release_claim"
-    return 1
-  fi
-  return 0
-}
-
-lifecycle_emit_release_duplicate_envelope() {
-  printf 'IMPLEMENTATION ALREADY RELEASED\n'
-  printf 'lane=%s\n' "$lifecycle_release_lane"
-  printf 'issue=%s\n' "$lifecycle_release_duplicate_issue"
-  printf 'base=%s\n' "$lifecycle_release_duplicate_base"
-  printf 'saved_checkpoint=%s\n' "$lifecycle_release_saved_checkpoint"
-  printf 'released_claim=%s\n' "$lifecycle_release_claim"
-  printf 'released_branch=%s\n' "$lifecycle_release_duplicate_branch"
-  printf 'origin_main=%s\n' "$lifecycle_release_duplicate_origin_main"
-  printf 'clean=yes\nmutation=no-op\nstate=FREE\n'
-}
-
-lifecycle_emit_release_envelope() {
-  printf 'IMPLEMENTATION RELEASED\n'
-  printf 'lane=%s\n' "$lifecycle_release_lane"
-  printf 'issue=%s\n' "$lifecycle_release_issue"
-  printf 'saved_checkpoint=%s\n' "$lifecycle_release_saved_checkpoint"
-  printf 'released_claim=%s\n' "$lifecycle_release_claim"
-  printf 'released_branch=%s\n' "$lifecycle_release_topic"
-  printf 'idle_branch=%s\n' "$lifecycle_idle_branch"
-  printf 'idle_head=%s\n' "$lifecycle_idle_head"
-  printf 'origin_main=%s\n' "$lifecycle_idle_origin"
-  printf 'clean=%s\n' "$lifecycle_idle_clean"
-  printf 'state=FREE\n'
-}
-
-lifecycle_release_command() {
-  lifecycle_release_lane=$1
-  lifecycle_release_saved_checkpoint=$2
-  lifecycle_release_claim=$3
-  lifecycle_release_repo=
-  lifecycle_release_issue=
-  lifecycle_release_topic=
-  lifecycle_release_base=
-  lifecycle_release_durable_claim=
-  lifecycle_release_output=
-  lifecycle_release_rc=0
-
-  lifecycle_release_repo=$(lifecycle_repo "$lifecycle_release_lane") || {
-    echo 'ERROR: lane must be main or sub'
-    return 2
-  }
-
-  lifecycle_release_validate || return $?
-  if [ "$lifecycle_release_duplicate_proven" = yes ]; then
-    lifecycle_emit_release_duplicate_envelope
-    return 0
-  fi
-  lifecycle_release_output=$(rl "$lifecycle_release_lane" "$lifecycle_release_saved_checkpoint" \
-    "$lifecycle_release_claim" 2>&1) || lifecycle_release_rc=$?
-
-  if lifecycle_prove_idle_retry "$lifecycle_release_lane"; then
-    lifecycle_emit_release_envelope
-    return 0
-  fi
-
-  printf 'BLOCKED: release mutation completion could not be proven\n'
-  printf 'lane=%s\nissue=%s\nsaved_checkpoint=%s\nreleased_claim=%s\nreleased_branch=%s\n' \
-    "$lifecycle_release_lane" "$lifecycle_release_issue" "$lifecycle_release_saved_checkpoint" \
-    "$lifecycle_release_claim" "$lifecycle_release_topic"
-  if [ -n "$lifecycle_release_output" ]; then
-    printf 'mutation_output:\n%s\n' "$lifecycle_release_output"
-  fi
-  printf 'state=BLOCKED\n'
-  return 1
 }
 integration_clean_slot_identity() {
   local repo expected_issue expected_claim expected_topic
@@ -2430,6 +3187,9 @@ integration_clean_command() {
     "$lane" "$issue" "$branch" "$expected_topic" "$head" "$expected_main" "$claim" "$head" "$file_set"
   rm -rf "$root"
 }
+# nuinuiCAD Human-test adapter. Exact-ref marker/receipt and idle transition
+# mechanics are owned by shared human-test-core.sh.
+
 e2e_path_exists() {
   [ -e "$1" ] || [ -L "$1" ]
 }
@@ -2438,389 +3198,111 @@ e2e_regular_file() {
   [ -f "$1" ] && [ ! -L "$1" ]
 }
 
-e2e_receipt_path() {
-  printf '%s/nuinui-e2e-release-receipt\n' "$(gd "$1")"
-}
-
-e2e_resolve_ref() {
-  local r="$1"
-  local f="$2"
-  local h=""
-
-  h="$(git -C "$r" rev-parse "$f^{commit}" 2>/dev/null)" || return 1
-  nuinui_ownership_valid_sha "$h" || return 1
-  printf '%s\n' "$h"
-}
-
-e2e_read_marker() {
-  local p="$1"
-
-  e2e_regular_file "$p" || return 1
-  set -- $(nuinui_ownership_read_fields "$p" issue,ref) || return 1
-  [ "$#" = 2 ] || return 1
-  nuinui_ownership_valid_issue "$1" || return 1
-  nuinui_ownership_valid_sha "$2" || return 1
-  printf '%s %s\n' "$1" "$2"
-}
-
 e2e_read_session() {
-  local p="$1"
-  local source_fixture=""
-  local issue=""
-  local ref=""
-  local root=""
-  local handoff=""
-  local cdp_port=""
-  local launch_pid=""
-
-  e2e_regular_file "$p" || return 1
-  if nuinui_ownership_validate_exact_file "$p" issue,ref,source_fixture,root,handoff,cdp_port,launch_pid; then
-    source_fixture="$(nuinui_ownership_field "$p" source_fixture)" || return 1
-    case "$source_fixture" in
-      /*) ;;
-      *) return 1 ;;
-    esac
-  elif ! nuinui_ownership_validate_exact_file "$p" issue,ref,root,handoff,cdp_port,launch_pid; then
+  local path=$1 source_fixture issue ref root handoff cdp_port launch_pid
+  e2e_regular_file "$path" || return 1
+  if nuinui_ownership_validate_exact_file "$path" issue,ref,source_fixture,root,handoff,cdp_port,launch_pid; then
+    source_fixture=$(nuinui_ownership_field "$path" source_fixture) || return 1
+    case "$source_fixture" in /*) ;; *) return 1 ;; esac
+  elif ! nuinui_ownership_validate_exact_file "$path" issue,ref,root,handoff,cdp_port,launch_pid; then
     return 1
   fi
-  issue="$(nuinui_ownership_field "$p" issue)" || return 1
-  ref="$(nuinui_ownership_field "$p" ref)" || return 1
-  root="$(nuinui_ownership_field "$p" root)" || return 1
-  handoff="$(nuinui_ownership_field "$p" handoff)" || return 1
-  cdp_port="$(nuinui_ownership_field "$p" cdp_port)" || return 1
-  launch_pid="$(nuinui_ownership_field "$p" launch_pid)" || return 1
-  nuinui_ownership_valid_issue "$issue" || return 1
-  nuinui_ownership_valid_sha "$ref" || return 1
-  [ -n "$root" ] || return 1
-  [ -n "$handoff" ] || return 1
+  issue=$(nuinui_ownership_field "$path" issue) || return 1
+  ref=$(nuinui_ownership_field "$path" ref) || return 1
+  root=$(nuinui_ownership_field "$path" root) || return 1
+  handoff=$(nuinui_ownership_field "$path" handoff) || return 1
+  cdp_port=$(nuinui_ownership_field "$path" cdp_port) || return 1
+  launch_pid=$(nuinui_ownership_field "$path" launch_pid) || return 1
+  nuinui_ownership_valid_issue "$issue" && nuinui_ownership_valid_sha "$ref" || return 1
+  [ -n "$root" ] && [ -n "$handoff" ] || return 1
   printf '%s\n' "$cdp_port" | grep -Eq '^[0-9]+$' || return 1
   printf '%s\n' "$launch_pid" | grep -Eq '^[0-9]+$' || return 1
   printf '%s %s %s %s %s %s\n' "$issue" "$ref" "$root" "$handoff" "$cdp_port" "$launch_pid"
 }
 
-e2e_read_receipt() {
-  local p="$1"
-
-  e2e_regular_file "$p" || return 1
-  set -- $(nuinui_ownership_read_fields "$p" version,issue,ref) || return 1
-  [ "$#" = 3 ] || return 1
-  [ "$1" = 1 ] || return 1
-  nuinui_ownership_valid_issue "$2" || return 1
-  nuinui_ownership_valid_sha "$3" || return 1
-  printf '%s %s %s\n' "$1" "$2" "$3"
-}
-
-e2e_checkout_identity() {
-  local r="$1"
-
-  gr "$r" &&
-    ao "$r" "$RT" &&
-    cn "$r" &&
-    [ -z "$(bn "$r")" ]
-}
-
-e2e_checkout_matches() {
-  local r="$1"
-  local h="$2"
-
-  e2e_checkout_identity "$r" &&
-    [ "$(hh "$r" 2>/dev/null)" = "$h" ]
-}
-
 e2e_duplicate_session_matches() {
-  local r="$1"
-  local i="$2"
-  local f="$3"
-  local s=""
+  local repo=$1 issue=$2 ref=$3 session
+  session=$(ep "$repo")
+  if ! e2e_path_exists "$session"; then return 0; fi
+  set -- $(e2e_read_session "$session") || return 1
+  [ "$1" = "$issue" ] && [ "$2" = "$ref" ]
+}
 
-  s="$(ep "$r")"
-  if ! e2e_path_exists "$s"; then
+fixed_2plus1_profile_human_test_preflight() {
+  local repo=$E branch dirty marker
+  echo "e2e path=$repo"
+  gr "$repo" || return 1
+  branch=$(bn "$repo")
+  dirty=$(git -C "$repo" status --porcelain)
+  marker=$(mp "$repo")
+  echo "  branch=${branch:-DETACHED}"
+  echo "  head=$(hh "$repo")"
+  echo "  clean=$([ -z "$dirty" ] && echo yes || echo no) marker=$([ -f "$marker" ] && echo present || echo none)"
+  [ ! -f "$marker" ] || sed 's/^/    /' "$marker"
+  [ -z "$dirty" ]
+}
+
+fixed_2plus1_profile_human_test_start_guard() {
+  local repo=$1 issue=$2 ref=$3 mode=$4
+  case "$mode" in
+    active)
+      e2e_path_exists "$(ep "$repo")" && {
+        echo 'BLOCKED: E2E start requires a valid clean detached checkout with no session'
+        return 1
+      }
+      return 0
+      ;;
+    duplicate)
+      e2e_duplicate_session_matches "$repo" "$issue" "$ref" || {
+        echo 'BLOCKED: duplicate E2E start session is malformed or conflicts with marker'
+        return 1
+      }
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+fixed_2plus1_profile_human_test_release_guard() {
+  local repo=$1 issue=$2 ref=$3 mode=$4 stage=$5
+  if [ "$mode" = duplicate ]; then
+    e2e_path_exists "$(ep "$repo")" && {
+      echo 'BLOCKED: duplicate E2E release requires no session metadata'
+      return 1
+    }
     return 0
   fi
-  set -- $(e2e_read_session "$s") || return 1
-  [ "$1" = "$i" ] && [ "$2" = "$f" ]
-}
-
-e2e_start_duplicate() {
-  local i="$1"
-  local f="$2"
-  local r="$E"
-  local k=""
-  local s=""
-  local marker_issue=""
-
-  k="$(mp "$r")"
-  s="$(ep "$r")"
-  e2e_regular_file "$k" || {
-    echo 'BLOCKED: duplicate E2E start requires a regular exact marker'
-    return 1
-  }
-  set -- $(e2e_read_marker "$k") || {
-    echo 'BLOCKED: duplicate E2E start marker is malformed'
-    return 1
-  }
-  marker_issue=$1
-  if [ "$marker_issue" != "$i" ] || [ "$2" != "$f" ]; then
-    echo 'BLOCKED: duplicate E2E start marker does not match caller Issue/ref'
-    echo "expected_issue=$marker_issue"
-    echo "actual_issue=$i"
-    echo "expected_ref=$2"
-    echo "actual_ref=$f"
+  if e2e_path_exists "$(ep "$repo")"; then
+    if [ "$stage" = after-fetch ]; then
+      echo 'BLOCKED: E2E session metadata appeared after fetch'
+    else
+      echo 'BLOCKED: E2E session metadata must be cleaned up before release'
+    fi
     return 1
   fi
-  e2e_checkout_matches "$r" "$f" || {
-    echo 'BLOCKED: duplicate E2E start checkout identity does not match marker ref'
-    return 1
-  }
-  e2e_duplicate_session_matches "$r" "$i" "$f" || {
-    echo 'BLOCKED: duplicate E2E start session is malformed or conflicts with marker'
-    return 1
-  }
-  printf 'E2E ALREADY STARTED\nissue=%s\nref=%s\nclean=yes\nmutation=no-op\nstate=BUSY\n' "$i" "$f"
-}
-
-e2e_write_receipt() {
-  local r="$1"
-  local i="$2"
-  local f="$3"
-  local p=""
-
-  p="$(e2e_receipt_path "$r")" || return 1
-  if e2e_path_exists "$p" && ! e2e_regular_file "$p"; then
-    return 1
-  fi
-  wa "$p" "version=1\nissue=$i\nref=$f\n" || return 1
-  set -- $(e2e_read_receipt "$p") || return 1
-  [ "$1 $2 $3" = "1 $i $f" ]
-}
-
-e2e_release_duplicate() {
-  local i="$1"
-  local f="$2"
-  local r="$E"
-  local s=""
-  local p=""
-  local receipt_issue=""
-  local origin_main=""
-
-  s="$(ep "$r")"
-  p="$(e2e_receipt_path "$r")"
-  e2e_path_exists "$s" && {
-    echo 'BLOCKED: duplicate E2E release requires no session metadata'
-    return 1
-  }
-  e2e_path_exists "$p" || {
-    echo 'BLOCKED: E2E release marker is absent and the release receipt is missing'
-    return 1
-  }
-  set -- $(e2e_read_receipt "$p") || {
-    echo 'BLOCKED: E2E release receipt is malformed'
-    return 1
-  }
-  receipt_issue=$2
-  if [ "$receipt_issue" != "$i" ] || [ "$3" != "$f" ]; then
-    echo 'BLOCKED: duplicate E2E release receipt does not match caller Issue/ref'
-    echo "expected_issue=$receipt_issue"
-    echo "actual_issue=$i"
-    echo "expected_ref=$3"
-    echo "actual_ref=$f"
-    return 1
-  fi
-  e2e_checkout_identity "$r" || {
-    echo 'BLOCKED: duplicate E2E release checkout identity is invalid'
-    return 1
-  }
-  origin_main="$(am "$r")"
-  nuinui_ownership_valid_sha "$origin_main" || {
-    echo 'BLOCKED: duplicate E2E release could not read authoritative origin/main'
-    return 1
-  }
-  [ "$(hh "$r" 2>/dev/null)" = "$origin_main" ] || {
-    echo 'BLOCKED: duplicate E2E release HEAD is not authoritative origin/main'
-    return 1
-  }
-  printf 'E2E ALREADY RELEASED\nissue=%s\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE\n' "$i" "$f" "$origin_main"
-}
-
-e2e_release_active() {
-  local i="$1"
-  local f="$2"
-  local r="$E"
-  local k=""
-  local s=""
-  local marker_issue=""
-  local origin_main=""
-
-  k="$(mp "$r")"
-  s="$(ep "$r")"
-  set -- $(e2e_read_marker "$k") || {
-    echo 'BLOCKED: E2E release marker is malformed'
-    return 1
-  }
-  marker_issue=$1
-  if [ "$marker_issue" != "$i" ] || [ "$2" != "$f" ]; then
-    echo 'BLOCKED: E2E release marker does not match caller Issue/ref'
-    echo "expected_issue=$marker_issue"
-    echo "actual_issue=$i"
-    echo "expected_ref=$2"
-    echo "actual_ref=$f"
-    return 1
-  fi
-  e2e_path_exists "$s" && {
-    echo 'BLOCKED: E2E session metadata must be cleaned up before release'
-    return 1
-  }
-  e2e_checkout_matches "$r" "$f" || {
-    echo 'BLOCKED: E2E release checkout identity is invalid'
-    return 1
-  }
-  fp "$r" || {
-    echo 'BLOCKED: E2E release fetch/prune failed'
-    return 1
-  }
-  set -- $(e2e_read_marker "$k") || {
-    echo 'BLOCKED: E2E release marker changed or became malformed after fetch'
-    return 1
-  }
-  [ "$1" = "$i" ] && [ "$2" = "$f" ] || {
-    echo 'BLOCKED: E2E release marker changed after fetch'
-    return 1
-  }
-  e2e_path_exists "$s" && {
-    echo 'BLOCKED: E2E session metadata appeared after fetch'
-    return 1
-  }
-  e2e_checkout_matches "$r" "$f" || {
-    echo 'BLOCKED: E2E release checkout changed after fetch'
-    return 1
-  }
-  origin_main="$(am "$r")"
-  nuinui_ownership_valid_sha "$origin_main" || {
-    echo 'BLOCKED: E2E release could not read authoritative origin/main'
-    return 1
-  }
-  e2e_write_receipt "$r" "$i" "$f" || {
-    echo 'BLOCKED: could not atomically write the E2E release receipt; marker retained'
-    return 1
-  }
-  sd "$r" "$origin_main" >/dev/null 2>&1 || {
-    echo 'BLOCKED: could not detach E2E checkout to authoritative origin/main; marker retained'
-    return 1
-  }
-  e2e_checkout_matches "$r" "$origin_main" || {
-    echo 'BLOCKED: E2E checkout did not reach authoritative origin/main; marker retained'
-    return 1
-  }
-  rm "$k" || {
-    echo 'BLOCKED: could not remove E2E marker; release receipt retained'
-    return 1
-  }
-  echo 'E2E RELEASED'
 }
 
 es() {
-  local i="$1"
-  local f="$2"
-  local r="$E"
-  local k=""
-  local h=""
-  local origin_main=""
-  local current_head=""
-
-  k="$(mp "$r")"
-  nuinui_ownership_valid_issue "$i" || {
-    echo 'BLOCKED: invalid E2E Issue'
-    return 1
-  }
-  if e2e_path_exists "$k"; then
-    h="$(e2e_resolve_ref "$r" "$f")" || {
-      echo 'BLOCKED: tested-ref does not resolve to a commit in the E2E checkout'
-      return 1
-    }
-    e2e_start_duplicate "$i" "$h"
-    return $?
-  fi
-  gr "$r" &&
-    ao "$r" "$RT" &&
-    cn "$r" &&
-    [ -z "$(bn "$r")" ] &&
-    ! e2e_path_exists "$(ep "$r")" || {
-      echo 'BLOCKED: E2E start requires a valid clean detached checkout with no session'
-      return 1
-    }
-  fp "$r" || {
-    echo 'BLOCKED: E2E start fetch/prune failed'
-    return 1
-  }
-  origin_main="$(om "$r")" || {
-    echo 'BLOCKED: E2E start could not read origin/main'
-    return 1
-  }
-  nuinui_ownership_valid_sha "$origin_main" || {
-    echo 'BLOCKED: E2E start origin/main is invalid'
-    return 1
-  }
-  h="$(e2e_resolve_ref "$r" "$f")" || {
-    echo 'BLOCKED: tested-ref does not resolve to a commit in the E2E checkout'
-    return 1
-  }
-  current_head="$(hh "$r")" || return 1
-  if [ "$current_head" != "$origin_main" ]; then
-    an "$r" "$current_head" "$origin_main" && sd "$r" "$origin_main" >/dev/null 2>&1 || {
-      echo 'BLOCKED: E2E checkout cannot safely return to origin/main'
-      return 1
-    }
-  fi
-  sd "$r" "$h" >/dev/null 2>&1 || {
-    echo 'BLOCKED: E2E checkout cannot be fixed to tested-ref'
-    return 1
-  }
-  wa "$k" "issue=$i\nref=$h\n" || {
-    echo 'BLOCKED: could not atomically write E2E marker'
-    return 1
-  }
-  e2e_read_marker "$k" >/dev/null || {
-    echo 'BLOCKED: E2E marker verification failed'
-    return 1
-  }
-  echo 'E2E STARTED'
+  fixed_2plus1_human_test_start "$1" "$2" 'E2E STARTED' 'E2E ALREADY STARTED'
 }
 
 el() {
-  local i="$1"
-  local f="$2"
-
-  nuinui_ownership_valid_issue "$i" &&
-    nuinui_ownership_valid_sha "$f" &&
+  local issue=$1 ref=$2
+  nuinui_ownership_valid_issue "$issue" &&
+    nuinui_ownership_valid_sha "$ref" &&
     fm "$M" &&
     [ "$(git -C "$M" branch --show-current)" = codex/interim-sequential ] &&
-    cn "$M" &&
-    [ "$(hh "$M")" = "$f" ] &&
-    an "$M" "$(om "$M")" "$f" || return 1
-  es "$i" "$f"
+    cn "$M" && [ "$(hh "$M")" = "$ref" ] &&
+    an "$M" "$(om "$M")" "$ref" || return 1
+  es "$issue" "$ref"
 }
 
 ee() {
-  local i="$1"
-  local f="$2"
-  local r="$E"
-  local k=""
-
-  k="$(mp "$r")"
-  nuinui_ownership_valid_issue "$i" || {
-    echo 'BLOCKED: invalid E2E Issue'
-    return 1
-  }
-  nuinui_ownership_valid_sha "$f" || {
-    echo 'BLOCKED: tested-ref must be a full commit SHA'
-    return 1
-  }
-  f="$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')"
-  if e2e_path_exists "$k"; then
-    e2e_release_active "$i" "$f"
-  else
-    e2e_release_duplicate "$i" "$f"
-  fi
+  local output rc
+  output=
+  rc=0
+  output=$(fixed_2plus1_human_test_release "$1" "$2" 'E2E RELEASED' 'E2E ALREADY RELEASED' 2>&1) || rc=$?
+  printf '%s\n' "$output" | sed 's/^origin_default=/origin_main=/'
+  return "$rc"
 }
 CONTEXT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui
 
@@ -3629,7 +4111,7 @@ nuinui_command_result_last_result() {
   nuinui_command_result_has_trailing_newline "$nuinui_command_result_output" || [ ! -s "$nuinui_command_result_output" ] || printf '\n'
   printf 'output_end\n===== END NUINUI LAST RESULT =====\n'
 }
-T(){ local R O a f o c h;R=$(mktemp -d "${TMPDIR:-/tmp}/nui.XXXXXX")||return 1;trap 'rm -rf "$R"' EXIT;O=$R/o;M=$R/m;S=$R/s;E=$R/e;RT=;export GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b;git init -q --bare "$O";git init -q -b main "$M";echo a>$M/a;git -C "$M" add a;git -C "$M" commit -qm a;git -C "$M" remote add origin "$O";git -C "$M" push -qu origin main;git -C "$M" worktree add -q --detach "$S" origin/main;git -C "$M" worktree add -q --detach "$E" origin/main;a=$(om "$M");pf >/dev/null 2>&1&&return 1;li main >/dev/null&&li sub >/dev/null||return 1;f=$R/x;printf 'version=2\n'>$f;nuinui_ownership_validate_initialization "$f"&&return 1;o=$(st main SAY-9 "$a" x/say-9-a)||return 1;c=$(echo "$o"|sed -n 's/^  claim=//p');echo b>>$M/a;git -C "$M" add a;git -C "$M" commit -qm b;h=$(hh "$M");rl main "$h" "$c" >/dev/null 2>&1&&return 1;git -C "$M" push -q origin HEAD:main;rl main "$h" "$c" >/dev/null||return 1;echo 'SELFTEST PASS';}
+T(){ local R O a f o c h;R=$(mktemp -d "${TMPDIR:-/tmp}/nui.XXXXXX")||return 1;trap 'rm -rf "$R"' EXIT;O=$R/o;M=$R/m;S=$R/s;E=$R/e;RT=;export NUINUI_SELFTEST=1 NUINUI_MAIN_WT="$M" NUINUI_SUB_WT="$S" NUINUI_E2E_WT="$E" GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b;git init -q --bare "$O";git init -q -b main "$M";echo a>$M/a;git -C "$M" add a;git -C "$M" commit -qm a;git -C "$M" remote add origin "$O";git -C "$M" push -qu origin main;git -C "$M" worktree add -q --detach "$S" origin/main;git -C "$M" worktree add -q --detach "$E" origin/main;a=$(om "$M");pf >/dev/null 2>&1&&return 1;li main >/dev/null&&li sub >/dev/null||return 1;f=$R/x;printf 'version=2\n'>$f;nuinui_ownership_validate_initialization "$f"&&return 1;o=$(st main SAY-9 "$a" x/say-9-a)||return 1;c=$(echo "$o"|sed -n 's/^  claim=//p');echo b>>$M/a;git -C "$M" add a;git -C "$M" commit -qm b;h=$(hh "$M");rl main "$h" "$c" >/dev/null 2>&1&&return 1;git -C "$M" push -q origin HEAD:main;rl main "$h" "$c" >/dev/null||return 1;echo 'SELFTEST PASS';}
 nuinui_self_test() {
   ( T )
   nuinui_selftest_rc=$?
@@ -3677,7 +4159,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.21
+V=1.6.22
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {

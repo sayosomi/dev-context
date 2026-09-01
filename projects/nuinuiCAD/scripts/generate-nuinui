@@ -11,12 +11,19 @@ output=$1
 [ -n "$output" ] || usage
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-ownership_source=$script_dir/nuinui-src/ownership-schema.sh
+repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
+profile_source=$script_dir/nuinui-src/project-profile.sh
+fixed_2plus1_source_dir=$repo_root/shared/local-tools/fixed-2plus1
+profile_contract_source=$fixed_2plus1_source_dir/profile-contract.sh
+ownership_source=$fixed_2plus1_source_dir/ownership-schema.sh
+implementation_core_source=$fixed_2plus1_source_dir/implementation-core.sh
+facade_source=$fixed_2plus1_source_dir/lifecycle-facade.sh
+release_facade_source=$fixed_2plus1_source_dir/release-facade.sh
+human_test_core_source=$fixed_2plus1_source_dir/human-test-core.sh
 body_source=$script_dir/nuinui-src/nuinui-body.sh
 github_pr_source=$script_dir/nuinui-src/github-pr.sh
 required_checks_source=$script_dir/nuinui-src/required-checks.sh
 pr_auto_merge_source=$script_dir/nuinui-src/pr-auto-merge.sh
-facade_source=$script_dir/nuinui-src/lifecycle-facade.sh
 integration_clean_source=$script_dir/nuinui-src/integration-clean.sh
 e2e_source=$script_dir/nuinui-src/e2e.sh
 context_sync_source=$script_dir/nuinui-src/context-sync.sh
@@ -26,6 +33,14 @@ self_test_source=$script_dir/nuinui-src/self-test.sh
 dispatch_source=$script_dir/nuinui-src/cli-dispatch.sh
 artifact_path=$script_dir/nuinui
 
+[ -f "$profile_source" ] || {
+  echo "generate-nuinui: project profile source is missing: $profile_source" >&2
+  exit 1
+}
+[ -f "$profile_contract_source" ] || {
+  echo "generate-nuinui: fixed 2+1 profile contract source is missing: $profile_contract_source" >&2
+  exit 1
+}
 [ -f "$ownership_source" ] || {
   echo "generate-nuinui: ownership source is missing: $ownership_source" >&2
   exit 1
@@ -47,7 +62,15 @@ artifact_path=$script_dir/nuinui
   exit 1
 }
 [ -f "$facade_source" ] || {
-  echo "generate-nuinui: lifecycle façade source is missing: $facade_source" >&2
+  echo "generate-nuinui: shared lifecycle façade source is missing: $facade_source" >&2
+  exit 1
+}
+[ -f "$release_facade_source" ] || {
+  echo "generate-nuinui: shared release façade source is missing: $release_facade_source" >&2
+  exit 1
+}
+[ -f "$human_test_core_source" ] || {
+  echo "generate-nuinui: shared Human-test core source is missing: $human_test_core_source" >&2
   exit 1
 }
 [ -f "$integration_clean_source" ] || {
@@ -86,7 +109,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$ownership_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$facade_source"|"$integration_clean_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
+  "$profile_source"|"$profile_contract_source"|"$ownership_source"|"$implementation_core_source"|"$facade_source"|"$release_facade_source"|"$human_test_core_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$integration_clean_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
     echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -115,10 +138,15 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-# The source order is explicit and deterministic. The ownership schema must
-# precede every consumer that invokes it.
+# The source order is explicit and deterministic. The profile and shared
+# fixed-2+1 modules precede every consumer that invokes them.
 umask 077
-cat "$ownership_source" "$body_source" "$github_pr_source" "$required_checks_source" "$pr_auto_merge_source" "$facade_source" "$integration_clean_source" "$e2e_source" "$context_sync_source" "$diagnostics_source" "$command_result_source" "$self_test_source" "$dispatch_source" > "$temporary_path"
+cat "$profile_source" "$profile_contract_source" "$ownership_source" \
+  "$implementation_core_source" "$facade_source" "$release_facade_source" \
+  "$human_test_core_source" "$body_source" "$github_pr_source" \
+  "$required_checks_source" "$pr_auto_merge_source" "$integration_clean_source" \
+  "$e2e_source" "$context_sync_source" "$diagnostics_source" \
+  "$command_result_source" "$self_test_source" "$dispatch_source" > "$temporary_path"
 chmod 755 "$temporary_path"
 mv "$temporary_path" "$output_path"
 

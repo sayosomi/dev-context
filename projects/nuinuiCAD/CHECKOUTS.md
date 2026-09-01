@@ -6,6 +6,8 @@ nuinuiCADのlocal execution capacityとimplementation lane ownershipを、常設
 
 この3 checkoutは再利用候補ではなく、**存在を許可するexecution laneそのもの**である。Issue数、Ready数、worker数を理由に追加worktree / clone / checkoutを作らない。
 
+固定2+1のproject-independentなexecution semantics（2 implementation lane + 1 Human-test lane、FREE/BUSY/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`FIXED-2PLUS1-EXECUTION.md`](../../shared/FIXED-2PLUS1-EXECUTION.md) がownerする。この文書はnuinuiCAD固有のfixed path、public lane alias、Luna implementation role、Human-only Manual E2E policyをownerする。
+
 ## Fixed lanes
 
 | Lane | Checkout | Role |

@@ -11,10 +11,16 @@ output=$1
 [ -n "$output" ] || usage
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-ownership_source=$script_dir/nuinui-src/ownership-schema.sh
+repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
+profile_source=$script_dir/nuinui-src/project-profile.sh
+ownership_source=$repo_root/shared/local-tools/fixed-2plus1/ownership-schema.sh
 body_source=$script_dir/nuinui-handoff-check-src/handoff-body.sh
 artifact_path=$script_dir/nuinui-handoff-check
 
+[ -f "$profile_source" ] || {
+  echo "generate-nuinui-handoff-check: project profile source is missing: $profile_source" >&2
+  exit 1
+}
 [ -f "$ownership_source" ] || {
   echo "generate-nuinui-handoff-check: ownership source is missing: $ownership_source" >&2
   exit 1
@@ -31,7 +37,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$ownership_source"|"$body_source"|"$artifact_path")
+  "$profile_source"|"$ownership_source"|"$body_source"|"$artifact_path")
     echo 'generate-nuinui-handoff-check: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -61,7 +67,7 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 umask 077
-cat "$ownership_source" "$body_source" > "$temporary_path"
+cat "$profile_source" "$ownership_source" "$body_source" > "$temporary_path"
 chmod 755 "$temporary_path"
 mv "$temporary_path" "$output_path"
 
