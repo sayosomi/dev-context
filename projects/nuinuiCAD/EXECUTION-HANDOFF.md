@@ -106,6 +106,41 @@ HANDOFF VERIFIED
 
 を返す。
 
+### `HANDOFF VERIFIED` is terminal startup proof
+
+For the current Execution Envelope, `HANDOFF VERIFIED` is terminal startup proof for the startup facts owned by the canonical `nuinui-handoff-check`:
+
+- assigned repository / lane identity;
+- durable Issue and claim;
+- claimed branch;
+- checkpoint / HEAD;
+- claimed Base ancestry;
+- clean state;
+- absence of mutation / release-pending state;
+- exact remote topic presence / checkpoint according to `absent` or `exact` mode;
+- authoritative remote main;
+- no local / remote identity drift during the check.
+
+After `HANDOFF VERIFIED`, do not require a second command solely to re-prove those same facts. In particular, do not treat any of the following as a second post-success handoff gate merely for reconfirmation:
+
+- `git fetch origin --prune`;
+- `refs/remotes/origin/<branch>`;
+- `git branch -r`;
+- shorthand or ambiguous remote branch lookup;
+- another ad-hoc `ls-remote` query.
+
+This does not prohibit a fetch or remote inspection with a genuinely new material reason during a later implementation or integration operation. A genuinely new race-sensitive topic-branch fact must use exact remote authority:
+
+```text
+git ls-remote --heads origin "refs/heads/<exact branch>"
+```
+
+Local `refs/remotes/origin/*` refs are never authoritative remote-topic evidence against a successful canonical handoff. A later fetch must not override the successful handoff or turn a remote-tracking ref into topic authority.
+
+If a secondary observation conflicts with `HANDOFF VERIFIED` without a repository mutation or a genuinely new material external event, preserve the canonical handoff result for the facts owned by the helper. Do not send the Human back through diagnosis, preflight, state paste, or regenerated handoff merely because of that secondary observation. A genuinely new material drift signal still routes to the appropriate existing owner.
+
+Keep Topic remote mode semantics exact: `absent` means fresh unpushed generation, and `exact` means pushed-checkpoint continuation. The helper must not infer the mode.
+
 ## Failure handling
 
 Generic defaultはhard-stopである。Helperが`BLOCKED:`または`ERROR:`を返した場合、Lunaはrepository mutationへ進まない。

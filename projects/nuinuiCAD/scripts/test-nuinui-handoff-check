@@ -170,9 +170,17 @@ branch=$FRESH_BRANCH
 base=$NEW_MAIN
 claim=$FRESH_CLAIM
 STATE
+STALE_TRACKING_REF="refs/remotes/origin/$FRESH_BRANCH"
+git -C "$MAIN" update-ref "$STALE_TRACKING_REF" "$CHECKPOINT"
+STALE_TRACKING_SHA="$(git -C "$MAIN" rev-parse "$STALE_TRACKING_REF")"
+if git -C "$REMOTE" show-ref --verify --quiet "refs/heads/$FRESH_BRANCH"; then
+  fail "fresh absent-mode topic unexpectedly exists on remote before handoff"
+fi
 "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent > "$ROOT/out"
 grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "fresh absent-mode handoff did not verify"; }
+[ "$(git -C "$MAIN" rev-parse "$STALE_TRACKING_REF")" = "$STALE_TRACKING_SHA" ] || fail "absent-mode handoff changed stale local remote-tracking ref"
 echo "PASS: fresh topic absent mode"
+echo "PASS: absent mode ignores stale local remote-tracking topic"
 
 ORIGIN_URL="$(git -C "$MAIN" remote get-url origin)"
 git -C "$MAIN" remote set-url origin "$ROOT/missing-remote.git"
