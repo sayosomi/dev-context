@@ -53,7 +53,12 @@ ip() { printf '%s/nuinui-implementation-v1\n' "$(gd "$1")"; }
 sp() { printf '%s/nuinui-implementation-slot\n' "$(gd "$1")"; }
 kp() { printf '%s/nuinui-implementation-lock\n' "$(gd "$1")"; }
 rp() { printf '%s/nuinui-implementation-slot.releasing.%s\n' "$(gd "$1")" "$2"; }
-rds() { find "$(gd "$1")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | LC_ALL=C sort; }
+rds() {
+  runtime_releasing_git_dir=$(gd "$1") || return 1
+  runtime_releasing=$(find "$runtime_releasing_git_dir" -maxdepth 1 -type d \
+    -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  [ -z "$runtime_releasing" ] || printf '%s\n' "$runtime_releasing" | LC_ALL=C sort
+}
 mp() { printf '%s/nuinui-slot\n' "$(gd "$1")"; }
 ep() { printf '%s/nuinui-e2e-session\n' "$(gd "$1")"; }
 
@@ -104,7 +109,10 @@ id() {
   esac
 }
 
-nr() { [ -z "$(rds "$1")" ]; }
+nr() {
+  runtime_no_release_dirs=$(rds "$1") || return 1
+  [ -z "$runtime_no_release_dirs" ]
+}
 
 bo() {
   runtime_branch_path=$(CDPATH= cd -- "$1" && pwd -P) || return 1

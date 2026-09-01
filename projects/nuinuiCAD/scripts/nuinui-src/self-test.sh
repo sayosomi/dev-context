@@ -1,11 +1,11 @@
 T() {
-  local R O M S E manifest base output claim
+  local R O PROJECT_REPO IMPLEMENTATION_REPO HUMAN_TEST_REPO manifest base output claim
   R=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nui.XXXXXX")" && pwd -P) || return 1
   trap 'rm -rf "$R"' EXIT HUP INT TERM
   O=$R/sayosomi/nuinuiCAD.git
-  M=$R/main
-  S=$R/implementation
-  E=$R/human
+  PROJECT_REPO=$R/main
+  IMPLEMENTATION_REPO=$R/implementation
+  HUMAN_TEST_REPO=$R/human
   manifest=$R/LANES.conf
   export NUINUI_SELFTEST=1
   export NUINUI_RUNTIME_MANIFEST=$manifest
@@ -14,16 +14,16 @@ T() {
   export GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b
   mkdir -p "$R/sayosomi"
   git init -q --bare "$O"
-  git init -q -b main "$M"
-  git -C "$M" config user.name a
-  git -C "$M" config user.email a@b
-  printf '%s\n' a > "$M/a"
-  git -C "$M" add a
-  git -C "$M" commit -qm a
-  git -C "$M" remote add origin "$O"
-  git -C "$M" push -qu origin main
-  git -C "$M" worktree add -q --detach "$S" origin/main
-  git -C "$M" worktree add -q --detach "$E" origin/main
+  git init -q -b main "$PROJECT_REPO"
+  git -C "$PROJECT_REPO" config user.name a
+  git -C "$PROJECT_REPO" config user.email a@b
+  printf '%s\n' a > "$PROJECT_REPO/a"
+  git -C "$PROJECT_REPO" add a
+  git -C "$PROJECT_REPO" commit -qm a
+  git -C "$PROJECT_REPO" remote add origin "$O"
+  git -C "$PROJECT_REPO" push -qu origin main
+  git -C "$PROJECT_REPO" worktree add -q --detach "$IMPLEMENTATION_REPO" origin/main
+  git -C "$PROJECT_REPO" worktree add -q --detach "$HUMAN_TEST_REPO" origin/main
   git init -q "$R/result"
   printf '%s\n' \
     'version=1' \
@@ -32,22 +32,22 @@ T() {
     '' \
     '[lane main-source]' \
     'role=implementation' \
-    "path=$M" \
+    "path=$PROJECT_REPO" \
     'idle=branch' \
     '' \
     '[lane implementation]' \
     'role=implementation' \
-    "path=$S" \
+    "path=$IMPLEMENTATION_REPO" \
     'idle=detached' \
     '' \
     '[lane human]' \
     'role=human-test' \
-    "path=$E" \
+    "path=$HUMAN_TEST_REPO" \
     'idle=detached' > "$manifest"
   if lane_execution_preflight "$manifest" >/dev/null 2>&1; then return 1; fi
   lane_execution_lane_init "$manifest" 'main-source' >/dev/null || return 1
   lane_execution_lane_init "$manifest" implementation >/dev/null || return 1
-  base=$(om "$M") || return 1
+  base=$(om "$PROJECT_REPO") || return 1
   output=$(lane_execution_start "$manifest" implementation SAY-9 "$base" \
     codex/SAY-9-self-test) || return 1
   claim=$(printf '%s\n' "$output" | sed -n 's/^claim=//p')

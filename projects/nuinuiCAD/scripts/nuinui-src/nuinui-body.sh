@@ -2,7 +2,7 @@
 # The product manifest is resolved lazily so version/help/context commands do
 # not depend on a healthy lane topology.
 
-V=1.7.0
+V=1.7.1
 P=$0
 case "$P" in
   */*) ;;

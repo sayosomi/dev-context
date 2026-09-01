@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.7.0`。
+current standalone helper version: `1.7.1`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -142,6 +142,9 @@ shared/local-tools/lane-execution/render.sh
 
 shared/local-tools/lane-execution/implementation-operations.sh
   topology-neutral verify, lane-init, resume, release, recover, and integration adapters
+
+shared/local-tools/lane-execution/release-safety.sh
+  generic read-only duplicate-release proof preserving the v1 safety envelope
 
 projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
   nuinuiCAD's Work-ID / branch policy and explicit Human-test status hook for the generic preflight contract

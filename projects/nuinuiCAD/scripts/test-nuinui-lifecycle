@@ -1,5 +1,405 @@
 #!/bin/sh
 set -eu
 
-script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-exec /bin/sh "$script_dir/test-nuinui-runtime" "$@"
+SOURCE_HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
+ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-lifecycle.XXXXXX")" && pwd -P)
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() { echo "LIFECYCLE TEST FAIL: $*" >&2; exit 1; }
+assert_contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
+assert_not_contains() { if printf '%s\n' "$1" | grep -Fq -- "$2"; then fail "$3"; fi; }
+
+PROJECT=$ROOT/project
+HELPER=$PROJECT/scripts/nuinui
+REMOTE=$ROOT/sayosomi/nuinuiCAD.git
+SEED=$ROOT/seed
+MAIN=$ROOT/main
+IMPL=$ROOT/implementation
+OTHER=$ROOT/other
+HUMAN=$ROOT/human
+RESULT=$ROOT/result
+MANIFEST=$PROJECT/LANES.conf
+ORIGINAL_PATH=$PATH
+
+mkdir -p "$PROJECT/scripts" "$ROOT/unrelated" "$(dirname "$REMOTE")"
+cp "$SOURCE_HELPER" "$HELPER"
+chmod 755 "$HELPER"
+
+git init -q --bare "$REMOTE"
+git init -q -b main "$SEED"
+git -C "$SEED" config user.name test
+git -C "$SEED" config user.email test@example.invalid
+printf '%s\n' base > "$SEED/base.txt"
+git -C "$SEED" add base.txt
+git -C "$SEED" commit -qm base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -qu origin main
+git clone -q "$REMOTE" "$MAIN"
+git -C "$MAIN" config user.name test
+git -C "$MAIN" worktree add -q --detach "$IMPL" origin/main
+git -C "$MAIN" worktree add -q --detach "$HUMAN" origin/main
+git -C "$IMPL" config user.name test
+git -C "$IMPL" config user.email test@example.invalid
+git -C "$HUMAN" config user.name test
+git -C "$HUMAN" config user.email test@example.invalid
+git init -q "$RESULT"
+
+write_manifest() {
+  printf '%s\n' \
+    'version=1' \
+    'repository=sayosomi/nuinuiCAD' \
+    'default_branch=main' \
+    '' \
+    '[lane source]' \
+    'role=implementation' \
+    "path=$MAIN" \
+    'idle=branch' \
+    '' \
+    '[lane impl]' \
+    'role=implementation' \
+    "path=$IMPL" \
+    'idle=detached' \
+    '' \
+    '[lane human]' \
+    'role=human-test' \
+    "path=$HUMAN" \
+    'idle=detached' > "$MANIFEST"
+}
+
+write_manifest
+export NUINUI_SELFTEST=1
+export NUINUI_SELFTEST_RESULT_REPO=$RESULT
+unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
+cd "$ROOT/unrelated"
+
+gitdir() { git -C "$IMPL" rev-parse --absolute-git-dir; }
+slot_dir() { printf '%s/nuinui-implementation-slot\n' "$(gitdir)"; }
+lock_dir() { printf '%s/nuinui-implementation-lock\n' "$(gitdir)"; }
+marker_path() { printf '%s/nuinui-implementation-v1\n' "$(gitdir)"; }
+receipt_path() { printf '%s/nuinui-implementation-release-receipt\n' "$(gitdir)"; }
+
+metadata_snapshot() {
+  snapshot_path=$1
+  if [ -L "$snapshot_path" ]; then
+    printf 'symlink:%s\n' "$(readlink "$snapshot_path")"
+  elif [ -f "$snapshot_path" ]; then
+    cat "$snapshot_path"
+  elif [ -d "$snapshot_path" ]; then
+    printf 'directory\n'
+  else
+    printf 'absent\n'
+  fi
+}
+
+tombstone_snapshot() {
+  for snapshot_path in "$(gitdir)"/nuinui-implementation-slot.releasing.*; do
+    if [ -d "$snapshot_path" ]; then
+      printf '%s\n' "$snapshot_path"
+      metadata_snapshot "$snapshot_path/state"
+      metadata_snapshot "$snapshot_path/checkpoint"
+    fi
+  done
+}
+
+lane_snapshot() {
+  printf 'branch=%s\n' "$(git -C "$IMPL" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  printf 'head=%s\n' "$(git -C "$IMPL" rev-parse HEAD)"
+  printf 'status=%s\n' "$(git -C "$IMPL" status --porcelain)"
+  printf 'refs=%s\n' "$(git -C "$IMPL" for-each-ref refs/heads --format='%(refname) %(objectname)' | LC_ALL=C sort)"
+  printf 'slot=%s\n' "$(metadata_snapshot "$(slot_dir)/state")"
+  printf 'lock=%s\n' "$(metadata_snapshot "$(lock_dir)/state")"
+  printf 'tombstones=%s\n' "$(tombstone_snapshot)"
+  printf 'initialization=%s\n' "$(metadata_snapshot "$(marker_path)")"
+  printf 'receipt=%s\n' "$(metadata_snapshot "$(receipt_path)")"
+}
+
+clear_tombstones() {
+  for clear_path in "$(gitdir)"/nuinui-implementation-slot.releasing.*; do
+    [ -d "$clear_path" ] || continue
+    rm -rf "$clear_path"
+  done
+}
+
+sync_idle() {
+  git -C "$IMPL" fetch -q origin main
+  BASE=$(git -C "$IMPL" rev-parse origin/main)
+  git -C "$SEED" fetch -q origin main
+  git -C "$SEED" switch -q main
+  git -C "$SEED" merge -q --ff-only origin/main
+  rm -f "$IMPL/lifecycle-duplicate-dirty" "$IMPL/lifecycle-named-dirty"
+  git -C "$IMPL" switch -q --detach "$BASE"
+}
+
+prepare_duplicate() {
+  sync_idle
+  rm -rf "$(slot_dir)" "$(lock_dir)" "$(receipt_path)"
+  clear_tombstones
+  printf 'version=1\n' > "$(marker_path)"
+  DUPLICATE_ISSUE=SAY-200
+  DUPLICATE_BRANCH=codex/SAY-200-lifecycle
+  DUPLICATE_CLAIM=lifecycle-claim-200
+  printf 'version=1\nlane=impl\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+    "$DUPLICATE_ISSUE" "$DUPLICATE_BRANCH" "$BASE" "$BASE" \
+    "$DUPLICATE_CLAIM" > "$(receipt_path)"
+}
+
+expect_blocked() {
+  blocked_name=$1
+  blocked_checkpoint=$2
+  blocked_claim=$3
+  blocked_before=$(lane_snapshot)
+  if blocked_output=$("$HELPER" release impl "$blocked_checkpoint" "$blocked_claim" 2>&1); then
+    printf '%s\n' "$blocked_output"
+    fail "$blocked_name unexpectedly succeeded"
+  fi
+  assert_contains "$blocked_output" 'BLOCKED' "$blocked_name did not fail closed"
+  assert_not_contains "$blocked_output" 'IMPLEMENTATION ALREADY RELEASED' \
+    "$blocked_name was classified as a duplicate"
+  blocked_after=$(lane_snapshot)
+  [ "$blocked_before" = "$blocked_after" ] || fail "$blocked_name changed lifecycle state"
+  echo "PASS: $blocked_name"
+}
+
+expect_blocked_with_path() {
+  blocked_name=$1
+  blocked_path=$2
+  blocked_checkpoint=$3
+  blocked_claim=$4
+  blocked_before=$(lane_snapshot)
+  if blocked_output=$(PATH="$blocked_path" "$HELPER" release impl \
+    "$blocked_checkpoint" "$blocked_claim" 2>&1); then
+    printf '%s\n' "$blocked_output"
+    fail "$blocked_name unexpectedly succeeded"
+  fi
+  assert_contains "$blocked_output" 'BLOCKED' "$blocked_name did not fail closed"
+  blocked_after=$(lane_snapshot)
+  [ "$blocked_before" = "$blocked_after" ] || fail "$blocked_name changed lifecycle state"
+  echo "PASS: $blocked_name"
+}
+
+expect_duplicate_success() {
+  duplicate_before=$(lane_snapshot)
+  duplicate_output=$("$HELPER" release impl "$DUPLICATE_CHECKPOINT" "$DUPLICATE_CLAIM") || {
+    printf '%s\n' "$duplicate_output"
+    fail 'exact duplicate release failed'
+  }
+  assert_contains "$duplicate_output" 'IMPLEMENTATION ALREADY RELEASED' \
+    'exact duplicate release did not use the proven receipt path'
+  duplicate_after=$(lane_snapshot)
+  [ "$duplicate_before" = "$duplicate_after" ] || fail 'exact duplicate release changed lifecycle state'
+  echo 'PASS: exact duplicate release succeeds read-only'
+}
+
+prepare_duplicate
+DUPLICATE_CHECKPOINT=$BASE
+expect_duplicate_success
+
+prepare_duplicate
+rm "$(marker_path)"
+expect_blocked 'missing initialization marker rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+printf 'version=2\n' > "$(marker_path)"
+expect_blocked 'malformed initialization marker rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+FAKE_FIND_BIN=$ROOT/fake-find
+mkdir -p "$FAKE_FIND_BIN"
+printf '%s\n' '#!/bin/sh' 'exit 91' > "$FAKE_FIND_BIN/find"
+chmod 755 "$FAKE_FIND_BIN/find"
+prepare_duplicate
+expect_blocked_with_path 'tombstone discovery failure rejects duplicate' \
+  "$FAKE_FIND_BIN:$ORIGINAL_PATH" "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+TOMBSTONE=$(gitdir)/nuinui-implementation-slot.releasing.$DUPLICATE_CLAIM
+mkdir "$TOMBSTONE"
+printf 'version=1\nissue=%s\nbranch=%s\nbase=%s\nclaim=%s\n' \
+  "$DUPLICATE_ISSUE" "$DUPLICATE_BRANCH" "$BASE" "$DUPLICATE_CLAIM" > "$TOMBSTONE/state"
+printf '%s\n' "$BASE" > "$TOMBSTONE/checkpoint"
+expect_blocked 'release tombstone rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+expect_blocked 'wrong claim rejects duplicate' "$BASE" wrong-claim-200
+
+prepare_duplicate
+WRONG_CHECKPOINT=0000000000000000000000000000000000000001
+expect_blocked 'wrong checkpoint rejects duplicate' "$WRONG_CHECKPOINT" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+rm "$(receipt_path)"
+expect_blocked 'missing receipt rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+printf 'version=2\n' > "$(receipt_path)"
+expect_blocked 'malformed receipt rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+sed 's/^lane=impl$/lane=other/' "$(receipt_path)" > "$ROOT/receipt.tmp"
+mv "$ROOT/receipt.tmp" "$(receipt_path)"
+expect_blocked 'receipt lane mismatch rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+UNRELATED_BASE=$(printf 'unrelated base\n' | git -C "$IMPL" commit-tree "${BASE}^{tree}" -m unrelated-base)
+printf 'version=1\nlane=impl\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$DUPLICATE_ISSUE" "$DUPLICATE_BRANCH" "$UNRELATED_BASE" "$BASE" \
+  "$DUPLICATE_CLAIM" > "$(receipt_path)"
+expect_blocked 'receipt Base ancestry failure rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+DESCENDANT_CHECKPOINT=$(printf 'checkpoint not in default\n' | git -C "$IMPL" commit-tree \
+  "${BASE}^{tree}" -p "$BASE" -m checkpoint-not-in-default)
+printf 'version=1\nlane=impl\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$DUPLICATE_ISSUE" "$DUPLICATE_BRANCH" "$BASE" "$DESCENDANT_CHECKPOINT" \
+  "$DUPLICATE_CLAIM" > "$(receipt_path)"
+expect_blocked 'checkpoint not contained in fresh authoritative default rejects duplicate' \
+  "$DESCENDANT_CHECKPOINT" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+printf '%s\n' dirty > "$IMPL/lifecycle-duplicate-dirty"
+expect_blocked 'dirty checkout rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+git -C "$IMPL" branch lifecycle-idle-drift "$BASE"
+git -C "$IMPL" switch -q lifecycle-idle-drift
+expect_blocked 'wrong idle checkout rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+mkdir "$(lock_dir)"
+printf 'version=1\noperation=release\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$DUPLICATE_ISSUE" "$DUPLICATE_BRANCH" "$BASE" "$BASE" "$DUPLICATE_CLAIM" > "$(lock_dir)/state"
+expect_blocked 'mutation lock rejects duplicate' "$BASE" "$DUPLICATE_CLAIM"
+
+REAL_GIT=$(command -v git)
+FAKE_GIT_BIN=$ROOT/fake-git
+mkdir -p "$FAKE_GIT_BIN"
+{
+  printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+    '*ls-remote\ origin\ refs/heads/main*)' '  exit 92;;' 'esac'
+  printf 'exec %s "$@"\n' "$REAL_GIT"
+} > "$FAKE_GIT_BIN/git"
+chmod 755 "$FAKE_GIT_BIN/git"
+prepare_duplicate
+expect_blocked_with_path 'authoritative default read failure rejects duplicate' \
+  "$FAKE_GIT_BIN:$ORIGINAL_PATH" "$BASE" "$DUPLICATE_CLAIM"
+
+prepare_duplicate
+NEWER_CLAIM=newer-generation-200
+mkdir "$(slot_dir)"
+printf 'version=1\nissue=%s\nbranch=%s\nbase=%s\nclaim=%s\n' \
+  SAY-201 codex/SAY-201-newer "$BASE" "$NEWER_CLAIM" > "$(slot_dir)/state"
+expect_blocked 'newer active generation rejects stale receipt' "$BASE" "$DUPLICATE_CLAIM"
+
+setup_started() {
+  sync_idle
+  rm -rf "$(slot_dir)" "$(lock_dir)" "$(receipt_path)"
+  clear_tombstones
+  printf 'version=1\n' > "$(marker_path)"
+  ACTIVE_ISSUE=$1
+  ACTIVE_BRANCH=$2
+  ACTIVE_START=$(
+    "$HELPER" start impl "$ACTIVE_ISSUE" "$BASE" "$ACTIVE_BRANCH"
+  ) || fail "could not start $ACTIVE_ISSUE"
+  ACTIVE_CLAIM=$(printf '%s\n' "$ACTIVE_START" | sed -n 's/^claim=//p')
+  [ -n "$ACTIVE_CLAIM" ] || fail "start $ACTIVE_ISSUE did not return a claim"
+}
+
+setup_active() {
+  setup_started "$1" "$2"
+  printf '%s\n' "$ACTIVE_ISSUE" > "$IMPL/lifecycle-$ACTIVE_ISSUE"
+  git -C "$IMPL" add "lifecycle-$ACTIVE_ISSUE"
+  git -C "$IMPL" commit -qm "lifecycle $ACTIVE_ISSUE"
+  ACTIVE_CHECKPOINT=$(git -C "$IMPL" rev-parse HEAD)
+  git -C "$IMPL" push -q -u origin "$ACTIVE_BRANCH"
+  if [ "${3:-no}" = yes ]; then
+    git -C "$SEED" fetch -q origin "$ACTIVE_BRANCH"
+    git -C "$SEED" switch -q main
+    git -C "$SEED" merge -q --ff-only "origin/$ACTIVE_BRANCH"
+    git -C "$SEED" push -q origin main
+  fi
+}
+
+expect_active_blocked() {
+  expect_blocked "$1" "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM"
+}
+
+assert_release_success() {
+  success_output=$("$HELPER" release impl "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM") || {
+    printf '%s\n' "$success_output"
+    fail "$1 did not release"
+  }
+  assert_contains "$success_output" 'IMPLEMENTATION RELEASED' "$1 missing release result"
+  [ ! -e "$(slot_dir)" ] || fail "$1 retained active slot"
+  [ ! -e "$(lock_dir)" ] || fail "$1 retained mutation lock"
+  [ -f "$(receipt_path)" ] || fail "$1 did not write receipt"
+  echo "PASS: $1"
+}
+
+setup_active SAY-210 codex/SAY-210-elsewhere yes
+git -C "$IMPL" switch -q --detach "$BASE"
+git -C "$IMPL" worktree add -q "$OTHER" "$ACTIVE_BRANCH"
+expect_active_blocked 'claimed branch checked out elsewhere blocks release'
+git -C "$IMPL" worktree remove --force "$OTHER"
+
+setup_active SAY-211 codex/SAY-211-missing-ref yes
+git -C "$IMPL" switch -q --detach "$BASE"
+git -C "$IMPL" branch -D "$ACTIVE_BRANCH" >/dev/null
+git -C "$SEED" push -q origin ":$ACTIVE_BRANCH"
+expect_active_blocked 'claimed ref missing blocks release'
+
+setup_active SAY-212 codex/SAY-212-renamed-ref yes
+git -C "$IMPL" switch -q --detach "$BASE"
+git -C "$IMPL" branch -D "$ACTIVE_BRANCH" >/dev/null
+git -C "$SEED" push -q origin ":$ACTIVE_BRANCH"
+git -C "$IMPL" switch -q -c renamed-lifecycle "$ACTIVE_CHECKPOINT"
+assert_release_success 'differently named exact-ref branch is safely recovered'
+
+setup_active SAY-213 codex/SAY-213-wrong-head yes
+git -C "$IMPL" switch -q -c wrong-head-lifecycle "$BASE"
+expect_active_blocked 'named branch at wrong HEAD blocks release'
+
+setup_active SAY-214 codex/SAY-214-dirty-name yes
+git -C "$IMPL" switch -q -c dirty-name-lifecycle "$ACTIVE_CHECKPOINT"
+git -C "$SEED" push -q origin ":$ACTIVE_BRANCH"
+printf '%s\n' dirty > "$IMPL/lifecycle-named-dirty"
+expect_active_blocked 'dirty named branch blocks release'
+
+setup_active SAY-215 codex/SAY-215-wrong-local yes
+git -C "$IMPL" switch -q --detach "$BASE"
+git -C "$SEED" push -q origin ":$ACTIVE_BRANCH"
+git -C "$IMPL" update-ref "refs/heads/$ACTIVE_BRANCH" "$BASE"
+expect_active_blocked 'local topic at wrong SHA blocks release'
+
+setup_active SAY-216 codex/SAY-216-unmerged no
+git -C "$IMPL" switch -q --detach "$BASE"
+expect_active_blocked 'checkpoint not merged into authoritative default blocks release'
+
+setup_active SAY-217 codex/SAY-217-remote-mismatch yes
+git -C "$IMPL" switch -q --detach "$BASE"
+REMOTE_MISMATCH=$(printf 'remote topic mismatch\n' | git -C "$SEED" commit-tree \
+  "${ACTIVE_CHECKPOINT}^{tree}" -p "$ACTIVE_CHECKPOINT" -m remote-topic-mismatch)
+git -C "$SEED" push -q origin "$REMOTE_MISMATCH:refs/heads/$ACTIVE_BRANCH"
+expect_active_blocked 'remote topic mismatch blocks release'
+
+setup_started SAY-218 codex/SAY-218-receipt-failure
+RECEIPT_FAILURE=$(receipt_path)
+mkdir "$RECEIPT_FAILURE"
+if RECEIPT_FAILURE_OUTPUT=$("$HELPER" release impl "$BASE" "$ACTIVE_CLAIM" 2>&1); then
+  printf '%s\n' "$RECEIPT_FAILURE_OUTPUT"
+  fail 'receipt write failure unexpectedly succeeded'
+fi
+assert_contains "$RECEIPT_FAILURE_OUTPUT" 'BLOCKED' 'receipt write failure did not fail closed'
+[ ! -e "$(slot_dir)" ] || fail 'receipt write failure dropped active slot incorrectly'
+[ -d "$(lock_dir)" ] || fail 'receipt write failure dropped mutation lock'
+RECEIPT_FAILURE_TOMBSTONE=$(tombstone_snapshot)
+[ -n "$RECEIPT_FAILURE_TOMBSTONE" ] || fail 'receipt write failure dropped release tombstone'
+[ -d "$RECEIPT_FAILURE" ] || fail 'receipt write failure did not retain its injected fault'
+rm -rf "$RECEIPT_FAILURE"
+RECOVER_OUTPUT=$($HELPER recover impl "$ACTIVE_CLAIM")
+assert_contains "$RECOVER_OUTPUT" 'RECOVERED operation=release' \
+  'recover did not complete interrupted release'
+[ -f "$(receipt_path)" ] || fail 'recover did not restore release receipt'
+[ ! -e "$(lock_dir)" ] || fail 'recover retained release lock'
+[ -z "$(tombstone_snapshot)" ] || fail 'recover retained release tombstone'
+echo 'PASS: release receipt write failure retains recoverable state and recover completes it'
+
+echo 'NUINUI LIFECYCLE TEST PASS'
