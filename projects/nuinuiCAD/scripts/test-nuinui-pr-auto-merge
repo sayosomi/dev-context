@@ -334,12 +334,12 @@ assert_contains() {
   printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"
 }
 without_command_result_footer() {
-  printf '%s\n' "$1" | sed '/^===== NUINUI COMMAND RESULT =====$/,$d'
+  printf '%s\n' "$1" | sed '/^🧾 NUINUI COMMAND RESULT$/,$d'
 }
 assert_success_envelope() {
   name=$1
   actual=$2
-  expected=$(printf 'AUTO-MERGE RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE' \
+  expected=$(printf '🔀 AUTO-MERGE RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE' \
     "$PR_NUMBER" "$HEAD" "$MAIN")
   if [ "$(without_command_result_footer "$actual")" != "$expected" ]; then
     printf '%s\n' "$actual"
@@ -349,7 +349,7 @@ assert_success_envelope() {
 assert_first_line_classified() {
   first=$(printf '%s\n' "$1" | sed -n '1p')
   case "$first" in
-    BLOCKED:*|ERROR:*) ;;
+    ⛔\ BLOCKED:*|❌\ ERROR:*) ;;
     *) fail "$2: first line was not classified: $first" ;;
   esac
 }
@@ -465,7 +465,7 @@ run_duplicate() {
     printf '%s\n' "$output"
     fail "$name duplicate unexpectedly failed"
   fi
-  expected=$(printf 'AUTO-MERGE ALREADY RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE\nmutation=no-op' \
+  expected=$(printf '♻️ AUTO-MERGE ALREADY RESERVED\npr=%s\nhead=%s\nmain=%s\nmerge_method=MERGE\nmutation=no-op' \
     "$PR_NUMBER" "$HEAD" "$MAIN")
   [ "$(without_command_result_footer "$output")" = "$expected" ] || fail "$name duplicate envelope mismatch"
   [ "$(graphql_count "$CASE_ROOT/ops")" = 1 ] || fail "$name duplicate invoked GraphQL"
@@ -548,7 +548,10 @@ assert_no_graphql "$ROOT/toctou-complete/ops" 'TOCTOU pending to complete'
 
 run_failure 'reservation mutation race' mutation-race \
   'BLOCKED: all required checks are already complete'
-assert_contains "$output" '===== NUINUI COMMAND RESULT =====' 'mutation race did not emit command-result footer'
+assert_contains "$output" '🧾 NUINUI COMMAND RESULT' 'mutation race did not emit Human command-result heading'
+if printf '%s\n' "$output" | grep -Fq '===== END NUINUI COMMAND RESULT ====='; then
+  fail 'mutation race exposed legacy command-result footer'
+fi
 assert_contains "$output" 'mutation=unknown' 'mutation race was classified as no mutation'
 mutation_race_last_result=$(last_result_for_case mutation-race)
 assert_contains "$mutation_race_last_result" 'recovery=READY' 'mutation race last-result was not READY'

@@ -24,6 +24,10 @@ assert_line() {
   printf '%s\n' "$1" | grep -Eq -- "$2" || fail "$3"
 }
 
+assert_exact_line() {
+  printf '%s\n' "$1" | grep -Fqx -- "$2" || fail "$3"
+}
+
 assert_file_line() {
   grep -Eq -- "$2" "$1" || fail "$3"
 }
@@ -86,8 +90,9 @@ initialize_lanes() {
 }
 
 assert_footer() {
-  assert_contains "$1" '===== NUINUI COMMAND RESULT =====' "$2 missing footer"
-  assert_contains "$1" '===== END NUINUI COMMAND RESULT =====' "$2 missing footer end"
+  assert_exact_line "$1" '🧾 NUINUI COMMAND RESULT' "$2 missing Human command-result heading"
+  assert_not_contains "$1" '===== NUINUI COMMAND RESULT =====' "$2 exposed legacy command-result heading"
+  assert_not_contains "$1" '===== END NUINUI COMMAND RESULT =====' "$2 exposed legacy command-result footer"
 }
 
 assert_last_ready() {
@@ -97,7 +102,8 @@ assert_last_ready() {
     printf '%s\n' "$last_output"
     fail "$1 did not recover a terminal result"
   fi
-  assert_contains "$last_output" 'recovery=READY' "$1 was not recovery READY"
+  assert_exact_line "$last_output" '🧾 NUINUI LAST RESULT' "$1 missing Human last-result heading"
+  assert_exact_line "$last_output" '🟢 recovery=READY' "$1 was not decorated recovery READY"
 }
 
 write_valid_terminal() {
@@ -115,13 +121,14 @@ expect_invalid() {
     invalid_rc=$?
   fi
   [ "$invalid_rc" -ne 0 ] || fail "$invalid_name returned zero"
-  assert_contains "$invalid_output" 'recovery=INVALID' "$invalid_name was not invalid"
+  assert_exact_line "$invalid_output" '❌ recovery=INVALID' "$invalid_name recovery was not decorated"
   assert_not_contains "$invalid_output" 'recovery=READY' "$invalid_name reported READY"
 }
 
 setup_case successful-mutation
 success_output=$("$HELPER" lane-init main)
-assert_contains "$success_output" 'LANE INITIALIZED' 'successful mutation lost canonical output'
+assert_exact_line "$success_output" '🏗️ LANE INITIALIZED' 'successful mutation lost Human output heading'
+assert_exact_line "$success_output" '⭕ result=SUCCESS' 'successful mutation result was not decorated'
 assert_footer "$success_output" successful-mutation
 assert_file_line "$(state_path)" '^version=1$' 'successful state version is not strict'
 assert_file_line "$(state_path)" '^phase=TERMINAL$' 'successful state is not terminal'
@@ -131,12 +138,20 @@ assert_file_line "$(state_path)" '^mutation=yes$' 'successful state mutation is 
 expected_request_sha=$(printf '%s\0%s\0' lane-init main | shasum -a 256 | awk 'NR == 1 {print $1}')
 [ "$(state_value "$(state_path)" request_sha256)" = "$expected_request_sha" ] || fail 'request identity did not bind command and arguments'
 [ "$(cat "$(output_path)")" = 'LANE INITIALIZED' ] || fail 'stored output changed canonical output'
+assert_not_contains "$(cat "$(output_path)")" '🏗️' 'stored output contains Human decoration'
 assert_last_ready successful-mutation
 assert_contains "$last_output" 'command=lane-init' 'successful recovery command is wrong'
-assert_contains "$last_output" 'result=SUCCESS' 'successful recovery result is wrong'
+assert_exact_line "$last_output" '⭕ result=SUCCESS' 'successful recovery result is not decorated'
 assert_contains "$last_output" 'mutation=yes' 'successful recovery mutation is wrong'
-assert_contains "$last_output" 'LANE INITIALIZED' 'successful recovery lost canonical output'
+assert_contains "$last_output" '🏗️ LANE INITIALIZED' 'successful recovery lost Human output heading'
 assert_not_contains "$last_output" '===== NUINUI COMMAND RESULT =====' 'recovery exposed the command footer'
+assert_not_contains "$last_output" '===== NUINUI LAST RESULT =====' 'recovery exposed the legacy last-result heading'
+assert_not_contains "$last_output" '===== END NUINUI LAST RESULT =====' 'recovery exposed the legacy last-result footer'
+
+already_initialized_output=$("$HELPER" lane-init main)
+assert_exact_line "$already_initialized_output" '♻️ ALREADY INITIALIZED' 'duplicate lane initialization lost Human heading'
+assert_exact_line "$already_initialized_output" '⭕ result=SUCCESS' 'duplicate lane initialization result was not decorated'
+assert_footer "$already_initialized_output" duplicate-initialization
 
 setup_case no-op
 initialize_lanes
@@ -144,9 +159,10 @@ BASE=$(git -C "$M" rev-parse origin/main)
 "$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result FREE >/dev/null
 noop_output=$("$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result FREE)
 assert_contains "$noop_output" 'mutation=no-op' 'exact duplicate did not preserve no-op evidence'
+assert_exact_line "$noop_output" '⭕ result=SUCCESS' 'exact duplicate result was not decorated'
 assert_footer "$noop_output" no-op
 assert_last_ready no-op
-assert_contains "$last_output" 'result=SUCCESS' 'no-op result was not terminal success'
+assert_exact_line "$last_output" '⭕ result=SUCCESS' 'no-op result was not decorated terminal success'
 assert_contains "$last_output" 'mutation=no' 'no-op mutation was not classified no'
 
 setup_case blocked-before-mutation
@@ -162,13 +178,15 @@ else
 fi
 [ "$blocked_rc" -ne 0 ] || fail 'blocked mutation returned zero'
 assert_contains "$blocked_output" 'BLOCKED:' 'blocked mutation was not classified'
+assert_exact_line "$blocked_output" '⛔ BLOCKED: begin target lane is not FREE' 'blocked mutation headline was not decorated'
 assert_footer "$blocked_output" blocked-before-mutation
-assert_contains "$blocked_output" 'result=BLOCKED' 'blocked footer result is wrong'
+assert_exact_line "$blocked_output" '⛔ result=BLOCKED' 'blocked footer result is not decorated'
 assert_contains "$blocked_output" 'mutation=no' 'blocked footer mutation is wrong'
 after_blocked=$(git -C "$M" rev-parse HEAD):$(git -C "$M" status --porcelain):$(git -C "$S" rev-parse HEAD)
 [ "$before_blocked" = "$after_blocked" ] || fail 'blocked mutation changed lane state'
 assert_last_ready blocked-before-mutation
 assert_contains "$last_output" 'result=BLOCKED' 'blocked result was not recoverable'
+assert_exact_line "$last_output" '⛔ result=BLOCKED' 'blocked recovered result is not decorated'
 assert_contains "$last_output" 'mutation=no' 'blocked recovered mutation is wrong'
 
 setup_case blocked-after-start
@@ -182,10 +200,12 @@ else
 fi
 [ "$ambiguous_rc" -ne 0 ] || fail 'ambiguous start returned zero'
 assert_contains "$ambiguous_output" 'BLOCKED: start mutation completion could not be proven' 'ambiguous start did not preserve canonical BLOCKED evidence'
-assert_contains "$ambiguous_output" 'result=BLOCKED' 'ambiguous start footer result is wrong'
+assert_exact_line "$ambiguous_output" '⛔ BLOCKED: start mutation completion could not be proven' 'ambiguous start headline was not decorated'
+assert_exact_line "$ambiguous_output" '⛔ result=BLOCKED' 'ambiguous start footer result is not decorated'
 assert_contains "$ambiguous_output" 'mutation=unknown' 'ambiguous start was not classified as unknown mutation'
 assert_last_ready blocked-after-start
 assert_contains "$last_output" 'result=BLOCKED' 'ambiguous start result was not recoverable'
+assert_exact_line "$last_output" '⛔ result=BLOCKED' 'ambiguous start recovered result is not decorated'
 assert_contains "$last_output" 'mutation=unknown' 'ambiguous start recovery did not preserve unknown mutation'
 
 setup_case e2e-blocked
@@ -199,10 +219,11 @@ else
 fi
 [ "$e2e_blocked_rc" -ne 0 ] || fail 'blocked E2E start returned zero'
 assert_contains "$e2e_blocked_output" 'BLOCKED:' 'blocked E2E start did not report canonical BLOCKED evidence'
-assert_contains "$e2e_blocked_output" 'result=BLOCKED' 'blocked E2E footer result is wrong'
+assert_exact_line "$e2e_blocked_output" '⛔ result=BLOCKED' 'blocked E2E footer result is not decorated'
 assert_contains "$e2e_blocked_output" 'mutation=unknown' 'blocked E2E result was treated as no mutation'
 assert_last_ready e2e-blocked
 assert_contains "$last_output" 'result=BLOCKED' 'blocked E2E result was not recoverable'
+assert_exact_line "$last_output" '⛔ result=BLOCKED' 'blocked E2E recovered result is not decorated'
 assert_contains "$last_output" 'mutation=unknown' 'blocked E2E recovery did not preserve unknown mutation'
 
 setup_case interrupted
@@ -218,7 +239,9 @@ fi
 [ "$interrupted_rc" -ne 0 ] || fail 'STARTED result returned zero'
 assert_contains "$interrupted_output" 'operation_id=cccccccccccccccccccccccccccccccccccccccc' 'incomplete operation identity was lost'
 assert_contains "$interrupted_output" 'result=INCOMPLETE' 'incomplete result was not reported'
+assert_exact_line "$interrupted_output" '🟠 result=INCOMPLETE' 'incomplete result was not decorated'
 assert_contains "$interrupted_output" 'recovery=BLOCKED' 'incomplete recovery was not blocked'
+assert_exact_line "$interrupted_output" '⛔ recovery=BLOCKED' 'incomplete recovery was not decorated'
 assert_not_contains "$interrupted_output" 'old canonical output' 'incomplete result exposed old output'
 assert_not_contains "$interrupted_output" 'recovery=READY' 'incomplete result reported READY'
 
@@ -320,11 +343,13 @@ else
 fi
 [ "$integration_rc" -ne 0 ] || fail 'integration push failure returned zero'
 assert_contains "$integration_output" 'ERROR: integration push failed after verified merge commit' 'integration failure evidence is missing'
-assert_contains "$integration_output" 'result=ERROR' 'integration failure footer result is wrong'
+assert_exact_line "$integration_output" '❌ ERROR: integration push failed after verified merge commit' 'integration failure headline was not decorated'
+assert_exact_line "$integration_output" '❌ result=ERROR' 'integration failure footer result is not decorated'
 assert_contains "$integration_output" 'mutation=yes' 'post-commit push failure was not classified as mutation'
 assert_footer "$integration_output" integration-push-failure
 assert_last_ready integration-push-failure
 assert_contains "$last_output" 'result=ERROR' 'integration error was not recoverable'
+assert_exact_line "$last_output" '❌ result=ERROR' 'integration recovered result is not decorated'
 assert_contains "$last_output" 'mutation=yes' 'recovered integration mutation evidence is wrong'
 assert_contains "$last_output" "head=" 'recovered integration output lost local head evidence'
 assert_not_contains "$last_output" '===== NUINUI COMMAND RESULT =====' 'integration recovery exposed the command footer'

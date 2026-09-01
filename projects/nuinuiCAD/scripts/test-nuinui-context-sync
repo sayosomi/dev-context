@@ -184,6 +184,7 @@ TEST_PATH=$REAL_PATH
 
 write_wrapper
 output=$(call_helper context-audit "$TARGET" "$BLOB_NEW") || fail "valid behind audit failed: $output"
+assert_line "$output" '🔎 AUDIT COMPLETE' 'valid behind audit Human heading'
 assert_contains "$output" 'AUDIT COMPLETE' 'valid behind audit'
 assert_contains "$output" "head=$BASE" 'valid behind audit'
 assert_contains "$output" "origin_main=$TARGET" 'valid behind audit'
@@ -231,6 +232,7 @@ unset NUINUI_GIT_WRAPPER_MODE
 TEST_PATH=$REAL_PATH
 
 output=$(call_helper context-sync "$TARGET" "$BLOB_NEW") || fail "valid sync failed: $output"
+assert_line "$output" '🔄 CONTEXT SYNCED' 'valid sync Human heading'
 assert_contains "$output" 'CONTEXT SYNCED' 'valid sync'
 assert_contains "$output" "head=$TARGET" 'valid sync'
 assert_contains "$output" "artifact_blob=$BLOB_NEW" 'valid sync'
@@ -238,6 +240,7 @@ assert_contains "$output" 'clean=yes' 'valid sync'
 assert_eq "$(git -C "$PROD" rev-parse HEAD)" "$TARGET" 'post-sync head'
 assert_eq "$(git -C "$PROD" rev-parse HEAD:$ARTIFACT)" "$BLOB_NEW" 'post-sync artifact'
 output=$(call_helper context-sync "$TARGET" "$BLOB_NEW") || fail "already-current sync failed: $output"
+assert_line "$output" '🔄 CONTEXT SYNCED' 'already-current sync Human heading'
 assert_contains "$output" 'CONTEXT SYNCED' 'already-current sync'
 expect_failure_unchanged 'wrong sync artifact' context-sync "$TARGET" "$BLOB_OLD"
 expect_failure_unchanged 'sync expected main mismatch' context-sync "$BASE" "$BLOB_OLD"
@@ -266,6 +269,7 @@ TEST_PATH=$REAL_PATH
 make_target_fixture dev-audit
 dev_before=$(fixture_state)
 output=$(call_helper context-dev-audit "$BASE_BRANCH" "$TARGET") || fail "valid dev audit failed: $output"
+assert_line "$output" '🔎 DEV-CONTEXT AUDIT COMPLETE' 'valid dev audit Human heading'
 assert_contains "$output" 'DEV-CONTEXT AUDIT COMPLETE' 'valid dev audit'
 assert_contains "$output" "worktree=$DEV" 'valid dev audit'
 assert_contains "$output" "branch=$BASE_BRANCH" 'valid dev audit'
@@ -299,6 +303,7 @@ expect_failure_unchanged 'wrong expected dev head' context-dev-audit "$BASE_BRAN
 make_base_fixture transition-ok
 paths_before=$(git -C "$PROD" worktree list --porcelain | sed -n 's/^worktree //p')
 output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "valid dev transition failed: $output"
+assert_line "$output" '🔀 DEV-CONTEXT TRANSITIONED' 'valid dev transition Human heading'
 assert_contains "$output" 'DEV-CONTEXT TRANSITIONED' 'valid dev transition'
 assert_contains "$output" "worktree=$DEV" 'valid dev transition'
 assert_contains "$output" "branch=$NEW_BRANCH" 'valid dev transition'
@@ -320,7 +325,7 @@ NUINUI_GIT_WRAPPER_MODE=duplicate-no-mutation; export NUINUI_GIT_WRAPPER_MODE
 output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "exact duplicate transition failed: $output"
 unset NUINUI_GIT_WRAPPER_MODE
 TEST_PATH=$REAL_PATH
-assert_line "$output" 'DEV-CONTEXT ALREADY TRANSITIONED' 'exact duplicate transition'
+assert_line "$output" '♻️ DEV-CONTEXT ALREADY TRANSITIONED' 'exact duplicate transition'
 assert_line "$output" "worktree=$DEV" 'exact duplicate transition'
 assert_line "$output" "branch=$NEW_BRANCH" 'exact duplicate transition'
 assert_line "$output" "base=$TARGET" 'exact duplicate transition'
@@ -335,9 +340,13 @@ assert_eq "$(git -C "$PROD" rev-parse "refs/heads/$OLD_BRANCH")" "$BASE" 'exact 
 assert_eq "$(git -C "$DEV" symbolic-ref --short HEAD)" "$NEW_BRANCH" 'exact duplicate branch'
 assert_eq "$(git -C "$DEV" rev-parse HEAD)" "$TARGET" 'exact duplicate head'
 last_result=$(call_helper last-result) || fail "duplicate last-result failed: $last_result"
-assert_line "$last_result" 'result=SUCCESS' 'duplicate last-result'
+assert_line "$last_result" '🧾 NUINUI LAST RESULT' 'duplicate last-result Human heading'
+assert_line "$last_result" '⭕ result=SUCCESS' 'duplicate last-result'
 assert_line "$last_result" 'mutation=no' 'duplicate last-result'
-assert_line "$last_result" 'DEV-CONTEXT ALREADY TRANSITIONED' 'duplicate last-result'
+assert_line "$last_result" '♻️ DEV-CONTEXT ALREADY TRANSITIONED' 'duplicate last-result'
+case "$last_result" in
+  *'===== NUINUI LAST RESULT ====='*|*'===== END NUINUI LAST RESULT ====='*) fail 'duplicate last-result exposed legacy separators' ;;
+esac
 
 make_base_fixture progressed
 output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "progressed fixture setup failed: $output"

@@ -17,20 +17,31 @@ E2E_CLOSURE_TMPDIR="$ROOT/e2e-closure-tmp"
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 assert_line() { printf '%s\n' "$1" | grep -Eq "$2" || fail "$3"; }
 assert_exact_line() { printf '%s\n' "$1" | grep -Fqx "$2" || fail "$3"; }
+assert_not_contains() {
+  if printf '%s\n' "$1" | grep -Fq -- "$2"; then
+    fail "$3"
+  fi
+}
 without_command_result_footer() {
-  printf '%s\n' "$1" | sed '/^===== NUINUI COMMAND RESULT =====$/,$d'
+  printf '%s\n' "$1" | sed '/^🧾 NUINUI COMMAND RESULT$/,$d'
 }
 assert_preflight_boundary() {
   preflight_boundary_output=$1
   preflight_boundary_marker=$2
-  [ "$(printf '%s\n' "$preflight_boundary_output" | sed -n '1p')" = '===== NUINUI PREFLIGHT RESULT =====' ] || {
+  [ "$(printf '%s\n' "$preflight_boundary_output" | sed -n '1p')" = '✈️ NUINUI PREFLIGHT RESULT' ] || {
     printf '%s\n' "$preflight_boundary_output"
-    fail "preflight output did not begin with the fixed header"
+    fail "preflight output did not begin with the Human header"
   }
-  [ "$(printf '%s\n' "$preflight_boundary_output" | tail -n 1)" = "$preflight_boundary_marker" ] || {
+  preflight_boundary_expected_marker='❌ PREFLIGHT BLOCKED'
+  [ "$preflight_boundary_marker" = 'PREFLIGHT PASS' ] && preflight_boundary_expected_marker='⭕ PREFLIGHT PASS'
+  [ "$(printf '%s\n' "$preflight_boundary_output" | tail -n 1)" = "$preflight_boundary_expected_marker" ] || {
     printf '%s\n' "$preflight_boundary_output"
-    fail "preflight output did not end with $preflight_boundary_marker"
+    fail "preflight output did not end with the decorated $preflight_boundary_marker"
   }
+  assert_line "$preflight_boundary_output" '^1️⃣ main path=' 'preflight missing decorated main lane heading'
+  assert_line "$preflight_boundary_output" '^2️⃣ sub path=' 'preflight missing decorated sub lane heading'
+  assert_line "$preflight_boundary_output" '^🖐️ e2e path=' 'preflight missing decorated E2E lane heading'
+  assert_not_contains "$preflight_boundary_output" '===== NUINUI PREFLIGHT RESULT =====' 'preflight exposed legacy heading'
 }
 gitdir() { git -C "$1" rev-parse --absolute-git-dir; }
 slot_state() { printf '%s/nuinui-implementation-slot/state\n' "$(gitdir "$1")"; }
@@ -82,7 +93,7 @@ expect_public_request_rejected() {
     rc=$?
   fi
   [ "$rc" -ne 0 ] || fail "$name returned zero"
-  if printf '%s\n' "$output" | grep -q '^ERROR: public command .* failed without a diagnostic$'; then
+  if printf '%s\n' "$output" | grep -q '^❌ ERROR: public command .* failed without a diagnostic$'; then
     printf '%s\n' "$output"
     fail "$name used the generic no-diagnostic fallback"
   fi
@@ -112,7 +123,7 @@ expect_e2e_blocked_no_mutation() {
     expect_e2e_rc=$?
   fi
   [ "$expect_e2e_rc" -ne 0 ] || fail "$expect_e2e_case returned zero"
-  assert_line "$expect_e2e_output" '^BLOCKED:' "$expect_e2e_case did not report BLOCKED"
+  assert_line "$expect_e2e_output" '^⛔ BLOCKED:' "$expect_e2e_case did not report decorated BLOCKED"
   expect_e2e_after=$(e2e_snapshot "$E2E")
   [ "$expect_e2e_before" = "$expect_e2e_after" ] || fail "$expect_e2e_case mutated E2E state"
   echo "PASS: $expect_e2e_case is blocked without mutation"
@@ -169,7 +180,7 @@ expect_begin_duplicate() {
     printf '%s\n' "$begin_duplicate_output"
     fail "$begin_duplicate_name unexpectedly failed"
   fi
-  [ "$(printf '%s\n' "$begin_duplicate_output" | sed -n '1p')" = 'IMPLEMENTATION ALREADY STARTED' ] || {
+  [ "$(printf '%s\n' "$begin_duplicate_output" | sed -n '1p')" = '♻️ IMPLEMENTATION ALREADY STARTED' ] || {
     printf '%s\n' "$begin_duplicate_output"
     fail "$begin_duplicate_name missing duplicate marker"
   }
@@ -180,7 +191,7 @@ expect_begin_duplicate() {
   assert_line "$begin_duplicate_output" "^checkpoint=$begin_duplicate_base$" "$begin_duplicate_name checkpoint is not Base"
   assert_line "$begin_duplicate_output" "^claim=$begin_duplicate_claim$" "$begin_duplicate_name changed claim"
   assert_line "$begin_duplicate_output" '^clean=yes$' "$begin_duplicate_name missing clean state"
-  assert_line "$begin_duplicate_output" '^state=BUSY$' "$begin_duplicate_name missing BUSY state"
+  assert_line "$begin_duplicate_output" '^🔵 state=BUSY$' "$begin_duplicate_name missing decorated BUSY state"
   assert_line "$begin_duplicate_output" "^peer_lane=$begin_duplicate_peer_lane$" "$begin_duplicate_name missing peer lane"
   assert_line "$begin_duplicate_output" "^peer_state=$begin_duplicate_peer_state$" "$begin_duplicate_name wrong peer state"
   assert_line "$begin_duplicate_output" "^peer_issue=$begin_duplicate_peer_issue$" "$begin_duplicate_name wrong peer Issue"
@@ -203,11 +214,11 @@ expect_begin_conflict() {
     begin_conflict_rc=$?
   fi
   [ "$begin_conflict_rc" -ne 0 ] || fail "$begin_conflict_name returned zero"
-  printf '%s\n' "$begin_conflict_output" | grep -Eq '^(BLOCKED|ERROR):' || {
+  printf '%s\n' "$begin_conflict_output" | grep -Eq '^(⛔ BLOCKED:|❌ ERROR:)' || {
     printf '%s\n' "$begin_conflict_output"
     fail "$begin_conflict_name did not report an actionable failure"
   }
-  if printf '%s\n' "$begin_conflict_output" | grep -q '^IMPLEMENTATION ALREADY STARTED$'; then
+  if printf '%s\n' "$begin_conflict_output" | grep -q '^♻️ IMPLEMENTATION ALREADY STARTED$'; then
     fail "$begin_conflict_name was classified as a duplicate"
   fi
   begin_conflict_after=$(begin_state "$begin_conflict_target" "$begin_conflict_peer")
@@ -270,7 +281,7 @@ expect_resume_blocked() {
     cat "$ROOT/resume-blocked.out"
     fail "$name unexpectedly succeeded"
   fi
-  grep -q '^BLOCKED:' "$ROOT/resume-blocked.out" || {
+  grep -q '^⛔ BLOCKED:' "$ROOT/resume-blocked.out" || {
     cat "$ROOT/resume-blocked.out"
     fail "$name did not fail closed"
   }
@@ -349,9 +360,9 @@ expect_malformed_release() {
     rc=$?
   fi
   [ "$rc" -ne 0 ] || fail "$name returned zero"
-  [ "$(printf '%s\n' "$output" | sed -n '1p')" = 'BLOCKED: malformed durable ownership state' ] || fail "$name was not classified first as malformed durable ownership state"
-  assert_line "$output" '^BLOCKED: malformed durable ownership state$' "$name was not classified as malformed durable ownership state"
-  if printf '%s\n' "$output" | grep -Eq '^BLOCKED: (checkpoint|claim) mismatch$'; then
+  [ "$(printf '%s\n' "$output" | sed -n '1p')" = '⛔ BLOCKED: malformed durable ownership state' ] || fail "$name was not classified first as malformed durable ownership state"
+  assert_line "$output" '^⛔ BLOCKED: malformed durable ownership state$' "$name was not classified as malformed durable ownership state"
+  if printf '%s\n' "$output" | grep -Eq '^⛔ BLOCKED: (checkpoint|claim) mismatch$'; then
     fail "$name reported a checkpoint or claim mismatch instead of malformed state"
   fi
   [ "$(cat "$SLOT_PATH")" = "$expected_slot" ] || fail "$name changed the durable slot"
@@ -383,7 +394,7 @@ expect_release_blocked() {
     cat "$ROOT/release-conflict.out"
     fail "$name unexpectedly succeeded"
   fi
-  grep -q '^BLOCKED:' "$ROOT/release-conflict.out" || { cat "$ROOT/release-conflict.out"; fail "$name did not fail closed"; }
+  grep -q '^⛔ BLOCKED:' "$ROOT/release-conflict.out" || { cat "$ROOT/release-conflict.out"; fail "$name did not fail closed"; }
   [ "$(cat "$SLOT_PATH")" = "$before_slot" ] || fail "$name changed the durable slot"
   after_dirs="$(find "$(gitdir "$MAIN")" -maxdepth 1 -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | sort)"
   [ "$after_dirs" = "$before_dirs" ] || fail "$name changed release-pending state"
@@ -410,7 +421,7 @@ expect_release_duplicate() {
     printf '%s\n' "$output"
     fail "$name unexpectedly failed"
   fi
-  [ "$(printf '%s\n' "$output" | sed -n '1p')" = 'IMPLEMENTATION ALREADY RELEASED' ] || {
+  [ "$(printf '%s\n' "$output" | sed -n '1p')" = '♻️ IMPLEMENTATION ALREADY RELEASED' ] || {
     printf '%s\n' "$output"
     fail "$name missing duplicate marker"
   }
@@ -424,7 +435,7 @@ expect_release_duplicate() {
   assert_line "$output" "^origin_main=$release_duplicate_origin$" "$name missing authoritative main"
   assert_line "$output" '^clean=yes$' "$name missing clean state"
   assert_line "$output" '^mutation=no-op$' "$name missing no-op marker"
-  assert_line "$output" '^state=FREE$' "$name missing FREE state"
+  assert_line "$output" '^🟢 state=FREE$' "$name missing decorated FREE state"
   after=$(release_snapshot "$release_duplicate_repo")
   [ "$before" = "$after" ] || fail "$name changed durable or Git state"
   echo "PASS: $name"
@@ -448,7 +459,7 @@ expect_duplicate_blocked() {
     duplicate_blocked_rc=$?
   fi
   [ "$duplicate_blocked_rc" -ne 0 ] || fail "$name returned zero"
-  printf '%s\n' "$output" | grep -q '^BLOCKED:' || {
+  printf '%s\n' "$output" | grep -q '^⛔ BLOCKED:' || {
     printf '%s\n' "$output"
     fail "$name did not fail closed"
   }
@@ -475,11 +486,11 @@ expect_duplicate_find_failure() {
     duplicate_find_failure_rc=$?
   fi
   [ "$duplicate_find_failure_rc" -ne 0 ] || fail "$name returned zero"
-  if printf '%s\n' "$output" | grep -q '^IMPLEMENTATION ALREADY RELEASED$'; then
+  if printf '%s\n' "$output" | grep -q '^♻️ IMPLEMENTATION ALREADY RELEASED$'; then
     printf '%s\n' "$output"
     fail "$name was classified as a duplicate"
   fi
-  printf '%s\n' "$output" | grep -q '^BLOCKED:' || {
+  printf '%s\n' "$output" | grep -q '^⛔ BLOCKED:' || {
     printf '%s\n' "$output"
     fail "$name did not fail closed"
   }
@@ -528,7 +539,7 @@ release_main() {
   release_main_base=$(sed -n 's/^base=//p' "$(slot_state "$MAIN")")
   merge_topic_into_main "$branch"
   "$HELPER" release main "$checkpoint" "$claim" >"$ROOT/release.out"
-  assert_line "$(cat "$ROOT/release.out")" '^IMPLEMENTATION RELEASED$' 'release did not succeed'
+  assert_line "$(cat "$ROOT/release.out")" '^🏁 IMPLEMENTATION RELEASED$' 'release did not succeed'
   assert_line "$(cat "$ROOT/release.out")" '^lane=main$' 'release missing lane'
   assert_line "$(cat "$ROOT/release.out")" "^saved_checkpoint=$checkpoint$" 'release missing saved checkpoint'
   assert_line "$(cat "$ROOT/release.out")" "^released_claim=$claim$" 'release missing claim'
@@ -537,7 +548,7 @@ release_main() {
   assert_line "$(cat "$ROOT/release.out")" '^idle_head=[0-9a-fA-F]{40}$' 'release missing idle HEAD'
   assert_line "$(cat "$ROOT/release.out")" '^origin_main=[0-9a-fA-F]{40}$' 'release missing origin main'
   assert_line "$(cat "$ROOT/release.out")" '^clean=yes$' 'release missing clean state'
-  assert_line "$(cat "$ROOT/release.out")" '^state=FREE$' 'release missing FREE state'
+  assert_line "$(cat "$ROOT/release.out")" '^🟢 state=FREE$' 'release missing decorated FREE state'
   assert_release_receipt main "$release_main_issue" "$branch" "$release_main_base" "$checkpoint" "$claim"
 }
 
@@ -548,7 +559,7 @@ assert_release_envelope() {
   claim=$4
   branch=$5
   idle_branch=$6
-  assert_line "$output" '^IMPLEMENTATION RELEASED$' 'drift release did not succeed'
+  assert_line "$output" '^🏁 IMPLEMENTATION RELEASED$' 'drift release did not succeed'
   assert_line "$output" "^lane=$lane$" 'drift release missing lane'
   assert_line "$output" "^saved_checkpoint=$checkpoint$" 'drift release missing saved checkpoint'
   assert_line "$output" "^released_claim=$claim$" 'drift release missing claim'
@@ -557,7 +568,7 @@ assert_release_envelope() {
   assert_line "$output" '^idle_head=[0-9a-fA-F]{40}$' 'drift release missing idle HEAD'
   assert_line "$output" '^origin_main=[0-9a-fA-F]{40}$' 'drift release missing origin main'
   assert_line "$output" '^clean=yes$' 'drift release missing clean state'
-  assert_line "$output" '^state=FREE$' 'drift release missing FREE state'
+  assert_line "$output" '^🟢 state=FREE$' 'drift release missing decorated FREE state'
 }
 
 setup_main_drift() {
@@ -649,7 +660,7 @@ expect_release_blocked_command() {
     rc=$?
   fi
   [ "$rc" -ne 0 ] || fail "$name returned zero"
-  printf '%s\n' "$output" | grep -q '^BLOCKED:' || {
+  printf '%s\n' "$output" | grep -q '^⛔ BLOCKED:' || {
     printf '%s\n' "$output"
     fail "$name did not fail closed"
   }
@@ -675,7 +686,7 @@ expect_release_blocked_drift() {
 }
 
 assert_release_branch_mismatch() {
-  assert_line "$output" '^BLOCKED: release claimed branch mismatch$' "$1 missing branch mismatch classification"
+assert_line "$output" '^⛔ BLOCKED: release claimed branch mismatch$' "$1 missing branch mismatch classification"
   assert_line "$output" "^lane=$DRIFT_LANE$" "$1 missing lane"
   assert_line "$output" "^issue=$DRIFT_ISSUE$" "$1 missing Issue"
   assert_line "$output" "^claimed_branch=$DRIFT_BRANCH$" "$1 changed durable branch identity"
@@ -724,10 +735,25 @@ FORENSIC_ALIAS="$ROOT/forensic-alias"
 
 DEFAULT_THREE_OUTPUT=$($HELPER preflight)
 assert_preflight_boundary "$DEFAULT_THREE_OUTPUT" 'PREFLIGHT PASS'
+assert_line "$DEFAULT_THREE_OUTPUT" '^  🟢 state=FREE([[:space:]]|$)' 'default preflight missing decorated FREE state'
 if printf '%s\n' "$DEFAULT_THREE_OUTPUT" | grep -q '^forensic_'; then
   fail 'default three-worktree preflight exposed forensic diagnostics'
 fi
 echo 'PASS: default three-worktree preflight remains strict and quiet'
+
+DOCTOR_STATUS_PROBE="$ROOT/doctor-status-probe"
+printf '%s\n' \
+  '#!/bin/sh' \
+  '[ "${1:-}" = status ] || exit 1' \
+  'printf "%s\\n" DOCTOR_FULL_STATUS_PROBE=invoked' > "$DOCTOR_STATUS_PROBE"
+chmod 755 "$DOCTOR_STATUS_PROBE"
+DOCTOR_OUTPUT=$(NUINUI_E2E_STATUS_HELPER="$DOCTOR_STATUS_PROBE" $HELPER doctor --full)
+assert_exact_line "$DOCTOR_OUTPUT" '🩺 NUINUI DOCTOR' 'doctor did not prepend its Human heading'
+[ "$(printf '%s\n' "$DOCTOR_OUTPUT" | grep -Fc '🩺 NUINUI DOCTOR')" = 1 ] ||
+  fail 'doctor emitted more than one Human heading'
+assert_exact_line "$DOCTOR_OUTPUT" 'DOCTOR_FULL_STATUS_PROBE=invoked' \
+  'doctor --full did not reach the isolated E2E status probe'
+echo 'PASS: doctor --full uses one Human heading and reaches the full diagnostic path'
 
 git -C "$MAIN" worktree add -q --detach "$FORENSIC" origin/main
 git -C "$FORENSIC" switch -q -c sayosomi/forensic-arbitrary
@@ -776,7 +802,7 @@ else
 fi
 [ "$SECOND_FORENSIC_RC" -ne 0 ] || fail 'second extra worktree returned zero'
 assert_preflight_boundary "$SECOND_FORENSIC_OUTPUT" 'PREFLIGHT BLOCKED'
-assert_exact_line "$SECOND_FORENSIC_OUTPUT" 'forensic_exception=BLOCKED' \
+assert_exact_line "$SECOND_FORENSIC_OUTPUT" '⛔ forensic_exception=BLOCKED' \
   'second extra worktree did not expose a blocked forensic exception'
 assert_exact_line "$SECOND_FORENSIC_OUTPUT" 'forensic_reason=registered-inventory-mismatch' \
   'second extra worktree did not expose an inventory mismatch reason'
@@ -800,7 +826,7 @@ ln -s "$FORENSIC" "$FORENSIC_ALIAS"
 expect_public_request_rejected 'wrong existing absolute non-worktree path' \
   preflight --forensic-worktree "$NON_WORKTREE"
 assert_preflight_boundary "$output" 'PREFLIGHT BLOCKED'
-assert_exact_line "$output" 'forensic_exception=BLOCKED' 'wrong non-worktree path missed blocked forensic evidence'
+assert_exact_line "$output" '⛔ forensic_exception=BLOCKED' 'wrong non-worktree path missed blocked forensic evidence'
 assert_exact_line "$output" 'forensic_reason=not-registered-worktree' 'wrong non-worktree path missed stable reason'
 assert_exact_line "$output" "forensic_worktree=$NON_WORKTREE" 'wrong non-worktree path changed evidence'
 
@@ -858,16 +884,16 @@ echo 'PASS: forensic option placement, completeness, and argument count are usag
 expect_public_request_rejected 'invalid begin forensic request' \
   begin main SAY-121 "$BASE" sayosomi/say-121-invalid-forensic FREE \
   --forensic-worktree "$MISSING_FORENSIC"
-assert_line "$output" '^forensic_exception=BLOCKED$' 'invalid begin forensic request missed blocked evidence'
+assert_line "$output" '^⛔ forensic_exception=BLOCKED$' 'invalid begin forensic request missed blocked evidence'
 assert_line "$output" '^forensic_reason=missing-or-not-directory$' 'invalid begin forensic request missed reason'
-assert_line "$output" '^BLOCKED: begin fixed-lane preflight failed$' 'invalid begin forensic request did not stop before mutation'
+assert_line "$output" '^⛔ BLOCKED: begin fixed-lane preflight failed$' 'invalid begin forensic request did not stop before mutation'
 
 expect_public_request_rejected 'invalid start forensic request' \
   start main SAY-122 "$BASE" sayosomi/say-122-invalid-forensic \
   --forensic-worktree "$MISSING_FORENSIC"
-assert_line "$output" '^forensic_exception=BLOCKED$' 'invalid start forensic request missed blocked evidence'
+assert_line "$output" '^⛔ forensic_exception=BLOCKED$' 'invalid start forensic request missed blocked evidence'
 assert_line "$output" '^forensic_reason=missing-or-not-directory$' 'invalid start forensic request missed reason'
-assert_line "$output" '^BLOCKED: start fixed-lane preflight failed$' 'invalid start forensic request did not stop before mutation'
+assert_line "$output" '^⛔ BLOCKED: start fixed-lane preflight failed$' 'invalid start forensic request did not stop before mutation'
 echo 'PASS: rejected begin/start forensic requests are mutation-free'
 
 FORENSIC_BRANCH_BEFORE=$(git -C "$FORENSIC" symbolic-ref --quiet --short HEAD)
@@ -876,7 +902,7 @@ FORENSIC_STATUS_BEFORE=$(git -C "$FORENSIC" status --porcelain)
 FORENSIC_BEGIN_BRANCH=sayosomi/say-123-forensic-begin
 FORENSIC_BEGIN_OUTPUT=$($HELPER begin main SAY-123 "$BASE" "$FORENSIC_BEGIN_BRANCH" FREE \
   --forensic-worktree "$FORENSIC")
-[ "$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n '1p')" = 'IMPLEMENTATION STARTED' ] || {
+[ "$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n '1p')" = '🚀 IMPLEMENTATION STARTED' ] || {
   printf '%s\n' "$FORENSIC_BEGIN_OUTPUT"
   fail 'valid forensic begin changed the lifecycle envelope first line'
 }
@@ -885,7 +911,7 @@ assert_exact_line "$FORENSIC_BEGIN_OUTPUT" 'forensic_exception=active' \
 assert_exact_line "$FORENSIC_BEGIN_OUTPUT" "forensic_worktree=$FORENSIC" \
   'valid forensic begin missed the exact forensic path'
 assert_line "$FORENSIC_BEGIN_OUTPUT" '^lane=main$' 'valid forensic begin missed target lane'
-assert_line "$FORENSIC_BEGIN_OUTPUT" '^state=BUSY$' 'valid forensic begin did not start target ownership'
+assert_line "$FORENSIC_BEGIN_OUTPUT" '^🔵 state=BUSY$' 'valid forensic begin did not start target ownership'
 FORENSIC_BEGIN_CLAIM=$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n 's/^claim=//p')
 FORENSIC_BEGIN_CHECKPOINT=$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n 's/^checkpoint=//p')
 [ -n "$FORENSIC_BEGIN_CLAIM" ] || fail 'valid forensic begin did not expose a claim'
@@ -902,14 +928,14 @@ sync_free_lanes
 expect_public_request_rejected 'forensic begin peer occupancy mismatch' \
   begin main SAY-124 "$BASE" sayosomi/say-124-peer-mismatch SAY-999 \
   --forensic-worktree "$FORENSIC"
-assert_line "$output" '^BLOCKED: begin peer occupancy does not match caller expectation$' \
+assert_line "$output" '^⛔ BLOCKED: begin peer occupancy does not match caller expectation$' \
   'forensic begin peer mismatch was not enforced'
 echo 'PASS: peer occupancy remains enforced with a valid forensic exception'
 
 FORENSIC_START_BRANCH=sayosomi/say-125-forensic-start
 FORENSIC_START_OUTPUT=$($HELPER start main SAY-125 "$BASE" "$FORENSIC_START_BRANCH" \
   --forensic-worktree "$FORENSIC")
-[ "$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n '1p')" = 'IMPLEMENTATION STARTED' ] || {
+[ "$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n '1p')" = '🚀 IMPLEMENTATION STARTED' ] || {
   printf '%s\n' "$FORENSIC_START_OUTPUT"
   fail 'valid forensic direct start changed the lifecycle envelope first line'
 }
@@ -917,7 +943,7 @@ assert_exact_line "$FORENSIC_START_OUTPUT" 'forensic_exception=active' \
   'valid forensic direct start missed active forensic evidence'
 assert_exact_line "$FORENSIC_START_OUTPUT" "forensic_worktree=$FORENSIC" \
   'valid forensic direct start missed the exact forensic path'
-assert_line "$FORENSIC_START_OUTPUT" '^state=BUSY$' 'valid forensic direct start did not start target ownership'
+assert_line "$FORENSIC_START_OUTPUT" '^🔵 state=BUSY$' 'valid forensic direct start did not start target ownership'
 FORENSIC_START_CLAIM=$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n 's/^claim=//p')
 FORENSIC_START_CHECKPOINT=$(printf '%s\n' "$FORENSIC_START_OUTPUT" | sed -n 's/^checkpoint=//p')
 release_main "$FORENSIC_START_CHECKPOINT" "$FORENSIC_START_CLAIM" "$FORENSIC_START_BRANCH"
@@ -931,7 +957,7 @@ echo 'PASS: forensic self-test teardown leaves exactly three registered worktree
 
 VERIFY_MATCH_BRANCH=sayosomi/say-118-matching-branch
 VERIFY_MATCH_OUTPUT=$("$HELPER" verify main SAY-118 "$BASE" "$VERIFY_MATCH_BRANCH")
-[ "$VERIFY_MATCH_OUTPUT" = 'VERIFIED' ] || {
+[ "$VERIFY_MATCH_OUTPUT" = '🔎 VERIFIED' ] || {
   printf '%s\n' "$VERIFY_MATCH_OUTPUT"
   fail 'matching public verify did not succeed normally'
 }
@@ -939,7 +965,7 @@ echo 'PASS: public verify accepts one matching identifier'
 
 VERIFY_DUPLICATE_BRANCH=sayosomi/say-118-followup-say-118-diagnostics
 VERIFY_DUPLICATE_OUTPUT=$("$HELPER" verify main SAY-118 "$BASE" "$VERIFY_DUPLICATE_BRANCH")
-[ "$VERIFY_DUPLICATE_OUTPUT" = 'VERIFIED' ] || {
+[ "$VERIFY_DUPLICATE_OUTPUT" = '🔎 VERIFIED' ] || {
   printf '%s\n' "$VERIFY_DUPLICATE_OUTPUT"
   fail 'duplicate matching public verify did not succeed normally'
 }
@@ -949,11 +975,11 @@ AMBIGUOUS_FORWARD_BRANCH=sayosomi/say-118-reference-post-say-249-fix
 expect_public_request_rejected 'forward ambiguous public verify' \
   verify main SAY-118 "$BASE" "$AMBIGUOUS_FORWARD_BRANCH"
 AMBIGUOUS_FORWARD_OUTPUT=$output
-assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'forward ambiguous verify missed multiple-identifier diagnostic'
+assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^❌ ERROR: branch contains multiple issue identifiers$' 'forward ambiguous verify missed multiple-identifier diagnostic'
 assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^expected=SAY-118$' 'forward ambiguous verify omitted expected Issue'
 assert_line "$AMBIGUOUS_FORWARD_OUTPUT" '^found=SAY-118,SAY-249$' 'forward ambiguous verify omitted deterministic found identifiers'
 assert_line "$AMBIGUOUS_FORWARD_OUTPUT" "^branch=$AMBIGUOUS_FORWARD_BRANCH$" 'forward ambiguous verify omitted exact branch'
-if printf '%s\n' "$AMBIGUOUS_FORWARD_OUTPUT" | grep -q '^ERROR: public command .* failed without a diagnostic$'; then
+if printf '%s\n' "$AMBIGUOUS_FORWARD_OUTPUT" | grep -q '^❌ ERROR: public command .* failed without a diagnostic$'; then
   fail 'forward ambiguous verify used the generic no-diagnostic fallback'
 fi
 echo 'PASS: forward ambiguous public verify is actionable'
@@ -962,11 +988,11 @@ AMBIGUOUS_REVERSE_BRANCH=sayosomi/say-249-reference-for-say-118-fix
 expect_public_request_rejected 'reverse ambiguous public verify' \
   verify main SAY-118 "$BASE" "$AMBIGUOUS_REVERSE_BRANCH"
 AMBIGUOUS_REVERSE_OUTPUT=$output
-assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'reverse ambiguous verify missed multiple-identifier diagnostic'
+assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^❌ ERROR: branch contains multiple issue identifiers$' 'reverse ambiguous verify missed multiple-identifier diagnostic'
 assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^expected=SAY-118$' 'reverse ambiguous verify omitted expected Issue'
 assert_line "$AMBIGUOUS_REVERSE_OUTPUT" '^found=SAY-249,SAY-118$' 'reverse ambiguous verify omitted deterministic found identifiers'
 assert_line "$AMBIGUOUS_REVERSE_OUTPUT" "^branch=$AMBIGUOUS_REVERSE_BRANCH$" 'reverse ambiguous verify omitted exact branch'
-if printf '%s\n' "$AMBIGUOUS_REVERSE_OUTPUT" | grep -q '^ERROR: public command .* failed without a diagnostic$'; then
+if printf '%s\n' "$AMBIGUOUS_REVERSE_OUTPUT" | grep -q '^❌ ERROR: public command .* failed without a diagnostic$'; then
   fail 'reverse ambiguous verify used the generic no-diagnostic fallback'
 fi
 echo 'PASS: reverse ambiguous public verify is actionable'
@@ -974,14 +1000,14 @@ echo 'PASS: reverse ambiguous public verify is actionable'
 expect_public_request_rejected 'public verify with only a different Issue' \
   verify main SAY-118 "$BASE" sayosomi/say-249-only
 DIFFERENT_VERIFY_OUTPUT=$output
-assert_line "$DIFFERENT_VERIFY_OUTPUT" '^ERROR: branch issue identifier does not match requested Issue$' 'different-Issue verify missed mismatch diagnostic'
+assert_line "$DIFFERENT_VERIFY_OUTPUT" '^❌ ERROR: branch issue identifier does not match requested Issue$' 'different-Issue verify missed mismatch diagnostic'
 assert_line "$DIFFERENT_VERIFY_OUTPUT" '^expected=SAY-118$' 'different-Issue verify omitted expected Issue'
 assert_line "$DIFFERENT_VERIFY_OUTPUT" '^found=SAY-249$' 'different-Issue verify omitted found Issue'
 assert_line "$DIFFERENT_VERIFY_OUTPUT" '^branch=sayosomi/say-249-only$' 'different-Issue verify omitted exact branch'
 expect_public_request_rejected 'public verify with no SAY identifier' \
   verify main SAY-118 "$BASE" sayosomi/feature-without-issue
 NO_IDENTIFIER_VERIFY_OUTPUT=$output
-assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^ERROR: branch does not contain requested issue identifier$' 'no-identifier verify missed diagnostic'
+assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^❌ ERROR: branch does not contain requested issue identifier$' 'no-identifier verify missed diagnostic'
 assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^expected=SAY-118$' 'no-identifier verify omitted expected Issue'
 assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^found=-$' 'no-identifier verify omitted empty found value'
 assert_line "$NO_IDENTIFIER_VERIFY_OUTPUT" '^branch=sayosomi/feature-without-issue$' 'no-identifier verify omitted exact branch'
@@ -989,7 +1015,7 @@ INVALID_REF_BRANCH=sayosomi/say-118-invalid..ref
 expect_public_request_rejected 'public verify with invalid Git ref syntax' \
   verify main SAY-118 "$BASE" "$INVALID_REF_BRANCH"
 INVALID_REF_OUTPUT=$output
-assert_line "$INVALID_REF_OUTPUT" '^ERROR: invalid Git branch syntax$' 'invalid-ref verify missed branch-syntax diagnostic'
+assert_line "$INVALID_REF_OUTPUT" '^❌ ERROR: invalid Git branch syntax$' 'invalid-ref verify missed branch-syntax diagnostic'
 assert_line "$INVALID_REF_OUTPUT" '^expected=SAY-118$' 'invalid-ref verify omitted caller Issue'
 assert_line "$INVALID_REF_OUTPUT" '^found=invalid$' 'invalid-ref verify omitted invalid marker'
 assert_line "$INVALID_REF_OUTPUT" "^branch=$INVALID_REF_BRANCH$" 'invalid-ref verify omitted exact branch'
@@ -998,14 +1024,14 @@ echo 'PASS: public verify rejects mismatch, missing identifier, and invalid ref 
 expect_public_request_rejected 'public start with multiple distinct identifiers' \
   start main SAY-118 "$BASE" "$AMBIGUOUS_FORWARD_BRANCH"
 START_AMBIGUOUS_OUTPUT=$output
-assert_line "$START_AMBIGUOUS_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'ambiguous start missed multiple-identifier diagnostic'
+assert_line "$START_AMBIGUOUS_OUTPUT" '^❌ ERROR: branch contains multiple issue identifiers$' 'ambiguous start missed multiple-identifier diagnostic'
 assert_line "$START_AMBIGUOUS_OUTPUT" '^expected=SAY-118$' 'ambiguous start omitted expected Issue'
 assert_line "$START_AMBIGUOUS_OUTPUT" '^found=SAY-118,SAY-249$' 'ambiguous start omitted all found identifiers'
 assert_line "$START_AMBIGUOUS_OUTPUT" "^branch=$AMBIGUOUS_FORWARD_BRANCH$" 'ambiguous start omitted exact branch'
 expect_public_request_rejected 'public begin with multiple distinct identifiers' \
   begin sub SAY-118 "$BASE" "$AMBIGUOUS_REVERSE_BRANCH" FREE
 BEGIN_AMBIGUOUS_OUTPUT=$output
-assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^ERROR: branch contains multiple issue identifiers$' 'ambiguous begin missed multiple-identifier diagnostic'
+assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^❌ ERROR: branch contains multiple issue identifiers$' 'ambiguous begin missed multiple-identifier diagnostic'
 assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^expected=SAY-118$' 'ambiguous begin omitted expected Issue'
 assert_line "$BEGIN_AMBIGUOUS_OUTPUT" '^found=SAY-249,SAY-118$' 'ambiguous begin omitted all found identifiers'
 assert_line "$BEGIN_AMBIGUOUS_OUTPUT" "^branch=$AMBIGUOUS_REVERSE_BRANCH$" 'ambiguous begin omitted exact branch'
@@ -1024,7 +1050,7 @@ else
 fi
 assert_line "$PERSISTED_ACTIVE_PREFLIGHT" "^  owner_issue=SAY-249 owner_branch=$AMBIGUOUS_FORWARD_BRANCH" \
   'ambiguous persisted active slot was not parsed by the historical selector'
-assert_line "$PERSISTED_ACTIVE_PREFLIGHT" '^  state=BUSY$' 'ambiguous persisted active slot was not classified BUSY'
+assert_line "$PERSISTED_ACTIVE_PREFLIGHT" '^  🔵 state=BUSY$' 'ambiguous persisted active slot was not classified BUSY'
 if printf '%s\n' "$PERSISTED_ACTIVE_PREFLIGHT" | grep -q 'invalid-active-slot'; then
   fail 'ambiguous persisted active slot became invalid-active-slot'
 fi
@@ -1046,7 +1072,7 @@ else
 fi
 [ "$PERSISTED_LOCK_RC" -ne 0 ] || fail 'ambiguous persisted mutation lock returned zero'
 assert_line "$PERSISTED_LOCK_PREFLIGHT" \
-  "^  state=BLOCKED reason=mutation-in-progress operation=start claim=$PERSISTED_LOCK_CLAIM$" \
+  "^  ⛔ state=BLOCKED reason=mutation-in-progress operation=start claim=$PERSISTED_LOCK_CLAIM$" \
   'ambiguous persisted mutation lock was not parsed as mutation-in-progress'
 if printf '%s\n' "$PERSISTED_LOCK_PREFLIGHT" | grep -q 'invalid-mutation-lock'; then
   fail 'ambiguous persisted mutation lock became invalid-mutation-lock'
@@ -1059,7 +1085,7 @@ PERSISTED_RECEIPT_CLAIM=compat-receipt-claim-118
 printf 'version=1\nlane=main\nissue=SAY-249\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
   "$AMBIGUOUS_FORWARD_BRANCH" "$BASE" "$BASE" "$PERSISTED_RECEIPT_CLAIM" > "$(release_receipt main)"
 PERSISTED_RECEIPT_OUTPUT=$("$HELPER" release main "$BASE" "$PERSISTED_RECEIPT_CLAIM")
-assert_line "$PERSISTED_RECEIPT_OUTPUT" '^IMPLEMENTATION ALREADY RELEASED$' \
+assert_line "$PERSISTED_RECEIPT_OUTPUT" '^♻️ IMPLEMENTATION ALREADY RELEASED$' \
   'ambiguous persisted release receipt did not use the completed-release path'
 assert_line "$PERSISTED_RECEIPT_OUTPUT" '^issue=SAY-249$' \
   'ambiguous persisted release receipt was not parsed with its stored Issue'
@@ -1070,9 +1096,9 @@ echo 'PASS: ambiguous persisted release receipt remains readable'
 
 PREFLIGHT_PASS_OUTPUT=$("$HELPER" preflight)
 assert_preflight_boundary "$PREFLIGHT_PASS_OUTPUT" 'PREFLIGHT PASS'
-assert_line "$PREFLIGHT_PASS_OUTPUT" '^main path=' 'PASS preflight missing main diagnostics'
-assert_line "$PREFLIGHT_PASS_OUTPUT" '^sub path=' 'PASS preflight missing sub diagnostics'
-assert_line "$PREFLIGHT_PASS_OUTPUT" '^e2e path=' 'PASS preflight missing e2e diagnostics'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^1️⃣ main path=' 'PASS preflight missing decorated main diagnostics'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^2️⃣ sub path=' 'PASS preflight missing decorated sub diagnostics'
+assert_line "$PREFLIGHT_PASS_OUTPUT" '^🖐️ e2e path=' 'PASS preflight missing decorated e2e diagnostics'
 assert_line "$PREFLIGHT_PASS_OUTPUT" '^worktrees:$' 'PASS preflight missing worktree diagnostics'
 echo 'PASS: public preflight PASS has fixed result boundary'
 
@@ -1085,7 +1111,7 @@ else
 fi
 [ "$PREFLIGHT_BLOCKED_RC" -ne 0 ] || fail 'blocked public preflight returned zero'
 assert_preflight_boundary "$PREFLIGHT_BLOCKED_OUTPUT" 'PREFLIGHT BLOCKED'
-assert_line "$PREFLIGHT_BLOCKED_OUTPUT" '^e2e path=' 'BLOCKED preflight missing e2e diagnostics'
+assert_line "$PREFLIGHT_BLOCKED_OUTPUT" '^🖐️ e2e path=' 'BLOCKED preflight missing decorated e2e diagnostics'
 assert_line "$PREFLIGHT_BLOCKED_OUTPUT" '^  clean=no marker=none$' 'BLOCKED preflight missing invalid e2e diagnostic'
 echo 'PASS: public preflight BLOCKED has fixed result boundary'
 rm "$E2E/preflight-blocked"
@@ -1110,7 +1136,7 @@ fi
 [ "$E2E_OLD_RELEASE_RC" = 2 ] || fail 'old zero-argument E2E release did not return usage status'
 [ "$E2E_OLD_RELEASE_OUTPUT" = 'Usage: nuinui e2e-release <SAY-123> <tested-ref>' ] || fail 'old zero-argument E2E release did not return exact usage'
 E2E_START_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
-[ "$(without_command_result_footer "$E2E_START_OUTPUT")" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_START_OUTPUT"; fail 'normal E2E start did not return exact success output'; }
+[ "$(without_command_result_footer "$E2E_START_OUTPUT")" = '🖐️ E2E STARTED' ] || { printf '%s\n' "$E2E_START_OUTPUT"; fail 'normal E2E start did not return exact success output'; }
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'normal E2E start attached the checkout'
 [ "$(git -C "$E2E" rev-parse HEAD)" = "$E2E_TESTED_REF" ] || fail 'normal E2E start changed the tested ref'
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E start dirtied the checkout'
@@ -1133,7 +1159,7 @@ assert_line "$E2E_CLOSURE_OUTPUT" '^E2E CLOSURE BLOCKED$' 'release-ready closure
 E2E_DUPLICATE_BEFORE=$(e2e_snapshot "$E2E")
 E2E_DUPLICATE_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
 E2E_DUPLICATE_AFTER=$(e2e_snapshot "$E2E")
-[ "$(without_command_result_footer "$E2E_DUPLICATE_OUTPUT")" = "$(printf 'E2E ALREADY STARTED\nissue=SAY-299\nref=%s\nclean=yes\nmutation=no-op\nstate=BUSY' "$E2E_TESTED_REF")" ] || {
+[ "$(without_command_result_footer "$E2E_DUPLICATE_OUTPUT")" = "$(printf '♻️ E2E ALREADY STARTED\nissue=SAY-299\nref=%s\nclean=yes\nmutation=no-op\n🔵 state=BUSY' "$E2E_TESTED_REF")" ] || {
   printf '%s\n' "$E2E_DUPLICATE_OUTPUT"
   fail 'exact duplicate E2E start did not return the required no-op envelope'
 }
@@ -1160,12 +1186,12 @@ printf 'issue=SAY-299\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=
 E2E_DUPLICATE_SESSION_BEFORE=$(e2e_snapshot "$E2E")
 E2E_DUPLICATE_WITH_SESSION=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
 E2E_DUPLICATE_SESSION_AFTER=$(e2e_snapshot "$E2E")
-[ "$(without_command_result_footer "$E2E_DUPLICATE_WITH_SESSION")" = "$(printf 'E2E ALREADY STARTED\nissue=SAY-299\nref=%s\nclean=yes\nmutation=no-op\nstate=BUSY' "$E2E_TESTED_REF")" ] || fail 'duplicate E2E start rejected a valid matching session'
+[ "$(without_command_result_footer "$E2E_DUPLICATE_WITH_SESSION")" = "$(printf '♻️ E2E ALREADY STARTED\nissue=SAY-299\nref=%s\nclean=yes\nmutation=no-op\n🔵 state=BUSY' "$E2E_TESTED_REF")" ] || fail 'duplicate E2E start rejected a valid matching session'
 [ "$E2E_DUPLICATE_SESSION_BEFORE" = "$E2E_DUPLICATE_SESSION_AFTER" ] || fail 'duplicate E2E start changed valid session state'
 printf 'issue=SAY-299\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
   "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
 E2E_LEGACY_OUTPUT=$("$HELPER" e2e-start SAY-299 "$E2E_TESTED_REF")
-[ "$(printf '%s\n' "$E2E_LEGACY_OUTPUT" | sed -n '1p')" = 'E2E ALREADY STARTED' ] || fail 'legacy E2E session was not recognized'
+[ "$(printf '%s\n' "$E2E_LEGACY_OUTPUT" | sed -n '1p')" = '♻️ E2E ALREADY STARTED' ] || fail 'legacy E2E session was not recognized'
 printf 'issue=SAY-299\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
   "$E2E_TESTED_REF" "$E2E_SOURCE_FIXTURE" "$E2E_PREPARED_ROOT" "$E2E_PREPARED_HANDOFF" > "$E2E_SESSION"
 printf 'issue=SAY-998\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=999999\n' \
@@ -1188,7 +1214,7 @@ e2e_cleanup SAY-299 "$E2E_TESTED_REF" "$E2E_PREPARED_ROOT" >/dev/null || fail 'c
 [ -f "$E2E_MARKER" ] || fail 'canonical E2E cleanup removed marker'
 
 E2E_RELEASE_OUTPUT=$("$HELPER" e2e-release SAY-299 "$E2E_TESTED_REF")
-[ "$(without_command_result_footer "$E2E_RELEASE_OUTPUT")" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_OUTPUT"; fail 'normal E2E release did not return exact success output'; }
+[ "$(without_command_result_footer "$E2E_RELEASE_OUTPUT")" = '🖐️ E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_OUTPUT"; fail 'normal E2E release did not return exact success output'; }
 [ ! -e "$E2E_MARKER" ] || fail 'normal E2E release retained the marker'
 [ -z "$(git -C "$E2E" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'normal E2E release attached the checkout'
 [ -z "$(git -C "$E2E" status --porcelain)" ] || fail 'normal E2E release dirtied the checkout'
@@ -1205,7 +1231,7 @@ echo 'PASS: normal E2E start/release and closure regression'
 E2E_DUPLICATE_RELEASE_BEFORE=$(e2e_snapshot "$E2E")
 E2E_DUPLICATE_RELEASE_OUTPUT=$("$HELPER" e2e-release SAY-299 "$E2E_TESTED_REF")
 E2E_DUPLICATE_RELEASE_AFTER=$(e2e_snapshot "$E2E")
-[ "$(without_command_result_footer "$E2E_DUPLICATE_RELEASE_OUTPUT")" = "$(printf 'E2E ALREADY RELEASED\nissue=SAY-299\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE' "$E2E_TESTED_REF" "$E2E_RELEASE_REF")" ] || {
+[ "$(without_command_result_footer "$E2E_DUPLICATE_RELEASE_OUTPUT")" = "$(printf '♻️ E2E ALREADY RELEASED\nissue=SAY-299\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\n🟢 state=FREE' "$E2E_TESTED_REF" "$E2E_RELEASE_REF")" ] || {
   printf '%s\n' "$E2E_DUPLICATE_RELEASE_OUTPUT"
   fail 'exact duplicate E2E release did not return the required no-op envelope'
 }
@@ -1234,7 +1260,7 @@ expect_e2e_blocked_no_mutation 'missing E2E release receipt duplicate release' e
 printf '%s\n' "$E2E_RECEIPT_CONTENT" > "$E2E_RECEIPT"
 
 E2E_START_B_OUTPUT=$("$HELPER" e2e-start SAY-300 "$E2E_SECOND_REF")
-[ "$(without_command_result_footer "$E2E_START_B_OUTPUT")" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_START_B_OUTPUT"; fail 'second E2E start did not succeed'; }
+[ "$(without_command_result_footer "$E2E_START_B_OUTPUT")" = '🖐️ E2E STARTED' ] || { printf '%s\n' "$E2E_START_B_OUTPUT"; fail 'second E2E start did not succeed'; }
 [ "$(cat "$E2E_RECEIPT")" = "$E2E_RECEIPT_CONTENT" ] || fail 'starting a new E2E generation changed the prior receipt'
 expect_e2e_blocked_no_mutation 'stale E2E release against active newer marker' e2e-release SAY-299 "$E2E_TESTED_REF"
 
@@ -1245,13 +1271,13 @@ rmdir "$E2E_RECEIPT"
 printf '%s\n' "$E2E_RECEIPT_CONTENT" > "$E2E_RECEIPT"
 
 E2E_RELEASE_B_OUTPUT=$("$HELPER" e2e-release SAY-300 "$E2E_SECOND_REF")
-[ "$(without_command_result_footer "$E2E_RELEASE_B_OUTPUT")" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_B_OUTPUT"; fail 'second E2E release did not succeed'; }
+[ "$(without_command_result_footer "$E2E_RELEASE_B_OUTPUT")" = '🖐️ E2E RELEASED' ] || { printf '%s\n' "$E2E_RELEASE_B_OUTPUT"; fail 'second E2E release did not succeed'; }
 [ "$(cat "$E2E_RECEIPT")" = "$(printf 'version=1\nissue=SAY-300\nref=%s\n' "$E2E_SECOND_REF")" ] || fail 'second E2E release did not replace the receipt'
 E2E_RELEASE_B_REF="$(git -C "$E2E" rev-parse origin/main)"
 E2E_DUPLICATE_RELEASE_B_BEFORE=$(e2e_snapshot "$E2E")
 E2E_DUPLICATE_RELEASE_B_OUTPUT=$("$HELPER" e2e-release SAY-300 "$E2E_SECOND_REF")
 E2E_DUPLICATE_RELEASE_B_AFTER=$(e2e_snapshot "$E2E")
-[ "$(without_command_result_footer "$E2E_DUPLICATE_RELEASE_B_OUTPUT")" = "$(printf 'E2E ALREADY RELEASED\nissue=SAY-300\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE' "$E2E_SECOND_REF" "$E2E_RELEASE_B_REF")" ] || fail 'second exact duplicate E2E release did not succeed'
+[ "$(without_command_result_footer "$E2E_DUPLICATE_RELEASE_B_OUTPUT")" = "$(printf '♻️ E2E ALREADY RELEASED\nissue=SAY-300\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\n🟢 state=FREE' "$E2E_SECOND_REF" "$E2E_RELEASE_B_REF")" ] || fail 'second exact duplicate E2E release did not succeed'
 [ "$E2E_DUPLICATE_RELEASE_B_BEFORE" = "$E2E_DUPLICATE_RELEASE_B_AFTER" ] || fail 'second exact duplicate E2E release changed E2E state'
 
 E2E_SESSION_CONTENT="issue=SAY-300
@@ -1268,9 +1294,9 @@ E2E_GC_ISSUE=SAY-301
 E2E_GC_TESTED_REF="$(git -C "$E2E" commit-tree "$(git -C "$E2E" rev-parse HEAD^{tree})" -p "$E2E_RELEASE_B_REF" -m 'prunable E2E tested ref')"
 git -C "$E2E" update-ref refs/heads/e2e-gc-tested "$E2E_GC_TESTED_REF"
 E2E_GC_START_OUTPUT=$("$HELPER" e2e-start "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")
-[ "$(without_command_result_footer "$E2E_GC_START_OUTPUT")" = 'E2E STARTED' ] || { printf '%s\n' "$E2E_GC_START_OUTPUT"; fail 'prunable E2E generation did not start'; }
+[ "$(without_command_result_footer "$E2E_GC_START_OUTPUT")" = '🖐️ E2E STARTED' ] || { printf '%s\n' "$E2E_GC_START_OUTPUT"; fail 'prunable E2E generation did not start'; }
 E2E_GC_RELEASE_OUTPUT=$("$HELPER" e2e-release "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")
-[ "$(without_command_result_footer "$E2E_GC_RELEASE_OUTPUT")" = 'E2E RELEASED' ] || { printf '%s\n' "$E2E_GC_RELEASE_OUTPUT"; fail 'prunable E2E generation did not release'; }
+[ "$(without_command_result_footer "$E2E_GC_RELEASE_OUTPUT")" = '🖐️ E2E RELEASED' ] || { printf '%s\n' "$E2E_GC_RELEASE_OUTPUT"; fail 'prunable E2E release did not release'; }
 [ "$(cat "$E2E_RECEIPT")" = "$(printf 'version=1\nissue=%s\nref=%s\n' "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")" ] || fail 'prunable E2E release wrote the wrong receipt'
 git -C "$E2E" update-ref -d refs/heads/e2e-gc-tested "$E2E_GC_TESTED_REF"
 git -C "$E2E" reflog expire --expire=now --all
@@ -1284,7 +1310,7 @@ fi
 E2E_GC_DUPLICATE_BEFORE=$(e2e_snapshot "$E2E")
 E2E_GC_DUPLICATE_OUTPUT=$("$HELPER" e2e-release "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF")
 E2E_GC_DUPLICATE_AFTER=$(e2e_snapshot "$E2E")
-[ "$(without_command_result_footer "$E2E_GC_DUPLICATE_OUTPUT")" = "$(printf 'E2E ALREADY RELEASED\nissue=%s\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\nstate=FREE' "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF" "$E2E_RELEASE_B_REF")" ] || {
+[ "$(without_command_result_footer "$E2E_GC_DUPLICATE_OUTPUT")" = "$(printf '♻️ E2E ALREADY RELEASED\nissue=%s\nref=%s\norigin_main=%s\nclean=yes\nmutation=no-op\n🟢 state=FREE' "$E2E_GC_ISSUE" "$E2E_GC_TESTED_REF" "$E2E_RELEASE_B_REF")" ] || {
   printf '%s\n' "$E2E_GC_DUPLICATE_OUTPUT"
   fail 'duplicate E2E release did not use the durable receipt after object pruning'
 }
@@ -1298,7 +1324,7 @@ expect_old_signature_rejected 'old claimless release signature' release main "$B
 
 BRANCH1=sayosomi/say-201-begin-free
 OUT1=$("$HELPER" begin main SAY-201 "$BASE" "$BRANCH1" FREE)
-assert_line "$OUT1" '^IMPLEMENTATION STARTED$' 'FREE peer begin missing header'
+assert_line "$OUT1" '^🚀 IMPLEMENTATION STARTED$' 'FREE peer begin missing Human header'
 assert_line "$OUT1" '^lane=main$' 'FREE peer begin missing lane'
 assert_line "$OUT1" '^issue=SAY-201$' 'FREE peer begin missing Issue'
 assert_line "$OUT1" "^branch=$BRANCH1$" 'FREE peer begin missing branch'
@@ -1306,7 +1332,7 @@ assert_line "$OUT1" "^base=$BASE$" 'FREE peer begin missing base'
 assert_line "$OUT1" '^checkpoint=[0-9a-fA-F]{40}$' 'FREE peer begin missing checkpoint'
 assert_line "$OUT1" '^claim=[0-9A-Za-z][0-9A-Za-z._-]{7,127}$' 'FREE peer begin missing claim'
 assert_line "$OUT1" '^clean=yes$' 'FREE peer begin missing clean state'
-assert_line "$OUT1" '^state=BUSY$' 'FREE peer begin missing BUSY state'
+assert_line "$OUT1" '^🔵 state=BUSY$' 'FREE peer begin missing decorated BUSY state'
 assert_line "$OUT1" '^peer_lane=sub$' 'FREE peer begin missing peer lane'
 assert_line "$OUT1" '^peer_state=FREE$' 'FREE peer begin wrong peer state'
 assert_line "$OUT1" '^peer_issue=-$' 'FREE peer begin wrong peer Issue'
@@ -1331,7 +1357,7 @@ if "$HELPER" release main "$WRONG_CHECKPOINT" "$CLAIM1" >"$ROOT/wrong-checkpoint
   cat "$ROOT/wrong-checkpoint-release.out"
   fail 'wrong checkpoint release unexpectedly succeeded'
 fi
-assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" '^BLOCKED: checkpoint mismatch$' 'wrong checkpoint release was not classified'
+assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" '^⛔ BLOCKED: checkpoint mismatch$' 'wrong checkpoint release was not classified'
 assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" "^expected=$ADVANCED_CHECKPOINT$" 'wrong checkpoint release omitted expected checkpoint'
 assert_line "$(cat "$ROOT/wrong-checkpoint-release.out")" "^actual=$WRONG_CHECKPOINT$" 'wrong checkpoint release omitted actual checkpoint'
 [ "$(cat "$(slot_state "$MAIN")")" = "$SLOT_BEFORE_RELEASE_FAILURE" ] || fail 'wrong checkpoint release changed durable ownership'
@@ -1342,7 +1368,7 @@ if "$HELPER" release main "$ADVANCED_CHECKPOINT" "$WRONG_CLAIM" >"$ROOT/wrong-cl
   cat "$ROOT/wrong-claim-release.out"
   fail 'wrong claim release unexpectedly succeeded'
 fi
-assert_line "$(cat "$ROOT/wrong-claim-release.out")" '^BLOCKED: claim mismatch$' 'wrong claim release was not classified'
+assert_line "$(cat "$ROOT/wrong-claim-release.out")" '^⛔ BLOCKED: claim mismatch$' 'wrong claim release was not classified'
 assert_line "$(cat "$ROOT/wrong-claim-release.out")" "^expected=$CLAIM1$" 'wrong claim release omitted durable claim'
 assert_line "$(cat "$ROOT/wrong-claim-release.out")" "^actual=$WRONG_CLAIM$" 'wrong claim release omitted caller claim'
 [ "$(cat "$(slot_state "$MAIN")")" = "$SLOT_BEFORE_RELEASE_FAILURE" ] || fail 'wrong claim release changed durable ownership'
@@ -1461,6 +1487,15 @@ rmdir "$RELEASE_DIR1" "$RELEASE_DIR2"
 ACTIVE_SLOT_DIR="$(dirname "$SLOT_PATH")"
 rm "$SLOT_PATH"
 rmdir "$ACTIVE_SLOT_DIR"
+RELEASE_DIR_PENDING="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.$CLAIM1"
+mkdir "$RELEASE_DIR_PENDING"
+cp "$ROOT/valid-release-slot" "$RELEASE_DIR_PENDING/state"
+printf '%s\n' "$ADVANCED_CHECKPOINT" > "$RELEASE_DIR_PENDING/checkpoint"
+PENDING_PREFLIGHT_OUTPUT=$("$HELPER" preflight)
+assert_line "$PENDING_PREFLIGHT_OUTPUT" "^  🟠 state=RELEASE-PENDING claim=$CLAIM1 checkpoint=$ADVANCED_CHECKPOINT$" \
+  'release-pending preflight did not decorate the primary state'
+rm "$RELEASE_DIR_PENDING/state" "$RELEASE_DIR_PENDING/checkpoint"
+rmdir "$RELEASE_DIR_PENDING"
 RELEASE_DIR3="$(gitdir "$MAIN")/nuinui-implementation-slot.releasing.claim-release-3"
 mkdir "$RELEASE_DIR3"
 cp "$ROOT/valid-release-slot" "$RELEASE_DIR3/state"
@@ -1567,7 +1602,7 @@ if RECEIPT_FAILURE_RELEASE_OUTPUT=$("$HELPER" release sub "$RECEIPT_FAILURE_BASE
   printf '%s\n' "$RECEIPT_FAILURE_RELEASE_OUTPUT"
   fail 'receipt write failure unexpectedly succeeded'
 fi
-printf '%s\n' "$RECEIPT_FAILURE_RELEASE_OUTPUT" | grep -q '^BLOCKED:' || {
+printf '%s\n' "$RECEIPT_FAILURE_RELEASE_OUTPUT" | grep -q '^⛔ BLOCKED:' || {
   printf '%s\n' "$RECEIPT_FAILURE_RELEASE_OUTPUT"
   fail 'receipt write failure did not fail closed'
 }
@@ -1580,7 +1615,7 @@ RECEIPT_FAILURE_TEMP="$(find "$RECEIPT_FAILURE_RECEIPT" -type f -print 2>/dev/nu
 rm "$RECEIPT_FAILURE_TEMP"
 rmdir "$RECEIPT_FAILURE_RECEIPT"
 RECEIPT_FAILURE_RECOVER=$("$HELPER" recover sub "$RECEIPT_FAILURE_CLAIM")
-assert_line "$RECEIPT_FAILURE_RECOVER" '^RECOVERED operation=release$' 'receipt write failure recovery failed'
+assert_line "$RECEIPT_FAILURE_RECOVER" '^🛟 RECOVERED operation=release$' 'receipt write failure recovery failed'
 assert_release_receipt sub SAY-318 "$RECEIPT_FAILURE_BRANCH" "$RECEIPT_FAILURE_BASE" "$RECEIPT_FAILURE_BASE" "$RECEIPT_FAILURE_CLAIM"
 echo 'PASS: receipt write failure retains lock and tombstone recovery state'
 
@@ -1660,8 +1695,8 @@ sync_free_lanes
 setup_main_drift SAY-305 sayosomi/say-305-release-different-topic
 git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_BASE"
 expect_release_blocked_drift 'release drift local topic at different SHA'
-assert_line "$output" '^BLOCKED: checkpoint mismatch$' 'release drift local topic at different SHA was not a checkpoint mismatch'
-if printf '%s\n' "$output" | grep -q '^BLOCKED: release claimed branch mismatch$'; then
+assert_line "$output" '^⛔ BLOCKED: checkpoint mismatch$' 'release drift local topic at different SHA was not a checkpoint mismatch'
+if printf '%s\n' "$output" | grep -q '^⛔ BLOCKED: release claimed branch mismatch$'; then
   fail 'release drift local topic at different SHA was classified as branch drift'
 fi
 git -C "$MAIN" update-ref "refs/heads/$DRIFT_BRANCH" "$DRIFT_CHECKPOINT"
@@ -1809,7 +1844,7 @@ CHECKPOINT2="$(printf '%s\n' "$OUT2" | sed -n 's/^checkpoint=//p')"
 BRANCH_BUSY_DUP=sayosomi/say-218-busy-peer-duplicate
 OUT_BUSY_DUP=$("$HELPER" begin main SAY-218 "$CHECKPOINT2" "$BRANCH_BUSY_DUP" SAY-202)
 CLAIM_BUSY_DUP="$(printf '%s\n' "$OUT_BUSY_DUP" | sed -n 's/^claim=//p')"
-assert_line "$OUT_BUSY_DUP" '^IMPLEMENTATION STARTED$' 'BUSY peer duplicate setup missing header'
+assert_line "$OUT_BUSY_DUP" '^🚀 IMPLEMENTATION STARTED$' 'BUSY peer duplicate setup missing Human header'
 assert_line "$OUT_BUSY_DUP" '^peer_state=BUSY$' 'BUSY peer duplicate setup missing BUSY peer'
 assert_line "$OUT_BUSY_DUP" '^peer_issue=SAY-202$' 'BUSY peer duplicate setup missing peer Issue'
 expect_begin_duplicate 'exact duplicate with BUSY peer' "$MAIN" "$SUB" main SAY-218 "$CHECKPOINT2" "$BRANCH_BUSY_DUP" SAY-202 "$CLAIM_BUSY_DUP" BUSY SAY-202 sub
@@ -1817,7 +1852,7 @@ release_main "$CHECKPOINT2" "$CLAIM_BUSY_DUP" "$BRANCH_BUSY_DUP"
 
 BRANCH_RACE=sayosomi/say-213-dirty-peer-race
 OUT_RACE=$(NUINUI_SELFTEST_BEGIN_AFTER_START=dirty-peer "$HELPER" begin main SAY-213 "$CHECKPOINT2" "$BRANCH_RACE" SAY-202)
-assert_line "$OUT_RACE" '^IMPLEMENTATION STARTED$' 'dirty peer race begin did not succeed'
+assert_line "$OUT_RACE" '^🚀 IMPLEMENTATION STARTED$' 'dirty peer race begin did not succeed'
 assert_line "$OUT_RACE" '^issue=SAY-213$' 'dirty peer race begin returned wrong target Issue'
 assert_line "$OUT_RACE" '^peer_lane=sub$' 'dirty peer race begin missing peer lane'
 assert_line "$OUT_RACE" '^peer_state=BUSY$' 'dirty peer race begin changed peer state'
@@ -1826,7 +1861,7 @@ assert_line "$OUT_RACE" '^preflight=PASS$' 'dirty peer race begin missing prefli
 RACE_CLAIM="$(printf '%s\n' "$OUT_RACE" | sed -n 's/^claim=//p')"
 RACE_CHECKPOINT="$(printf '%s\n' "$OUT_RACE" | sed -n 's/^checkpoint=//p')"
 RACE_PREFLIGHT=$("$HELPER" preflight)
-assert_line "$RACE_PREFLIGHT" '^  state=BUSY$' 'dirty peer race did not leave peer BUSY'
+assert_line "$RACE_PREFLIGHT" '^  🔵 state=BUSY$' 'dirty peer race did not leave peer BUSY'
 assert_line "$RACE_PREFLIGHT" "^  owner_issue=SAY-202 owner_branch=$BRANCH2 base=$CHECKPOINT1 claim=$CLAIM2$" 'dirty peer race changed peer identity'
 
 printf 'dirty target\n' > "$MAIN/begin-dirty"
@@ -1866,17 +1901,17 @@ release_main "$RACE_CHECKPOINT" "$RACE_CLAIM" "$BRANCH_RACE"
 
 printf 'dirty-owned-lane\n' > "$SUB/untracked"
 DIRTY_PREFLIGHT=$("$HELPER" preflight)
-assert_line "$DIRTY_PREFLIGHT" '^sub path=' 'dirty BUSY preflight missing sub lane'
+assert_line "$DIRTY_PREFLIGHT" '^2️⃣ sub path=' 'dirty BUSY preflight missing decorated sub lane'
 assert_line "$DIRTY_PREFLIGHT" '^  clean=no$' 'dirty BUSY preflight did not report clean=no'
 assert_line "$DIRTY_PREFLIGHT" "^  owner_issue=SAY-202 owner_branch=$BRANCH2 base=$CHECKPOINT1 claim=$CLAIM2$" 'dirty BUSY preflight changed durable ownership identity'
-assert_line "$DIRTY_PREFLIGHT" '^  state=BUSY$' 'dirty owned lane did not remain BUSY'
+assert_line "$DIRTY_PREFLIGHT" '^  🔵 state=BUSY$' 'dirty owned lane did not remain BUSY'
 
 git -C "$SUB" switch -q --detach "$CHECKPOINT1"
 if "$HELPER" preflight > "$ROOT/wrong-branch-preflight.out" 2>&1; then
   cat "$ROOT/wrong-branch-preflight.out"
   fail 'wrong-branch active lane unexpectedly remained valid'
 fi
-assert_line "$(cat "$ROOT/wrong-branch-preflight.out")" '^  state=BLOCKED reason=claim-checkout-mismatch$' 'wrong-branch active lane did not fail closed'
+assert_line "$(cat "$ROOT/wrong-branch-preflight.out")" '^  ⛔ state=BLOCKED reason=claim-checkout-mismatch$' 'wrong-branch active lane did not fail closed'
 git -C "$SUB" switch -q "$BRANCH2"
 
 BRANCH3=sayosomi/say-203-matching-peer
@@ -1909,7 +1944,7 @@ rm "$E2E/untracked"
 
 git -C "$SUB" push -q -u origin "$BRANCH2"
 "$HELPER" release sub "$CHECKPOINT2" "$CLAIM2" >"$ROOT/sub-release.out"
-assert_line "$(cat "$ROOT/sub-release.out")" '^IMPLEMENTATION RELEASED$' 'sub release did not succeed'
+assert_line "$(cat "$ROOT/sub-release.out")" '^🏁 IMPLEMENTATION RELEASED$' 'sub release did not succeed'
 sync_free_lanes
 
 BRANCH5=sayosomi/say-207-resume
@@ -1918,7 +1953,7 @@ CLAIM5="$(printf '%s\n' "$OUT5" | sed -n 's/^claim=//p')"
 CHECKPOINT5="$(printf '%s\n' "$OUT5" | sed -n 's/^checkpoint=//p')"
 git -C "$SUB" push -q -u origin "$BRANCH5"
 RESUME5=$("$HELPER" resume sub SAY-207 "$CHECKPOINT4" "$CHECKPOINT5" "$BRANCH5" "$CLAIM5")
-assert_line "$RESUME5" '^IMPLEMENTATION RESUMED$' 'resume missing header'
+assert_line "$RESUME5" '^▶️ IMPLEMENTATION RESUMED$' 'resume missing Human header'
 assert_line "$RESUME5" '^lane=sub$' 'resume missing lane'
 assert_line "$RESUME5" '^issue=SAY-207$' 'resume missing Issue'
 assert_line "$RESUME5" "^branch=$BRANCH5$" 'resume missing branch'
@@ -1926,7 +1961,7 @@ assert_line "$RESUME5" "^base=$CHECKPOINT4$" 'resume missing base'
 assert_line "$RESUME5" "^checkpoint=$CHECKPOINT5$" 'resume missing checkpoint'
 assert_line "$RESUME5" "^claim=$CLAIM5$" 'resume missing claim'
 assert_line "$RESUME5" '^clean=yes$' 'resume missing clean state'
-assert_line "$RESUME5" '^state=BUSY$' 'resume missing BUSY state'
+assert_line "$RESUME5" '^🔵 state=BUSY$' 'resume missing decorated BUSY state'
 "$HELPER" release sub "$CHECKPOINT5" "$CLAIM5" >/dev/null
 sync_free_lanes
 
@@ -1935,7 +1970,7 @@ PREPUSH_BRANCH=sayosomi/say-216-prepush-resume
 PREPUSH_OUT=$("$HELPER" begin main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BRANCH" FREE)
 PREPUSH_CLAIM="$(printf '%s\n' "$PREPUSH_OUT" | sed -n 's/^claim=//p')"
 PREPUSH_CHECKPOINT="$(printf '%s\n' "$PREPUSH_OUT" | sed -n 's/^checkpoint=//p')"
-assert_line "$PREPUSH_OUT" '^IMPLEMENTATION STARTED$' 'pre-push begin missing header'
+assert_line "$PREPUSH_OUT" '^🚀 IMPLEMENTATION STARTED$' 'pre-push begin missing Human header'
 assert_line "$PREPUSH_OUT" "^base=$PREPUSH_BASE$" 'pre-push begin changed Base'
 assert_line "$PREPUSH_OUT" "^checkpoint=$PREPUSH_BASE$" 'pre-push begin checkpoint is not Base'
 assert_line "$PREPUSH_OUT" '^clean=yes$' 'pre-push begin is not clean'
@@ -1995,7 +2030,7 @@ else
   RACE_RC=$?
 fi
 [ "$RACE_RC" -ne 0 ] || fail 'pre-push remote race returned zero'
-printf '%s\n' "$RACE_OUTPUT" | grep -q '^BLOCKED:' || {
+printf '%s\n' "$RACE_OUTPUT" | grep -q '^⛔ BLOCKED:' || {
   printf '%s\n' "$RACE_OUTPUT"
   fail 'pre-push remote race did not fail closed'
 }
@@ -2013,7 +2048,7 @@ git -C "$SEED" push -q origin ":$PREPUSH_BRANCH"
 echo 'PASS: pre-push remote race is rejected before switch'
 
 PREPUSH_RESUME=$("$HELPER" resume main SAY-216 "$PREPUSH_BASE" "$PREPUSH_BASE" "$PREPUSH_BRANCH" "$PREPUSH_CLAIM")
-assert_line "$PREPUSH_RESUME" '^IMPLEMENTATION RESUMED$' 'pre-push resume missing header'
+assert_line "$PREPUSH_RESUME" '^▶️ IMPLEMENTATION RESUMED$' 'pre-push resume missing Human header'
 assert_line "$PREPUSH_RESUME" '^lane=main$' 'pre-push resume missing lane'
 assert_line "$PREPUSH_RESUME" '^issue=SAY-216$' 'pre-push resume missing Issue'
 assert_line "$PREPUSH_RESUME" "^branch=$PREPUSH_BRANCH$" 'pre-push resume missing branch'
@@ -2021,7 +2056,7 @@ assert_line "$PREPUSH_RESUME" "^base=$PREPUSH_BASE$" 'pre-push resume changed Ba
 assert_line "$PREPUSH_RESUME" "^checkpoint=$PREPUSH_BASE$" 'pre-push resume changed checkpoint'
 assert_line "$PREPUSH_RESUME" "^claim=$PREPUSH_CLAIM$" 'pre-push resume changed claim'
 assert_line "$PREPUSH_RESUME" '^clean=yes$' 'pre-push resume missing clean state'
-assert_line "$PREPUSH_RESUME" '^state=BUSY$' 'pre-push resume missing BUSY state'
+assert_line "$PREPUSH_RESUME" '^🔵 state=BUSY$' 'pre-push resume missing decorated BUSY state'
 [ "$(cat "$(slot_state "$MAIN")")" = "$PREPUSH_SLOT_BEFORE" ] || fail 'pre-push resume changed durable ownership'
 echo 'PASS: begin-created pre-push resume preserves exact generation'
 git -C "$MAIN" switch -q main
@@ -2101,7 +2136,7 @@ sync_free_lanes
 BASE7="$(git -C "$MAIN" rev-parse origin/main)"
 BRANCH7=sayosomi/say-209-low-level-start
 START7=$("$HELPER" start main SAY-209 "$BASE7" "$BRANCH7")
-assert_line "$START7" '^IMPLEMENTATION STARTED$' 'low-level start missing header'
+assert_line "$START7" '^🚀 IMPLEMENTATION STARTED$' 'low-level start missing Human header'
 assert_line "$START7" '^checkpoint=[0-9a-fA-F]{40}$' 'low-level start missing checkpoint'
 assert_line "$START7" '^claim=[0-9A-Za-z][0-9A-Za-z._-]{7,127}$' 'low-level start missing claim'
 assert_line "$START7" '^peer_state=FREE$' 'low-level start peer state missing'
@@ -2123,7 +2158,7 @@ CRASH_CLAIM="$(sed -n 's/^claim=//p' "$(slot_state "$MAIN")")"
 [ -n "$CRASH_CLAIM" ] || fail 'interrupted start did not retain claim'
 [ -e "$(gitdir "$MAIN")/nuinui-implementation-lock" ] || fail 'interrupted start did not retain lock'
 RECOVER_START=$("$HELPER" recover main "$CRASH_CLAIM")
-assert_line "$RECOVER_START" '^RECOVERED operation=start$' 'interrupted start recovery failed'
+assert_line "$RECOVER_START" '^🛟 RECOVERED operation=start$' 'interrupted start recovery failed'
 merge_topic_into_main "$CRASH_BRANCH"
 "$HELPER" release main "$CRASH_BASE" "$CRASH_CLAIM" >/dev/null
 sync_free_lanes
@@ -2137,7 +2172,7 @@ if NUINUI_SELFTEST_CRASH_AT=release-after-rename "$HELPER" release sub "$CRASH_R
   fail 'interrupted release unexpectedly succeeded'
 fi
 RECOVER_RELEASE=$("$HELPER" recover sub "$CRASH_RELEASE_CLAIM")
-assert_line "$RECOVER_RELEASE" '^RECOVERED operation=release$' 'interrupted release recovery failed'
+assert_line "$RECOVER_RELEASE" '^🛟 RECOVERED operation=release$' 'interrupted release recovery failed'
 assert_release_receipt sub SAY-212 "$CRASH_RELEASE_BRANCH" "$CRASH_RELEASE_BASE" "$CRASH_RELEASE_BASE" "$CRASH_RELEASE_CLAIM"
 sync_free_lanes
 expect_release_duplicate 'exact duplicate after successful release recovery' sub SAY-212 "$CRASH_RELEASE_BASE" "$CRASH_RELEASE_BASE" "$CRASH_RELEASE_CLAIM" "$CRASH_RELEASE_BRANCH"
@@ -2151,7 +2186,7 @@ else
   post_rc=$?
 fi
 [ "$post_rc" = 0 ] || { printf '%s\n' "$post_output"; fail 'proven completed begin mutation returned non-zero'; }
-assert_line "$post_output" '^IMPLEMENTATION STARTED$' 'completed post-mutation begin did not return success identity'
+assert_line "$post_output" '^🚀 IMPLEMENTATION STARTED$' 'completed post-mutation begin did not return success identity'
 assert_line "$post_output" '^mutation_state=COMPLETED$' 'post-mutation failure did not expose completed mutation'
 assert_line "$post_output" '^lane=main$' 'post-mutation envelope missing lane'
 assert_line "$post_output" '^issue=SAY-214$' 'post-mutation envelope missing Issue'
@@ -2162,7 +2197,7 @@ POST_CLAIM="$(printf '%s\n' "$post_output" | sed -n 's/^claim=//p' | tail -1)"
 assert_line "$post_output" '^checkpoint=[0-9a-fA-F]{40}$' 'post-mutation envelope missing checkpoint'
 assert_line "$post_output" '^claim=[0-9A-Za-z][0-9A-Za-z._-]{7,127}$' 'post-mutation envelope missing claim'
 assert_line "$post_output" '^clean=yes$' 'post-mutation envelope missing clean state'
-assert_line "$post_output" '^state=BUSY$' 'post-mutation envelope missing BUSY state'
+assert_line "$post_output" '^🔵 state=BUSY$' 'post-mutation envelope missing BUSY state'
 [ -f "$(slot_state "$MAIN")" ] || fail 'post-mutation audit failure dropped durable target slot'
 assert_line "$(cat "$(slot_state "$MAIN")")" '^issue=SAY-214$' 'post-mutation durable target Issue changed'
 assert_line "$(cat "$(slot_state "$MAIN")")" "^branch=$POST_BRANCH$" 'post-mutation durable target branch changed'
@@ -2186,12 +2221,12 @@ else
   stale_release_rc=$?
 fi
 [ "$stale_release_rc" = 0 ] || { printf '%s\n' "$stale_release_output"; fail 'stale release result was not reconciled to success'; }
-assert_line "$stale_release_output" '^IMPLEMENTATION RELEASED$' 'stale release result did not return released envelope'
+assert_line "$stale_release_output" '^🏁 IMPLEMENTATION RELEASED$' 'stale release result did not return released envelope'
 assert_line "$stale_release_output" '^issue=SAY-215$' 'stale release result omitted captured Issue'
 assert_line "$stale_release_output" "^released_claim=$STALE_RELEASE_CLAIM$" 'stale release result omitted captured claim'
 assert_line "$stale_release_output" "^released_branch=$STALE_RELEASE_BRANCH$" 'stale release result omitted captured branch'
-assert_line "$stale_release_output" '^state=FREE$' 'stale release result did not prove FREE state'
-if printf '%s\n' "$stale_release_output" | grep -Eq '^BLOCKED: (invalid/missing active slot|release mutation completion could not be proven)$'; then
+assert_line "$stale_release_output" '^🟢 state=FREE$' 'stale release result did not prove FREE state'
+  if printf '%s\n' "$stale_release_output" | grep -Eq '^⛔ BLOCKED: (invalid/missing active slot|release mutation completion could not be proven)$'; then
   printf '%s\n' "$stale_release_output"
   fail 'stale release result exposed a stale failure'
 fi
