@@ -116,6 +116,15 @@ shared/local-tools/fixed-2plus1/human-test-core.sh
 shared/local-tools/lane-execution/manifest.sh
   project-declared lane topology manifest grammar, validation, and data-only lookup API
 
+shared/local-tools/lane-execution/preflight.sh
+  generic manifest-driven lane classification, role dispatch, and registered-worktree inventory
+
+shared/local-tools/lane-execution/render.sh
+  topology-neutral human decoration derived from canonical lane role/state evidence
+
+projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
+  nuinuiCAD's explicit Human-test status hook for the generic preflight contract; not yet assembled into standalone `nuinui`
+
 nuinui-body.sh
   narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks
 
@@ -152,6 +161,16 @@ cli-dispatch.sh
 ```
 
 これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`generate-nuinui`はproject profile、shared fixed 2+1 modulesをexplicit orderでassembleし、その後に残りのnuinuiCAD adapterを連結してstandalone helperを生成する。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
+
+### Manifest-driven preflight foundation
+
+`shared/local-tools/lane-execution/preflight.sh` is the topology-neutral read-only foundation for the later standalone runtime migration. Its `lane_execution_preflight <manifest>` API validates the #141 data-only manifest, audits every declared lane in declaration order, dispatches by the declared role, and compares registered worktrees with the manifest-derived physical path set. The optional `--forensic-worktree <absolute-path>` argument admits exactly one already-authorized extra registered worktree using the existing one-shot semantics.
+
+The implementation-role path reuses the v1 ownership field reader and preserves the existing lock, active-slot, release-tombstone, initialization, idle, `FREE`, `BUSY`, `RELEASE-PENDING`, and `BLOCKED` proof ordering. The generic adapter's `lane_execution_validate_issue_branch` callback is the boundary for project-specific Work-ID / branch validation; topology data does not define that policy.
+
+The Human-test boundary is the explicit callback `lane_execution_human_test_preflight <lane-name> <checkout-path> <manifest-path>`. Project code owns role-specific marker, session, process, and evidence rules inside that callback. The generic layer never discovers a singleton Human-test lane, and zero or multiple Human-test lanes are valid manifest shapes.
+
+`render.sh` consumes the canonical `lane name=... role=... path=...` evidence and decorates by role/state only. These sources are directly executable/testable development sources, but are not included in the current generated `nuinui`; #145 owns the deterministic runtime location and assembly switch.
 
 ### Source-size architecture budget
 
