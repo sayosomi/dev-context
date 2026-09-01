@@ -125,11 +125,20 @@ shared/local-tools/lane-execution/inventory.sh
 shared/local-tools/lane-execution/lifecycle.sh
   generic N-lane begin/start admission and durable implementation mutation; not yet assembled into standalone `nuinui`
 
+shared/local-tools/lane-execution/human-test.sh
+  generic explicit-lane Human-test fixation, exact duplicate/release proofs, and project-hook boundary; not yet assembled into standalone `nuinui`
+
+shared/local-tools/lane-execution/cli.sh
+  staged role-aware lane router, explicit/short E2E lane selection, and #145 assembly boundary
+
 shared/local-tools/lane-execution/render.sh
   topology-neutral human decoration derived from canonical lane role/state evidence
 
 projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
   nuinuiCAD's explicit Human-test status hook for the generic preflight contract; not yet assembled into standalone `nuinui`
+
+projects/nuinuiCAD/scripts/nuinui-src/lane-execution-e2e-policy.sh
+  nuinuiCAD's explicit Human-test session guards and local-main source-lane policy for the staged generic runtime
 
 nuinui-body.sh
   narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks
@@ -179,6 +188,10 @@ The Human-test boundary is the explicit callback `lane_execution_human_test_pref
 `inventory.sh` defines the canonical implementation expectation syntax as comma-separated `lane=FREE` or `lane=<project-valid Work-ID>` pairs in manifest implementation-lane order. It derives actual occupancy only from successful #142 preflight evidence: `FREE` requires no owner, `BUSY` requires a valid owner Work-ID, and release-pending/blocked/ambiguous states are not occupancies. `lifecycle.sh` compares every declared implementation lane before mutation and again at the mutation boundary; its duplicate path proves the requested target generation while comparing every other lane. The source reuses the v1 ownership metadata format and is directly executable as `lane-execution-lifecycle begin|start ...`, but remains outside the generated standalone helper until #145.
 
 `render.sh` consumes the canonical `lane name=... role=... path=...` evidence and decorates by role/state only. These sources are directly executable/testable development sources, but are not included in the current generated `nuinui`; #145 owns the deterministic runtime location and assembly switch.
+
+`human-test.sh` is the staged topology-neutral exact-ref Human-test lifecycle. Its start/release API is `lane_execution_human_test_{start,release} <manifest> <human-test-lane> <SAY-123> <tested-ref>`; it validates the selected manifest lane before reading or mutating checkout state, and preserves the existing marker/session/receipt and detached-checkout proofs. Project hooks receive lane, repository, Work-ID, tested ref, mode, and release stage explicitly. `cli.sh` exposes the staged command contract with an explicit manifest context: `e2e-start`, `e2e-start-local-main`, and `e2e-release` accept either `<human-test-lane> <SAY-123> <tested-ref>` or the compatibility short form `<SAY-123> <tested-ref>`. Short forms resolve exactly one declared Human-test lane and block on zero or multiple lanes; they never select by name or position.
+
+The staged nuinuiCAD policy source owns E2E session metadata validation and resolves `e2e-start-local-main`'s source implementation lane by the unique current `idle=branch` policy. It validates that source checkout explicitly, including `codex/interim-sequential`, tested-ref equality, and authoritative-default ancestry. No generic Human-test source knows the meaning of local-main. The staged generic router validates every implementation lane argument by manifest role and forwards remaining operations through an explicit implementation adapter boundary; #145 owns assembly and runtime activation, while the generated production helper remains Fixed 2+1 and unchanged.
 
 ### Source-size architecture budget
 

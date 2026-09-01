@@ -1,0 +1,270 @@
+#!/bin/sh
+set -eu
+
+source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+LANE_EXECUTION_SOURCE_DIR=$source_dir
+. "$source_dir/manifest.sh"
+. "$source_dir/preflight.sh"
+. "$source_dir/inventory.sh"
+. "$source_dir/lifecycle.sh"
+. "$source_dir/human-test.sh"
+. "$source_dir/cli.sh"
+. "$(CDPATH= cd -- "$source_dir/../../.." && pwd -P)/projects/nuinuiCAD/scripts/nuinui-src/lane-execution-e2e-policy.sh"
+
+lane_execution_validate_work_id() {
+  case "$1" in SAY-[0-9]*) ;; *) return 1 ;; esac
+}
+
+lane_execution_validate_issue_branch() {
+  lane_execution_validate_work_id "$1" || return 1
+  case "$2" in topic/say-*) ;; *) return 1 ;; esac
+  git check-ref-format --branch "$2" >/dev/null 2>&1
+}
+
+lane_execution_cli_implementation_operation() {
+  printf 'ROUTED operation=%s manifest=%s lane=%s args=%s\n' "$1" "$2" "$3" "$#"
+}
+
+test_root=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/lane-human-test.XXXXXX")" && pwd -P)
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -rf "$test_root"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "LANE HUMAN-TEST TEST FAIL: $*" >&2
+  exit 1
+}
+
+assert_contains() {
+  case "$1" in
+    *"$2"*) ;;
+    *) fail "$3 missing=$2 output=$1" ;;
+  esac
+}
+
+new_repository() {
+  human_test_repository_root=$1
+  mkdir -p "$human_test_repository_root/remote/example"
+  git init -q --bare "$human_test_repository_root/remote/example/project.git"
+  git init -q -b main "$human_test_repository_root/root"
+  printf 'fixture\n' >"$human_test_repository_root/root/file"
+  git -C "$human_test_repository_root/root" add file
+  git -C "$human_test_repository_root/root" -c user.name=fixture \
+    -c user.email=fixture@example.invalid commit -qm fixture
+  git -C "$human_test_repository_root/root" remote add origin \
+    "$human_test_repository_root/remote/example/project.git"
+  git -C "$human_test_repository_root/root" push -q origin main
+}
+
+add_human_lane() {
+  git -C "$human_test_repository_root/root" worktree add -q --detach "$1" origin/main
+}
+
+write_manifest_header() {
+  human_test_manifest=$1
+  printf 'version=1\nrepository=example/project\ndefault_branch=main\n' \
+    >"$human_test_manifest"
+}
+
+add_implementation_lane() {
+  printf '\n[lane %s]\nrole=implementation\npath=%s\nidle=branch\n' \
+    "$1" "$2" >>"$human_test_manifest"
+}
+
+add_human_manifest_lane() {
+  printf '\n[lane %s]\nrole=human-test\npath=%s\nidle=detached\n' \
+    "$1" "$2" >>"$human_test_manifest"
+}
+
+make_interim_source() {
+  git -C "$1" switch -q -c codex/interim-sequential
+}
+
+human_test_fixture() {
+  human_test_fixture_root=$1
+  human_test_human_count=$2
+  human_test_repository_root=$human_test_fixture_root
+  new_repository "$human_test_fixture_root"
+  make_interim_source "$human_test_fixture_root/root"
+  mkdir -p "$human_test_fixture_root/lanes"
+  human_test_manifest=$human_test_fixture_root/lanes.conf
+  write_manifest_header "$human_test_manifest"
+  add_implementation_lane worker "$human_test_fixture_root/root"
+  human_test_index=1
+  while [ "$human_test_index" -le "$human_test_human_count" ]; do
+    human_test_path=$human_test_fixture_root/lanes/verify-$human_test_index
+    add_human_lane "$human_test_path"
+    add_human_manifest_lane "verify-$human_test_index" "$human_test_path"
+    human_test_index=$((human_test_index + 1))
+  done
+  human_test_base=$(git -C "$human_test_fixture_root/root" rev-parse HEAD)
+}
+
+capture_cli() {
+  human_test_output=
+  human_test_rc=0
+  human_test_output=$(lane_execution_cli_command "$@" 2>&1) || human_test_rc=$?
+}
+
+one_root=$test_root/one
+human_test_fixture "$one_root" 1
+one_human=$one_root/lanes/verify-1
+capture_cli "$human_test_manifest" verify worker SAY-1 "$human_test_base" topic/say-1
+[ "$human_test_rc" = 0 ] || fail "renamed implementation lane was not routed: $human_test_output"
+assert_contains "$human_test_output" 'ROUTED operation=verify' 'renamed implementation routing'
+for human_test_operation in lane-init resume release recover integrate-clean; do
+  capture_cli "$human_test_manifest" "$human_test_operation" worker SAY-1 \
+    "$human_test_base" topic/say-1
+  [ "$human_test_rc" = 0 ] || fail "renamed lane rejected for $human_test_operation: $human_test_output"
+  assert_contains "$human_test_output" \
+    "ROUTED operation=$human_test_operation" "renamed $human_test_operation routing"
+done
+capture_cli "$human_test_manifest" e2e-start SAY-1 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "singleton short start failed: $human_test_output"
+assert_contains "$human_test_output" 'E2E STARTED' 'singleton short start'
+one_marker=$(lane_execution_human_test_marker_path "$one_human")
+[ -f "$one_marker" ] || fail 'singleton start did not create selected marker'
+capture_cli "$human_test_manifest" e2e-start SAY-1 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "singleton duplicate start failed: $human_test_output"
+assert_contains "$human_test_output" 'E2E ALREADY STARTED' 'singleton duplicate start'
+capture_cli "$human_test_manifest" e2e-release SAY-1 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "singleton release failed: $human_test_output"
+assert_contains "$human_test_output" 'E2E RELEASED' 'singleton release'
+capture_cli "$human_test_manifest" e2e-release SAY-1 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "singleton duplicate release failed: $human_test_output"
+assert_contains "$human_test_output" 'E2E ALREADY RELEASED' 'singleton duplicate release'
+one_receipt=$(lane_execution_human_test_receipt_path "$one_human")
+[ -f "$one_receipt" ] || fail 'singleton release did not retain receipt'
+echo 'PASS: one renamed Human-test lane supports short/explicit lifecycle and exact duplicates'
+
+capture_cli "$human_test_manifest" e2e-start-local-main SAY-2 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "renamed local-main start failed: $human_test_output"
+assert_contains "$human_test_output" 'E2E STARTED' 'renamed local-main start'
+capture_cli "$human_test_manifest" e2e-release verify-1 SAY-2 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "renamed explicit release failed: $human_test_output"
+echo 'PASS: project local-main policy selects the renamed idle=branch source lane'
+
+zero_root=$test_root/zero
+human_test_repository_root=$zero_root
+new_repository "$zero_root"
+zero_manifest=$zero_root/zero.conf
+write_manifest_header "$zero_manifest"
+add_implementation_lane renamed "$zero_root/root"
+zero_base=$(git -C "$zero_root/root" rev-parse HEAD)
+capture_cli "$zero_manifest" verify renamed SAY-3 "$zero_base" topic/say-3
+[ "$human_test_rc" = 0 ] || fail "zero-Human-test implementation route failed: $human_test_output"
+capture_cli "$zero_manifest" e2e-start SAY-3 "$zero_base"
+[ "$human_test_rc" != 0 ] || fail 'zero-Human-test short form unexpectedly passed'
+assert_contains "$human_test_output" 'no Human-test lane configured' 'zero-Human-test diagnostic'
+capture_cli "$zero_manifest" e2e-start-local-main SAY-3 "$zero_base"
+[ "$human_test_rc" != 0 ] || fail 'zero-Human-test short local-main unexpectedly passed'
+assert_contains "$human_test_output" 'no Human-test lane configured' \
+  'zero-Human-test local-main diagnostic'
+capture_cli "$zero_manifest" e2e-release SAY-3 "$zero_base"
+[ "$human_test_rc" != 0 ] || fail 'zero-Human-test short release unexpectedly passed'
+assert_contains "$human_test_output" 'no Human-test lane configured' \
+  'zero-Human-test release diagnostic'
+echo 'PASS: zero Human-test lanes do not block implementation routing and short E2E fails clearly'
+
+two_root=$test_root/two
+human_test_fixture "$two_root" 2
+two_a=$two_root/lanes/verify-1
+two_b=$two_root/lanes/verify-2
+capture_cli "$human_test_manifest" e2e-start SAY-4 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'two-lane short start unexpectedly selected a lane'
+assert_contains "$human_test_output" 'explicit Human-test lane required' 'two-lane short start diagnostic'
+capture_cli "$human_test_manifest" e2e-start-local-main SAY-4 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'two-lane short local-main unexpectedly selected a lane'
+assert_contains "$human_test_output" 'explicit Human-test lane required' 'two-lane short local-main diagnostic'
+capture_cli "$human_test_manifest" e2e-release SAY-4 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'two-lane short release unexpectedly selected a lane'
+assert_contains "$human_test_output" 'explicit Human-test lane required' 'two-lane short release diagnostic'
+capture_cli "$human_test_manifest" e2e-start worker SAY-4 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'implementation lane was accepted by Human-test start'
+[ ! -f "$(lane_execution_human_test_marker_path "$two_a")" ] || fail 'wrong-role start mutated lane A'
+capture_cli "$human_test_manifest" e2e-release worker SAY-4 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'implementation lane was accepted by Human-test release'
+[ ! -f "$(lane_execution_human_test_marker_path "$two_a")" ] || fail 'wrong-role release mutated lane A'
+capture_cli "$human_test_manifest" e2e-start missing SAY-4 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'unknown Human-test lane was accepted'
+capture_cli "$human_test_manifest" verify verify-1 SAY-4 "$human_test_base" topic/say-4
+[ "$human_test_rc" != 0 ] || fail 'Human-test lane was accepted by implementation routing'
+capture_cli "$human_test_manifest" e2e-start verify-1 SAY-4 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "explicit Human-test lane A failed: $human_test_output"
+[ -f "$(lane_execution_human_test_marker_path "$two_a")" ] || fail 'explicit lane A marker missing'
+[ ! -f "$(lane_execution_human_test_marker_path "$two_b")" ] || fail 'explicit lane A mutated lane B'
+capture_cli "$human_test_manifest" e2e-start verify-2 SAY-4 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "explicit Human-test lane B failed: $human_test_output"
+[ -f "$(lane_execution_human_test_marker_path "$two_b")" ] || fail 'explicit lane B marker missing'
+capture_cli "$human_test_manifest" e2e-release verify-1 SAY-4 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "explicit lane A release failed: $human_test_output"
+capture_cli "$human_test_manifest" e2e-release verify-2 SAY-4 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "explicit lane B release failed: $human_test_output"
+echo 'PASS: two Human-test lanes require explicit selection and mutate only the selected lane'
+
+malformed_root=$test_root/malformed
+human_test_fixture "$malformed_root" 1
+malformed_human=$malformed_root/lanes/verify-1
+malformed_marker=$(lane_execution_human_test_marker_path "$malformed_human")
+printf 'issue=SAY-5\n' >"$malformed_marker"
+capture_cli "$human_test_manifest" e2e-start verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'malformed marker unexpectedly passed'
+assert_contains "$human_test_output" 'marker is malformed' 'malformed marker diagnostic'
+rm -f "$malformed_marker"
+printf '%s\n' 'not-session' >"$(lane_execution_human_test_session_path "$malformed_human")"
+capture_cli "$human_test_manifest" e2e-start verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'malformed session unexpectedly passed'
+assert_contains "$human_test_output" 'no session' 'malformed session diagnostic'
+rm -f "$(lane_execution_human_test_session_path "$malformed_human")"
+ln -s "$malformed_root/root/file" "$malformed_marker"
+capture_cli "$human_test_manifest" e2e-start verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'symlink marker unexpectedly passed'
+assert_contains "$human_test_output" 'invalid type' 'symlink marker diagnostic'
+rm -f "$malformed_marker"
+printf 'issue=SAY-99\nref=%s\n' "$human_test_base" >"$malformed_marker"
+capture_cli "$human_test_manifest" e2e-start verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'mismatched marker unexpectedly passed'
+assert_contains "$human_test_output" 'does not match caller' 'mismatched marker diagnostic'
+rm -f "$malformed_marker"
+capture_cli "$human_test_manifest" e2e-start verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" = 0 ] || fail "setup start for receipt test failed: $human_test_output"
+printf 'version=1\nissue=SAY-5\n' >"$(lane_execution_human_test_receipt_path "$malformed_human")"
+capture_cli "$human_test_manifest" e2e-release verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'malformed receipt unexpectedly passed'
+assert_contains "$human_test_output" 'receipt is malformed' 'malformed receipt diagnostic'
+rm -f "$malformed_marker"
+capture_cli "$human_test_manifest" e2e-release verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'malformed receipt duplicate unexpectedly passed'
+assert_contains "$human_test_output" 'receipt is malformed' 'malformed receipt duplicate diagnostic'
+rm -f "$(lane_execution_human_test_receipt_path "$malformed_human")"
+printf 'version=1\nissue=SAY-99\nref=%s\n' "$human_test_base" \
+  >"$(lane_execution_human_test_receipt_path "$malformed_human")"
+capture_cli "$human_test_manifest" e2e-release verify-1 SAY-5 "$human_test_base"
+[ "$human_test_rc" != 0 ] || fail 'mismatched receipt unexpectedly passed'
+assert_contains "$human_test_output" 'receipt does not match caller' \
+  'mismatched receipt diagnostic'
+echo 'PASS: malformed/mismatched marker/session/receipt and symlink/type-confusion states fail closed'
+
+ambiguous_root=$test_root/ambiguous
+human_test_repository_root=$ambiguous_root
+new_repository "$ambiguous_root"
+mkdir -p "$ambiguous_root/lanes"
+add_human_lane "$ambiguous_root/lanes/human"
+git -C "$ambiguous_root/root" worktree add -q --detach "$ambiguous_root/lanes/other" origin/main
+ambiguous_manifest=$ambiguous_root/ambiguous.conf
+write_manifest_header "$ambiguous_manifest"
+add_implementation_lane source-a "$ambiguous_root/root"
+printf '\n[lane source-b]\nrole=implementation\npath=%s\nidle=branch\n' \
+  "$ambiguous_root/lanes/other" >>"$ambiguous_manifest"
+add_human_manifest_lane human "$ambiguous_root/lanes/human"
+ambiguous_base=$(git -C "$ambiguous_root/root" rev-parse HEAD)
+capture_cli "$ambiguous_manifest" e2e-start-local-main human SAY-6 "$ambiguous_base"
+[ "$human_test_rc" != 0 ] || fail 'ambiguous local-main source policy unexpectedly passed'
+assert_contains "$human_test_output" 'missing or ambiguous' 'ambiguous local-main diagnostic'
+echo 'PASS: local-main source policy fails closed on ambiguity'
+
+echo 'LANE HUMAN-TEST TEST PASS'
