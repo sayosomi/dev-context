@@ -64,6 +64,8 @@ start / resume後のidentity invariantは、physical BUSYなmain/subから読め
 
 same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHuman 3-lane preflightへ戻さない。current Linear checkpoint / last verified envelopeのclaimとcheckpointをcaller expectationとして`nuinui-handoff-check`へ渡し、actual local durable stateとのmatchをその場で検証する。
 
+Canonical `nuinui-handoff-check`が`HANDOFF VERIFIED`を返した後は、通常そのままLuna implementationへ進む。成功済みhandoffのhelper-owned startup factsを再確認するだけのsecondary observationを理由に、Humanをpreflight、diagnosis、state paste、またはhandoff再生成へ戻さない。repository mutationまたはgenuinely new material drift signalがある場合だけ、既存ownerのdrift / recovery routeを使う。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
+
 product / UX decision、approval-gated dev-context write、unsafe/destructive unknown-state recovery等のHuman判断boundaryは自動決定しない。その場合も必要な判断/actionを具体化する。
 
 ## Implementation continuation completion rule

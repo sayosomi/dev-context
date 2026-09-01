@@ -243,6 +243,8 @@ Promptのstartup sequenceでは、Luna processのinitial cwdをlane validation�
 
 Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は、下記 `Luna startup handoff gate` が明示する exact pushed-checkpoint `claimed branch mismatch` recoveryだけを例外とし、それ以外は変更せず停止して報告させる。
 
+Project-specific canonical `nuinui-handoff-check` is terminal startup proof for its helper-owned facts when it returns `HANDOFF VERIFIED`. Do not append `git fetch origin --prune` or another lane / topic / main verification after that success merely to re-prove those facts; the shared Coding Agent fetch rule does not create a second post-success handoff gate. A later fetch required for genuinely new implementation work is allowed, but its remote-tracking refs must not override the successful handoff or become authoritative topic evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
+
 ### Luna startup handoff gate
 
 Repository operation前に、Lunaはcurrent-run Execution Envelopeからsupplied exact handoff commandをargument変更なしで実行する。
