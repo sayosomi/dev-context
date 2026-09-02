@@ -57,6 +57,7 @@ The checked-in manifest currently provides this example topology; lane names and
 - `main` implementation lane: `/Users/yosomi/Code/nuinuiCAD`
 - `sub` implementation lane: `/Users/yosomi/Code/nuinuiCAD-sub`
 - `e2e` Manual E2E lane: `/Users/yosomi/Code/nuinuiCAD-e2e`
+- `e2e2` Manual E2E lane: `/Users/yosomi/Code/nuinuiCAD-e2e2`
 
 Hard rule:
 
