@@ -7,6 +7,7 @@
 # session/process policy, but they do not select a lane or weaken the Git
 # fixation, marker, receipt, or release proofs.
 
+# BEGIN DEVELOPMENT-ONLY SOURCE LOADING
 lane_execution_human_test_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_human_test_source_dir" ] &&
   [ "${LANE_EXECUTION_HUMAN_TEST_EXECUTE:-0}" = 1 ]; then
@@ -20,6 +21,7 @@ if ! command -v lane_execution__canonical_path >/dev/null 2>&1 &&
   [ -n "$lane_execution_human_test_source_dir" ]; then
   . "$lane_execution_human_test_source_dir/preflight.sh"
 fi
+# END DEVELOPMENT-ONLY SOURCE LOADING
 
 lane_execution_human_test__path_exists() {
   [ -e "$1" ] || [ -L "$1" ]

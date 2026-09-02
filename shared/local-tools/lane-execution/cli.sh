@@ -8,6 +8,7 @@
 # specific adapters receive the validated lane and manifest and keep their
 # existing durable semantics.
 
+# BEGIN DEVELOPMENT-ONLY SOURCE LOADING
 lane_execution_cli_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_cli_source_dir" ] &&
   [ "${LANE_EXECUTION_CLI_EXECUTE:-0}" = 1 ]; then
@@ -25,6 +26,7 @@ if ! command -v lane_execution_human_test_start >/dev/null 2>&1 &&
   [ -n "$lane_execution_cli_source_dir" ]; then
   . "$lane_execution_cli_source_dir/human-test.sh"
 fi
+# END DEVELOPMENT-ONLY SOURCE LOADING
 
 lane_execution_cli_validate_lane() {
   [ "$#" = 3 ] || return 2

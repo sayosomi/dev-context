@@ -6,6 +6,7 @@
 # runtime. The manifest supplies topology; this source supplies lifecycle
 # mechanics.
 
+# BEGIN DEVELOPMENT-ONLY SOURCE LOADING
 lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_source_dir" ] && {
   [ "${LANE_EXECUTION_LIFECYCLE_EXECUTE:-0}" = 1 ] || [ "${0##*/}" = lifecycle.sh ];
@@ -18,6 +19,7 @@ fi
 if ! command -v lane_execution_inventory_normalize >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
   . "$lane_execution_source_dir/inventory.sh"
 fi
+# END DEVELOPMENT-ONLY SOURCE LOADING
 
 if ! command -v lane_execution_before_mutation_revalidate >/dev/null 2>&1; then
   lane_execution_before_mutation_revalidate() { return 0; }

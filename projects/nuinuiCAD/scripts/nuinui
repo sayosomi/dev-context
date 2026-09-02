@@ -595,21 +595,10 @@ lifecycle_prove_busy_retry() {
 # ownership readers/classification rules without assigning meaning to lane
 # names.
 
-lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
-if [ -z "$lane_execution_source_dir" ] && [ "${LANE_EXECUTION_PREFLIGHT_EXECUTE:-0}" = 1 ]; then
-  lane_execution_source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-fi
-
-if ! command -v lane_manifest_validate >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
-  . "$lane_execution_source_dir/manifest.sh"
-fi
 
 # Reuse the established v1 field reader and generic scalar validators.  The
 # generic parser below supplies the lane-independent slot/lock checks while
 # keeping project Work-ID / branch policy in an explicit callback.
-if ! command -v nuinui_ownership_read_fields >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
-  . "$lane_execution_source_dir/ownership.sh"
-fi
 
 lane_execution_validate_issue_branch() {
   # Project adapters may replace this callback with their stricter Work-ID /
@@ -1280,18 +1269,6 @@ lane_execution__inventory_value() {
 # runtime. The manifest supplies topology; this source supplies lifecycle
 # mechanics.
 
-lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
-if [ -z "$lane_execution_source_dir" ] && {
-  [ "${LANE_EXECUTION_LIFECYCLE_EXECUTE:-0}" = 1 ] || [ "${0##*/}" = lifecycle.sh ];
-}; then
-  lane_execution_source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-fi
-if ! command -v lane_execution_preflight >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
-  . "$lane_execution_source_dir/preflight.sh"
-fi
-if ! command -v lane_execution_inventory_normalize >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
-  . "$lane_execution_source_dir/inventory.sh"
-fi
 
 if ! command -v lane_execution_before_mutation_revalidate >/dev/null 2>&1; then
   lane_execution_before_mutation_revalidate() { return 0; }
@@ -1774,19 +1751,6 @@ fi
 # session/process policy, but they do not select a lane or weaken the Git
 # fixation, marker, receipt, or release proofs.
 
-lane_execution_human_test_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
-if [ -z "$lane_execution_human_test_source_dir" ] &&
-  [ "${LANE_EXECUTION_HUMAN_TEST_EXECUTE:-0}" = 1 ]; then
-  lane_execution_human_test_source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-fi
-if ! command -v lane_manifest_validate >/dev/null 2>&1 &&
-  [ -n "$lane_execution_human_test_source_dir" ]; then
-  . "$lane_execution_human_test_source_dir/manifest.sh"
-fi
-if ! command -v lane_execution__canonical_path >/dev/null 2>&1 &&
-  [ -n "$lane_execution_human_test_source_dir" ]; then
-  . "$lane_execution_human_test_source_dir/preflight.sh"
-fi
 
 lane_execution_human_test__path_exists() {
   [ -e "$1" ] || [ -L "$1" ]
@@ -2264,23 +2228,6 @@ fi
 # specific adapters receive the validated lane and manifest and keep their
 # existing durable semantics.
 
-lane_execution_cli_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
-if [ -z "$lane_execution_cli_source_dir" ] &&
-  [ "${LANE_EXECUTION_CLI_EXECUTE:-0}" = 1 ]; then
-  lane_execution_cli_source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
-fi
-if ! command -v lane_manifest_validate >/dev/null 2>&1 &&
-  [ -n "$lane_execution_cli_source_dir" ]; then
-  . "$lane_execution_cli_source_dir/manifest.sh"
-fi
-if ! command -v lane_execution_begin >/dev/null 2>&1 &&
-  [ -n "$lane_execution_cli_source_dir" ]; then
-  . "$lane_execution_cli_source_dir/lifecycle.sh"
-fi
-if ! command -v lane_execution_human_test_start >/dev/null 2>&1 &&
-  [ -n "$lane_execution_cli_source_dir" ]; then
-  . "$lane_execution_cli_source_dir/human-test.sh"
-fi
 
 lane_execution_cli_validate_lane() {
   [ "$#" = 3 ] || return 2

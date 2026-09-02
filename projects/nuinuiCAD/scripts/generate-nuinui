@@ -128,14 +128,39 @@ trap cleanup EXIT HUP INT TERM
 
 # The source order is explicit and deterministic. Data parsing and generic
 # durable/runtime primitives precede project policy, adapters, and commands.
+# Development-only source-loading bootstrap blocks remain available when a
+# staged source is executed directly, but are not production runtime code.
+assemble_source() {
+  sed '/^# BEGIN DEVELOPMENT-ONLY SOURCE LOADING$/,/^# END DEVELOPMENT-ONLY SOURCE LOADING$/d' "$1"
+}
+
 umask 077
-cat "$ownership_source" "$manifest_source" "$runtime_source" "$preflight_source" \
-  "$inventory_source" "$lifecycle_source" "$human_test_source" "$cli_source" \
-  "$render_source" "$project_policy_source" "$e2e_policy_source" \
-  "$release_safety_source" "$implementation_operations_source" "$body_source" "$github_pr_source" \
-  "$required_checks_source" "$pr_auto_merge_source" "$integration_clean_source" \
-  "$e2e_source" "$context_sync_source" "$diagnostics_source" \
-  "$command_result_source" "$self_test_source" "$dispatch_source" > "$temporary_path"
+{
+assemble_source "$ownership_source"
+assemble_source "$manifest_source"
+assemble_source "$runtime_source"
+assemble_source "$preflight_source"
+assemble_source "$inventory_source"
+assemble_source "$lifecycle_source"
+assemble_source "$human_test_source"
+assemble_source "$cli_source"
+assemble_source "$render_source"
+assemble_source "$project_policy_source"
+assemble_source "$e2e_policy_source"
+assemble_source "$release_safety_source"
+assemble_source "$implementation_operations_source"
+assemble_source "$body_source"
+assemble_source "$github_pr_source"
+assemble_source "$required_checks_source"
+assemble_source "$pr_auto_merge_source"
+assemble_source "$integration_clean_source"
+assemble_source "$e2e_source"
+assemble_source "$context_sync_source"
+assemble_source "$diagnostics_source"
+assemble_source "$command_result_source"
+assemble_source "$self_test_source"
+assemble_source "$dispatch_source"
+} > "$temporary_path"
 chmod 755 "$temporary_path"
 mv "$temporary_path" "$output_path"
 

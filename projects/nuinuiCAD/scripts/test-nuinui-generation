@@ -94,6 +94,9 @@ test_generator() {
         fail "$name candidate contains obsolete production topology marker: $obsolete_marker"
       fi
     done
+    if grep -Eq '^[[:space:]]*\.[[:space:]]+.*\.sh' "$candidate_a"; then
+      fail "$name candidate contains runtime source loading"
+    fi
   fi
 
   protected_paths="$artifact_path"
