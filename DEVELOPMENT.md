@@ -124,14 +124,14 @@ persistent development worktreeがdirty、unexpectedなunresolved Task state、a
 
 implementation、validation、pushed-state blocking review、narrow blocking fix、PR lifecycleの全期間で、same persistent worktreeとcurrent topic branchを使い続ける。blocking fixのためにworktreeをrotateしない。
 
-dev-contextのpersistent worktreeはnuinuiCADのfixed product laneではない。
+dev-contextのpersistent worktreeはnuinuiCADのproduct laneではない。
 
-## Separation from nuinuiCAD fixed lanes
+## Separation from nuinuiCAD declared lanes
 
 resource modelを混ぜない。
 
 ```text
-sayosomi/nuinuiCAD product fixed lanes:
+sayosomi/nuinuiCAD product manifest-declared lanes (current example):
   /Users/yosomi/Code/nuinuiCAD
   /Users/yosomi/Code/nuinuiCAD-sub
   /Users/yosomi/Code/nuinuiCAD-e2e
@@ -143,12 +143,12 @@ sayosomi/dev-context repository:
 
 明示的な境界は次のとおり。
 
-- dev-context worktreeはnuinuiCAD `main` / `sub` / `e2e` laneではない。
-- dev-context taskはnuinuiCADのthree-lane capacityを消費しない。
+- dev-context worktreeはnuinuiCADのmanifest-declared laneではない。
+- dev-context taskはnuinuiCADのproduct lane capacityを消費しない。
 - nuinuiCAD lane occupancyだけを理由にdev-context developmentをblockしない。
-- dev-context worktreeを使うことは、nuinuiCADのfourth product checkoutを作る許可にならない。
+- dev-context worktreeを使うことは、nuinuiCADの追加product checkoutを作る許可にならない。
 - nuinuiCADのdurable lane claim / checkpoint semanticsをdev-context worktreeへmechanically適用しない。
-- root `DEVELOPMENT.md`がdev-context persistent worktree lifecycleをownerし、`projects/nuinuiCAD/CHECKOUTS.md`がproduct fixed lanesをownerする。
+- root `DEVELOPMENT.md`がdev-context persistent worktree lifecycleをownerし、`projects/nuinuiCAD/CHECKOUTS.md`と`LANES.conf`がproduct declared lanesをownerする。
 
 ## Development lifecycle
 

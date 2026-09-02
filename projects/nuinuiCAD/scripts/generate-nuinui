@@ -16,6 +16,7 @@ project_policy_source=$script_dir/nuinui-src/lane-execution-profile.sh
 e2e_policy_source=$script_dir/nuinui-src/lane-execution-e2e-policy.sh
 ownership_source=$repo_root/shared/local-tools/lane-execution/ownership.sh
 manifest_source=$repo_root/shared/local-tools/lane-execution/manifest.sh
+standalone_context_source=$repo_root/shared/local-tools/lane-execution/standalone-context.sh
 runtime_source=$repo_root/shared/local-tools/lane-execution/runtime.sh
 preflight_source=$repo_root/shared/local-tools/lane-execution/preflight.sh
 inventory_source=$repo_root/shared/local-tools/lane-execution/inventory.sh
@@ -40,7 +41,7 @@ artifact_path=$script_dir/nuinui
 
 [ -f "$project_policy_source" ] || { echo "generate-nuinui: project policy source is missing: $project_policy_source" >&2; exit 1; }
 [ -f "$e2e_policy_source" ] || { echo "generate-nuinui: E2E policy source is missing: $e2e_policy_source" >&2; exit 1; }
-for generic_source in "$ownership_source" "$manifest_source" "$runtime_source" \
+for generic_source in "$ownership_source" "$manifest_source" "$standalone_context_source" "$runtime_source" \
   "$preflight_source" "$inventory_source" "$lifecycle_source" "$human_test_source" \
   "$cli_source" "$render_source" "$implementation_operations_source" "$release_safety_source"; do
   [ -f "$generic_source" ] || { echo "generate-nuinui: generic runtime source is missing: $generic_source" >&2; exit 1; }
@@ -97,7 +98,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$integration_clean_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
+  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$integration_clean_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
     echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -138,6 +139,7 @@ umask 077
 {
 assemble_source "$ownership_source"
 assemble_source "$manifest_source"
+assemble_source "$standalone_context_source"
 assemble_source "$runtime_source"
 assemble_source "$preflight_source"
 assemble_source "$inventory_source"

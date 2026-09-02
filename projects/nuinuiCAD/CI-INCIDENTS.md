@@ -38,21 +38,17 @@ local executionを最初のfallbackにしない。
 
 web evidenceだけでexact failureとcauseが十分ならlocal reproductionしない。
 
-## Fixed-lane local reproduction
+## Declared-lane local reproduction
 
-local reproductionが必要なら [`CHECKOUTS.md`](./CHECKOUTS.md) の`FREE`なimplementation laneを使う。
+local reproductionが必要なら [`CHECKOUTS.md`](./CHECKOUTS.md) の`FREE`なmanifest-declared implementation laneを使う。
 
-候補:
-
-1. `main` laneがFREEなら`/Users/yosomi/Code/nuinuiCAD`;
-2. `main` BUSYかつ`sub` FREEなら`/Users/yosomi/Code/nuinuiCAD-sub`;
-3. 両方BUSYならincident reproductionのために新checkoutを作らない。どちらかがsafe checkpointでrelease可能になるまで既存Taskを保全する。
+候補はcurrent `LANES.conf`の宣言順に確認する。全implementation laneがBUSYならincident reproductionのために新checkoutを作らず、どれかがsafe checkpointでrelease可能になるまで既存Taskを保全する。
 
 禁止:
 
 - `/Users/yosomi/Code/nuinuiCAD-ci-repro`の作成 / 使用;
 - additional worktree / clone;
-- `e2e` laneの転用;
+- `role=human-test` laneの転用;
 - BUSY laneをreset / stash / force-switchして空けること。
 
 ## Executor

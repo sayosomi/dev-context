@@ -78,7 +78,7 @@ Issue Authoringではread-onlyなrepository / GitHub investigationだけを行�
 
 `/Users/yosomi/Code/dev-context-dev` はdev-contextのsingle-track persistent development worktreeであり、Issue Authoringのために新しいworktreeを作らない。implementationを開始するときだけ、[root `DEVELOPMENT.md`](./DEVELOPMENT.md) のcurrent persistent-worktree policyに従って安全にrepurposeする。
 
-Issue AuthoringはnuinuiCADのmain / sub / e2e fixed laneをclaimせず、そのcapacityを消費しない。nuinuiCAD lane occupancyだけを理由にdev-context Issue Authoringまたはdev-context implementationを`contract:blocked`とは分類しない。
+Issue AuthoringはnuinuiCADのmanifest-declared laneをclaimせず、そのcapacityを消費しない。nuinuiCAD lane occupancyだけを理由にdev-context Issue Authoringまたはdev-context implementationを`contract:blocked`とは分類しない。
 
 ## Contract state labels
 
@@ -301,7 +301,7 @@ dev-contextへ次を持ち込まない。
 - Linear Project / Document semantics
 - GitHub Issues mirror semantics
 - `contract_reaudit` campaign marker
-- nuinuiCAD fixed-lane routing
+- nuinuiCAD declared-lane routing
 - Manual E2E classification
 
 dev-contextではGitHub Issuesを直接primary Work / current-contract authorityとして扱う。Linearの導入、Linear mirror、Linear Project / Document、またはnuinuiCADのlane semanticsをdev-context Issue governanceへ追加しない。

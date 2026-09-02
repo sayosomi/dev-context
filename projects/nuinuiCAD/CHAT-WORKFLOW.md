@@ -10,7 +10,7 @@ current stateのauthorityは次の通り。
 
 - actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
 - Work / contract / progress / checkpoint: Linear Issue / Comment / Document
-- local execution occupancy: actual fixed checkout state + current Linear checkpoint
+- local execution occupancy: actual declared-lane checkout state + current Issue checkpoint
 - durable project policy: latest `sayosomi/dev-context` owner documents
 
 過去chat、chat summary、project conversation historyはcurrent stateのauthorityにしない。
@@ -48,7 +48,7 @@ SAY-123 authoring #1
 
 このchat分割自体はIssue decompositionではない。Issue boundaryは`CONTRACT-DECISIONS.md`、implementation sliceは`IMPLEMENTATION-SLICING.md`がauthority。
 
-chatとlaneも固定対応させない。`main chat` / `sub chat`のような恒久対応を作らず、Issueのcurrent execution時点でFREEなlaneを割り当てる。
+chatとlaneも固定対応させない。`main chat` / `sub chat`のような恒久対応を作らず、Issueのcurrent execution時点でmanifest上FREEなdeclared laneを割り当てる。
 
 ## Rotation is always allowed
 
@@ -96,7 +96,7 @@ Issue / Workを新chatで開始・再開するとき、過去chatの要約から
 2. loading ruleが要求するlatest dev-context owner documents
 3. current Linear Issue / Comments / relevant Document
 4. latest GitHub remote repository / branch / PR / CI state
-5. local executionが関係する場合だけactual fixed lane state
+5. local executionが関係する場合だけactual declared-lane state
 
 current implementation factはlatest repositoryをauthoritativeとする。
 
@@ -134,8 +134,8 @@ chatの数とexecution parallelismを混同しない。
 ```text
 Coordinator chat     -> execution capacityを消費しない
 Issue Authoring chat -> unlimited; execution capacityを消費しない
-Implementation       -> main/subで最大2 track
-Manual E2E           -> e2eで最大1 track
+Implementation       -> declared role=implementation lanes
+Manual E2E           -> declared role=human-test lanes
 ```
 
 Issue Authoringを多数並行することは許可するが、Ready Workが増えたことを理由にimplementation laneを追加しない。
@@ -150,22 +150,22 @@ Human report / idea
 -> Issue / contract Ready
 -> Todo
 -> Coordinator or direct request selects Work
--> Implementation chat + FREE main/sub lane
+-> Implementation chat + FREE declared implementation lane
 -> implementation merge + authoritative read-back
 -> prove remaining acceptance is required Manual E2E only
 -> synchronize Linear status to In Review
 -> synchronize `manual_e2e_only` and current Manual E2E state according to existing policy
--> exact main/sub implementation lane release
+-> exact declared implementation lane release
 -> successful IMPLEMENTATION RELEASED
 -> Lane release checkpoint record and read-back
 -> implementation lane proven FREE
--> if e2e lane is FREE, normal e2e-start / E2E handoff
--> if e2e lane is BUSY, remain In Review and wait without retaining the implementation lane
+-> if a Human-test lane is FREE, normal e2e-start / E2E handoff
+-> if all suitable Human-test lanes are BUSY, remain In Review and wait without retaining the implementation lane
 -> PASS
 -> Done
 ```
 
-ImplementationからE2Eへのcanonical handoffでは、E2E startをimplementation release barrierより前に置かない。E2E laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、E2EがBUSYならmain/subを保持せずIn Reviewで待つ。
+ImplementationからE2Eへのcanonical handoffでは、E2E startをimplementation release barrierより前に置かない。Human-test laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、selected Human-test laneがBUSYならimplementation laneを保持せずIn Reviewで待つ。
 
 roleを切り替える際も、destination roleのstartup gateを省略しない。同じchatを継続するか新chatへ切り替えるかはWork identityとは別判断。
 

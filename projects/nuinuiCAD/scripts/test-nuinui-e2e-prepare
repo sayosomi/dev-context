@@ -3,8 +3,9 @@
 set -u
 
 SCRIPT_DIR="${0:A:h}"
-PREPARE_SCRIPT="$SCRIPT_DIR/nuinui-e2e-prepare"
+PREPARE_SCRIPT="${1:-$SCRIPT_DIR/nuinui-e2e-prepare}"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-e2e-prepare-test.XXXXXX")" || exit 1
+TEST_ROOT="${TEST_ROOT:A}"
 
 cleanup_test_root() {
   [[ -d "$TEST_ROOT" ]] && rm -rf -- "$TEST_ROOT"
@@ -29,6 +30,7 @@ handoff=""
 root=""
 status_out=""
 marker_contents=""
+manifest="$TEST_ROOT/LANES.conf"
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -50,6 +52,16 @@ tested_ref="$(git -C "$repo" rev-parse HEAD)"
 marker="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-slot"
 session="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-session"
 printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+cat > "$manifest" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane test-human]
+role=human-test
+path=$repo
+idle=detached
+MANIFEST
 
 cat > "$fake_bin/lsof" <<'EOF'
 #!/bin/zsh
@@ -95,7 +107,8 @@ EOF
 chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_app/Contents/Resources/app/bin/code"
 
 common_env=(
-  "NUINUI_E2E_PREPARE_WT=$repo"
+  "NUINUI_E2E_SELFTEST=1"
+  "NUINUI_E2E_MANIFEST=$manifest"
   "NUINUI_E2E_TEMP_PARENT=$temp_parent"
   "TMPDIR=$closure_parent/"
   "NUINUI_E2E_VSCODE_APP=$fake_app"
@@ -104,12 +117,12 @@ common_env=(
 )
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.3.0" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.4.0" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
-print -r -- "$help_out" | grep -Fq "nuinui e2e-release <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
-cleanup_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
-release_line="$(print -r -- "$help_out" | grep -n "nuinui e2e-release <SAY-123> <tested-ref>" | head -n 1 | cut -d: -f1)"
-closure_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare closure-check <Issue>" | head -n 1 | cut -d: -f1)"
+print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
+cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
+release_line="$(print -r -- "$help_out" | grep -nF "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" | head -n 1 | cut -d: -f1)"
+closure_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>" | head -n 1 | cut -d: -f1)"
 [[ -n "$cleanup_line" && -n "$release_line" && -n "$closure_line" && "$cleanup_line" -lt "$release_line" && "$release_line" -lt "$closure_line" ]] || fail "help does not preserve cleanup -> release -> closure order"
 
 echo "TEST: status reports no session and unmanaged artifact candidates without mutation"
@@ -395,5 +408,56 @@ printf '%s\n' "$receipt_content" > "$cleanup_receipt"
 if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-998 "$other_ref" "$arbitrary_root" >/dev/null 2>&1; then
   fail "wrong cleanup root unexpectedly succeeded"
 fi
+
+echo "TEST: explicit Human-test lanes remain independent in a 2+2 topology"
+repo_two="$TEST_ROOT/repo-two"
+git clone -q "$repo" "$repo_two" || fail "second Human-test clone"
+git -C "$repo_two" remote set-url origin https://github.com/sayosomi/nuinuiCAD.git
+git -C "$repo_two" switch --detach -q HEAD || fail "second Human-test detach"
+tested_ref_two="$(git -C "$repo_two" rev-parse HEAD)"
+marker_two="$(git -C "$repo_two" rev-parse --absolute-git-dir)/nuinui-slot"
+session_two="$(git -C "$repo_two" rev-parse --absolute-git-dir)/nuinui-e2e-session"
+printf 'issue=SAY-997\nref=%s\n' "$tested_ref_two" > "$marker_two"
+manifest_two="$TEST_ROOT/LANES-2plus2.conf"
+cat > "$manifest_two" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane implementation-a]
+role=implementation
+path=$repo
+idle=detached
+
+[lane implementation-b]
+role=implementation
+path=$repo_two
+idle=detached
+
+[lane human-a]
+role=human-test
+path=$repo
+idle=detached
+
+[lane human-b]
+role=human-test
+path=$repo_two
+idle=detached
+MANIFEST
+two_env=("${common_env[@]}")
+two_env+=("NUINUI_E2E_MANIFEST=$manifest_two")
+two_env+=("NUINUI_FAKE_REPO=$repo_two")
+if env "${two_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-997 "$tested_ref_two" "$fixture" 9556 >/dev/null 2>&1; then
+  fail "short-form prepare selected a lane in a multi-Human-test topology"
+fi
+two_prepare_out="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9556 2>&1)" || {
+  print -r -- "$two_prepare_out"
+  fail "explicit second Human-test prepare"
+}
+[[ -f "$session_two" ]] || fail "explicit second Human-test session missing"
+[[ "$(sed -n 's/^lane=//p' "$session_two")" == human-b ]] || fail "session did not retain exact Human-test lane"
+two_root="$(sed -n 's/^root=//p' "$session_two")"
+env "${two_env[@]}" zsh "$PREPARE_SCRIPT" cleanup human-b SAY-997 "$tested_ref_two" "$two_root" >/dev/null || fail "explicit second Human-test cleanup"
+[[ ! -e "$session_two" && ! -e "$two_root" ]] || fail "second Human-test cleanup retained state"
 
 echo "SELFTEST PASS"

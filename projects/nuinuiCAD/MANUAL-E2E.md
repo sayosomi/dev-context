@@ -394,7 +394,7 @@ Classify the candidate only after these checks:
 
 If Human explicitly stops or pauses before triage completes, the [Human stop / pause rule](#common-runtime-control-after-a-unit-result) remains highest priority: request no further E2E operation, record triage as incomplete / not performed as applicable, and do not infer or confirm product `FAIL` from incomplete triage.
 
-Triage is limited to failure classification and minimal reproduction evidence collection: tested ref / build, actual host and production path, fixture / initial state, concise reproducible steps and observation, excluded test-side explanations, triage class, and whether rerun or implementation decomposition is required. It is not implementation debugging. Do not modify product code in the E2E checkout, perform ad-hoc implementation repair or fix experiments there, or turn triage into open-ended repository / source investigation. Once implementation failure is confirmed, fixes continue through the existing decomposition flow and return to a `FREE` `main` / `sub` implementation lane.
+Triage is limited to failure classification and minimal reproduction evidence collection: tested ref / build, actual host and production path, fixture / initial state, concise reproducible steps and observation, excluded test-side explanations, triage class, and whether rerun or implementation decomposition is required. It is not implementation debugging. Do not modify product code in the Human-test checkout, perform ad-hoc implementation repair or fix experiments there, or turn triage into open-ended repository / source investigation. Once implementation failure is confirmed, fixes continue through the existing decomposition flow and return to a `FREE` declared implementation lane.
 
 After this gate, continue with the existing result-handling flow below; a confirmed implementation failure is the only triage outcome that enters implementation-failure decomposition.
 
@@ -412,7 +412,7 @@ For confirmed implementation failure:
    - a prerequisite prevents an executable contract → `Contract: Blocked`;
    - keep `Manual E2E: Failed` as failure evidence until a later rerun passes;
 6. only `Contract: Ready` + unblocked Work returns to normal implementation execution under [`CHECKOUTS.md`](./CHECKOUTS.md) and [`CODING-AGENT.md`](./CODING-AGENT.md):
-   - select a `FREE` `main` or `sub` implementation lane;
+   - select a `FREE` manifest-declared implementation lane;
    - freeze the fix Base checkpoint SHA and record the implementation checkpoint;
    - Codex Luna xhigh performs implementation / blocking fix / verification / git work;
    - never implement or repair the product from the `e2e` checkout;
@@ -489,7 +489,7 @@ FAIL candidate present?
          -> ambiguous oracle / new product decision: Contract / plan non-Ready
          -> confirmed implementation failure:
             confirm product FAIL -> existing result handling / focused latest-main re-audit
-            -> Ready + unblocked -> FREE main/sub -> Luna fix -> merge -> rerun
+            -> Ready + unblocked -> FREE declared implementation lane -> Luna fix -> merge -> rerun
             -> Pending / Blocked -> Backlog until resolved
          -> Human stops / pauses before triage completes:
             record incomplete / not performed -> no product FAIL

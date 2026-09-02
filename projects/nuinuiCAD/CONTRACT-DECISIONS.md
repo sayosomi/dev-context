@@ -15,9 +15,9 @@ Issue作成、Bug調査、仕様相談、contract策定、acceptance整理、dep
 Issue Authoringはrepository implementationではない。
 
 - Authoring chat数にimplementation capacity上限を適用しない。
-- `main` / `sub` / `e2e` laneをclaimしない。
+- execution laneをclaimしない。
 - contractをReadyにしただけでは`In Progress`へ進めない。
-- repository implementation / blocking fixはReady後にfixed implementation laneへ割り当て、Luna xhighで実行する。
+- repository implementation / blocking fixはReady後にmanifest-declared implementation laneへ割り当て、Luna xhighで実行する。
 
 複数Authoring chatが同じIssueを扱う場合、Linear write前にcurrent Issue / relevant commentsを再取得し、別chatのcurrent decisionを失わない。競合するproduct decisionをlast-write-winsで上書きしない。
 
@@ -151,14 +151,14 @@ Issue boundary、chat、execution laneは別判断。
 new leaf Issue
   -> Authoring / contract Ready
   -> Todo
-  -> FREEなmain/sub laneへstartupした時だけIn Progress
+  -> FREEなdeclared implementation laneへstartupした時だけIn Progress
 
 same Issue next slice
   -> current laneで継続、またはsafe checkpointでrelease / later restart
   -> implementationはLuna xhigh
 ```
 
-execution capacity / laneは`CHECKOUTS.md`、implementation executorは`CODING-AGENT.md`、slice / checkpointは`IMPLEMENTATION-SLICING.md`をauthorityとする。
+execution capacity / laneは`LANES.conf` + `CHECKOUTS.md`、implementation executorは`CODING-AGENT.md`、slice / checkpointは`IMPLEMENTATION-SLICING.md`をauthorityとする。
 
 ## Parent after decomposition
 

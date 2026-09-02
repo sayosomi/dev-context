@@ -57,7 +57,7 @@ remote/local照合、checkout / worktree、commit / push / reviewの詳細は [`
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](./AGENT-PROMPT-STYLE.md) |
 | implementation Coding Agent role / prompt content / management ordering / handoff | [Shared Implementation Coding Agent Workflow](./CODING-AGENT-WORKFLOW.md) |
 | reusable implementation/review skills and Human terminal instruction skill routing | [Shared Agent Skills](./AGENT-SKILLS.md) |
-| reusable fixed 2+1 execution mechanics | [Fixed 2+1 Execution Model](./FIXED-2PLUS1-EXECUTION.md) |
+| reusable declared-lane execution semantics | [Declared-lane Execution Model](./DECLARED-LANE-EXECUTION.md) |
 
 ## Task lifecycle
 

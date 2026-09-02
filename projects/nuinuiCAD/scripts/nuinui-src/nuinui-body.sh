@@ -1,8 +1,9 @@
 # nuinuiCAD-specific runtime shell helpers for the generated standalone CLI.
 # The product manifest is resolved lazily so version/help/context commands do
-# not depend on a healthy lane topology.
+# not depend on a healthy lane topology. standalone-context.sh owns the
+# structural helper/project relationship.
 
-V=1.7.1
+V=1.8.0
 P=$0
 case "$P" in
   */*) ;;
@@ -22,38 +23,9 @@ else
   CT=sayosomi/dev-context
 fi
 
-nuinui_runtime_resolve_manifest() {
-  if [ "${NUINUI_SELFTEST:-0}" = 1 ] && [ -n "${NUINUI_SELFTEST_MANIFEST:-}" ]; then
-    case "$NUINUI_SELFTEST_MANIFEST" in /*) ;; *) echo 'BLOCKED: test manifest path must be absolute' >&2; return 1 ;; esac
-    [ -f "$NUINUI_SELFTEST_MANIFEST" ] && [ ! -L "$NUINUI_SELFTEST_MANIFEST" ] &&
-      [ -r "$NUINUI_SELFTEST_MANIFEST" ] || {
-        echo "BLOCKED: test manifest is not a readable regular file: $NUINUI_SELFTEST_MANIFEST" >&2
-        return 1
-      }
-    printf '%s\n' "$NUINUI_SELFTEST_MANIFEST"
-    return 0
-  fi
-  [ -n "$P" ] && [ -f "$P" ] && [ ! -L "$P" ] || {
-    echo 'BLOCKED: generated helper location cannot be proven' >&2
-    return 1
-  }
-  nuinui_runtime_script_dir=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P) || return 1
-  [ "$(basename -- "$nuinui_runtime_script_dir")" = scripts ] || {
-    echo 'BLOCKED: generated helper is not in its versioned project scripts directory' >&2
-    return 1
-  }
-  nuinui_runtime_project_dir=$(CDPATH= cd -- "$nuinui_runtime_script_dir/.." 2>/dev/null && pwd -P) || return 1
-  nuinui_runtime_manifest=$nuinui_runtime_project_dir/LANES.conf
-  [ -f "$nuinui_runtime_manifest" ] && [ ! -L "$nuinui_runtime_manifest" ] &&
-    [ -r "$nuinui_runtime_manifest" ] || {
-      echo "BLOCKED: authoritative project lane manifest is missing or unreadable: $nuinui_runtime_manifest" >&2
-      return 1
-    }
-  printf '%s\n' "$nuinui_runtime_manifest"
-}
-
 nuinui_require_runtime_manifest() {
-  NUINUI_RUNTIME_MANIFEST=$(nuinui_runtime_resolve_manifest) || return 1
+  NUINUI_RUNTIME_MANIFEST=$(lane_standalone_context_manifest "$P" \
+    "${NUINUI_SELFTEST:-0}" "${NUINUI_SELFTEST_MANIFEST:-}") || return 1
   export NUINUI_RUNTIME_MANIFEST
   lane_manifest_validate "$NUINUI_RUNTIME_MANIFEST" || {
     echo "BLOCKED: authoritative project lane manifest is invalid: $NUINUI_RUNTIME_MANIFEST" >&2

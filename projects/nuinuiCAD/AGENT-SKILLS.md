@@ -40,7 +40,7 @@ DSL変更時に、変更内容に応じて次のsurfaceを確認する。
 
 repository-owned skill: `sayosomi/nuinuiCAD/.agents/skills/nuinuicad-luna-mcp-e2e/SKILL.md`
 
-predeclaredされた`Executor: Luna`のObjective Manual E2E unitを、fixed `e2e` laneのisolated VS Code production host上で実行するためのskill。
+predeclaredされた`Executor: Luna`のObjective Manual E2E unitを、manifest-declared Human-test laneのisolated VS Code production host上で実行するためのskill。
 
 実行モデル:
 
@@ -55,7 +55,7 @@ Human = transport or Human-judgment executor when required
 このskillはexecution procedureを提供するがauthorityを置き換えない。
 
 - classification / executor / PASS-FAIL-BLOCKED: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
-- fixed checkout / lane: [`CHECKOUTS.md`](./CHECKOUTS.md)
+- declared checkout / lane: [`CHECKOUTS.md`](./CHECKOUTS.md) + [`../../shared/DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md)
 - isolated VS Code host: [`VS-CODE-E2E.md`](./VS-CODE-E2E.md)
 - Luna prompt / tested-state / evidence / retry: [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md)
 - current fixture / oracle: current Linear Issue Manual E2E plan
@@ -112,4 +112,4 @@ ChatGPT、Luna/implementation agent、Coordinator、Human E2Eの間でIssue/chec
 
 このskillはpolicy本文の複製、Issue選択、send/resume、Linear/GitHub/local外部write、merge、lane/worktree操作、implementation判断を行わない。Active interimと通常運用のどちらでも、先にREADMEとcurrent authorityを読み、競合・stale evidence・不明ownerは推測せず停止する。
 
-すべてのskillはparent task、repository `AGENTS.md`、current Linear contract、fixed lane policyを上書きしない。
+すべてのskillはparent task、repository `AGENTS.md`、current Linear contract、declared-lane policyを上書きしない。

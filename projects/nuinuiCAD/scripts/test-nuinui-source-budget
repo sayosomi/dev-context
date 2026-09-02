@@ -7,16 +7,16 @@ script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
 source_budget_check() {
   source_budget_script_dir=$1
   source_budget_search_root=$source_budget_script_dir
-  source_budget_shared_root=
   source_budget_lane_execution_root=
+  source_budget_e2e_prepare_root=$source_budget_script_dir/nuinui-e2e-prepare-src
   while [ "$source_budget_search_root" != / ]; do
-    if [ -d "$source_budget_search_root/shared/local-tools/fixed-2plus1" ]; then
-      source_budget_shared_root=$source_budget_search_root/shared/local-tools/fixed-2plus1
-    fi
     if [ -d "$source_budget_search_root/shared/local-tools/lane-execution" ]; then
       source_budget_lane_execution_root=$source_budget_search_root/shared/local-tools/lane-execution
     fi
-    if [ -n "$source_budget_shared_root" ] && [ -n "$source_budget_lane_execution_root" ]; then
+    if [ -d "$source_budget_search_root/projects/nuinuiCAD/scripts/nuinui-e2e-prepare-src" ]; then
+      source_budget_e2e_prepare_root=$source_budget_search_root/projects/nuinuiCAD/scripts/nuinui-e2e-prepare-src
+    fi
+    if [ -n "$source_budget_lane_execution_root" ] && [ -n "$source_budget_e2e_prepare_root" ]; then
       break
     fi
     source_budget_next_root=$(CDPATH= cd -- "$source_budget_search_root/.." && pwd -P) || break
@@ -26,8 +26,8 @@ source_budget_check() {
   for source_root in \
     "$source_budget_script_dir/nuinui-src" \
     "$source_budget_script_dir/nuinui-handoff-check-src" \
-    "$source_budget_shared_root" \
-    "$source_budget_lane_execution_root"; do
+    "$source_budget_lane_execution_root" \
+    "$source_budget_e2e_prepare_root"; do
     [ -d "$source_root" ] || {
       echo "SOURCE BUDGET BLOCKED: missing guarded source root path=$source_root" >&2
       return 1
@@ -37,8 +37,8 @@ source_budget_check() {
   source_budget_workspace=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-source-budget.XXXXXX")
   source_budget_nuinui_list=$source_budget_workspace/nuinui-src
   source_budget_handoff_list=$source_budget_workspace/nuinui-handoff-check-src
-  source_budget_shared_list=$source_budget_workspace/fixed-2plus1
   source_budget_lane_execution_list=$source_budget_workspace/lane-execution
+  source_budget_e2e_prepare_list=$source_budget_workspace/nuinui-e2e-prepare-src
   source_budget_top_level_list=$source_budget_workspace/top-level
   source_budget_unsorted_list=$source_budget_workspace/unsorted
   source_budget_list=$source_budget_workspace/sorted
@@ -53,13 +53,13 @@ source_budget_check() {
     rm -rf "$source_budget_workspace"
     return 1
   fi
-  if ! find "$source_budget_shared_root" -type f -print > "$source_budget_shared_list"; then
-    echo "SOURCE BUDGET BLOCKED: discovery=shared-fixed-2plus1 path=$source_budget_shared_root" >&2
+  if ! find "$source_budget_lane_execution_root" -type f -print > "$source_budget_lane_execution_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=shared-lane-execution path=$source_budget_lane_execution_root" >&2
     rm -rf "$source_budget_workspace"
     return 1
   fi
-  if ! find "$source_budget_lane_execution_root" -type f -print > "$source_budget_lane_execution_list"; then
-    echo "SOURCE BUDGET BLOCKED: discovery=shared-lane-execution path=$source_budget_lane_execution_root" >&2
+  if ! find "$source_budget_e2e_prepare_root" -type f -print > "$source_budget_e2e_prepare_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=nuinui-e2e-prepare-src path=$source_budget_e2e_prepare_root" >&2
     rm -rf "$source_budget_workspace"
     return 1
   fi
@@ -79,8 +79,8 @@ source_budget_check() {
       test-*) continue ;;
     esac
     printf '%s\n' "$source_path"
-  done < "$source_budget_shared_list" >> "$source_budget_unsorted_list"; then
-    echo "SOURCE BUDGET BLOCKED: discovery=shared-local-tools-classification path=$source_budget_shared_root" >&2
+  done < "$source_budget_lane_execution_list" >> "$source_budget_unsorted_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=shared-lane-execution-classification path=$source_budget_lane_execution_root" >&2
     rm -rf "$source_budget_workspace"
     return 1
   fi
@@ -90,15 +90,15 @@ source_budget_check() {
       test-*) continue ;;
     esac
     printf '%s\n' "$source_path"
-  done < "$source_budget_lane_execution_list" >> "$source_budget_unsorted_list"; then
-    echo "SOURCE BUDGET BLOCKED: discovery=shared-lane-execution-classification path=$source_budget_lane_execution_root" >&2
+  done < "$source_budget_e2e_prepare_list" >> "$source_budget_unsorted_list"; then
+    echo "SOURCE BUDGET BLOCKED: discovery=nuinui-e2e-prepare-src-classification path=$source_budget_e2e_prepare_root" >&2
     rm -rf "$source_budget_workspace"
     return 1
   fi
   if ! while IFS= read -r source_path || [ -n "$source_path" ]; do
     source_name=${source_path##*/}
     case "$source_name" in
-      nuinui|nuinui-handoff-check|generate-*|test-*)
+      nuinui|nuinui-handoff-check|nuinui-e2e-prepare|generate-*|test-*)
         continue
         ;;
     esac
@@ -176,8 +176,8 @@ make_fixture() {
   mkdir -p \
     "$source_budget_fixture/scripts/nuinui-src" \
     "$source_budget_fixture/scripts/nuinui-handoff-check-src" \
-    "$source_budget_fixture/shared/local-tools/fixed-2plus1" \
-    "$source_budget_fixture/shared/local-tools/lane-execution"
+    "$source_budget_fixture/shared/local-tools/lane-execution" \
+    "$source_budget_fixture/scripts/nuinui-e2e-prepare-src"
   cp "$budget_script" "$source_budget_fixture/scripts/test-nuinui-source-budget"
   chmod 755 "$source_budget_fixture/scripts/test-nuinui-source-budget"
   printf '%s\n' "$source_budget_fixture"
@@ -273,19 +273,15 @@ make_bytes 32769 "$handoff_path"
 run_expected_failure 'nuinui-handoff-check-src over-budget source' "$handoff_fixture/scripts/test-nuinui-source-budget" "$handoff_path"
 
 shared_fixture=$(make_fixture shared-root)
-shared_path=$shared_fixture/shared/local-tools/fixed-2plus1/new-shared-core.sh
+shared_path=$shared_fixture/shared/local-tools/lane-execution/new-shared-core.sh
 make_bytes 32769 "$shared_path"
-run_expected_failure 'shared fixed-2plus1 over-budget source' "$shared_fixture/scripts/test-nuinui-source-budget" "$shared_path"
+run_expected_failure 'shared lane-execution over-budget source' "$shared_fixture/scripts/test-nuinui-source-budget" "$shared_path"
 
-lane_execution_path=$shared_fixture/shared/local-tools/lane-execution/new-lane-source.sh
-make_bytes 32769 "$lane_execution_path"
-run_expected_failure 'shared lane-execution over-budget source' "$shared_fixture/scripts/test-nuinui-source-budget" "$lane_execution_path"
+e2e_source_path=$shared_fixture/scripts/nuinui-e2e-prepare-src/new-e2e-source.zsh
+make_bytes 32769 "$e2e_source_path"
+run_expected_failure 'nuinui-e2e-prepare source over-budget source' "$shared_fixture/scripts/test-nuinui-source-budget" "$e2e_source_path"
 
 standalone_fixture=$(make_fixture standalone)
-standalone_path=$standalone_fixture/scripts/nuinui-e2e-prepare
-make_bytes 32769 "$standalone_path"
-run_expected_failure 'top-level nuinui-e2e-prepare over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$standalone_path"
-
 generic_standalone_path=$standalone_fixture/scripts/new-standalone-helper
 make_bytes 32769 "$generic_standalone_path"
 run_expected_failure 'top-level standalone helper over budget' "$standalone_fixture/scripts/test-nuinui-source-budget" "$generic_standalone_path"
@@ -311,6 +307,7 @@ run_expected_pass 'generated artifacts, generators, and focused tests excluded' 
 boundary_fixture=$(make_fixture boundary)
 make_bytes 32768 "$boundary_fixture/scripts/nuinui-src/exact-source.sh"
 make_bytes 32768 "$boundary_fixture/scripts/nuinui-handoff-check-src/exact-handoff-source.sh"
+make_bytes 32768 "$boundary_fixture/scripts/nuinui-e2e-prepare-src/exact-e2e-source.zsh"
 make_bytes 32768 "$boundary_fixture/scripts/exact-standalone-helper"
 run_expected_pass 'exact budget boundary accepted' "$boundary_fixture/scripts/test-nuinui-source-budget"
 

@@ -3,12 +3,14 @@ set -eu
 
 HELPER="${1:-$(cd "$(dirname "$0")" && pwd -P)/nuinui-handoff-check}"
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/nuinui-handoff-check.XXXXXX")"
+ROOT="$(CDPATH= cd -- "$ROOT" && pwd -P)"
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 
 REMOTE="$ROOT/remote.git"
 SEED="$ROOT/seed"
 MAIN="$ROOT/main"
 SUB="$ROOT/sub"
+THIRD="$ROOT/third"
 
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 expect_blocked() {
@@ -49,6 +51,29 @@ git clone -q "$REMOTE" "$MAIN"
 git -C "$MAIN" config user.name test
 git -C "$MAIN" config user.email test@example.invalid
 git -C "$MAIN" worktree add -q --detach "$SUB" origin/main
+git -C "$MAIN" worktree add -q --detach "$THIRD" origin/main
+
+MANIFEST="$ROOT/LANES.conf"
+cat > "$MANIFEST" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane alpha]
+role=implementation
+path=$MAIN
+idle=branch
+
+[lane beta]
+role=implementation
+path=$SUB
+idle=detached
+
+[lane gamma]
+role=implementation
+path=$THIRD
+idle=detached
+MANIFEST
 
 BASE="$(git -C "$MAIN" rev-parse origin/main)"
 ISSUE="SAY-167"
@@ -78,10 +103,12 @@ claim=$CLAIM
 STATE
 
 export NUINUI_HANDOFF_SELFTEST=1
-export NUINUI_MAIN_WT="$MAIN"
-export NUINUI_SUB_WT="$SUB"
+export NUINUI_HANDOFF_MANIFEST="$MANIFEST"
 
-"$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact > "$ROOT/out"
+if ! "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact > "$ROOT/out" 2>&1; then
+  cat "$ROOT/out"
+  fail 'exact handoff failed'
+fi
 grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "exact handoff did not verify"; }
 grep -q "^  branch=$BRANCH$" "$ROOT/out" || fail "verified handoff did not use durable claimed branch"
 if grep -q "$OLD_BRANCH" "$ROOT/out"; then fail "stale same-Issue branch leaked into verified identity"; fi
@@ -89,41 +116,41 @@ echo "PASS: exact claim ignores unrelated stale same-Issue branch"
 
 cp "$SLOT/state" "$ROOT/valid-state"
 sed 's/^version=1$/version=2/' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot unsupported version" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot unsupported version" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 sed '/^claim=/d' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot missing key" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot missing key" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 cp "$ROOT/valid-state" "$SLOT/state"
 printf 'claim=duplicate-claim\n' >> "$SLOT/state"
-expect_blocked "active slot duplicate key" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot duplicate key" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 cp "$ROOT/valid-state" "$SLOT/state"
 printf 'unknown=value\n' >> "$SLOT/state"
-expect_blocked "active slot unknown key" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot unknown key" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 sed 's/^issue=SAY-167$/issue=NOT-167/' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot invalid Issue" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot invalid Issue" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 sed 's#^branch=.*#branch=not a branch#' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot invalid branch" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot invalid branch" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 sed 's#^branch=.*#branch=sayosomi/say-999-other-branch#' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot Issue branch mismatch" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot Issue branch mismatch" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 sed 's/^base=.*/base=not-a-sha/' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot invalid Base" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot invalid Base" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 sed 's/^claim=.*/claim=bad/' "$ROOT/valid-state" > "$SLOT/state"
-expect_blocked "active slot invalid claim" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "active slot invalid claim" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 
 cp "$ROOT/valid-state" "$SLOT/state"
 
-expect_blocked "wrong claim" "$HELPER" main "$ISSUE" claim-cp1-12345678 "$CHECKPOINT" "$BASE" exact
-expect_blocked "wrong checkpoint" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
+expect_blocked "wrong claim" "$HELPER" alpha "$ISSUE" claim-cp1-12345678 "$CHECKPOINT" "$BASE" exact
+expect_blocked "wrong checkpoint" "$HELPER" alpha "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
 
 git -C "$MAIN" switch -q "$OLD_BRANCH"
-expect_blocked "stale same-Issue checkout" "$HELPER" main "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
+expect_blocked "stale same-Issue checkout" "$HELPER" alpha "$ISSUE" "$CLAIM" "$BASE" "$BASE" exact
 [ "$(sed -n '1p' "$ROOT/out")" = "BLOCKED: handoff claimed branch mismatch" ] || {
   cat "$ROOT/out"
   fail "stale same-Issue checkout did not use exact claimed branch mismatch classification"
@@ -141,7 +168,7 @@ grep -Fx "ACTUAL:          $OLD_BRANCH" "$ROOT/out" >/dev/null || {
 git -C "$MAIN" switch -q "$BRANCH"
 
 echo dirty >> "$MAIN/a"
-expect_blocked "dirty lane" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+expect_blocked "dirty lane" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
 git -C "$MAIN" checkout -q -- a
 
 git -C "$SEED" fetch -q origin main
@@ -151,8 +178,8 @@ git -C "$SEED" add newer
 git -C "$SEED" commit -q -m newer
 git -C "$SEED" push -q origin main
 NEW_MAIN="$(git -C "$SEED" rev-parse HEAD)"
-expect_blocked "stale main" "$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
-"$HELPER" main "$ISSUE" "$CLAIM" "$CHECKPOINT" "$NEW_MAIN" exact > "$ROOT/out"
+expect_blocked "stale main" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact
+"$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$NEW_MAIN" exact > "$ROOT/out"
 grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "fresh main handoff did not verify"; }
 echo "PASS: fresh main verification"
 
@@ -176,7 +203,7 @@ STALE_TRACKING_SHA="$(git -C "$MAIN" rev-parse "$STALE_TRACKING_REF")"
 if git -C "$REMOTE" show-ref --verify --quiet "refs/heads/$FRESH_BRANCH"; then
   fail "fresh absent-mode topic unexpectedly exists on remote before handoff"
 fi
-"$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent > "$ROOT/out"
+"$HELPER" alpha "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent > "$ROOT/out"
 grep -q '^HANDOFF VERIFIED$' "$ROOT/out" || { cat "$ROOT/out"; fail "fresh absent-mode handoff did not verify"; }
 [ "$(git -C "$MAIN" rev-parse "$STALE_TRACKING_REF")" = "$STALE_TRACKING_SHA" ] || fail "absent-mode handoff changed stale local remote-tracking ref"
 echo "PASS: fresh topic absent mode"
@@ -184,10 +211,10 @@ echo "PASS: absent mode ignores stale local remote-tracking topic"
 
 ORIGIN_URL="$(git -C "$MAIN" remote get-url origin)"
 git -C "$MAIN" remote set-url origin "$ROOT/missing-remote.git"
-expect_blocked "unavailable remote does not satisfy absent mode" "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
+expect_blocked "unavailable remote does not satisfy absent mode" "$HELPER" alpha "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
 git -C "$MAIN" remote set-url origin "$ORIGIN_URL"
 
 git -C "$MAIN" push -q -u origin "$FRESH_BRANCH"
-expect_blocked "fresh mode rejects pre-existing remote topic" "$HELPER" main "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
+expect_blocked "fresh mode rejects pre-existing remote topic" "$HELPER" alpha "$FRESH_ISSUE" "$FRESH_CLAIM" "$NEW_MAIN" "$NEW_MAIN" absent
 
 echo "NUINUI HANDOFF CHECK SELFTEST PASS"
