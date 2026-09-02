@@ -118,7 +118,7 @@ current authorityの調査が完了し、executorへ渡せるcontractが成立�
 
 required prerequisite、external capability、またはupstream decisionが利用できず、現時点でexecutable contractを完成できない状態。
 
-単なるimplementation開始待ち、Humanの空き時間待ち、またはnuinuiCAD main / sub / e2e lane occupancyは`contract:blocked`の理由にしない。
+単なるimplementation開始待ち、Humanの空き時間待ち、またはnuinuiCADのmanifest-declared lane occupancyは`contract:blocked`の理由にしない。
 
 ## Ask Human only for real decision branches
 

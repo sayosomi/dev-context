@@ -180,11 +180,11 @@ declared implementation lane release成功後はcurrent Issue Commentへrelease 
 
 ```text
 Lane release checkpoint
-- Lane: main | sub
+- Lane: <manifest-declared implementation lane>
 - Saved checkpoint: <exact pushed / integration checkpoint sha>
 - Released claim: <generation token>
 - Release result: RELEASED
-- Idle branch/state: main | DETACHED
+- Idle branch/state: <default-branch> | DETACHED
 - Idle HEAD: <sha>
 - Lane state: FREE
 ```

@@ -272,7 +272,7 @@ implementation lane開始 / pause / next PRでは少なくとも:
 
 ```text
 Implementation checkpoint
-- Lane: main | sub
+- Lane: <manifest-declared implementation lane>
 - Base checkpoint: <sha>
 - Branch: <branch>
 - PR / pushed head: <pr or sha>
