@@ -17,6 +17,7 @@ The checked-in manifest currently declares these example lanes; the names and pa
 | `main` | `/Users/yosomi/Code/nuinuiCAD` | Luna implementation / blocking fix / implementation-side diagnosis |
 | `sub` | `/Users/yosomi/Code/nuinuiCAD-sub` | Luna implementation / blocking fix / implementation-side diagnosis |
 | `e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Manual E2E only |
+| `e2e2` | `/Users/yosomi/Code/nuinuiCAD-e2e2` | Manual E2E only |
 
 Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
 
@@ -30,7 +31,7 @@ Capacity and routing rules:
 
 ## Human-authorized forensic worktree exception
 
-通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の3 laneは上記manifestの例であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
+通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の4 laneは上記manifestの例であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
 
 forensic checkoutの作成・利用には、事前の明示的なHuman authorizationが必要である。`--forensic-worktree <absolute-path>` flagは、既にHumanがauthorizedしたcheckoutをcurrent invocationのinventory exceptionとして認識するだけであり、作成・利用をauthorizeしない。
 
