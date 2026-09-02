@@ -48,7 +48,7 @@ SAY-123 authoring #1
 
 このchat分割自体はIssue decompositionではない。Issue boundaryは`CONTRACT-DECISIONS.md`、implementation sliceは`IMPLEMENTATION-SLICING.md`がauthority。
 
-chatとlaneも固定対応させない。`main chat` / `sub chat`のような恒久対応を作らず、Issueのcurrent execution時点でmanifest上FREEなdeclared laneを割り当てる。
+chatとlaneも固定対応させない。恒久的なchat-to-lane対応を作らず、Issueのcurrent execution時点でmanifest上FREEなdeclared laneを割り当てる。
 
 ## Rotation is always allowed
 

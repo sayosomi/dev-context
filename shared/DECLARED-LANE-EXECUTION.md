@@ -76,8 +76,11 @@ checkpoint-to-fresh-authoritative-default ancestry are all re-proven.
 Human-test commands accept an explicit declared Human-test lane. Short forms
 are compatibility syntax only when exactly one Human-test lane is declared:
 zero lanes block, and two or more lanes require explicit identity. Persisted
-session, marker, and receipt metadata carries the exact lane identity; a
-path, declaration order, or literal name is never used to guess ownership.
+session metadata records the exact lane where session identity is required.
+Marker and receipt files are physically scoped to the selected lane's Git
+directory and are interpreted only through that selected declared-lane
+context. Lane identity is never reconstructed from a marker or receipt
+filename, a path, declaration order, or a literal global E2E lane name.
 
 The project Human-test policy remains separate from topology. It owns exact
 Issue/tested-ref marker and session semantics, process ownership, receipts,

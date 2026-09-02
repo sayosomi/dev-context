@@ -415,7 +415,7 @@ For confirmed implementation failure:
    - select a `FREE` manifest-declared implementation lane;
    - freeze the fix Base checkpoint SHA and record the implementation checkpoint;
    - Codex Luna xhigh performs implementation / blocking fix / verification / git work;
-   - never implement or repair the product from the `e2e` checkout;
+   - never implement or repair the product from a Human-test checkout;
 7. implement / verify / review / merge;
 8. when only required Manual E2E remains again, return to `manual_e2e_only + In Review`.
 

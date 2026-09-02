@@ -165,21 +165,6 @@ closure_check_lane() {
   return 1
 }
 
-closure_check() {
-  local candidate result=0
-  local -a lanes
-  lanes=($(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test))
-  (( ${#lanes} > 0 )) || { echo 'BLOCKED: no Human-test lane is declared'; return 1; }
-  for candidate in "${lanes[@]}"; do
-    E2E_LANE="$candidate"
-    E2E_WT="$(lane_manifest_lane_path "$E2E_MANIFEST" "$candidate")" || return 1
-    E2E_REPOSITORY="$(lane_manifest_repository_identity "$E2E_MANIFEST")" || return 1
-    E2E_DEFAULT_BRANCH="$(lane_manifest_default_branch "$E2E_MANIFEST")" || return 1
-    closure_check_lane "$1" || result=1
-  done
-  return "$result"
-}
-
 cleanup_receipt_path() {
   local git_dir="$(git -C "$E2E_WT" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
   printf '%s/nuinui-e2e-cleanup-receipt\n' "$git_dir"
@@ -247,7 +232,10 @@ cleanup() {
   local issue="$1"
   local tested_ref="$2"
   local requested_root="$3"
-  local session=""
+  local session="" session_snapshot="" session_final_snapshot=""
+  local session_snapshot_lane="" session_snapshot_issue="" session_snapshot_ref=""
+  local session_snapshot_source_fixture="" session_snapshot_root=""
+  local session_snapshot_handoff="" session_snapshot_cdp_port="" session_snapshot_launch_pid=""
   local handoff=""
 
   assert_cleanup_args "$issue" "$tested_ref" "$requested_root" || return $?
@@ -261,6 +249,22 @@ cleanup() {
     return 1
   }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
+  [[ "$SESSION_KIND" == current ]] || {
+    echo "BLOCKED: legacy E2E session cannot be cleaned by the current lifecycle"
+    return 1
+  }
+  session_snapshot="$(cat "$session"; printf '\001')" || {
+    echo "BLOCKED: could not snapshot E2E session metadata"
+    return 1
+  }
+  session_snapshot_lane="$SESSION_LANE"
+  session_snapshot_issue="$SESSION_ISSUE"
+  session_snapshot_ref="$SESSION_REF"
+  session_snapshot_source_fixture="$SESSION_SOURCE_FIXTURE"
+  session_snapshot_root="$SESSION_ROOT"
+  session_snapshot_handoff="$SESSION_HANDOFF"
+  session_snapshot_cdp_port="$SESSION_CDP_PORT"
+  session_snapshot_launch_pid="$SESSION_LAUNCH_PID"
   [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
@@ -284,8 +288,30 @@ cleanup() {
     echo "BLOCKED: could not atomically write the E2E cleanup receipt; session retained"
     return 1
   }
+  [[ -f "$session" && ! -L "$session" ]] || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
+  session_final_snapshot="$(cat "$session"; printf '\001')" || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
+  [[ "$session_final_snapshot" == "$session_snapshot" ]] || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
   load_session "$session" || { echo "BLOCKED: E2E session changed before metadata removal; receipt retained"; return 1; }
-  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+  [[ "$SESSION_KIND" == current &&
+    "$SESSION_LANE" == "$session_snapshot_lane" &&
+    "$SESSION_ISSUE" == "$session_snapshot_issue" &&
+    "$SESSION_REF" == "$session_snapshot_ref" &&
+    "$SESSION_SOURCE_FIXTURE" == "$session_snapshot_source_fixture" &&
+    "$SESSION_ROOT" == "$session_snapshot_root" &&
+    "$SESSION_HANDOFF" == "$session_snapshot_handoff" &&
+    "$SESSION_CDP_PORT" == "$session_snapshot_cdp_port" &&
+    "$SESSION_LAUNCH_PID" == "$session_snapshot_launch_pid" &&
+    "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" &&
+    "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
     return 1
   }

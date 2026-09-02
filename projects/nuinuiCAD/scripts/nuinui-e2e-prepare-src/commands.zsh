@@ -247,13 +247,13 @@ case "${1:-}" in
     ;;
   status)
     [[ "$#" -eq 1 || "$#" -eq 2 ]] || { usage; exit 2; }
-    if [[ "$#" -eq 2 ]]; then select_human_lane "$2" || exit $?; else select_persisted_lane || exit $?; fi
+    if [[ "$#" -eq 2 ]]; then select_human_lane "$2" || exit $?; else select_human_lane || exit $?; fi
     status
     ;;
   closure-check)
     if [[ "$#" -eq 2 ]]; then
-      e2e_context || exit $?
-      closure_check "$2"
+      select_human_lane || exit $?
+      closure_check_lane "$2"
     elif [[ "$#" -eq 3 ]]; then
       select_human_lane "$2" || exit $?
       closure_check_lane "$3"
@@ -263,7 +263,7 @@ case "${1:-}" in
     ;;
   cleanup)
     if [[ "$#" -eq 4 ]]; then
-      select_persisted_lane || exit $?
+      select_human_lane || exit $?
       cleanup "$2" "$3" "$4"
     elif [[ "$#" -eq 5 ]]; then
       select_human_lane "$2" || exit $?

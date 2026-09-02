@@ -72,7 +72,7 @@ actual repository ownershipを優先する。
 - artificial compatibility layerやtemporary APIが必要;
 - overheadだけ増え、review / diagnosis / rollback境界が改善しない。
 
-PRを小さくすること、Issue数を増やすこと、2 laneを常時埋めること自体を目的にしない。
+PRを小さくすること、Issue数を増やすこと、宣言されたcapacityを常時埋めること自体を目的にしない。
 
 ## Safe checkpoints
 

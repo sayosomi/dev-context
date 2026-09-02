@@ -1,4 +1,4 @@
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 handoff_context() {
   handoff_manifest=$(lane_standalone_context_manifest "$0" \
@@ -144,7 +144,11 @@ handoff_check() {
   [ "$HANDOFF_DEFAULT_SHA" = "$expected_default" ] || { echo "BLOCKED: remote default changed during handoff verification"; return 1; }
 
   [ ! -e "$lock" ] && [ ! -L "$lock" ] || { echo "BLOCKED: implementation lane mutation lock appeared during handoff verification"; return 1; }
-  [ -z "$(rds "$repo")" ] || { echo "BLOCKED: release-pending state appeared during handoff verification"; return 1; }
+  handoff_final_releasing=$(rds "$repo") || {
+    echo "BLOCKED: unable to rediscover release-pending state during handoff verification"
+    return 1
+  }
+  [ -z "$handoff_final_releasing" ] || { echo "BLOCKED: release-pending state appeared during handoff verification"; return 1; }
   nuinui_ownership_parse_slot "$slot/state" >/dev/null || { echo "BLOCKED: durable lane claim became invalid during handoff verification"; return 1; }
   [ "$(cat "$slot/state")" = "$slot_snapshot" ] || { echo "BLOCKED: durable lane claim changed during handoff verification"; return 1; }
   [ "$(bn "$repo")" = "$current_branch" ] || { echo "BLOCKED: local branch changed during handoff verification"; return 1; }

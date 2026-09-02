@@ -114,6 +114,50 @@ grep -q "^  branch=$BRANCH$" "$ROOT/out" || fail "verified handoff did not use d
 if grep -q "$OLD_BRANCH" "$ROOT/out"; then fail "stale same-Issue branch leaked into verified identity"; fi
 echo "PASS: exact claim ignores unrelated stale same-Issue branch"
 
+echo "PASS: setup for final release-tombstone discovery failure regression"
+FIND_COUNTER="$ROOT/release-tombstone-find-count"
+REAL_FIND="$(command -v find)"
+FAKE_FIND_DIR="$ROOT/fake-find-bin"
+mkdir "$FAKE_FIND_DIR"
+cat > "$FAKE_FIND_DIR/find" <<'EOF'
+#!/bin/sh
+count=0
+[ -f "$NUINUI_HANDOFF_FIND_COUNTER" ] && count=$(cat "$NUINUI_HANDOFF_FIND_COUNTER")
+case "$*" in
+  *nuinui-implementation-slot.releasing.*)
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$NUINUI_HANDOFF_FIND_COUNTER"
+    [ "$count" -eq 2 ] && exit 1
+    ;;
+esac
+exec "$NUINUI_HANDOFF_REAL_FIND" "$@"
+EOF
+chmod 755 "$FAKE_FIND_DIR/find"
+before_handoff_branch="$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+before_handoff_head="$(git -C "$MAIN" rev-parse HEAD)"
+before_handoff_status="$(git -C "$MAIN" status --porcelain)"
+before_handoff_refs="$(git -C "$MAIN" for-each-ref --format='%(refname) %(objectname)' | sort)"
+before_handoff_slot="$(cat "$SLOT/state")"
+if env PATH="$FAKE_FIND_DIR:$PATH" NUINUI_HANDOFF_REAL_FIND="$REAL_FIND" \
+  NUINUI_HANDOFF_FIND_COUNTER="$FIND_COUNTER" \
+  "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact > "$ROOT/out" 2>&1; then
+  cat "$ROOT/out"
+  fail 'final release-tombstone discovery failure unexpectedly verified handoff'
+fi
+grep -Fx 'BLOCKED: unable to rediscover release-pending state during handoff verification' "$ROOT/out" >/dev/null || {
+  cat "$ROOT/out"
+  fail 'final release-tombstone discovery failure did not use stable BLOCKED diagnostic'
+}
+if grep -q '^HANDOFF VERIFIED$' "$ROOT/out"; then fail 'failed final tombstone discovery emitted HANDOFF VERIFIED'; fi
+[ "$(cat "$FIND_COUNTER")" = 2 ] || fail 'release-tombstone discovery points were not distinguished'
+[ "$(git -C "$MAIN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = "$before_handoff_branch" ] || fail 'handoff discovery failure changed branch'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$before_handoff_head" ] || fail 'handoff discovery failure changed HEAD'
+[ "$(git -C "$MAIN" status --porcelain)" = "$before_handoff_status" ] || fail 'handoff discovery failure changed working tree'
+[ "$(git -C "$MAIN" for-each-ref --format='%(refname) %(objectname)' | sort)" = "$before_handoff_refs" ] || fail 'handoff discovery failure changed refs'
+[ "$(cat "$SLOT/state")" = "$before_handoff_slot" ] || fail 'handoff discovery failure changed durable slot'
+[ ! -e "$GITDIR/nuinui-implementation-lock" ] && [ ! -L "$GITDIR/nuinui-implementation-lock" ] || fail 'handoff discovery failure changed lock state'
+echo "PASS: final release-tombstone discovery failure blocks read-only handoff"
+
 cp "$SLOT/state" "$ROOT/valid-state"
 sed 's/^version=1$/version=2/' "$ROOT/valid-state" > "$SLOT/state"
 expect_blocked "active slot unsupported version" "$HELPER" alpha "$ISSUE" "$CLAIM" "$CHECKPOINT" "$BASE" exact

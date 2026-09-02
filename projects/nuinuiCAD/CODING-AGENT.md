@@ -132,6 +132,9 @@ Humanがterminal commandを実行したことを理由にsource-code implementat
 
 Source-code implementation executionは [`LANES.conf`](./LANES.conf) に宣言された`role=implementation` laneだけを使う。
 
+The checked-in manifest currently provides the following implementation-lane
+example; names and paths are data, not the topology model.
+
 - `main`: `/Users/yosomi/Code/nuinuiCAD`
 - `sub`: `/Users/yosomi/Code/nuinuiCAD-sub`
 
@@ -313,7 +316,7 @@ New sessionを使う典型:
 ユーザーへLuna promptを提示するとき、prompt外側に次を明示する。
 
 ```text
-Luna lane: main | sub
+Luna lane: <manifest-declared implementation lane>
 Luna session: New session | Reuse current session
 ```
 
@@ -321,9 +324,9 @@ Reuse時だけ短い理由を添える。
 
 ## E2E failure fix
 
-Manual E2Eでconfirmed implementation failureが出たら、`e2e` checkoutでは修正しない。
+Manual E2Eでconfirmed implementation failureが出たら、Human-test checkoutでは修正しない。
 
-ChatGPTがfailureをclassify / sliceし、`FREE`な`main`または`sub`へfixを割り当て、Lunaが実装する。fix merge後、new exact tested commitで`e2e`へ戻す。
+ChatGPTがfailureをclassify / sliceし、`FREE`なmanifest-declared implementation laneへfixを割り当て、Lunaが実装する。fix merge後、new exact tested commitでselected Human-test laneへ戻す。
 
 ## Cross-chat continuity
 

@@ -25,7 +25,7 @@ nuinuiCAD作業開始時はlocal cloneの有無にかかわらず、GitHub上の
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-e2e-prepare
 ```
 
-このcloneはnuinuiCAD repositoryの4th checkoutではない。
+このcloneはnuinuiCAD repositoryの追加execution laneではない。
 
 candidate source / edit / test / promotionは次のpersistent single-track development worktreeで行う。
 
@@ -176,7 +176,7 @@ cli-dispatch.sh
 
 The implementation-role path reuses the v1 ownership field reader and preserves the existing lock, active-slot, release-tombstone, initialization, idle, `FREE`, `BUSY`, `RELEASE-PENDING`, and `BLOCKED` proof ordering. The generic adapter's `lane_execution_validate_issue_branch` callback is the boundary for project-specific Work-ID / branch validation; topology data does not define that policy.
 
-The Human-test boundary is the explicit callback `lane_execution_human_test_preflight <lane-name> <checkout-path> <manifest-path>`. Project code owns role-specific marker, session, process, and evidence rules inside that callback. The generic layer never discovers a singleton Human-test lane, and zero or multiple Human-test lanes are valid manifest shapes.
+The Human-test boundary is the explicit callback `lane_execution_human_test_preflight <lane-name> <checkout-path> <manifest-path>`. Project code owns role-specific marker, session, process, and evidence rules inside that callback. The generic layer never performs public short-form lane selection; project helpers enforce exactly-one-lane compatibility for their own short forms, while zero or multiple Human-test lanes remain valid manifest shapes.
 
 `inventory.sh` defines the canonical implementation expectation syntax as comma-separated `lane=FREE` or `lane=<project-valid Work-ID>` pairs in manifest implementation-lane order. It derives actual occupancy only from successful #142 preflight evidence: `FREE` requires no owner, `BUSY` requires a valid owner Work-ID, and release-pending/blocked/ambiguous states are not occupancies. `lifecycle.sh` compares every declared implementation lane before mutation and again at the mutation boundary; its duplicate path proves the requested target generation while comparing every other lane. The source reuses the v1 ownership metadata format and is directly executable as `lane-execution-lifecycle begin|start ...`; the generated standalone helper assembles this generic owner in deterministic order.
 

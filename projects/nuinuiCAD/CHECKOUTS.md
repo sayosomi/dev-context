@@ -136,7 +136,7 @@ Integration Watermark到達後のalready-reviewed topicについて、ChatGPTが
 
 ### Authority
 
-`main` / `sub` implementation laneのprimary ownership evidenceはcheckout appearanceやLinear statusではなく、そのworktree固有Git directoryに保存するdurable metadataである。
+宣言されたimplementation laneのprimary ownership evidenceはcheckout appearanceやLinear statusではなく、そのlane固有Git directoryに保存するdurable metadataである。
 
 - durable metadata: physical ownership / generation authority;
 - Linear checkpoint: restart / handoff identityの外部evidence;
@@ -308,9 +308,9 @@ releaseはvalid active slotがexpected claimを所有し、caller checkpoint / c
 
 PR merge後にremote topic refが自動削除されていても、それ自体をBLOCK条件にしない。authoritative evidenceはsaved exact checkpointとcurrent `origin/main` ancestryである。別のsafe mergeで`origin/main`がさらにadvanceしていてもcheckpointがancestorならlatest `origin/main`へreleaseしてよい。
 
-post-mergeに実装laneのcheckoutだけがdriftした場合、release自身が次の狭い条件をすべて満たすときだけ復旧して続行できる。active slotがdurable Issue / branch / Base / claimとexact一致し、lock / tombstoneがなく、checkpoint / caller claimもexact一致することを先に確認する。claimed local refがcheckpointにある場合は、main laneのcleanな`main`、sub laneのcleanなdetached checkoutを従来どおり復旧でき、cleanなexact-checkpoint differently named branchからもexisting local claimed topicへexact `git switch`できる。current HEAD / checkpointがfresh authoritative `origin/main`に含まれ、topicが別worktreeでcheckoutされていないことを再証明する。remote topicはabsentでもよいが、存在する場合は同じcheckpointのexact refでなければならない。
+post-mergeに実装laneのcheckoutだけがdriftした場合、release自身が次の狭い条件をすべて満たすときだけ復旧して続行できる。active slotがdurable Issue / branch / Base / claimとexact一致し、lock / tombstoneがなく、checkpoint / caller claimもexact一致することを先に確認する。claimed local refがcheckpointにある場合は、manifest-declared `idle=branch` laneのcleanなdefault-branch checkout、または`idle=detached` laneのcleanなdetached checkoutを、そのlaneの宣言されたidle policyどおり復旧でき、cleanなexact-checkpoint differently named branchからもexisting local claimed topicへexact `git switch`できる。current HEAD / checkpointがfresh authoritative default branchに含まれ、topicが別worktreeでcheckoutされていないことを再証明する。remote topicはabsentでもよいが、存在する場合は同じcheckpointのexact refでなければならない。
 
-この復旧はreleaseの既存mutation lock取得後、slotをreleasing tombstoneへrenameする前に行う。claimed local refがmissingでも、current checkoutがcleanなnamed non-main branch、current branch refがcheckpoint、HEADがcheckpoint、fresh authoritative `origin/main` / Base ancestry、remote topic、別worktree不存在、lock / tombstone不存在をすべてexactに証明できる場合だけ、switch直前にcritical factsを再取得・再検証して`git branch -m <durable-claimed-branch>`を一度だけ行う。existing claimed refのpathでは`git switch <durable-claimed-branch>`だけを使い、missing-ref pathではそのexact renameだけを使う。Issue textやstring similarityからbranchを推測せず、durable slotのbranchを唯一の意図されたidentityとする。branch生成、reset、stash、merge、rebase、cherry-pick、force操作、durable metadata rewriteは行わない。wrong checkpoint / claim / ref SHA、dirty、別named branch、別worktree、remote / ancestry / metadata ambiguity、lock / tombstone conflictは`BLOCKED: release claimed branch mismatch`または既存の厳密なmismatchとしてactive slotを保持する。repair後に完了を証明できない場合はrelease lockを残してrecoverへ渡し、`resume` / `recover` / generic claim-checkout mismatchの意味はこのrelease-only recoveryで変更しない。
+この復旧はreleaseの既存mutation lock取得後、slotをreleasing tombstoneへrenameする前に行う。claimed local refがmissingでも、current checkoutがcleanなnamed non-default branch、current branch refがcheckpoint、HEADがcheckpoint、fresh authoritative default branch / Base ancestry、remote topic、別worktree不存在、lock / tombstone不存在をすべてexactに証明できる場合だけ、switch直前にcritical factsを再取得・再検証して`git branch -m <durable-claimed-branch>`を一度だけ行う。existing claimed refのpathでは`git switch <durable-claimed-branch>`だけを使い、missing-ref pathではそのexact renameだけを使う。Issue textやstring similarityからbranchを推測せず、durable slotのbranchを唯一の意図されたidentityとする。branch生成、reset、stash、merge、rebase、cherry-pick、force操作、durable metadata rewriteは行わない。wrong checkpoint / claim / ref SHA、dirty、別named branch、別worktree、remote / ancestry / metadata ambiguity、lock / tombstone conflictは`BLOCKED: release claimed branch mismatch`または既存の厳密なmismatchとしてactive slotを保持する。repair後に完了を証明できない場合はrelease lockを残してrecoverへ渡し、`resume` / `recover` / generic claim-checkout mismatchの意味はこのrelease-only recoveryで変更しない。
 
 idle state:
 
@@ -334,7 +334,7 @@ issue=<released Issue>
 saved_checkpoint=<exact checkpoint>
 released_claim=<claim>
 released_branch=<topic branch>
-idle_branch=<main|DETACHED>
+idle_branch=<default-branch|DETACHED>
 idle_head=<actual final HEAD>
 origin_main=<authoritative main used for release>
 clean=yes
@@ -424,7 +424,7 @@ CI reproductionも追加のexecution laneを作らない。必要ならFREEなde
 ## Prohibited patterns
 
 - Issueごとのdisposable worktree;
-- persistent 4th checkout;
+- persistent unregistered extra checkout;
 - `/Users/yosomi/Code/nuinuiCAD-ci-repro`;
 - active slice途中のroutine merge-main / rebase-main;
 - unfinished parallel branch同士の取り込み;

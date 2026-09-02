@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.4.0"
+VERSION="1.4.1"
 E2E_WT=""
 E2E_LANE=""
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
@@ -59,38 +59,6 @@ EOF
   E2E_DEFAULT_BRANCH="$(lane_manifest_default_branch "$E2E_MANIFEST")" || return 1
 }
 
-select_persisted_lane() {
-  local requested="${1:-}" candidate session found=0 found_lane=""
-  local -a lanes
-  if [[ -n "$requested" ]]; then
-    select_human_lane "$requested"
-    return $?
-  fi
-  e2e_context || return 1
-  lanes=($(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test))
-  if (( ${#lanes} == 1 )); then
-    select_human_lane "${lanes[1]}"
-    return $?
-  fi
-  for candidate in "${lanes[@]}"; do
-    E2E_LANE="$candidate"
-    E2E_WT="$(lane_manifest_lane_path "$E2E_MANIFEST" "$candidate")" || return 1
-    session="$(session_path)" || return 1
-    if [[ -f "$session" && ! -L "$session" ]]; then
-      load_session "$session" || return 1
-      if [[ "$SESSION_KIND" == current && "$SESSION_LANE" == "$candidate" ]]; then
-        found=$((found + 1)); found_lane="$candidate"
-      fi
-    fi
-  done
-  if (( found == 1 )); then
-    select_human_lane "$found_lane"
-    return $?
-  fi
-  echo 'BLOCKED: persisted E2E session lane is missing or ambiguous'
-  return 1
-}
-
 usage() {
   cat <<'EOF'
 Usage:
@@ -106,6 +74,8 @@ Closure order:
   nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>
 
 Exact duplicate prepare/cleanup: no-op; no status/confirmation. Near-match: BLOCKED.
+Every short form requires exactly one declared Human-test lane; a persisted
+session never disambiguates a zero- or multi-lane manifest.
 
 EOF
 }
