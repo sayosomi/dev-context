@@ -448,6 +448,77 @@ lane_manifest_default_branch() {
 }
 #!/bin/sh
 
+# Structural context boundary for standalone helpers.
+#
+# This source locates the project manifest from the helper's own versioned
+# scripts directory.  It deliberately does not parse or source the manifest;
+# manifest.sh owns that data-only grammar.
+
+lane_standalone_context_manifest() {
+  [ "$#" = 3 ] || return 2
+  lane_standalone_context_helper=$1
+  lane_standalone_context_selftest=$2
+  lane_standalone_context_override=$3
+
+  if [ -n "$lane_standalone_context_override" ] &&
+    [ "$lane_standalone_context_selftest" != 1 ]; then
+    echo 'BLOCKED: test-only manifest override is unavailable outside self-test mode' >&2
+    return 1
+  fi
+  if [ "$lane_standalone_context_selftest" = 1 ] &&
+    [ -n "$lane_standalone_context_override" ]; then
+    case "$lane_standalone_context_override" in
+      /*) ;;
+      *) echo 'BLOCKED: test manifest path must be absolute' >&2; return 1 ;;
+    esac
+    [ -f "$lane_standalone_context_override" ] &&
+      [ ! -L "$lane_standalone_context_override" ] &&
+      [ -r "$lane_standalone_context_override" ] || {
+        echo "BLOCKED: test manifest is not a readable regular file: $lane_standalone_context_override" >&2
+        return 1
+      }
+    printf '%s\n' "$lane_standalone_context_override"
+    return 0
+  fi
+
+  case "$lane_standalone_context_helper" in
+    */*) ;;
+    *) lane_standalone_context_helper=$(command -v -- "$lane_standalone_context_helper" 2>/dev/null || true) ;;
+  esac
+  [ -n "$lane_standalone_context_helper" ] || {
+    echo 'BLOCKED: standalone helper location cannot be proven' >&2
+    return 1
+  }
+  case "$lane_standalone_context_helper" in
+    /*) ;;
+    *) lane_standalone_context_helper=$(CDPATH= cd -- \
+      "$(dirname -- "$lane_standalone_context_helper")" 2>/dev/null &&
+      pwd -P)/$(basename -- "$lane_standalone_context_helper") || return 1 ;;
+  esac
+  [ -f "$lane_standalone_context_helper" ] &&
+    [ ! -L "$lane_standalone_context_helper" ] || {
+      echo 'BLOCKED: standalone helper location cannot be proven' >&2
+      return 1
+    }
+  lane_standalone_context_script_dir=$(CDPATH= cd -- \
+    "$(dirname -- "$lane_standalone_context_helper")" 2>/dev/null && pwd -P) || return 1
+  [ "$(basename -- "$lane_standalone_context_script_dir")" = scripts ] || {
+    echo 'BLOCKED: standalone helper is not in its versioned project scripts directory' >&2
+    return 1
+  }
+  lane_standalone_context_project_dir=$(CDPATH= cd -- \
+    "$lane_standalone_context_script_dir/.." 2>/dev/null && pwd -P) || return 1
+  lane_standalone_context_manifest=$lane_standalone_context_project_dir/LANES.conf
+  [ -f "$lane_standalone_context_manifest" ] &&
+    [ ! -L "$lane_standalone_context_manifest" ] &&
+    [ -r "$lane_standalone_context_manifest" ] || {
+      echo "BLOCKED: authoritative project lane manifest is missing or unreadable: $lane_standalone_context_manifest" >&2
+      return 1
+    }
+  printf '%s\n' "$lane_standalone_context_manifest"
+}
+#!/bin/sh
+
 # Generic runtime mechanics shared by manifest-driven lane operations and the
 # existing project command sources.  Lane identity, checkout path, idle form,
 # repository, and default branch are read from NUINUI_RUNTIME_MANIFEST.
@@ -3357,9 +3428,10 @@ lane_execution_cli_implementation_operation() {
 }
 # nuinuiCAD-specific runtime shell helpers for the generated standalone CLI.
 # The product manifest is resolved lazily so version/help/context commands do
-# not depend on a healthy lane topology.
+# not depend on a healthy lane topology. standalone-context.sh owns the
+# structural helper/project relationship.
 
-V=1.7.1
+V=1.8.0
 P=$0
 case "$P" in
   */*) ;;
@@ -3379,38 +3451,9 @@ else
   CT=sayosomi/dev-context
 fi
 
-nuinui_runtime_resolve_manifest() {
-  if [ "${NUINUI_SELFTEST:-0}" = 1 ] && [ -n "${NUINUI_SELFTEST_MANIFEST:-}" ]; then
-    case "$NUINUI_SELFTEST_MANIFEST" in /*) ;; *) echo 'BLOCKED: test manifest path must be absolute' >&2; return 1 ;; esac
-    [ -f "$NUINUI_SELFTEST_MANIFEST" ] && [ ! -L "$NUINUI_SELFTEST_MANIFEST" ] &&
-      [ -r "$NUINUI_SELFTEST_MANIFEST" ] || {
-        echo "BLOCKED: test manifest is not a readable regular file: $NUINUI_SELFTEST_MANIFEST" >&2
-        return 1
-      }
-    printf '%s\n' "$NUINUI_SELFTEST_MANIFEST"
-    return 0
-  fi
-  [ -n "$P" ] && [ -f "$P" ] && [ ! -L "$P" ] || {
-    echo 'BLOCKED: generated helper location cannot be proven' >&2
-    return 1
-  }
-  nuinui_runtime_script_dir=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P) || return 1
-  [ "$(basename -- "$nuinui_runtime_script_dir")" = scripts ] || {
-    echo 'BLOCKED: generated helper is not in its versioned project scripts directory' >&2
-    return 1
-  }
-  nuinui_runtime_project_dir=$(CDPATH= cd -- "$nuinui_runtime_script_dir/.." 2>/dev/null && pwd -P) || return 1
-  nuinui_runtime_manifest=$nuinui_runtime_project_dir/LANES.conf
-  [ -f "$nuinui_runtime_manifest" ] && [ ! -L "$nuinui_runtime_manifest" ] &&
-    [ -r "$nuinui_runtime_manifest" ] || {
-      echo "BLOCKED: authoritative project lane manifest is missing or unreadable: $nuinui_runtime_manifest" >&2
-      return 1
-    }
-  printf '%s\n' "$nuinui_runtime_manifest"
-}
-
 nuinui_require_runtime_manifest() {
-  NUINUI_RUNTIME_MANIFEST=$(nuinui_runtime_resolve_manifest) || return 1
+  NUINUI_RUNTIME_MANIFEST=$(lane_standalone_context_manifest "$P" \
+    "${NUINUI_SELFTEST:-0}" "${NUINUI_SELFTEST_MANIFEST:-}") || return 1
   export NUINUI_RUNTIME_MANIFEST
   lane_manifest_validate "$NUINUI_RUNTIME_MANIFEST" || {
     echo "BLOCKED: authoritative project lane manifest is invalid: $NUINUI_RUNTIME_MANIFEST" >&2
@@ -5099,7 +5142,7 @@ doctor() {
     while IFS= read -r nuinui_doctor_human_lane || [ -n "$nuinui_doctor_human_lane" ]; do
       [ -n "$nuinui_doctor_human_lane" ] || continue
       nuinui_doctor_human_path=$(lane_manifest_lane_path "$NUINUI_RUNTIME_MANIFEST" "$nuinui_doctor_human_lane") || nuinui_doctor_result=1
-      [ -x "$EH" ] && NUINUI_E2E_PREPARE_WT="$nuinui_doctor_human_path" "$EH" status || nuinui_doctor_result=1
+      [ -x "$EH" ] && "$EH" status "$nuinui_doctor_human_lane" || nuinui_doctor_result=1
     done <<EOF
 $nuinui_doctor_human_lanes
 EOF
@@ -5644,6 +5687,18 @@ nuinui_self_test() {
     echo 'SELFTEST BLOCKED: runtime test is missing or not executable'
     return 1
   }
+  [ -x "$nuinui_selftest_dir/test-nuinui-handoff-check" ] || {
+    echo 'SELFTEST BLOCKED: handoff-check test is missing or not executable'
+    return 1
+  }
+  [ -x "$nuinui_selftest_dir/test-nuinui-e2e-prepare" ] || {
+    echo 'SELFTEST BLOCKED: e2e-prepare test is missing or not executable'
+    return 1
+  }
+  [ -x "$nuinui_selftest_dir/test-nuinui-topology-matrix" ] || {
+    echo 'SELFTEST BLOCKED: topology-matrix test is missing or not executable'
+    return 1
+  }
   [ -x "$nuinui_selftest_dir/test-nuinui-command-result" ] || {
     echo 'SELFTEST BLOCKED: command-result test is missing or not executable'
     return 1
@@ -5665,6 +5720,9 @@ nuinui_self_test() {
     return 1
   }
   /bin/sh "$nuinui_selftest_dir/test-nuinui-runtime" "$P" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-handoff-check" || return $?
+  /bin/zsh "$nuinui_selftest_dir/test-nuinui-e2e-prepare" "$EH" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-topology-matrix" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-command-result" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-lifecycle" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" "$P" || return $?
@@ -5674,7 +5732,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.7.1
+V=1.8.0
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
@@ -5925,7 +5983,7 @@ nuinui_lane_dispatch() {
         NUINUI_COMMAND_RESULT_LANE=$2
       else
         NUINUI_COMMAND_RESULT_LANE=$(lane_execution_cli_resolve_human_test_lane \
-          "$NUINUI_RUNTIME_MANIFEST" 2>/dev/null) || return 1
+          "$NUINUI_RUNTIME_MANIFEST") || return 1
       fi
       ;;
     verify|lane-init|begin|start|resume|release|recover|integrate-clean)

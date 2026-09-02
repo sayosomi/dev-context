@@ -1,0 +1,67 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  echo 'Usage: generate-nuinui-e2e-prepare <output-path>' >&2
+  exit 2
+}
+
+[ "$#" = 1 ] || usage
+output=$1
+[ -n "$output" ] || usage
+
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
+manifest_source=$repo_root/shared/local-tools/lane-execution/manifest.sh
+standalone_context_source=$repo_root/shared/local-tools/lane-execution/standalone-context.sh
+generic_runtime_source=$repo_root/shared/local-tools/lane-execution/runtime.sh
+e2e_runtime_source=$script_dir/nuinui-e2e-prepare-src/runtime.zsh
+session_source=$script_dir/nuinui-e2e-prepare-src/session.zsh
+commands_source=$script_dir/nuinui-e2e-prepare-src/commands.zsh
+artifact_path=$script_dir/nuinui-e2e-prepare
+
+for source in "$manifest_source" "$standalone_context_source" "$generic_runtime_source" "$e2e_runtime_source" \
+  "$session_source" "$commands_source"; do
+  [ -f "$source" ] || {
+    echo "generate-nuinui-e2e-prepare: source is missing: $source" >&2
+    exit 1
+  }
+done
+
+output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
+  echo "generate-nuinui-e2e-prepare: output directory does not exist: $(dirname "$output")" >&2
+  exit 1
+}
+output_path=$output_dir/$(basename "$output")
+case "$output_path" in
+  "$manifest_source"|"$standalone_context_source"|"$generic_runtime_source"|"$e2e_runtime_source"|"$session_source"|"$commands_source"|"$artifact_path")
+    echo 'generate-nuinui-e2e-prepare: refusing to overwrite a checked-in source or production artifact' >&2
+    exit 1
+    ;;
+esac
+[ ! -d "$output_path" ] || { echo "generate-nuinui-e2e-prepare: output is a directory: $output_path" >&2; exit 1; }
+[ ! -L "$output_path" ] || { echo "generate-nuinui-e2e-prepare: refusing to overwrite a symbolic link: $output_path" >&2; exit 1; }
+
+temporary_path=$output_path.tmp.$$
+[ ! -e "$temporary_path" ] || { echo "generate-nuinui-e2e-prepare: temporary output already exists: $temporary_path" >&2; exit 1; }
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -f "$temporary_path"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+umask 077
+{
+  echo '#!/bin/zsh'
+  cat "$manifest_source"
+  cat "$standalone_context_source"
+  cat "$generic_runtime_source"
+  cat "$e2e_runtime_source"
+  cat "$session_source"
+  cat "$commands_source"
+} > "$temporary_path"
+chmod 755 "$temporary_path"
+mv "$temporary_path" "$output_path"
+trap - EXIT HUP INT TERM

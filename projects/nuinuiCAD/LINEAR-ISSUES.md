@@ -22,7 +22,7 @@ Backlog -> Todo -> In Progress -> Done
 
 - `Backlog`: contract / plan / prerequisiteが未ready。
 - `Todo`: Ready Queue。実装可能だがimplementation lane未割当、またはsafe checkpointで再開待ち。
-- `In Progress`: main/sub durable laneでimplementation / fixを現在実行中。
+- `In Progress`: manifest-declared implementation laneでimplementation / fixを現在実行中。
 - `In Review`: implementation merge済みでrequired Manual E2Eだけが残る。
 - `Done`: implementation / required E2E / Done freshness完了。
 
@@ -32,7 +32,7 @@ Research / Review等、PRを伴わないIssueはWork自体が完了した時点�
 
 1. completion gateを満たす → `Done`。
 2. implementation merge済みでrequired Manual E2Eのみ残る → `In Review`。
-3. main/sub laneでcurrent implementation / fixを実行中 → `In Progress`。
+3. declared implementation laneでcurrent implementation / fixを実行中 → `In Progress`。
 4. それ以外のunstarted / checkpoint-pause / next-slice待ち → readinessにより`Todo`または`Backlog`。
 
 Readyだけを理由にIn Progressへしない。actual durable lane assignmentとexecution開始が必要。
@@ -43,20 +43,19 @@ Readyだけを理由にIn Progressへしない。actual durable lane assignment�
 
 implementation mergeとauthoritative read-backでrequired Manual E2Eだけが残ることを確認したIssueは、`In Review`へ同期する。physical implementation cleanup stateはWork statusとは別である。
 
-post-merge E2E-only release anomalyでは、physical main/sub laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でもIssue statusは`In Review`に保つ。slot rename前のrelease failureでphysical laneが`BUSY`のままでも、old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。interrupted cleanupを含むcleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
+post-merge E2E-only release anomalyでは、physical declared implementation laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でもIssue statusは`In Review`に保つ。slot rename前のrelease failureでphysical laneが`BUSY`のままでも、old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。interrupted cleanupを含むcleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
 
 この間に unrelated new implementation admissionを判定する場合も、そのlaneはunavailableとして数える。ただし、そのlaneのowner Issueをcurrent implementation `In Progress`集合へ戻してはならない。release / recoveryが成功した後、Lane release checkpointをrecordしてread-backし、laneを通常の`FREE` capacityへ戻す。
 
 このexceptionはmerged + E2E-only evidenceがあるpost-merge cleanupに限る。通常のactive implementationで、同じevidenceなしにBUSY laneとstatusが一致しない場合は、既存のoccupancy reconciliationを変更せずfail-closedにする。
 
-## Fixed implementation capacity
+## Declared implementation capacity
 
 ```text
-main lane: max 1 implementation track
-sub lane:  max 1 implementation track
+each manifest-declared implementation lane: max 1 implementation track
 ```
 
-両implementation laneがBUSYまたは新規割当不能ならReady implementation IssueはTodoに置く。3つ目のbranch / worktree / direct-GitHub source implementationを作らない。RELEASE-PENDING laneもcleanup完了まで新Issueへ割り当てない。
+all implementation lanesがBUSYまたは新規割当不能ならReady implementation IssueはTodoに置く。追加のbranch / worktree / direct-GitHub source implementationを作らない。RELEASE-PENDING laneもcleanup完了まで新Issueへ割り当てない。
 
 Research等が同じstatusを使っても3つ目のrepository implementation trackとして扱わない。
 
@@ -66,7 +65,7 @@ Issue AuthoringはIssue作成 / Bug調査 / product相談 / contract策定 / acc
 
 - Authoring chat数にexecution-lane上限を適用しない。
 - AuthoringだけでIn Progressへ進めない。
-- Authoring chatはmain/sub/e2eをclaimしない。
+- Authoring chatはexecution laneをclaimしない。
 - Contract Readyでimplementation待ちなら原則Todo。
 - implementation開始はactual lane transitionと同時に行う。
 
@@ -98,11 +97,11 @@ intermediate merge後にremaining acceptanceがありnext slice未開始ならRe
 
 ## Implementation occupancy reconciliation
 
-new implementation IssueをIn Progressへ進める前に、fresh 3-lane evidenceとLinear current implementation `In Progress`集合をIssue identity単位で照合する。
+new implementation IssueをIn Progressへ進める前に、fresh manifest-derived lane evidenceとLinear current implementation `In Progress`集合をIssue identity単位で照合する。
 
 正常状態では:
 
-- physical BUSYなmain/sub durable slotから一意に読めるIssue集合;
+- physical BUSYなdeclared implementation laneのdurable slotから一意に読めるIssue集合;
 - Linear current implementation In Progress集合;
 
 が一致する。
@@ -117,9 +116,9 @@ implementation IssueをIn Progressへ進めるとき:
 
 1. latest remote repository / current Issue確認;
 2. current slice確定;
-3. fresh Linear current implementation occupancyとparallel-admission decisionからtarget FREE lane、Base checkpoint、branch、exact peer expectationを選択;
-4. Humanへ1つの`nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>` commandを渡す;
-5. `begin`のfull local audit / target FREE proof / exact peer proofと`IMPLEMENTATION STARTED` envelopeを確認;
+3. fresh Linear current implementation occupancyとparallel-admission decisionからtarget FREE declared lane、Base checkpoint、branch、complete inventory expectationを選択;
+4. Humanへ1つの`nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>` commandを渡す;
+5. `begin`のfull local audit / target FREE proof / exact inventory proofと`IMPLEMENTATION STARTED` envelopeを確認;
 6. success確認後にIssueをIn Progressへ変更;
 7. `Implementation checkpoint`をCommentへ記録;
 8. status / checkpointをread-back。
@@ -130,7 +129,7 @@ known-Issueの通常pathでは、別Human `preflight`をstartup前に要求し�
 
 ```text
 Implementation checkpoint
-- Lane: main | sub
+- Lane: <manifest-declared implementation lane>
 - Base checkpoint: <sha>
 - Branch: <branch>
 - Claim: <generation token>
@@ -177,15 +176,15 @@ Issue未完了でもlaneを保持し続ける必要はない。RELEASE-PENDING�
 
 ## Lane release checkpoint
 
-main/sub release成功後はcurrent Issue Commentへrelease resultをcheckpointする。Issueが既にDoneでもrecordを追加し、release recordのためにreopenしない。
+declared implementation lane release成功後はcurrent Issue Commentへrelease resultをcheckpointする。Issueが既にDoneでもrecordを追加し、release recordのためにreopenしない。
 
 ```text
 Lane release checkpoint
-- Lane: main | sub
+- Lane: <manifest-declared implementation lane>
 - Saved checkpoint: <exact pushed / integration checkpoint sha>
 - Released claim: <generation token>
 - Release result: RELEASED
-- Idle branch/state: main | DETACHED
+- Idle branch/state: <default-branch> | DETACHED
 - Idle HEAD: <sha>
 - Lane state: FREE
 ```
@@ -222,7 +221,7 @@ confirmed Manual E2E implementation failure:
 2. `Manual E2E: Failed` evidence維持;
 3. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
 4. new implementation laneが未割当の間はstatusを`Todo`に保ち、fix contract / re-audit / dependency organization / rerun-plan synchronization中も`Todo`とする;
-5. laterにcurrently `FREE`なmain/sub laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
+5. laterにcurrently `FREE`なdeclared implementation laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
 6. fix merge後にrequired E2Eだけが残れば`manual_e2e_only` + `In Review`へ戻し、同じrelease-before-E2E barrierを適用;
 7. new exact tested commitでaffected E2E rerun。
 
@@ -262,7 +261,7 @@ required Manual E2Eだけが残るleaf Issue用。In Reviewと組み合わせる
 
 ### `only_chatgpt`
 
-廃止済み。新規付与しない。unfinished Issueに残る場合はcurrent contract/statusを壊さずlabelだけ除去する。execution ownerはfixed implementation lane + Luna policyで決まる。
+廃止済み。新規付与しない。unfinished Issueに残る場合はcurrent contract/statusを壊さずlabelだけ除去する。execution ownerはdeclared implementation lane + Luna policyで決まる。
 
 ## Parallel footprint / reservation
 

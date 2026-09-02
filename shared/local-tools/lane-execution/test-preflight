@@ -334,7 +334,6 @@ assert_contains "$project_hook_output" 'marker=none' 'nuinuiCAD Human-test marke
 assert_contains "$project_hook_output" 'session=none' 'nuinuiCAD Human-test session evidence'
 echo 'PASS: project Human-test hook consumes explicit lane/path/manifest context'
 
-. "$source_dir/../../../projects/nuinuiCAD/scripts/nuinui-src/project-profile.sh"
 lane_execution_validate_issue_branch SAY-9 sayosomi/say-9 ||
   fail 'nuinuiCAD project Work-ID/branch adapter rejected a valid pair'
 if lane_execution_validate_issue_branch SAY-9 unrelated/topic; then

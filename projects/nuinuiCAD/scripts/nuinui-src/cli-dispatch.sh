@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.7.1
+V=1.8.0
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
@@ -251,7 +251,7 @@ nuinui_lane_dispatch() {
         NUINUI_COMMAND_RESULT_LANE=$2
       else
         NUINUI_COMMAND_RESULT_LANE=$(lane_execution_cli_resolve_human_test_lane \
-          "$NUINUI_RUNTIME_MANIFEST" 2>/dev/null) || return 1
+          "$NUINUI_RUNTIME_MANIFEST") || return 1
       fi
       ;;
     verify|lane-init|begin|start|resume|release|recover|integrate-clean)

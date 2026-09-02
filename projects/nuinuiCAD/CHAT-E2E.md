@@ -4,14 +4,14 @@
 
 E2E chatはrequired Manual E2Eを実行・再開し、tested commit / evidence / PASS-FAIL-BLOCKEDをcurrent external stateへ同期するためのchat。
 
-実行capacityは [`CHECKOUTS.md`](./CHECKOUTS.md) の`e2e` lane最大1 track。Judgment / Executor / PASS-FAIL-BLOCKEDは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。
+実行capacityは [`LANES.conf`](./LANES.conf) に宣言された`role=human-test` laneの数から導出する。各Human-test laneは同時に1つのgenerationだけを保持する。Judgment / Executor / PASS-FAIL-BLOCKEDは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。
 
-E2E chatを新しく作っただけでは`e2e` laneをclaimしない。tested commit / marker / Issue checkpointを固定した時点でexecutionが開始する。
+E2E chatを新しく作っただけではHuman-test laneをclaimしない。tested commit / marker / Issue checkpointと選択laneを固定した時点でexecutionが開始する。
 
 ## Execution boundary
 
-- Manual E2Eは`e2e` laneだけで行う。
-- implementation failureが確認された場合、e2e checkoutでproduct codeを修正しない。fixはFREEな`main` / `sub` implementation laneへ戻す。
+- Manual E2Eはmanifestで`role=human-test`と宣言されたlaneだけで行う。
+- implementation failureが確認された場合、Human-test checkoutでproduct codeを修正しない。fixはFREEなdeclared implementation laneへ戻す。
 - tested commit、stable ref、marker、Issue checkpointの扱いは`CHECKOUTS.md` / `MANUAL-E2E.md` / relevant host-specific ownerをauthorityとする。
 - VS Code hostなら[`VS-CODE-E2E.md`](./VS-CODE-E2E.md)、ExecutorがLunaなら[`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md)も読む。
 - Human向けVS Code host preparationでは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned Human E2E preparation helperがcurrent local cloneで利用可能なら、そのhelperをhandoffに使う。ChatGPTが同じlaunch / session lifecycleをinline shellとして再実装しない。
@@ -25,14 +25,14 @@ normal E2E startupは、preceding implementation generationが#129 handoff barri
 ```text
 implementation merge / authoritative read-back complete
 -> Issue synchronized to In Review / E2E-only state
--> exact old main/sub generation released
+-> exact old declared implementation generation released
 -> successful IMPLEMENTATION RELEASED
 -> Lane release checkpoint recorded and read back
 -> physical implementation lane proven FREE
 -> e2e-start / E2E handoff
 ```
 
-implementation laneのrelease anomalyが残る間はnormal E2Eをstartしない。`BUSY`、`BLOCKED`、`RELEASE-PENDING`はcapacity unavailableであり、physical `FREE`を推測しない。e2e laneが`BUSY`ならIssueは`In Review`で待ち、main/sub capacityを保持しない。
+implementation laneのrelease anomalyが残る間はnormal E2Eをstartしない。`BUSY`、`BLOCKED`、`RELEASE-PENDING`はcapacity unavailableであり、physical `FREE`を推測しない。selected Human-test laneが`BUSY`ならIssueは`In Review`で待ち、implementation capacityを保持しない。
 
 ## Confirmed Manual E2E implementation failure
 
@@ -45,22 +45,24 @@ E2E FAIL confirmed
 -> Linear status = Todo
 -> remain Todo during fix contract / re-audit / dependency organization / rerun-plan synchronization
 -> synchronize focused contract / fix / rerun requirements
--> later select a currently FREE main/sub lane
+-> later select a currently FREE declared implementation lane
 -> start a new durable implementation generation
 -> only after canonical begin/start success change status to In Progress
 ```
 
-pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後は、fix contract、re-audit、dependency organization、rerun-plan synchronizationを行っている間も`Todo`に保つ。laterにFREEなmain/sub implementation laneを選択し、新しいgenerationをcanonical begin/startで開始する。successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
+pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後は、fix contract、re-audit、dependency organization、rerun-plan synchronizationを行っている間も`Todo`に保つ。laterにFREEなdeclared implementation laneを選択し、新しいgenerationをcanonical begin/startで開始する。successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
 
 ## Human E2E closure handoff
 
 Canonicalなsuccessful closure handoffは、必ず次の順序で行う。
 
 ```text
-nuinui-e2e-prepare cleanup <Issue> <tested-ref> <e2e-root>
-nuinui e2e-release <Issue> <tested-ref>
-nuinui-e2e-prepare closure-check <Issue>
+nuinui-e2e-prepare cleanup <human-test-lane> <Issue> <tested-ref> <e2e-root>
+nuinui e2e-release <human-test-lane> <Issue> <tested-ref>
+nuinui-e2e-prepare closure-check <human-test-lane> <Issue>
 ```
+
+When exactly one Human-test lane is declared, the helper's historical short forms remain compatible. With zero or multiple Human-test lanes, commands that need lane selection must use the explicit lane form and short forms block before mutation.
 
 cleanup成功後はtested same-Issue markerが残るnormalなrelease-ready stateであり、markerを削除するのはidentity-bearing `e2e-release <Issue> <tested-ref>`である。releaseはstrict marker、caller identity、session不在、clean detached checkout、authoritative `origin/main`を照合し、durable receiptを先に保存する。markerがないexact duplicate releaseはmatching receiptとidle authoritative checkoutをread-onlyで証明できる場合だけno-opとして受理する。`closure-check`はrelease後のfinal read-only closure proofとしてだけ実行し、cleanupとe2e-releaseの間には置かない。同一Issue markerがある間はclosure-checkが`BLOCKED`になるsemanticsを変更しない。same commandのexact duplicate成功では、追加のpreflight/status/confirmationやHuman handbackを要求しない。Manual E2EのPASS/FAIL semanticsは[`MANUAL-E2E.md`](./MANUAL-E2E.md)のまま維持する。
 

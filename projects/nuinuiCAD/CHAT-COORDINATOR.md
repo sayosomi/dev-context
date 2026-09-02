@@ -22,7 +22,7 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 ### Implementation occupancy reconciliation before routing
 
-新しいimplementation Workを選択・routingする前にfreshな3-lane stateを利用できる場合、Coordinatorは`main` / `sub`のphysical occupancyとLinear上のcurrent implementation `In Progress` Issueを照合する。
+新しいimplementation Workを選択・routingする前にfreshなmanifest-derived lane stateを利用できる場合、Coordinatorは全`role=implementation` laneのphysical occupancyとLinear上のcurrent implementation `In Progress` Issueを照合する。
 
 照合は件数だけではなく**Issue identity単位**で行う。
 
@@ -32,13 +32,13 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 不一致があれば、新しいimplementation startをroutingする前にcurrent remote / Linear checkpoint / fresh lane evidenceからstale stateを解消する。既存authorityだけでは安全に解消できない不一致は`BLOCKED / UNKNOWN`として扱い、新しいstart handoffを出さない。
 
-`In Progress`が2件以下という件数条件だけでは整合確認を満たさない。例えばphysical laneが`main=SAY-101`, `sub=SAY-102`なら、Linearのcurrent implementation `In Progress`集合もその2 Issueと一致していなければならない。
+`In Progress`の件数条件だけでは整合確認を満たさない。physical declared laneから読めるIssue集合とLinearのcurrent implementation `In Progress`集合がidentity単位で一致していなければならない。
 
 ### Parallel admission gate
 
 Humanが特定Issueのlane移動・再配置を明示せず、fresh lane stateとともにimplementation laneが`FREE`になったことを報告した場合、その報告を既存`BUSY` Issueのlane migration要求として解釈しない。既存`BUSY` laneのownershipを維持したまま、このsectionのparallel admission gateに従って`FREE` laneへ開始可能な別Issueを評価する。
 
-一方のimplementation laneが`BUSY`で、もう一方が`FREE`なとき、CoordinatorはReady Queueの優先順位だけで2本目を開始しない。先に**parallel interference risk**を評価し、相手laneと独立して進められる候補だけをparallel start候補へ入れる。
+あるimplementation laneが`BUSY`で、別のlaneが`FREE`なとき、CoordinatorはReady Queueの優先順位だけで追加のWorkを開始しない。先に**parallel interference risk**を評価し、相手laneと独立して進められる候補だけをparallel start候補へ入れる。
 
 `FREE` laneはcapacityでありutilization targetではない。安全なparallel candidateがなければ、laneを`FREE`のまま残すことを正常な選択肢とする。
 
@@ -73,9 +73,9 @@ Ready Queueに`LOW` candidateがなければ、Coordinatorは正式なrouting結
 - candidateをReadyから外す必要はない;
 - 必要ならIssue Authoring、contract refresh、Research等のlaneを占有しないWorkを進めてよいが、空きcapacityを埋めるためだけにWorkを作らない。
 
-両implementation laneが`FREE`なら最初のTaskは通常のWork選定で開始してよい。2本目を開始する時点では、先に開始したTaskをactive laneとしてこのgateを適用する。
+利用可能なimplementation laneが`FREE`なら最初のTaskは通常のWork選定で開始してよい。追加のTaskを開始する時点では、既に開始したTaskをactive laneとしてこのgateを適用する。
 
-candidateを選定してからactual startするまでにactive laneのscopeがshared ownerへ拡大したsignalがあれば、start handoff前にparallel admissionを再評価する。既に両laneがactiveになった後のscope expansionは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)のre-evaluation triggerとして扱い、unfinished branch同士を同期して解消しない。
+candidateを選定してからactual startするまでにactive laneのscopeがshared ownerへ拡大したsignalがあれば、start handoff前にparallel admissionを再評価する。複数laneがactiveになった後のscope expansionは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)のre-evaluation triggerとして扱い、unfinished branch同士を同期して解消しない。
 
 ### Blocked Issue candidate routing
 
@@ -93,7 +93,7 @@ HumanへWork候補やroutingを提案するときは、候補ごとに、適切�
 - existing chat継続が適切なら、新chat作成を勧めず、そのexisting chatへ送るmessageを提示する。
 - handoff messageには、current stateから一意に言える範囲で、対象Issue、chat role、確認すべきcurrent fact、到達させる次のcheckpointを含める。
 - lane、SHA、PR、tested commit等のfresh evidenceを確認していない場合、それらを確定事実として書かない。
-- Issue Authoring候補を複数並行してよい場合は、fixed implementation capacityと混同せず並行可能であることを示してよい。
+- Issue Authoring候補を複数並行してよい場合は、declared implementation capacityと混同せず並行可能であることを示してよい。
 
 具体的な定型文やIssue別テンプレートはこのdocumentへ保存しない。handoff messageはその時点のcurrent external stateから生成する。
 

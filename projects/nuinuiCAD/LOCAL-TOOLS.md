@@ -25,7 +25,7 @@ nuinuiCAD作業開始時はlocal cloneの有無にかかわらず、GitHub上の
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-e2e-prepare
 ```
 
-このcloneはnuinuiCAD repositoryの4th checkoutではない。
+このcloneはnuinuiCAD repositoryの追加execution laneではない。
 
 candidate source / edit / test / promotionは次のpersistent single-track development worktreeで行う。
 
@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.7.1`。
+current standalone helper version: `1.8.0`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -91,33 +91,14 @@ projects/nuinuiCAD/scripts/nuinui
 source ownership map:
 
 ```text
-projects/nuinuiCAD/scripts/nuinui-src/project-profile.sh
-  nuinuiCAD profile: main/sub/e2e aliases, fixed paths, repository/default-branch identity,
-  SAY-<digits> validation, and Manual E2E project policy hooks
-
-shared/local-tools/fixed-2plus1/profile-contract.sh
-  shared profile contract and fail-closed contract validation
-
-shared/local-tools/fixed-2plus1/ownership-schema.sh
-  canonical project-independent durable ownership schema semantics
-
-shared/local-tools/fixed-2plus1/implementation-core.sh
-  fixed 2+1 low-level lifecycle mechanics
-
-shared/local-tools/fixed-2plus1/lifecycle-facade.sh
-  shared begin/start/resume façade and envelopes
-
-shared/local-tools/fixed-2plus1/release-facade.sh
-  shared release drift proof, duplicate proof, and release envelopes
-
-shared/local-tools/fixed-2plus1/human-test-core.sh
-  shared exact-ref Human-test fixation, release, receipt, and duplicate mechanics
-
 shared/local-tools/lane-execution/ownership.sh
   generic v1 durable ownership metadata primitives, validation, and parsers
 
 shared/local-tools/lane-execution/manifest.sh
   project-declared lane topology manifest grammar, validation, and data-only lookup API
+
+shared/local-tools/lane-execution/standalone-context.sh
+  structural versioned-helper/project manifest location and test-only override boundary
 
 shared/local-tools/lane-execution/runtime.sh
   generic Git, checkout, default-branch, lock, slot, receipt, and idle-lane mechanics
@@ -195,9 +176,9 @@ cli-dispatch.sh
 
 The implementation-role path reuses the v1 ownership field reader and preserves the existing lock, active-slot, release-tombstone, initialization, idle, `FREE`, `BUSY`, `RELEASE-PENDING`, and `BLOCKED` proof ordering. The generic adapter's `lane_execution_validate_issue_branch` callback is the boundary for project-specific Work-ID / branch validation; topology data does not define that policy.
 
-The Human-test boundary is the explicit callback `lane_execution_human_test_preflight <lane-name> <checkout-path> <manifest-path>`. Project code owns role-specific marker, session, process, and evidence rules inside that callback. The generic layer never discovers a singleton Human-test lane, and zero or multiple Human-test lanes are valid manifest shapes.
+The Human-test boundary is the explicit callback `lane_execution_human_test_preflight <lane-name> <checkout-path> <manifest-path>`. Project code owns role-specific marker, session, process, and evidence rules inside that callback. The generic layer never performs public short-form lane selection; project helpers enforce exactly-one-lane compatibility for their own short forms, while zero or multiple Human-test lanes remain valid manifest shapes.
 
-`inventory.sh` defines the canonical implementation expectation syntax as comma-separated `lane=FREE` or `lane=<project-valid Work-ID>` pairs in manifest implementation-lane order. It derives actual occupancy only from successful #142 preflight evidence: `FREE` requires no owner, `BUSY` requires a valid owner Work-ID, and release-pending/blocked/ambiguous states are not occupancies. `lifecycle.sh` compares every declared implementation lane before mutation and again at the mutation boundary; its duplicate path proves the requested target generation while comparing every other lane. The source reuses the v1 ownership metadata format and is directly executable as `lane-execution-lifecycle begin|start ...`, but remains outside the generated standalone helper until #145.
+`inventory.sh` defines the canonical implementation expectation syntax as comma-separated `lane=FREE` or `lane=<project-valid Work-ID>` pairs in manifest implementation-lane order. It derives actual occupancy only from successful #142 preflight evidence: `FREE` requires no owner, `BUSY` requires a valid owner Work-ID, and release-pending/blocked/ambiguous states are not occupancies. `lifecycle.sh` compares every declared implementation lane before mutation and again at the mutation boundary; its duplicate path proves the requested target generation while comparing every other lane. The source reuses the v1 ownership metadata format and is directly executable as `lane-execution-lifecycle begin|start ...`; the generated standalone helper assembles this generic owner in deterministic order.
 
 `render.sh` consumes the canonical `lane name=... role=... path=...` evidence and decorates by role/state only. These sources are directly executable/testable development sources and are assembled into the generated `nuinui` in deterministic order.
 
@@ -214,9 +195,7 @@ projects/nuinuiCAD/scripts/nuinui-src/
 projects/nuinuiCAD/scripts/nuinui-handoff-check-src/
 ```
 
-It also guards every regular file directly under `projects/nuinuiCAD/scripts/` as a standalone implementation source. This includes `nuinui-e2e-prepare`; future standalone helpers are included automatically. Top-level discovery is sorted with `LC_ALL=C` and excludes only the generated artifacts `nuinui` and `nuinui-handoff-check`, generators named `generate-*`, and focused regression scripts named `test-*`.
-
-The shared fixed 2+1 implementation sources under `shared/local-tools/fixed-2plus1/` are guarded by the same per-file limit. The focused `test-fixed-2plus1-core` is excluded from that implementation cap, while the source-budget test fails closed if the shared source root cannot be discovered.
+The E2E preparation implementation is split under `projects/nuinuiCAD/scripts/nuinui-e2e-prepare-src/` and assembled into the generated `nuinui-e2e-prepare` artifact. The generated artifact is not a development-source owner and is excluded from per-file source discovery.
 
 The shared lane topology manifest sources under `shared/local-tools/lane-execution/` are guarded by the same per-file limit. Focused `test-*` files are excluded from the implementation cap, while the source-budget test fails closed if either shared source root cannot be discovered.
 
@@ -302,9 +281,9 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 `nuinui self-test`はmanifest-driven isolated runtime regressionでcomplete inventory admission、renamed lanes、wrong-role rejection、Human-test short/explicit selection、manifest resolution/security、uncertain mutation recovery、release receipt、topology-only helper byte identityを検証し、`scripts/test-nuinui-command-result`、`scripts/test-nuinui-integration-clean`、`scripts/test-nuinui-pr-auto-merge`、`scripts/test-nuinui-context-sync`、およびsource-budget regressionを集約する。
 
-成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / exact peer fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。通常の`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative origin main / `clean=yes` / `state=FREE`を返し、exact duplicateは`IMPLEMENTATION ALREADY RELEASED`とlane / Issue / Base / saved checkpoint / released claim / released branch / authoritative origin main / `clean=yes` / `mutation=no-op` / `state=FREE`を返す。
+成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / manifest-derived complete inventory fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。通常の`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative default / `clean=yes` / `state=FREE`を返し、exact duplicateは`IMPLEMENTATION ALREADY RELEASED`とlane / Issue / Base / saved checkpoint / released claim / released branch / authoritative default / `clean=yes` / `mutation=no-op` / `state=FREE`を返す。
 
-`start`をexplicit low-level primitiveとして直接使った場合も、full local audit後にlocal transition envelopeを返す。ただしpeerはその時点の観測値であり、ChatGPTが決めたcaller expectationとの一致を証明しない。canonical normal startupでは`begin`のexpected peer照合と`preflight=PASS`をadmission evidenceに使う。
+`start`をexplicit low-level primitiveとして直接使った場合も、full local audit後にlocal transition envelopeを返す。`start`のinventory evidenceはmanifest-derived observationであり、callerのcomplete expectation照合は`begin`の責務である。canonical normal startupでは`begin`のcomplete inventory照合と`preflight=PASS`をadmission evidenceに使う。
 
 ### `integrate-clean` merge-only integration
 
@@ -381,17 +360,19 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.3.0`。
+current Human E2E preparation helper version: `1.4.0`。
 
-`projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はdedicated e2e laneでHuman Manual E2E hostを準備するversioned helper。
+`projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
 ```text
-nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
-nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
-nuinui-e2e-prepare status
-nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
-nuinui-e2e-prepare closure-check <SAY-123>
+nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path>
+nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+nuinui-e2e-prepare status [<human-test-lane>]
+nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
+nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
 ```
+
+Explicit lane forms are required when zero or multiple Human-test lanes are declared. Short forms remain compatible only when exactly one Human-test lane exists; persisted sessions carry their exact lane identity for status and cleanup.
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。
 
@@ -415,9 +396,9 @@ active session authorityはcleanup receiptより常に優先される。near-mat
 Human E2Eのcanonical successful closureは、次の順序に固定する。
 
 ```text
-nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
-nuinui e2e-release <SAY-123> <tested-ref>
-nuinui-e2e-prepare closure-check <SAY-123>
+nuinui-e2e-prepare cleanup <human-test-lane> <SAY-123> <tested-ref> <e2e-root>
+nuinui e2e-release <human-test-lane> <SAY-123> <tested-ref>
+nuinui-e2e-prepare closure-check <human-test-lane> <SAY-123>
 ```
 
 session metadataはcurrent generationではstrictな`issue / ref / source_fixture / root / handoff / cdp_port / launch_pid`を保持する。legacyな6-field metadataはrollout/cleanup互換のためだけに認識し、duplicate prepareの成功には使わない。`cleanup <Issue> <tested-ref> <e2e-root>`はcallerのrootまでidentity照合し、owned process / temporary root / handoff / session metadataだけを削除する。完了時はGit dirの`nuinui-e2e-cleanup-receipt`（`version=1 / issue / ref / root`）を先にatomically保存する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
@@ -466,8 +447,8 @@ candidate SHA-256:
 promotion candidateはseparate legacy/backend fileなしでisolated temporary Git repositories上の`nuinui self-test`を完走し、次を確認した。
 
 - initialization gate / exact idle;
-- canonical begin with FREE peer and exact BUSY peer admission;
-- wrong peer, target BUSY, and invalid fixed-lane fail-closed admission;
+- canonical begin with FREE implementation lanes and exact BUSY target admission;
+- mismatched inventory, target BUSY, and invalid declared-lane fail-closed admission;
 - complete start / resume / release envelopes;
 - old resume/release signature rejection;
 - strict v1 unknown/missing/duplicate/unsupported schema failure;

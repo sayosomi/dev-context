@@ -100,7 +100,7 @@ Sol HighがHuman向けsetup commandを生成する前に:
 
 1. latest remote stateを確認する。
 2. testするexact commitを決める。
-3. moving `main`からtest evidenceを隔離する必要があればstable remote E2E refを固定する。
+3. moving default branchからtest evidenceを隔離する必要があればstable remote E2E refを固定する。
 4. fixture sourceとrequired binaries / extension bundle / CDP portを決める。
 5. Humanへ渡す準備scriptにexpected commit/refを埋め込む。
 
@@ -306,7 +306,7 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 `nuinui-e2e-prepare prepare`がunexpected error、hang、session/state mismatchで完了しない場合は、次の順序を固定する。
 
 1. product FAILとして扱わない。
-2. `nuinui-e2e-prepare status`でe2e checkout / marker / session metadata / recorded root / handoff / launch PIDをread-only確認する。
+2. `nuinui-e2e-prepare status <human-test-lane>`でselected Human-test checkout / marker / session metadata / recorded root / handoff / launch PIDをread-only確認する。
 3. valid sessionが残りcleanupが必要なら、`LOCAL-TOOLS.md`とhelper contractに従って`cleanup`する。
 4. helper defect / stale local clone / unsupported operation / environment blockerを分類し、`LOCAL-TOOLS.md`のrepair / fallback ruleへ進む。
 
@@ -410,7 +410,7 @@ Lunaはprepared hostへattachし、product action前にread-only environment pre
 最低限:
 
 1. handoff fileを読む。
-2. checkout HEAD / stable E2E ref / clean status / execution-time `origin/main` relationshipを確認する。
+2. selected Human-test checkoutのHEAD / stable E2E ref / clean status / execution-time authoritative default relationshipを確認する。
 3. CDP endpointが引き続きreachableであることを確認する。
 4. 接続先workbenchがcurrent unique fixtureを含むことを確認する。
 5. active document / language mode / required extension registrationを確認する。

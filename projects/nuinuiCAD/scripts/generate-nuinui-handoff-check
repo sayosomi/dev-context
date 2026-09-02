@@ -12,23 +12,21 @@ output=$1
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
 repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
-profile_source=$script_dir/nuinui-src/project-profile.sh
-ownership_source=$repo_root/shared/local-tools/fixed-2plus1/ownership-schema.sh
+ownership_source=$repo_root/shared/local-tools/lane-execution/ownership.sh
+manifest_source=$repo_root/shared/local-tools/lane-execution/manifest.sh
+standalone_context_source=$repo_root/shared/local-tools/lane-execution/standalone-context.sh
+runtime_source=$repo_root/shared/local-tools/lane-execution/runtime.sh
+profile_source=$script_dir/nuinui-src/lane-execution-profile.sh
 body_source=$script_dir/nuinui-handoff-check-src/handoff-body.sh
 artifact_path=$script_dir/nuinui-handoff-check
 
-[ -f "$profile_source" ] || {
-  echo "generate-nuinui-handoff-check: project profile source is missing: $profile_source" >&2
-  exit 1
-}
-[ -f "$ownership_source" ] || {
-  echo "generate-nuinui-handoff-check: ownership source is missing: $ownership_source" >&2
-  exit 1
-}
-[ -f "$body_source" ] || {
-  echo "generate-nuinui-handoff-check: body source is missing: $body_source" >&2
-  exit 1
-}
+for source in "$ownership_source" "$manifest_source" "$standalone_context_source" \
+  "$runtime_source" "$profile_source" "$body_source"; do
+  [ -f "$source" ] || {
+    echo "generate-nuinui-handoff-check: source is missing: $source" >&2
+    exit 1
+  }
+done
 
 output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
   echo "generate-nuinui-handoff-check: output directory does not exist: $(dirname "$output")" >&2
@@ -37,7 +35,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$profile_source"|"$ownership_source"|"$body_source"|"$artifact_path")
+  "$profile_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$body_source"|"$artifact_path")
     echo 'generate-nuinui-handoff-check: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -67,7 +65,14 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 umask 077
-cat "$profile_source" "$ownership_source" "$body_source" > "$temporary_path"
+{
+  cat "$ownership_source"
+  cat "$manifest_source"
+  cat "$standalone_context_source"
+  cat "$runtime_source"
+  cat "$profile_source"
+  cat "$body_source"
+} > "$temporary_path"
 chmod 755 "$temporary_path"
 mv "$temporary_path" "$output_path"
 

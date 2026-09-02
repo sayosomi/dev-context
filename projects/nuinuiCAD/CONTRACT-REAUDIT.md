@@ -97,7 +97,7 @@ Issue descriptionには再調査後のcurrent有効contractを置き、調査で
 2. `Contract`を`Ready` / `Pending` / `Blocked`の正しい状態へ同期する。
 3. Manual E2E label / plan、dependency、Issue boundaryを再評価して同期する。
 4. current executable sliceが存在する場合だけimplementation slicing / execution routeを再分類する。
-5. execution ownerは廃止済みlabelではなく、current chat role、fixed lane、Luna policyから再判定する。
+5. execution ownerは廃止済みlabelではなく、current chat role、manifest-declared lane、Luna policyから再判定する。
 6. `contract_reaudit`を外す。
 7. Issueのcurrent lifecycle phaseを先に判定し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のstatus synchronization precedenceに従ってstatusを同期する。
    - implementationがintended baseへmerge済みでrequired Manual E2Eだけが未完了なら`In Review`。

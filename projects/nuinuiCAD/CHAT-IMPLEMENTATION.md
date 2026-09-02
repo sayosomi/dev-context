@@ -4,11 +4,7 @@
 
 Implementation chatは`Contract: Ready`なIssueのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
 
-実行capacityはchat数ではなく[`CHECKOUTS.md`](./CHECKOUTS.md)のfixed implementation laneで決まる。
-
-- `main`: at most 1 implementation track
-- `sub`: at most 1 implementation track
-- 合計最大2 implementation track
+実行capacityはchat数ではなく[`LANES.conf`](./LANES.conf)に宣言されたimplementation laneで決まる。各宣言laneは同時に1つのimplementation generationだけを保持する。
 
 chatを新しく作っただけではlaneをclaimしない。actual startup gate / lane assignment / Base checkpoint / durable claimが成立した時点でexecutionが開始する。
 
@@ -23,7 +19,7 @@ Implementation chatでは次の2種類のdirect execution exceptionを認識す�
 - **Documentation / policy direct execution exception** — repository-owned documentation / specification / policyに限定された変更。
 - **Narrow CI/tooling direct execution exception** — product implementationから独立し、scope・intended change・focused verificationが一意なCI / repository tooling / automation-only変更。
 
-いずれも`CODING-AGENT.md`の全条件を満たし、Humanがplan / target / intended changeを明示承認した場合だけ使う。該当時はfixed main/sub/e2e lane、Base checkpoint、Luna sessionをclaimせず、write直前にrequired remote / target freshnessを確認する。
+いずれも`CODING-AGENT.md`の全条件を満たし、Humanがplan / target / intended changeを明示承認した場合だけ使う。該当時はdeclared execution lane、Base checkpoint、Luna sessionをclaimせず、write直前にrequired remote / target freshnessを確認する。
 
 どちらのexceptionにも一意に該当しないTask、または途中でsource/runtime/DSL semantics、broad debugging、conflict resolution、integration-heavy work等へscopeが拡大したTaskはdirect executionを停止し、`CODING-AGENT.md`の通常Luna xhigh lifecycleへ戻す。
 
@@ -53,16 +49,16 @@ Linear `In Progress`は「開始予定」ではなくactual implementation lane�
 
 Human terminal handoffでcanonical `nuinui begin`またはexplicit low-level `nuinui start` / `nuinui resume`を使う場合:
 
-1. fresh remote / Linear current implementation `In Progress`集合をIssue identity単位で照合し、target FREE lane、Base、branch、exact peer expectationを決める。
+1. fresh remote / Linear current implementation `In Progress`集合をIssue identity単位で照合し、target FREE declared implementation lane、Base、branch、complete inventory expectationを決める。
 2. known-Issueの通常startupでは別Human `preflight`を要求せず、`begin`を1つ提示する。
 3. `begin`のfull local auditとsuccessful `IMPLEMENTATION STARTED` envelopeが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で`In Progress`へ変更する。低レベル`start`を使う場合も、そのlocal envelopeを確認する。
 4. 同じcontinuationで`Implementation checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従いread-backする。
 
 If a Human reports terminal disappearance or lost output after `begin`, `start`, `resume`, `release`, `integrate-clean`, or another tracked mutation, request the single exact command `nuinui last-result` rather than asking for the mutation again. If it returns `recovery=READY` with the expected command and identity and `result=SUCCESS`, continue directly from the recovered checkpoint into the normal fresh remote / blocking-review / PR workflow. If `result=BLOCKED` or `result=ERROR`, continue from that exact terminal state. If recovery is `NONE`, `INVALID`, or `INCOMPLETE`, or the identity does not match the intended handoff, use the existing diagnostic/preflight routing. Do not demand duplicate state paste merely because stdout was lost.
 
-start / resume後のidentity invariantは、physical BUSYなmain/subから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数<=2だけでは十分ではない。
+start / resume後のidentity invariantは、physical BUSYなdeclared implementation laneから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数だけでは十分ではない。
 
-same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHuman 3-lane preflightへ戻さない。current Linear checkpoint / last verified envelopeのclaimとcheckpointをcaller expectationとして`nuinui-handoff-check`へ渡し、actual local durable stateとのmatchをその場で検証する。
+same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由に全宣言laneのpreflightへ戻さない。current Linear checkpoint / last verified envelopeのclaimとcheckpointをcaller expectationとして`nuinui-handoff-check`へ渡し、actual local durable stateとのmatchをその場で検証する。
 
 Canonical `nuinui-handoff-check`が`HANDOFF VERIFIED`を返した後は、通常そのままLuna implementationへ進む。成功済みhandoffのhelper-owned startup factsを再確認するだけのsecondary observationを理由に、Humanをpreflight、diagnosis、state paste、またはhandoff再生成へ戻さない。repository mutationまたはgenuinely new material drift signalがある場合だけ、既存ownerのdrift / recovery routeを使う。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
 
@@ -95,8 +91,8 @@ implementationがmergeされ、authoritative read-backでrequired Manual E2Eだ�
 
 - implementation executionは終了している。
 - normal E2E startupより先にIssueを`In Review`へ同期する。
-- E2Eを待つ間も実行中も、old main/sub claimを保持しない。
-- exact current implementation generationを、既存の`nuinui release <main|sub> <checkpoint> <claim>` contractでreleaseする。
+- E2Eを待つ間も実行中も、old implementation claimを保持しない。
+- exact current implementation generationを、既存の`nuinui release <implementation-lane> <checkpoint> <claim>` contractでreleaseする。
 - successful release後、`IMPLEMENTATION RELEASED`を確認し、Lane release checkpointをrecordしてread-backする。
 - E2E laneのavailabilityは、completed implementation laneをreleaseするかどうかを制御しない。
 
@@ -127,7 +123,7 @@ helperが`BLOCKED:` / `ERROR:`を返し、conflict、source edit、integration f
 
 Issue `Done`とimplementation laneを含むexecution lifecycle final closureを区別する。
 
-main/subを使用したWorkで「完全終了」「追加作業なし」と宣言してよいのは:
+declared implementation laneを使用したWorkで「完全終了」「追加作業なし」と宣言してよいのは:
 
 1. Work completion / Issue status synchronization完了;
 2. [`CHECKOUTS.md`](./CHECKOUTS.md)に従うlane release成功、actual lane FREE;
@@ -158,7 +154,7 @@ source-code implementationは[`CHECKOUTS.md`](./CHECKOUTS.md)の`begin` full-aud
 
 Direct execution exceptionではimplementation lane claim / Baseは不要だが、[`CODING-AGENT.md`](./CODING-AGENT.md)に従いwrite直前にrequired remote / target freshness、current relevant state、approved plan scopeを再確認する。
 
-web環境からfixed checkoutへ直接accessできないことを理由に代替clone / fourth worktree / direct-GitHub source implementationへ迂回しない。
+web環境からdeclared checkoutへ直接accessできないことを理由に代替clone / extra worktree / direct-GitHub source implementationへ迂回しない。
 
 ## Chat rotation
 
@@ -172,11 +168,11 @@ Implementation chatでは[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)とこのdocume
 
 ## Durable ownership handoff
 
-main/sub ownershipはGit-local durable claimで保持する。checkout branchだけからownershipを推測しない。state machine / recoveryは[`CHECKOUTS.md`](./CHECKOUTS.md)、CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)、Luna handoffのfresh execution identity検証は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)をauthorityとする。
+declared implementation lane ownershipはGit-local durable claimで保持する。checkout branchだけからownershipを推測しない。state machine / recoveryは[`CHECKOUTS.md`](./CHECKOUTS.md)、CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)、Luna handoffのfresh execution identity検証は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)をauthorityとする。
 
 new `nuinui begin`成功outputの`claim=<generation token>`を、`In Progress` transitionと同じcontinuationで`Implementation checkpoint`へ保存する。低レベル`start`を明示的に使った場合も同じく保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
 
-`resume` handoffはLane、Issue、fixed Base、exact pushed checkpoint、branch、claimをcurrent external stateから復元してhelperへ渡す。Baseをancestryから推測し直したり、local slot claimをcaller expectationの代わりに採用しない。
+`resume` handoffはLane、Issue、durable Base、exact pushed checkpoint、branch、claimをcurrent external stateから復元してhelperへ渡す。Baseをancestryから推測し直したり、local slot claimをcaller expectationの代わりに採用しない。
 
 `release` handoffはexact saved / integration checkpointとclaimを使う。claimless legacy signatureへfallbackしない。
 

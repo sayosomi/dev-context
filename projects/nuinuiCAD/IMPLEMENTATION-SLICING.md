@@ -8,7 +8,7 @@ Work decompositionとimplementation slicingを混同しない。
 
 - Work decomposition: original scope / acceptanceをsame Linear Issueに残すか、independent leaf Issueへ移すか。
 - Implementation slicing: same Issueのimplementationを1つまたは複数のsequential slice / PRへどう分けるか。
-- Execution lane: current implementation sliceを`main`または`sub`のどちらで実行するか。
+- Execution lane: current implementation sliceをどのmanifest-declared implementation laneで実行するか。
 
 Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、lane capacity / checkout isolationは [`CHECKOUTS.md`](./CHECKOUTS.md)、implementation executorは [`CODING-AGENT.md`](./CODING-AGENT.md) がauthority。
 
@@ -22,7 +22,7 @@ Implementationはcurrent repository ownershipの自然なboundaryでsliceし、*
 
 - current acceptance cluster;
 - primary semantic owner / boundary;
-- selected lane: `main | sub`;
+- selected lane: `<manifest-declared implementation lane>`;
 - Base checkpoint SHA;
 - branch;
 - next safe checkpoint;
@@ -72,7 +72,7 @@ actual repository ownershipを優先する。
 - artificial compatibility layerやtemporary APIが必要;
 - overheadだけ増え、review / diagnosis / rollback境界が改善しない。
 
-PRを小さくすること、Issue数を増やすこと、2 laneを常時埋めること自体を目的にしない。
+PRを小さくすること、Issue数を増やすこと、宣言されたcapacityを常時埋めること自体を目的にしない。
 
 ## Safe checkpoints
 
@@ -177,26 +177,26 @@ shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じ�
 
 ## Lane assignment
 
-implementation slice開始時は、ChatGPTがfresh remote state、Linear current implementation occupancy、parallel-admission decisionからlane、Base、branch、peer expectationを決め、known-Issueの通常startupではHumanへ [`nuinui begin`](./LOCAL-TOOLS.md) を1つ渡す。`begin`が [`CHECKOUTS.md`](./CHECKOUTS.md) のfull 3-lane auditを内部実行し、target FREEとpeer occupancyを再検証するため、別Human preflightを先行させない。
+implementation slice開始時は、ChatGPTがfresh remote state、Linear current implementation occupancy、parallel-admission decisionからdeclared lane、Base、branch、complete inventory expectationを決め、known-Issueの通常startupではHumanへ [`nuinui begin`](./LOCAL-TOOLS.md) を1つ渡す。`begin`が [`CHECKOUTS.md`](./CHECKOUTS.md) のfull declared-lane auditを内部実行し、target FREEとcomplete inventoryを再検証するため、別Human preflightを先行させない。
 
-- `main` FREE →通常第一候補;
-- `main` BUSYかつ`sub` FREE →Coordinatorのparallel admissionで`LOW`と判定できる独立Taskだけを`sub`へ開始してよい;
-- `main` BUSYかつ`sub` FREEでもadmissibleなTaskがない → `sub`をFREEのまま残す;
-- 両方BUSY →新しいimplementationは開始しない;
-- `e2e`はimplementationへ使わない。
+- declared implementation laneのいずれかがFREE → Coordinatorのparallel admissionに従い開始候補にできる;
+- BUSY laneがあり別のFREE laneがある場合も、`LOW`と判定できる独立Taskだけを開始してよい;
+- admissibleなTaskがない → FREE laneをそのまま残す;
+- 全implementation laneがBUSY →新しいimplementationは開始しない;
+- `role=human-test` laneはimplementationへ使わない。
 
-same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけでは3-lane preflightへ戻らない。current Branch / Base / Claim / Checkpointをcaller expectationとしてLunaの [`nuinui-handoff-check`](./EXECUTION-HANDOFF.md) に渡し、actual local stateをそこで機械的に検証する。exact pushed-checkpoint continuationでfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に使ってよい。canonical `IMPLEMENTATION RESUMED`とexact original handoff rerunの`HANDOFF VERIFIED`が揃わなければ、または別classificationのhandoff-check `BLOCKED`であれば、separate Human preflightへ戻る。`begin`、`resume`、`release`、このIssue #84 exception外のhandoff-check `BLOCKED`、crash suspicion、unexpected local state、identity不明、explicit diagnosis / recoveryだけがseparate preflightのrouting conditionである。`absent` modeにはautomatic recoveryを適用しない。
+same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけではdeclared-lane preflightへ戻らない。current Branch / Base / Claim / Checkpointをcaller expectationとしてLunaの [`nuinui-handoff-check`](./EXECUTION-HANDOFF.md) に渡し、actual local stateをそこで機械的に検証する。exact pushed-checkpoint continuationでfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に使ってよい。canonical `IMPLEMENTATION RESUMED`とexact original handoff rerunの`HANDOFF VERIFIED`が揃わなければ、または別classificationのhandoff-check `BLOCKED`であれば、separate Human preflightへ戻る。`begin`、`resume`、`release`、このIssue #84 exception外のhandoff-check `BLOCKED`、crash suspicion、unexpected local state、identity不明、explicit diagnosis / recoveryだけがseparate preflightのrouting conditionである。`absent` modeにはautomatic recoveryを適用しない。
 
-2 laneを超えるparallelismをIssue / branch / worktree追加で表現しない。2 laneを常時使用することも目標にしない。
+declared lane capacityを超えるparallelismをIssue / branch / worktree追加で表現しない。全laneを常時使用することも目標にしない。
 
 ## Cross-lane dependency rule
 
-`main`と`sub`はそれぞれ固定Base checkpointから独立して進める。
+各declared implementation laneはそれぞれのBase checkpointから独立して進める。
 
 禁止:
 
-- lane Aがlane Bのunfinished branchを取り込む;
-- lane Bがlane Aのmid-slice commitをbaseにする;
+- one declared laneが別のdeclared laneのunfinished branchを取り込む;
+- one declared laneが別laneのmid-slice commitをbaseにする;
 - 相手laneが進んだからという理由だけのroutine sync。
 
 real prerequisiteが判明した場合:
@@ -272,7 +272,7 @@ implementation lane開始 / pause / next PRでは少なくとも:
 
 ```text
 Implementation checkpoint
-- Lane: main | sub
+- Lane: <manifest-declared implementation lane>
 - Base checkpoint: <sha>
 - Branch: <branch>
 - PR / pushed head: <pr or sha>
@@ -294,13 +294,13 @@ Integration Watermark到達後は、rotation / handoffで誤ってroutine integr
 
 ## Manual E2E failure
 
-Manual E2Eでconfirmed implementation failureが出たら`e2e` laneでfixしない。
+Manual E2Eでconfirmed implementation failureが出たらHuman-test laneでfixしない。
 
 1. failureをimplementation / environment / capability / oracleへ分類;
 2. implementation failureならfailure classとsemantic ownerを特定;
 3. Same Issue vs new leafを判断;
 4. smallest natural fix sliceを決める;
-5. FREEな`main` / `sub` implementation laneへ載せる。ただしもう一方が`BUSY`ならparallel admission gateを満たすこと;
+5. FREEなdeclared implementation laneへ載せる。ただし他laneが`BUSY`ならparallel admission gateを満たすこと;
 6. Luna fix / verification / integration / merge;
 7. new exact tested commitでaffected E2E unitをrerun。
 

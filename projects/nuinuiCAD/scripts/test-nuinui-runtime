@@ -94,7 +94,7 @@ unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 
 cd "$ROOT/cwd"
 VERSION_OUTPUT=$($HELPER version)
-[ "$VERSION_OUTPUT" = 1.7.1 ] || fail "version output changed: $VERSION_OUTPUT"
+[ "$VERSION_OUTPUT" = 1.8.0 ] || fail "version output changed: $VERSION_OUTPUT"
 $HELPER lane-init primary >/dev/null
 $HELPER lane-init implementation >/dev/null
 NEIGHBORING_MANIFEST=$ROOT/cwd/LANES.conf
@@ -247,7 +247,7 @@ if PRODUCTION_RELOCATED_OUTPUT=$(NUINUI_SELFTEST=0 \
   printf '%s\n' "$PRODUCTION_RELOCATED_OUTPUT"
   fail 'production honored a manifest override for an unproven relocation'
 fi
-assert_contains "$PRODUCTION_RELOCATED_OUTPUT" 'generated helper' \
+assert_contains "$PRODUCTION_RELOCATED_OUTPUT" 'test-only manifest override' \
   'production relocation failure was not fail-closed'
 echo 'PASS: missing, unsupported, and test-only override manifest gates'
 

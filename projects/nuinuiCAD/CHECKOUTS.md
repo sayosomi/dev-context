@@ -2,13 +2,15 @@
 
 ## Purpose
 
-nuinuiCADのlocal execution capacityとimplementation lane ownershipを、常設3 checkoutに固定して管理する。
+nuinuiCADのlocal execution capacityとlane ownershipを、versioned `LANES.conf`に宣言されたcheckoutから導出して管理する。
 
-この3 checkoutは再利用候補ではなく、**存在を許可するexecution laneそのもの**である。Issue数、Ready数、worker数を理由に追加worktree / clone / checkoutを作らない。
+宣言されたcheckoutは再利用候補ではなく、**存在を許可するexecution laneそのもの**である。Issue数、Ready数、worker数を理由に動的なlane / worktree / clone / checkoutを作らない。
 
-固定2+1のproject-independentなexecution semantics（2 implementation lane + 1 Human-test lane、FREE/BUSY/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`FIXED-2PLUS1-EXECUTION.md`](../../shared/FIXED-2PLUS1-EXECUTION.md) がownerする。この文書はnuinuiCAD固有のfixed path、public lane alias、Luna implementation role、Human-only Manual E2E policyをownerする。
+再利用可能なexecution semantics（role、capacity、FREE/BUSY/RELEASE-PENDING/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md) がsole ownerする。この文書はnuinuiCAD固有のmanifest、Luna implementation policy、Human-only Manual E2E policyをownerする。
 
-## Fixed lanes
+## Declared lanes
+
+The checked-in manifest currently declares these example lanes; the names and paths are data, not the capacity model.
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
@@ -16,30 +18,25 @@ nuinuiCADのlocal execution capacityとimplementation lane ownershipを、常設
 | `sub` | `/Users/yosomi/Code/nuinuiCAD-sub` | Luna implementation / blocking fix / implementation-side diagnosis |
 | `e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Manual E2E only |
 
-`main` laneという呼称はGit branch `main`とは別概念。`main` / `sub` implementation laneはTask branchをcheckoutしてよい。
+Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
 
-Hard limits:
+Capacity and routing rules:
 
-- implementationは同時に最大2 track。`main`と`sub`を各1 trackだけ使う。
-- Manual E2Eは同時に最大1 track。`e2e`だけを使う。
-- 4つ目のexecution / implementation / E2E laneを作らない。下記のHuman-authorized forensic worktree exceptionだけはinventory上の1つの追加worktreeを許可する。
-- `e2e`をimplementationへ転用しない。
-- `main` / `sub`が両方BUSYなら、新しいimplementationは開始しない。
-- implementation lane数はcapacity上限でありutilization targetではない。parallel admissionを満たすWorkがなければFREE laneをidleのまま残す。
+- implementation capacity is the number of declared `role=implementation` lanes.
+- Human-test capacity is the number of declared `role=human-test` lanes.
+- a lane is never reassigned across roles, and declared paths are not inferred from lane names.
+- the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
+- capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
 
 ## Human-authorized forensic worktree exception
 
-通常policyは引き続き、次の3つのfixed execution laneだけを許可する。
-
-- `main` implementation lane;
-- `sub` implementation lane;
-- `e2e` Manual E2E lane。
+通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の3 laneは上記manifestの例であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
 
 forensic checkoutの作成・利用には、事前の明示的なHuman authorizationが必要である。`--forensic-worktree <absolute-path>` flagは、既にHumanがauthorizedしたcheckoutをcurrent invocationのinventory exceptionとして認識するだけであり、作成・利用をauthorizeしない。
 
-current `preflight` / `begin` / `start` invocationで認識できるsupplied registered forensic worktreeは正確に1つだけである。persistent allowlist、marker、config、receipt、environment settingは存在せず、directory nameやbranch nameのnaming conventionもexceptionを付与しない。forensic worktreeは`main` / `sub` / `e2e`にならず、execution capacity・implementation capacity・E2E capacityを消費も追加もしない。また、durable implementation metadataをownerできない。
+current `preflight` / `begin` / `start` invocationで認識できるsupplied registered forensic worktreeは正確に1つだけである。persistent allowlist、marker、config、receipt、environment settingは存在せず、directory nameやbranch nameのnaming conventionもexceptionを付与しない。forensic worktreeは宣言laneにならず、execution capacity・implementation capacity・Human-test capacityを消費も追加もしない。また、durable implementation metadataをownerできない。
 
-exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、fixed lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、main/sub/e2eに対する通常のlane safety checkはすべて引き続き適用される。
+exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、declared lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、宣言laneに対する通常のlane safety checkはすべて引き続き適用される。
 
 ## Human terminal operations
 
@@ -61,10 +58,10 @@ versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent
 
 ### Preflight diagnostic / routing rule
 
-`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue startは、ChatGPTがfresh remote / Linear occupancy / parallel-admission decisionからtarget laneとpeer expectationを確定した後、次の1 commandへ進む。
+`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue startは、ChatGPTがfresh remote / current occupancy / parallel-admission decisionからtarget implementation laneとcomplete inventory expectationを確定した後、次の1 commandへ進む。
 
 ```bash
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>
 ```
 
 ChatGPTがactual local inventoryを知らず、begin / resume / release / handoff-checkがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。ただし、exact pushed-checkpoint Luna handoffのinitial failureのfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に実行する。
@@ -73,9 +70,9 @@ ChatGPTがactual local inventoryを知らず、begin / resume / release / handof
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui preflight
 ```
 
-helperが未install、stale / broken、またはunsupportedなら、同じ応答内で完全なread-only 3-lane audit blockを提示する。
+helperが未install、stale / broken、またはunsupportedなら、同じ応答内で全宣言laneを含むread-only inventory audit blockを提示する。
 
-preflight evidenceは少なくとも全3 laneのpath、branch/detached HEAD、HEAD SHA、cleanliness、registered worktree state、main/sub durable ownership state、e2e marker stateを一度に確認できること。auditへfetch、checkout、switch、reset、stash、clean、marker mutationを混ぜない。
+preflight evidenceは少なくとも全宣言laneのrole、path、branch/detached HEAD、HEAD SHA、cleanliness、registered worktree state、durable ownership state、Human-test marker stateを一度に確認できること。auditへfetch、checkout、switch、reset、stash、clean、marker mutationを混ぜない。
 
 Humanからfresh audit outputが返ったら、それをcurrent evidenceとして扱う。material state changeのsignalがない限り同じpreflightを機械的に要求し直さない。
 
@@ -139,7 +136,7 @@ Integration Watermark到達後のalready-reviewed topicについて、ChatGPTが
 
 ### Authority
 
-`main` / `sub` implementation laneのprimary ownership evidenceはcheckout appearanceやLinear statusではなく、そのworktree固有Git directoryに保存するdurable metadataである。
+宣言されたimplementation laneのprimary ownership evidenceはcheckout appearanceやLinear statusではなく、そのlane固有Git directoryに保存するdurable metadataである。
 
 - durable metadata: physical ownership / generation authority;
 - Linear checkpoint: restart / handoff identityの外部evidence;
@@ -172,7 +169,7 @@ active slot `state`:
 version=1
 issue=SAY-123
 branch=<exact Task branch>
-base=<exact fixed Base checkpoint SHA>
+base=<exact durable Base checkpoint SHA>
 claim=<unique generation token>
 ```
 
@@ -186,7 +183,7 @@ v1 stateはstrict schema。required key missing / duplicate、unknown key、unsu
 
 ### Classification priority
 
-`nuinui preflight`はmain/subを次の優先順位で分類する。
+`nuinui preflight`は各宣言laneを次の優先順位で分類する。
 
 1. mutation lockあり → `BLOCKED`。validならoperation / claimを表示し、invalidならinvalid lockとしてBLOCK。
 2. active slotあり → releasing stateがなく、slot valid、checkout branch=slot.branch、slot.baseがcurrent HEAD ancestorなら`BUSY`。working treeのdirtyだけでは`BUSY`を`BLOCKED`にしない。branch / Base / metadata identityの不一致は`BLOCKED`。
@@ -197,12 +194,7 @@ v1 stateはstrict schema。required key missing / duplicate、unknown key、unsu
 
 active implementation laneがvalidなdurable ownershipを保持している場合、working treeのdirtyは診断上`clean=no`として表示するが、ownership identityが有効なら`state=BUSY`である。`FREE`のexact idle stateと`start` / `resume` / `release`のmutation preconditionでは、既存どおりworking tree cleanが必須である。
 
-exact idle state:
-
-- `main`: clean、branch=`main`、HEAD=fresh authoritative `origin/main`。
-- `sub`: clean、detached HEAD、HEAD=fresh authoritative `origin/main`。
-
-clean local `main`でもauthoritative `origin/main`よりbehindならFREEではない。preflightはread-onlyでcheckoutを自動normalizationしない。
+exact idle state is derived from each lane's declared `idle` policy: the checkout must be clean, at a fresh authoritative default-branch commit, and must satisfy the declared branch or detached form. A clean checkout that is behind the authoritative default is not FREE. Preflight is read-only and does not normalize checkout state.
 
 ### Mutation lock and crash safety
 
@@ -216,10 +208,10 @@ releaseはactive slotをclaim固有`releasing.<claim>`へatomic renameしてか�
 
 ## Ownership schema initialization
 
-固定implementation laneを新規作成 / 正当に再作成し、まだv1 initialization markerが存在しない場合だけ:
+宣言されたimplementation laneを新規作成 / 正当に再作成し、まだv1 initialization markerが存在しない場合だけ:
 
 ```text
-nuinui lane-init <main|sub>
+nuinui lane-init <implementation-lane>
 ```
 
 を使う。
@@ -230,23 +222,21 @@ active-looking checkoutやclaimless legacy checkpointからownershipを生成す
 
 ## Lane start
 
-### main / sub implementation
+### Declared implementation lane
 
 Canonical normal Human handoff:
 
 ```text
-nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123>
+nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>
 ```
 
-`expected-peer` is supplied by ChatGPT from the current Linear implementation occupancy and parallel-admission decision. `FREE` means the peer lane is physically FREE. `SAY-N` means the peer lane is physically BUSY and its durable owner Issue is exactly `SAY-N`.
-
-`begin` performs the full read-only 3-lane safety audit inside the same Human command, including fixed worktree registration, existing main/sub/e2e safety conditions, target FREE, and exact peer occupancy. It then revalidates target start conditions immediately before delegating to the existing start mutation semantics. An occupancy mismatch never starts the target lane. A successful result includes the complete verified `IMPLEMENTATION STARTED` envelope; ChatGPT can use it to synchronize Linear without another preflight.
+`begin` performs the full read-only declared-lane safety audit inside the same Human command, including registered worktree inventory, role validation, target FREE, and exact complete implementation occupancy. It then revalidates target start conditions immediately before delegating to the existing start mutation semantics. An inventory mismatch never starts the target lane. A successful result includes the complete verified `IMPLEMENTATION STARTED` envelope.
 
 成功時のstable envelope:
 
 ```text
 IMPLEMENTATION STARTED
-lane=<main|sub>
+lane=<implementation-lane>
 issue=<SAY-N>
 branch=<exact branch>
 base=<exact base>
@@ -254,23 +244,21 @@ checkpoint=<actual HEAD>
 claim=<durable generation claim>
 clean=yes
 state=BUSY
-peer_lane=<main|sub>
-peer_state=<FREE|BUSY>
-peer_issue=<SAY-N or ->
+implementation_inventory=<declaration-order lane=FREE|SAY-N entries>
 preflight=PASS
 ```
 
 Lower-level lifecycle primitive retained for self-test / explicit routing:
 
 ```text
-nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch>
+nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch>
 ```
 
 `start` is not the normal separate first half of a known-Issue Human start. It keeps the existing low-level mutation and recovery semantics; its output identifies the local transition and does not replace ChatGPT's external occupancy / parallel-admission decision. Use `begin` for the normal Human handoff.
 
 helperはnew claim generationを作成し、mutation lockとdurable slotをbranch switchより先に取得する。その後fresh remote / exact Base / branch absence / safe idleを再確認し、必要なsafe normalization後にTask branchをcreate/switchする。final checkout / Base / cleanlinessを再確認してlockを削除し、成功outputへclaimを返す。
 
-`begin` / `start` successはlane、Issue、branch、Base、actual checkpoint、claim、cleanliness、BUSY stateを返す。`begin`はさらにcaller expectationと照合済みのpeer lane / peer state / peer Issueと`preflight=PASS`を返す。`start`もfull audit後のpeer観測値と`preflight=PASS`を返すが、caller-supplied expected peerとのadmission証明は持たない。canonical normal startupでは`begin`を使い、成功した`begin`のclaimを[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のImplementation checkpointへ同じcontinuationで保存する。
+`begin` / `start` successはlane、Issue、branch、Base、actual checkpoint、claim、cleanliness、BUSY stateを返す。`begin`はさらにcaller expectationと照合済みのdeclaration-order implementation inventoryと`preflight=PASS`を返す。canonical normal startupでは`begin`を使い、成功した`begin`のclaimを既存のIssue checkpointへ同じcontinuationで保存する。
 
 branch作成前にcrashしてもslot / lockがlaneを保持する。precondition failureでexact pre-start stateを一意に証明できる場合だけ自分が作ったmetadataをrollbackしてよい。判定不能なら保持してBLOCKする。
 
@@ -279,10 +267,10 @@ branch作成前にcrashしてもslot / lockがlaneを保持する。precondition
 remote保存済みactive branchをsame durable generationへ戻す場合はnew startにしない。
 
 ```text
-nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>
+nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>
 ```
 
-callerはcurrent external checkpointからLane / Issue / fixed Base / exact checkpoint / branch / claimを復元する。通常のpushed checkpointではremote topicも同じcheckpointであることを要求する。`begin`直後の初回push前に限り、remote topicの成功したabsence、local topic = Base = expected checkpoint、cleanな既存topic、safeなidle identityをすべて証明できた場合だけ、そのlocal topicへ復帰できる。Baseをancestryだけから再推定したり、local slotのclaimをcaller expectationの代わりに採用しない。
+callerはcurrent external checkpointからLane / Issue / durable Base / exact checkpoint / branch / claimを復元する。通常のpushed checkpointではremote topicも同じcheckpointであることを要求する。`begin`直後の初回push前に限り、remote topicの成功したabsence、local topic = Base = expected checkpoint、cleanな既存topic、safeなidle identityをすべて証明できた場合だけ、そのlocal topicへ復帰できる。Baseをancestryだけから再推定したり、local slotのclaimをcaller expectationの代わりに採用しない。
 
 slot identityがexact一致し、working tree、local branch checkpoint、authoritative remote branch、worktree occupancyがsafe-resume条件を満たす場合だけexisting branchへswitchする。authoritative main確認はactive Baseを更新するためではない。latest mainのmerge / rebase / reset / stash / force-switchを行わない。
 
@@ -294,7 +282,7 @@ resume success envelope:
 
 ```text
 IMPLEMENTATION RESUMED
-lane=<main|sub>
+lane=<implementation-lane>
 issue=<SAY-N>
 branch=<exact branch>
 base=<exact base>
@@ -306,12 +294,12 @@ state=BUSY
 
 ## Lane release
 
-### main / sub
+### Declared implementation lane
 
 post-merge helper:
 
 ```text
-nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>
+nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>
 ```
 
 `lane + checkpoint`だけではgenerationを区別できないためclaimは必須。
@@ -320,14 +308,14 @@ releaseはvalid active slotがexpected claimを所有し、caller checkpoint / c
 
 PR merge後にremote topic refが自動削除されていても、それ自体をBLOCK条件にしない。authoritative evidenceはsaved exact checkpointとcurrent `origin/main` ancestryである。別のsafe mergeで`origin/main`がさらにadvanceしていてもcheckpointがancestorならlatest `origin/main`へreleaseしてよい。
 
-post-mergeに実装laneのcheckoutだけがdriftした場合、release自身が次の狭い条件をすべて満たすときだけ復旧して続行できる。active slotがdurable Issue / branch / Base / claimとexact一致し、lock / tombstoneがなく、checkpoint / caller claimもexact一致することを先に確認する。claimed local refがcheckpointにある場合は、main laneのcleanな`main`、sub laneのcleanなdetached checkoutを従来どおり復旧でき、cleanなexact-checkpoint differently named branchからもexisting local claimed topicへexact `git switch`できる。current HEAD / checkpointがfresh authoritative `origin/main`に含まれ、topicが別worktreeでcheckoutされていないことを再証明する。remote topicはabsentでもよいが、存在する場合は同じcheckpointのexact refでなければならない。
+post-mergeに実装laneのcheckoutだけがdriftした場合、release自身が次の狭い条件をすべて満たすときだけ復旧して続行できる。active slotがdurable Issue / branch / Base / claimとexact一致し、lock / tombstoneがなく、checkpoint / caller claimもexact一致することを先に確認する。claimed local refがcheckpointにある場合は、manifest-declared `idle=branch` laneのcleanなdefault-branch checkout、または`idle=detached` laneのcleanなdetached checkoutを、そのlaneの宣言されたidle policyどおり復旧でき、cleanなexact-checkpoint differently named branchからもexisting local claimed topicへexact `git switch`できる。current HEAD / checkpointがfresh authoritative default branchに含まれ、topicが別worktreeでcheckoutされていないことを再証明する。remote topicはabsentでもよいが、存在する場合は同じcheckpointのexact refでなければならない。
 
-この復旧はreleaseの既存mutation lock取得後、slotをreleasing tombstoneへrenameする前に行う。claimed local refがmissingでも、current checkoutがcleanなnamed non-main branch、current branch refがcheckpoint、HEADがcheckpoint、fresh authoritative `origin/main` / Base ancestry、remote topic、別worktree不存在、lock / tombstone不存在をすべてexactに証明できる場合だけ、switch直前にcritical factsを再取得・再検証して`git branch -m <durable-claimed-branch>`を一度だけ行う。existing claimed refのpathでは`git switch <durable-claimed-branch>`だけを使い、missing-ref pathではそのexact renameだけを使う。Issue textやstring similarityからbranchを推測せず、durable slotのbranchを唯一の意図されたidentityとする。branch生成、reset、stash、merge、rebase、cherry-pick、force操作、durable metadata rewriteは行わない。wrong checkpoint / claim / ref SHA、dirty、別named branch、別worktree、remote / ancestry / metadata ambiguity、lock / tombstone conflictは`BLOCKED: release claimed branch mismatch`または既存の厳密なmismatchとしてactive slotを保持する。repair後に完了を証明できない場合はrelease lockを残してrecoverへ渡し、`resume` / `recover` / generic claim-checkout mismatchの意味はこのrelease-only recoveryで変更しない。
+この復旧はreleaseの既存mutation lock取得後、slotをreleasing tombstoneへrenameする前に行う。claimed local refがmissingでも、current checkoutがcleanなnamed non-default branch、current branch refがcheckpoint、HEADがcheckpoint、fresh authoritative default branch / Base ancestry、remote topic、別worktree不存在、lock / tombstone不存在をすべてexactに証明できる場合だけ、switch直前にcritical factsを再取得・再検証して`git branch -m <durable-claimed-branch>`を一度だけ行う。existing claimed refのpathでは`git switch <durable-claimed-branch>`だけを使い、missing-ref pathではそのexact renameだけを使う。Issue textやstring similarityからbranchを推測せず、durable slotのbranchを唯一の意図されたidentityとする。branch生成、reset、stash、merge、rebase、cherry-pick、force操作、durable metadata rewriteは行わない。wrong checkpoint / claim / ref SHA、dirty、別named branch、別worktree、remote / ancestry / metadata ambiguity、lock / tombstone conflictは`BLOCKED: release claimed branch mismatch`または既存の厳密なmismatchとしてactive slotを保持する。repair後に完了を証明できない場合はrelease lockを残してrecoverへ渡し、`resume` / `recover` / generic claim-checkout mismatchの意味はこのrelease-only recoveryで変更しない。
 
 idle state:
 
-- `main`: clean local `main` at latest `origin/main`;
-- `sub`: clean detached HEAD at latest `origin/main`。
+- declared `idle=branch`: clean local default-branch form at latest authoritative default;
+- declared `idle=detached`: clean detached HEAD at latest authoritative default.
 
 release開始時にlane自身がclaimed topic branchをcheckoutしていた場合だけ、idle transition後にそのlocal branchをcleanup candidateとする。local refがsaved checkpointのまま、checkpointがcurrent mainに含まれ、他worktreeにcheckoutされていないことを再確認し、expected-old SHA付きexact deletionを行う。
 
@@ -341,12 +329,12 @@ successful release outputはIssue、saved checkpoint、released claim / branch�
 
 ```text
 IMPLEMENTATION RELEASED
-lane=<main|sub>
+lane=<implementation-lane>
 issue=<released Issue>
 saved_checkpoint=<exact checkpoint>
 released_claim=<claim>
 released_branch=<topic branch>
-idle_branch=<main|DETACHED>
+idle_branch=<default-branch|DETACHED>
 idle_head=<actual final HEAD>
 origin_main=<authoritative main used for release>
 clean=yes
@@ -356,7 +344,7 @@ state=FREE
 ### Explicit recovery
 
 ```text
-nuinui recover <main|sub> <expected-claim>
+nuinui recover <implementation-lane> <expected-claim>
 ```
 
 recoverは一般repair commandではない。valid lock / tombstoneとexpected claimをexact照合し、known interrupted `init | start | resume | release` stateだけを継続またはlock-only cleanupする。
@@ -365,10 +353,10 @@ multiple tombstones、claim mismatch、dirty、malformed state、wrong Base/hist
 
 ## E2E marker
 
-`e2e` laneはdetached HEADのため、実行中だけGit-local markerを持つ。
+Human-test lanes are normally detached and hold a Git-local marker only while an exact test generation is active.
 
 ```bash
-$(git -C /Users/yosomi/Code/nuinuiCAD-e2e rev-parse --git-dir)/nuinui-slot
+$(git -C <human-test-lane-path> rev-parse --git-dir)/nuinui-slot
 ```
 
 format:
@@ -380,15 +368,15 @@ ref=<40-character tested commit SHA>
 
 markerはworking treeへ置かない。E2E releaseの最後に削除する。
 
-active markerがある間は、そのIssue/ref generationがauthorityであり、古いcompleted receiptから別callerが新しいmarkerを採用・releaseしてはならない。exact duplicate startはstrict marker、caller identity、clean detached checkout、HEAD、optional sessionをread-onlyで証明した場合だけno-op成功する。receiptはmarkerとsessionがないidle stateで、caller identityとcurrent authoritative `origin/main` HEADが完全一致するときだけcompleted-release authorityになる。
+active markerがある間は、そのIssue/ref generationがauthorityであり、古いcompleted receiptから別callerが新しいmarkerを採用・releaseしてはならない。exact duplicate startはstrict marker、caller identity、clean checkout、HEAD、optional sessionをread-onlyで証明した場合だけno-op成功する。receiptはmarkerとsessionがないidle stateで、caller identityとcurrent authoritative default branch HEADが完全一致するときだけcompleted-release authorityになる。
 
 ### e2e start
 
-1. `e2e`がFREEであることを確認する。
+1. selected Human-test laneがmanifest上FREEであることを確認する。
 2. exact tested commit / stable refを決める。
 3. detached checkoutしactual HEADを確認する。
 4. markerへIssue / refを書く。
-5. Manual E2Eをfixed stateでHumanが実行する。
+5. Manual E2Eを宣言されたtested stateでHumanが実行する。
 
 E2E中にremote `main`が進んでもtested stateを途中更新しない。
 
@@ -397,10 +385,12 @@ E2E中にremote `main`が進んでもtested stateを途中更新しない。
 Canonicalなsuccessful Human E2E closure handoffは、必ず次の順序で行う。
 
 ```text
-nuinui-e2e-prepare cleanup <Issue> <tested-ref> <e2e-root>
-nuinui e2e-release <Issue> <tested-ref>
-nuinui-e2e-prepare closure-check <Issue>
+nuinui-e2e-prepare cleanup <human-test-lane> <Issue> <tested-ref> <e2e-root>
+nuinui e2e-release <human-test-lane> <Issue> <tested-ref>
+nuinui-e2e-prepare closure-check <human-test-lane> <Issue>
 ```
+
+Short forms for cleanup and `nuinui e2e-release` remain compatible only when exactly one Human-test lane is declared; explicit lane forms are required otherwise.
 
 `cleanup <Issue> <tested-ref> <e2e-root>`はIssue/refに加えてexact rootをsession-generation identityとして照合し、prepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。完了時はGit dirへstrictな`version=1 / issue / ref / root`の`nuinui-e2e-cleanup-receipt`を先に保存する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
 
@@ -408,33 +398,33 @@ nuinui-e2e-prepare closure-check <Issue>
 
 markerがない場合、同じcaller Issue/ref、strict receipt、session metadata不在、clean detached checkout、current authoritative `origin/main` HEADをread-onlyで完全一致証明できる場合だけ、`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先され、staleなreceiptから別Issueのreleaseを推測しない。
 
-`nuinui-e2e-prepare closure-check <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
+`nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
 
-`nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup <Issue> <tested-ref> <e2e-root>`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
+`nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup [<human-test-lane>] <Issue> <tested-ref> <e2e-root>`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
 
 ## E2E failure
 
-confirmed product implementation failureが出てもe2e laneでは修正しない。
+confirmed product implementation failureが出てもHuman-test laneでは修正しない。
 
 ```text
 e2e FAIL
 -> failure classification / fix contract
--> FREE main/sub implementation lane
+-> FREE declared implementation lane
 -> Luna fix / verification / merge
 -> new exact tested commit
--> e2e laneでaffected unit rerun
+-> selected Human-test laneでaffected unit rerun
 ```
 
-両implementation laneがBUSYなら既存Taskを壊してslotを作らない。
+すべてのdeclared implementation laneがBUSYなら既存Taskを壊してslotを作らない。
 
 ## CI reproduction
 
-CI reproductionも4つ目のcheckoutを作らない。必要ならFREEなmain/sub implementation laneを一時利用し、exact failing SHA / workflowをauthorityとしてLunaが診断する。両laneがBUSYならsafe checkpointまで待つ。詳細は[`CI-INCIDENTS.md`](./CI-INCIDENTS.md)。
+CI reproductionも追加のexecution laneを作らない。必要ならFREEなdeclared implementation laneを一時利用し、exact failing SHA / workflowをauthorityとしてLunaが診断する。全implementation laneがBUSYならsafe checkpointまで待つ。詳細は[`CI-INCIDENTS.md`](./CI-INCIDENTS.md)。
 
 ## Prohibited patterns
 
 - Issueごとのdisposable worktree;
-- persistent 4th checkout;
+- persistent unregistered extra checkout;
 - `/Users/yosomi/Code/nuinuiCAD-ci-repro`;
 - active slice途中のroutine merge-main / rebase-main;
 - unfinished parallel branch同士の取り込み;
@@ -445,4 +435,4 @@ CI reproductionも4つ目のcheckoutを作らない。必要ならFREEなmain/su
 - checkout appearanceからclaimを推測生成すること;
 - malformed / stale durable metadataのage-based deletion。
 
-並列性はmain/subの2 implementation laneで表現する。それ以上のparallelismを作らず、2 laneを同時に使うこと自体も目的にしない。
+並列性はmanifestに宣言されたimplementation lane数で表現する。それ以上のdynamic laneを作らず、全laneを同時に使うこと自体も目的にしない。

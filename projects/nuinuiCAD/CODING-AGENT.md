@@ -44,11 +44,11 @@ CI / repository tooling / automation workのうち、product implementationか�
 
 典型例は、既存CI jobへrepository内にすでに存在するcheck commandを1 step追加するだけで、上記条件をすべて満たす変更である。
 
-この例外ではfixed main/sub/e2e lane、Base checkpoint、Luna sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、merge、relevant work-management synchronizationまで担当してよい。
+この例外ではdeclared execution lane、Base checkpoint、Luna sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、merge、relevant work-management synchronizationまで担当してよい。
 
 write直前にlatest remote SHAとtarget file freshnessを再確認する。freshness driftによってintended change、scope、またはverification routeが一意でなくなった場合はwriteせず再評価する。
 
-途中でproduct source / runtime behavior / DSL semantics側の変更、broad debugging、conflict resolution、integration-heavy work、またはその他の除外scopeが必要になった場合はdirect executionを停止し、通常のLuna xhigh + fixed implementation lane lifecycleへ戻す。
+途中でproduct source / runtime behavior / DSL semantics側の変更、broad debugging、conflict resolution、integration-heavy work、またはその他の除外scopeが必要になった場合はdirect executionを停止し、通常のLuna xhigh + declared implementation lane lifecycleへ戻す。
 
 このexceptionは旧 `only_chatgpt` execution model全体を復活させるものではない。
 
@@ -128,16 +128,19 @@ ChatGPT determines the operation
 
 Humanがterminal commandを実行したことを理由にsource-code implementation ownershipをHumanへ移さない。source-code implementation contract、lane、Base checkpoint、Luna ownershipはそのまま維持する。
 
-## Fixed execution lanes
+## Declared execution lanes
 
-Source-code implementation executionは [`CHECKOUTS.md`](./CHECKOUTS.md) の2 laneだけを使う。
+Source-code implementation executionは [`LANES.conf`](./LANES.conf) に宣言された`role=implementation` laneだけを使う。
+
+The checked-in manifest currently provides the following implementation-lane
+example; names and paths are data, not the topology model.
 
 - `main`: `/Users/yosomi/Code/nuinuiCAD`
 - `sub`: `/Users/yosomi/Code/nuinuiCAD-sub`
 
-同時source-code implementationは最大2 track。3つ目のimplementation checkout / worktree / cloneを作らない。
+各laneは同時に1つのsource-code implementation generationだけを保持する。動的なimplementation checkout / worktree / cloneを作らない。
 
-Manual E2Eは`/Users/yosomi/Code/nuinuiCAD-e2e`専用で、source-code implementationへ転用しない。
+`role=human-test` laneはManual E2E専用で、source-code implementationへ転用しない。
 
 Documentation / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionでは、これらのimplementation laneをclaimしない。
 
@@ -145,16 +148,15 @@ Documentation / policy direct execution exceptionとnarrow CI/tooling direct exe
 
 CodexのProject root、Luna processのinitial working directory、またはsession開始時の`pwd`はimplementation laneを定義しない。
 
-implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLinear checkpointへ記録したfixed checkout pathである。
+implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLinear checkpointへ記録したmanifest-declared checkout pathである。
 
-- `main` laneなら`/Users/yosomi/Code/nuinuiCAD`;
-- `sub` laneなら`/Users/yosomi/Code/nuinuiCAD-sub`。
+具体的なlane nameとpathはcurrent `LANES.conf`から読む。lane nameからpathやroleを推測しない。
 
-Lunaは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushを行う前に、assigned fixed checkoutを明示的にtargetし、そのcheckoutへ移動するか`git -C <assigned-checkout>`で検証する。
+Lunaは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushを行う前に、assigned declared checkoutを明示的にtargetし、そのcheckoutへ移動するか`git -C <assigned-checkout>`で検証する。
 
 session開始時の`pwd`がassigned laneと違うことだけを理由に`LANE_MISMATCH`として停止してはならない。`LANE_MISMATCH`は、assigned checkoutをtargetした後にrepository identity / branch / HEAD / clean state等のrequired lane conditionが一致しない場合だけ使う。
 
-sub laneを使うために別Codex Project、別VS Code window、4つ目のcheckout/worktreeを作る必要はない。同じCodex Projectからfixed sub checkoutをtargetしてよい。
+declared laneを使うために別Codex Project、別VS Code window、extra checkout/worktreeを作る必要はない。同じCodex Projectからmanifest-declared checkoutをtargetしてよい。
 
 ChatGPTがLuna promptを生成するときは、initial `pwd`一致をpreconditionにせず、`assigned checkoutをtargetする -> そのcheckoutでbranch / HEAD / clean / remote stateを検証する`順序で書く。
 
@@ -314,7 +316,7 @@ New sessionを使う典型:
 ユーザーへLuna promptを提示するとき、prompt外側に次を明示する。
 
 ```text
-Luna lane: main | sub
+Luna lane: <manifest-declared implementation lane>
 Luna session: New session | Reuse current session
 ```
 
@@ -322,9 +324,9 @@ Reuse時だけ短い理由を添える。
 
 ## E2E failure fix
 
-Manual E2Eでconfirmed implementation failureが出たら、`e2e` checkoutでは修正しない。
+Manual E2Eでconfirmed implementation failureが出たら、Human-test checkoutでは修正しない。
 
-ChatGPTがfailureをclassify / sliceし、`FREE`な`main`または`sub`へfixを割り当て、Lunaが実装する。fix merge後、new exact tested commitで`e2e`へ戻す。
+ChatGPTがfailureをclassify / sliceし、`FREE`なmanifest-declared implementation laneへfixを割り当て、Lunaが実装する。fix merge後、new exact tested commitでselected Human-test laneへ戻す。
 
 ## Cross-chat continuity
 

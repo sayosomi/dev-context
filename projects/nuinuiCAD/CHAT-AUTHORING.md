@@ -21,7 +21,7 @@ Issue Authoring chatはIssueを**作る / 育てる / 編集する**ためのcha
 
 Issue Authoringはrepository implementationではない。
 
-- `main` / `sub` / `e2e` laneをclaimしない。
+- execution laneをclaimしない。
 - implementation branch / worktreeを作らない。
 - product code implementation / blocking fixを開始しない。
 - Readyになっただけでは`In Progress`へ進めない。
@@ -33,7 +33,7 @@ Issue contractの判断詳細は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.
 
 **Issue Authoring chatの同時実行数に上限を設けない。**
 
-複数IssueのAuthoringを別chatで並行してよい。これはfixed implementation capacityとは無関係であり、3つ目以降のimplementation trackを許可する意味ではない。
+複数IssueのAuthoringを別chatで並行してよい。これはdeclared implementation capacityとは無関係であり、lane capacityを増やす意味ではない。
 
 同じIssueを複数Authoring chatが扱うことも禁止しない。ただしLinear write前にcurrent Issue / relevant commentsを再取得し、別chatの新しい変更を失わないこと。競合するproduct decisionをlast-write-winsで上書きしない。一意に統合できない場合はHumanへ判断を戻す。
 

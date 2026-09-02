@@ -3,8 +3,9 @@
 set -u
 
 SCRIPT_DIR="${0:A:h}"
-PREPARE_SCRIPT="$SCRIPT_DIR/nuinui-e2e-prepare"
+PREPARE_SCRIPT="${1:-$SCRIPT_DIR/nuinui-e2e-prepare}"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-e2e-prepare-test.XXXXXX")" || exit 1
+TEST_ROOT="${TEST_ROOT:A}"
 
 cleanup_test_root() {
   [[ -d "$TEST_ROOT" ]] && rm -rf -- "$TEST_ROOT"
@@ -29,6 +30,7 @@ handoff=""
 root=""
 status_out=""
 marker_contents=""
+manifest="$TEST_ROOT/LANES.conf"
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -50,6 +52,16 @@ tested_ref="$(git -C "$repo" rev-parse HEAD)"
 marker="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-slot"
 session="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-session"
 printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+cat > "$manifest" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane test-human]
+role=human-test
+path=$repo
+idle=detached
+MANIFEST
 
 cat > "$fake_bin/lsof" <<'EOF'
 #!/bin/zsh
@@ -93,23 +105,41 @@ cat > "$fake_app/Contents/Resources/app/bin/code" <<'EOF'
 sleep 30
 EOF
 chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_app/Contents/Resources/app/bin/code"
+real_mv="$(command -v mv)"
+cat > "$fake_bin/mv" <<'EOF'
+#!/bin/zsh
+if [[ "${1:-}" == -- ]]; then
+  target="${3:-}"
+else
+  target="${2:-}"
+fi
+"$NUINUI_TEST_REAL_MV" "$@"
+if [[ "${NUINUI_TEST_MUTATE_SESSION_ON_RECEIPT:-0}" == 1 &&
+  "$target" == "${NUINUI_TEST_CLEANUP_RECEIPT:-}" ]]; then
+  sed 's/^cdp_port=9555$/cdp_port=9556/' "$NUINUI_TEST_SESSION" > "$NUINUI_TEST_SESSION.tmp"
+  "$NUINUI_TEST_REAL_MV" "$NUINUI_TEST_SESSION.tmp" "$NUINUI_TEST_SESSION"
+fi
+EOF
+chmod +x "$fake_bin/mv"
 
 common_env=(
-  "NUINUI_E2E_PREPARE_WT=$repo"
+  "NUINUI_E2E_SELFTEST=1"
+  "NUINUI_E2E_MANIFEST=$manifest"
   "NUINUI_E2E_TEMP_PARENT=$temp_parent"
   "TMPDIR=$closure_parent/"
   "NUINUI_E2E_VSCODE_APP=$fake_app"
   "NUINUI_FAKE_REPO=$repo"
+  "NUINUI_TEST_REAL_MV=$real_mv"
   "PATH=$fake_bin:$PATH"
 )
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.3.0" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.4.1" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
-print -r -- "$help_out" | grep -Fq "nuinui e2e-release <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
-cleanup_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
-release_line="$(print -r -- "$help_out" | grep -n "nuinui e2e-release <SAY-123> <tested-ref>" | head -n 1 | cut -d: -f1)"
-closure_line="$(print -r -- "$help_out" | grep -n "nuinui-e2e-prepare closure-check <Issue>" | head -n 1 | cut -d: -f1)"
+print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
+cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
+release_line="$(print -r -- "$help_out" | grep -nF "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" | head -n 1 | cut -d: -f1)"
+closure_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>" | head -n 1 | cut -d: -f1)"
 [[ -n "$cleanup_line" && -n "$release_line" && -n "$closure_line" && "$cleanup_line" -lt "$release_line" && "$release_line" -lt "$closure_line" ]] || fail "help does not preserve cleanup -> release -> closure order"
 
 echo "TEST: status reports no session and unmanaged artifact candidates without mutation"
@@ -233,6 +263,40 @@ if status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-
 fi
 print -r -- "$status_out" | grep -Fq 'marker=BLOCKING-SAME-ISSUE' \
   || fail "closure-check did not report the preserved same-Issue marker"
+
+echo "TEST: cleanup retains a changed session after receipt finalization"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "receipt-finalization race prepare"
+race_root="$(sed -n 's/^root=//p' "$session")"
+race_handoff="$handoff"
+race_session_before="$(cat "$session")"
+race_marker_before="$(cat "$marker")"
+race_head_before="$(git -C "$repo" rev-parse HEAD)"
+race_status_before="$(git -C "$repo" status --porcelain)"
+race_receipt="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-cleanup-receipt"
+if race_out="$(env "${common_env[@]}" NUINUI_TEST_MUTATE_SESSION_ON_RECEIPT=1 \
+  NUINUI_TEST_CLEANUP_RECEIPT="$race_receipt" NUINUI_TEST_SESSION="$session" \
+  zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$race_root" 2>&1)"; then
+  print -r -- "$race_out"
+  fail "cleanup reported success after session revalidation race"
+fi
+print -r -- "$race_out" | grep -Fq 'BLOCKED: E2E session changed before metadata removal; receipt retained' \
+  || { print -r -- "$race_out"; fail "session revalidation race did not fail closed"; }
+[[ -f "$session" && ! -L "$session" ]] || fail "session revalidation race removed changed session"
+[[ "$(cat "$session")" != "$race_session_before" ]] || fail "session revalidation race overwrote changed session"
+[[ "$(sed -n 's/^cdp_port=//p' "$session")" == 9556 ]] || fail "session revalidation race did not retain changed field"
+[[ -f "$race_receipt" && ! -L "$race_receipt" ]] || fail "session revalidation race did not retain cleanup receipt"
+[[ "$(cat "$race_receipt")" == "$(printf 'version=1\nissue=SAY-999\nref=%s\nroot=%s' "$tested_ref" "$race_root")" ]] \
+  || fail "session revalidation race changed cleanup receipt identity"
+[[ ! -e "$race_root" && ! -e "$race_handoff" ]] || fail "session revalidation race retained cleaned artifacts"
+[[ "$(cat "$marker")" == "$race_marker_before" ]] || fail "session revalidation race changed marker"
+[[ "$(git -C "$repo" rev-parse HEAD)" == "$race_head_before" ]] || fail "session revalidation race changed checkout HEAD"
+[[ "$(git -C "$repo" status --porcelain)" == "$race_status_before" ]] || fail "session revalidation race changed checkout state"
+print -r -- "$race_session_before" > "$session"
+rm -f -- "$race_receipt"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$race_root" >/dev/null || fail "cleanup after session revalidation race"
+[[ ! -e "$session" && -f "$race_receipt" ]] || fail "cleanup after session revalidation race retained state"
+root="$race_root"
+echo "PASS: changed session is retained with receipt after cleanup revalidation failure"
 
 echo "TEST: status blocks malformed session without mutation"
 printf 'issue=SAY-999\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=1\n' \
@@ -395,5 +459,177 @@ printf '%s\n' "$receipt_content" > "$cleanup_receipt"
 if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-998 "$other_ref" "$arbitrary_root" >/dev/null 2>&1; then
   fail "wrong cleanup root unexpectedly succeeded"
 fi
+
+echo "TEST: explicit Human-test lanes remain independent in a 2+2 topology"
+topology_bare="$TEST_ROOT/2plus2.git"
+implementation_a="$TEST_ROOT/implementation-a"
+implementation_b="$TEST_ROOT/implementation-b"
+human_a="$TEST_ROOT/human-a"
+human_b="$TEST_ROOT/human-b"
+git clone -q --bare "$repo" "$topology_bare" || fail "2+2 bare repository"
+git --git-dir="$topology_bare" config remote.origin.url https://github.com/sayosomi/nuinuiCAD.git
+tested_ref_two="$(git -C "$repo" rev-parse HEAD)"
+for topology_path in "$implementation_a" "$implementation_b" "$human_a" "$human_b"; do
+  git --git-dir="$topology_bare" worktree add -q --detach "$topology_path" "$tested_ref_two" \
+    || fail "2+2 worktree $topology_path"
+done
+[[ "$implementation_a" != "$implementation_b" && "$implementation_a" != "$human_a" &&
+  "$implementation_a" != "$human_b" && "$implementation_b" != "$human_a" &&
+  "$implementation_b" != "$human_b" && "$human_a" != "$human_b" ]] || fail "2+2 paths are not distinct"
+for topology_path in "$implementation_a" "$implementation_b" "$human_a" "$human_b"; do
+  git --git-dir="$topology_bare" worktree list --porcelain | sed -n 's/^worktree //p' |
+    grep -Fqx -- "$topology_path" || fail "2+2 path is not a registered worktree: $topology_path"
+done
+human_a_gitdir="$(git -C "$human_a" rev-parse --absolute-git-dir)"
+human_b_gitdir="$(git -C "$human_b" rev-parse --absolute-git-dir)"
+[[ "$human_a_gitdir" != "$human_b_gitdir" ]] || fail "2+2 Human-test Git directories are not distinct"
+marker_two_a="$human_a_gitdir/nuinui-slot"
+marker_two_b="$human_b_gitdir/nuinui-slot"
+session_two_a="$human_a_gitdir/nuinui-e2e-session"
+session_two="$human_b_gitdir/nuinui-e2e-session"
+receipt_two_a="$human_a_gitdir/nuinui-e2e-cleanup-receipt"
+receipt_two_b="$human_b_gitdir/nuinui-e2e-cleanup-receipt"
+printf 'issue=SAY-996\nref=%s\n' "$tested_ref_two" > "$marker_two_a"
+printf 'issue=SAY-997\nref=%s\n' "$tested_ref_two" > "$marker_two_b"
+manifest_two="$TEST_ROOT/LANES-2plus2.conf"
+cat > "$manifest_two" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane implementation-a]
+role=implementation
+path=$implementation_a
+idle=detached
+
+[lane implementation-b]
+role=implementation
+path=$implementation_b
+idle=detached
+
+[lane human-a]
+role=human-test
+path=$human_a
+idle=detached
+
+[lane human-b]
+role=human-test
+path=$human_b
+idle=detached
+MANIFEST
+two_env=("${common_env[@]}")
+two_env+=("NUINUI_E2E_MANIFEST=$manifest_two")
+two_env+=("NUINUI_FAKE_REPO=$human_b")
+two_handoff="$temp_parent/nuinui-SAY-997-human-e2e.env"
+
+two_snapshot() {
+  local topology_path metadata
+  for topology_path in "$implementation_a" "$implementation_b" "$human_a" "$human_b"; do
+    print -r -- "path=$topology_path"
+    print -r -- "head=$(git -C "$topology_path" rev-parse HEAD)"
+    print -r -- "branch=$(git -C "$topology_path" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    print -r -- "status=$(git -C "$topology_path" status --porcelain)"
+    print -r -- "refs=$(git -C "$topology_path" for-each-ref --format='%(refname) %(objectname)' | sort)"
+  done
+  for metadata in "$session_two_a" "$session_two" "$receipt_two_a" "$receipt_two_b" "$two_handoff"; do
+    if [[ -e "$metadata" || -L "$metadata" ]]; then
+      print -r -- "metadata=$metadata"
+      cat "$metadata"
+    else
+      print -r -- "metadata=$metadata:absent"
+    fi
+  done
+}
+
+expect_short_blocked() {
+  local label="$1" env_kind="$2" out=""
+  local -a selected_env
+  shift 2
+  if [[ "$env_kind" == two ]]; then
+    selected_env=("${two_env[@]}")
+  else
+    selected_env=("${zero_env[@]}")
+  fi
+  if out="$(env "${selected_env[@]}" zsh "$PREPARE_SCRIPT" "$@" 2>&1)"; then
+    print -r -- "$out"
+    fail "$label unexpectedly selected a Human-test lane"
+  fi
+  print -r -- "$out" | grep -Fq 'BLOCKED:' || {
+    print -r -- "$out"
+    fail "$label did not fail closed"
+  }
+}
+
+two_human_a_head_before="$(git -C "$human_a" rev-parse HEAD)"
+two_human_a_status_before="$(git -C "$human_a" status --porcelain)"
+two_human_a_refs_before="$(git -C "$human_a" for-each-ref --format='%(refname) %(objectname)' | sort)"
+two_before="$(two_snapshot)"
+expect_short_blocked "2+2 short check" two check SAY-997 "$tested_ref_two" "$fixture"
+expect_short_blocked "2+2 short prepare" two prepare SAY-997 "$tested_ref_two" "$fixture" 9556
+expect_short_blocked "2+2 short status before session" two status
+expect_short_blocked "2+2 short cleanup before session" two cleanup SAY-997 "$tested_ref_two" "$temp_parent/nuinui-vscode-e2e.two"
+expect_short_blocked "2+2 short closure-check before session" two closure-check SAY-997
+[[ "$(two_snapshot)" == "$two_before" ]] || fail "2+2 short-form rejection mutated fixture state"
+
+two_status_a="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" status human-a)" || fail "explicit Human-test status before prepare"
+print -r -- "$two_status_a" | grep -Fq 'E2E STATUS COMPLETE' || fail "explicit Human-test status did not complete"
+print -r -- "$two_status_a" | grep -Fq 'session=none' || fail "explicit Human-test status did not use its own session"
+
+two_prepare_out="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9556 2>&1)" || {
+  print -r -- "$two_prepare_out"
+  fail "explicit second Human-test prepare"
+}
+[[ -f "$session_two" ]] || fail "explicit second Human-test session missing"
+[[ "$(sed -n 's/^lane=//p' "$session_two")" == human-b ]] || fail "session did not retain exact Human-test lane"
+two_root="$(sed -n 's/^root=//p' "$session_two")"
+two_session_before="$(cat "$session_two")"
+two_marker_a_before="$(cat "$marker_two_a")"
+two_marker_b_before="$(cat "$marker_two_b")"
+two_handoff_before="$(cat "$two_handoff")"
+two_active_before="$(two_snapshot)"
+expect_short_blocked "2+2 short status with persisted session" two status
+expect_short_blocked "2+2 short cleanup with persisted session" two cleanup SAY-997 "$tested_ref_two" "$two_root"
+expect_short_blocked "2+2 short closure-check with persisted session" two closure-check SAY-997
+[[ "$(two_snapshot)" == "$two_active_before" ]] || fail "2+2 ambiguous short form mutated active state"
+[[ "$(cat "$session_two")" == "$two_session_before" && -d "$two_root" ]] || fail "2+2 short cleanup changed active session"
+[[ "$(cat "$marker_two_a")" == "$two_marker_a_before" && "$(cat "$marker_two_b")" == "$two_marker_b_before" ]] \
+  || fail "2+2 short rejection changed a marker"
+[[ "$(cat "$two_handoff")" == "$two_handoff_before" ]] || fail "2+2 short rejection changed handoff"
+
+two_status_b="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" status human-b)" || fail "explicit Human-test status with persisted session"
+print -r -- "$two_status_b" | grep -Fq 'session=active' || fail "explicit Human-test status did not find its exact session"
+env "${two_env[@]}" zsh "$PREPARE_SCRIPT" cleanup human-b SAY-997 "$tested_ref_two" "$two_root" >/dev/null || fail "explicit second Human-test cleanup"
+[[ ! -e "$session_two" && ! -e "$two_root" ]] || fail "second Human-test cleanup retained state"
+[[ -f "$receipt_two_b" ]] || fail "explicit second Human-test cleanup receipt missing"
+[[ "$(cat "$marker_two_a")" == "$two_marker_a_before" ]] || fail "Human-test cleanup changed the other lane marker"
+[[ ! -e "$session_two_a" && ! -e "$receipt_two_a" ]] || fail "Human-test cleanup changed the other lane metadata"
+[[ "$(git -C "$human_a" rev-parse HEAD)" == "$two_human_a_head_before" ]] || fail "Human-test cleanup changed the other lane HEAD"
+[[ "$(git -C "$human_a" status --porcelain)" == "$two_human_a_status_before" ]] || fail "Human-test cleanup changed the other lane checkout"
+[[ "$(git -C "$human_a" for-each-ref --format='%(refname) %(objectname)' | sort)" == "$two_human_a_refs_before" ]] \
+  || fail "Human-test cleanup changed the other lane refs"
+env "${two_env[@]}" zsh "$PREPARE_SCRIPT" closure-check human-b SAY-998 >/dev/null \
+  || fail "explicit Human-test closure-check"
+
+manifest_zero="$TEST_ROOT/LANES-zero-human.conf"
+cat > "$manifest_zero" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane implementation-a]
+role=implementation
+path=$implementation_a
+idle=detached
+MANIFEST
+zero_env=("${common_env[@]}")
+zero_env+=("NUINUI_E2E_MANIFEST=$manifest_zero")
+zero_env+=("NUINUI_FAKE_REPO=$implementation_a")
+zero_before="$(two_snapshot)"
+expect_short_blocked "zero Human-test short check" zero check SAY-998 "$tested_ref_two" "$fixture"
+expect_short_blocked "zero Human-test short prepare" zero prepare SAY-998 "$tested_ref_two" "$fixture" 9557
+expect_short_blocked "zero Human-test short status" zero status
+expect_short_blocked "zero Human-test short cleanup" zero cleanup SAY-998 "$tested_ref_two" "$temp_parent/nuinui-vscode-e2e.zero"
+expect_short_blocked "zero Human-test short closure-check" zero closure-check SAY-998
+[[ "$(two_snapshot)" == "$zero_before" ]] || fail "zero Human-test short-form rejection mutated fixture state"
 
 echo "SELFTEST PASS"

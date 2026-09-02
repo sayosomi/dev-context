@@ -9,7 +9,7 @@ doctor() {
     while IFS= read -r nuinui_doctor_human_lane || [ -n "$nuinui_doctor_human_lane" ]; do
       [ -n "$nuinui_doctor_human_lane" ] || continue
       nuinui_doctor_human_path=$(lane_manifest_lane_path "$NUINUI_RUNTIME_MANIFEST" "$nuinui_doctor_human_lane") || nuinui_doctor_result=1
-      [ -x "$EH" ] && NUINUI_E2E_PREPARE_WT="$nuinui_doctor_human_path" "$EH" status || nuinui_doctor_result=1
+      [ -x "$EH" ] && "$EH" status "$nuinui_doctor_human_lane" || nuinui_doctor_result=1
     done <<EOF
 $nuinui_doctor_human_lanes
 EOF

@@ -1,0 +1,146 @@
+#!/bin/sh
+set -eu
+
+SOURCE_HELPER=${1:-$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/nuinui}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+SOURCE_HANDOFF=${2:-$SCRIPT_DIR/nuinui-handoff-check}
+SOURCE_HELPER_SHA256=$(shasum -a 256 "$SOURCE_HELPER" | awk 'NR == 1 {print $1}')
+SOURCE_HELPER_BLOB=$(git hash-object "$SOURCE_HELPER")
+ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-topology-matrix.XXXXXX")" && pwd -P)
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() { echo "TOPOLOGY MATRIX FAIL: $*" >&2; exit 1; }
+contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
+expect_blocked() {
+  matrix_label=$1; shift
+  if "$@" >"$ROOT/out" 2>&1; then
+    cat "$ROOT/out"
+    fail "$matrix_label unexpectedly succeeded"
+  fi
+  contains "$(cat "$ROOT/out")" 'BLOCKED' "$matrix_label was not fail-closed"
+  echo "PASS: $matrix_label"
+}
+
+run_topology() {
+  matrix_name=$1
+  matrix_impl_count=$2
+  matrix_human_count=$3
+  matrix_root=$ROOT/$matrix_name
+  matrix_remote=$matrix_root/sayosomi/nuinuiCAD.git
+  matrix_seed=$matrix_root/seed
+  matrix_project=$matrix_root/project
+  matrix_result=$matrix_root/result
+  matrix_manifest=$matrix_project/LANES.conf
+  matrix_helper=$matrix_project/scripts/nuinui
+  matrix_handoff=$matrix_project/scripts/nuinui-handoff-check
+  mkdir -p "$matrix_project/scripts" "$matrix_root/unrelated" "$(dirname "$matrix_remote")"
+  cp "$SOURCE_HELPER" "$matrix_helper"
+  cp "$SOURCE_HANDOFF" "$matrix_handoff"
+  chmod 755 "$matrix_helper" "$matrix_handoff"
+  [ "$(shasum -a 256 "$matrix_helper" | awk 'NR == 1 {print $1}')" = "$SOURCE_HELPER_SHA256" ] || fail "$matrix_name changed helper bytes"
+  [ "$(git hash-object "$matrix_helper")" = "$SOURCE_HELPER_BLOB" ] || fail "$matrix_name changed helper blob"
+  git init -q --bare "$matrix_remote"
+  git init -q -b main "$matrix_seed"
+  git -C "$matrix_seed" config user.name test
+  git -C "$matrix_seed" config user.email test@example.invalid
+  printf '%s\n' base > "$matrix_seed/base.txt"
+  git -C "$matrix_seed" add base.txt
+  git -C "$matrix_seed" commit -qm base
+  git -C "$matrix_seed" remote add origin "$matrix_remote"
+  git -C "$matrix_seed" push -qu origin main
+  git clone -q "$matrix_remote" "$matrix_project/main"
+  git -C "$matrix_project/main" config user.name test
+  git -C "$matrix_project/main" config user.email test@example.invalid
+
+  impl_a=$matrix_project/main
+  impl_b=$matrix_project/impl-b
+  impl_c=$matrix_project/impl-c
+  human_a=$matrix_project/human-a
+  human_b=$matrix_project/human-b
+  [ "$matrix_impl_count" -ge 2 ] && git -C "$matrix_project/main" worktree add -q --detach "$impl_b" origin/main
+  [ "$matrix_impl_count" -ge 3 ] && git -C "$matrix_project/main" worktree add -q --detach "$impl_c" origin/main
+  [ "$matrix_human_count" -ge 1 ] && git -C "$matrix_project/main" worktree add -q --detach "$human_a" origin/main
+  [ "$matrix_human_count" -ge 2 ] && git -C "$matrix_project/main" worktree add -q --detach "$human_b" origin/main
+  git init -q "$matrix_result"
+
+  case "$matrix_name" in
+    one-plus-zero)
+      impl_names='build'; impl_paths="$impl_a"; impl_idles='branch'; human_names=''; selected=build; selected_path=$impl_a; begin_branch=codex/SAY-101-matrix; issue=SAY-101 ;;
+    two-plus-one)
+      impl_names='build compile'; impl_paths="$impl_a $impl_b"; impl_idles='branch detached'; human_names='manual'; selected=compile; selected_path=$impl_b; begin_branch=codex/SAY-102-matrix; issue=SAY-102 ;;
+    three-plus-one)
+      impl_names='build compile review'; impl_paths="$impl_a $impl_b $impl_c"; impl_idles='branch detached detached'; human_names='manual'; selected=review; selected_path=$impl_c; begin_branch=codex/SAY-103-matrix; issue=SAY-103 ;;
+    two-plus-two)
+      impl_names='build compile'; impl_paths="$impl_a $impl_b"; impl_idles='branch detached'; human_names='manual-a manual-b'; selected=compile; selected_path=$impl_b; begin_branch=codex/SAY-104-matrix; issue=SAY-104 ;;
+    *) fail "unknown topology $matrix_name" ;;
+  esac
+  {
+    printf '%s\n' version=1 repository=sayosomi/nuinuiCAD default_branch=main
+    n=1
+    for impl in $impl_names; do
+      set -- $impl_paths; impl_path=$1; shift; impl_paths="$*"
+      set -- $impl_idles; impl_idle=$1; shift; impl_idles="$*"
+      printf '\n[lane %s]\nrole=implementation\npath=%s\nidle=%s\n' "$impl" "$impl_path" "$impl_idle"
+      n=$((n + 1))
+    done
+    if [ -n "$human_names" ]; then
+      for human in $human_names; do
+        case "$human" in manual|manual-a) human_path=$human_a ;; manual-b) human_path=$human_b ;; esac
+        printf '\n[lane %s]\nrole=human-test\npath=%s\nidle=detached\n' "$human" "$human_path"
+      done
+    fi
+  } > "$matrix_manifest"
+  export NUINUI_SELFTEST=1 NUINUI_SELFTEST_RESULT_REPO="$matrix_result"
+  cd "$matrix_root/unrelated"
+
+  expect_blocked "$matrix_name preflight rejects uninitialized lanes" "$matrix_helper" preflight
+  for impl in $impl_names; do "$matrix_helper" lane-init "$impl" >/dev/null || fail "$matrix_name lane-init $impl"; done
+  matrix_preflight=$("$matrix_helper" preflight) || fail "$matrix_name preflight after initialization"
+  contains "$matrix_preflight" 'inventory_state=PASS' "$matrix_name registered inventory"
+  first_name=$(printf '%s\n' "$impl_names" | awk '{print $1}')
+  contains "$matrix_preflight" "lane name=$first_name role=implementation" "$matrix_name declaration-order lane"
+
+  matrix_base=$(git -C "$matrix_project/main" rev-parse origin/main)
+  case "$matrix_impl_count" in
+    1) inventory="build=FREE"; expected_inventory="build=$issue" ;;
+    2) inventory="build=FREE,compile=FREE"; expected_inventory="build=FREE,compile=$issue" ;;
+    3) inventory="build=FREE,compile=FREE,review=FREE"; expected_inventory="build=FREE,compile=FREE,review=$issue" ;;
+  esac
+  begin_output=$("$matrix_helper" begin "$selected" "$issue" "$matrix_base" "$begin_branch" "$inventory") || fail "$matrix_name begin"
+  contains "$begin_output" 'IMPLEMENTATION STARTED' "$matrix_name begin routing"
+  contains "$begin_output" "implementation_inventory=$expected_inventory" "$matrix_name complete inventory"
+  claim=$(printf '%s\n' "$begin_output" | sed -n 's/^claim=//p')
+  [ -n "$claim" ] || fail "$matrix_name begin claim"
+  release_output=$("$matrix_helper" release "$selected" "$matrix_base" "$claim") || fail "$matrix_name begin release"
+  contains "$release_output" 'IMPLEMENTATION RELEASED' "$matrix_name release routing"
+
+  start_output=$("$matrix_helper" start "$selected" "$issue" "$matrix_base" "$begin_branch") || fail "$matrix_name start"
+  start_claim=$(printf '%s\n' "$start_output" | sed -n 's/^claim=//p')
+  [ -n "$start_claim" ] || fail "$matrix_name start claim"
+  resume_output=$("$matrix_helper" resume "$selected" "$issue" "$matrix_base" "$matrix_base" "$begin_branch" "$start_claim") || fail "$matrix_name resume"
+  contains "$resume_output" 'IMPLEMENTATION RESUMED' "$matrix_name resume routing"
+  handoff_output=$(NUINUI_HANDOFF_SELFTEST=1 NUINUI_HANDOFF_MANIFEST="$matrix_manifest" \
+    "$matrix_handoff" "$selected" "$issue" "$start_claim" "$matrix_base" "$matrix_base" absent) || fail "$matrix_name handoff-check"
+  contains "$handoff_output" 'HANDOFF VERIFIED' "$matrix_name renamed-lane handoff"
+  "$matrix_helper" release "$selected" "$matrix_base" "$start_claim" >/dev/null || fail "$matrix_name resumed release"
+
+  if [ "$matrix_human_count" = 0 ]; then
+    expect_blocked "$matrix_name rejects Human-test short form with zero lanes" "$matrix_helper" e2e-start "$issue" "$matrix_base"
+  elif [ "$matrix_human_count" = 1 ]; then
+    human_output=$("$matrix_helper" e2e-start "$issue" "$matrix_base") || fail "$matrix_name singleton Human-test short form"
+    contains "$human_output" 'E2E STARTED' "$matrix_name singleton Human-test start"
+    "$matrix_helper" e2e-release "$issue" "$matrix_base" >/dev/null || fail "$matrix_name singleton Human-test release"
+  else
+    expect_blocked "$matrix_name rejects ambiguous Human-test short form" "$matrix_helper" e2e-start "$issue" "$matrix_base"
+    human_output=$("$matrix_helper" e2e-start manual-b "$issue" "$matrix_base") || fail "$matrix_name explicit Human-test start"
+    contains "$human_output" 'E2E STARTED' "$matrix_name explicit Human-test routing"
+    "$matrix_helper" e2e-release manual-b "$issue" "$matrix_base" >/dev/null || fail "$matrix_name explicit Human-test release"
+  fi
+  echo "PASS: topology $matrix_name (${matrix_impl_count} implementation + ${matrix_human_count} Human-test) helper_sha256=$SOURCE_HELPER_SHA256 helper_blob=$SOURCE_HELPER_BLOB"
+}
+
+run_topology one-plus-zero 1 0
+run_topology two-plus-one 2 1
+run_topology three-plus-one 3 1
+run_topology two-plus-two 2 2
+echo 'NUINUI TOPOLOGY MATRIX PASS'

@@ -1,29 +1,569 @@
 #!/bin/zsh
+#!/bin/sh
 
-VERSION="1.3.0"
-E2E_WT="${NUINUI_E2E_PREPARE_WT-/Users/yosomi/Code/nuinuiCAD-e2e}"
+# Data-only lane topology manifest API.
+#
+# The manifest is a deliberately small configuration format, not shell. This
+# file parses it with awk and never sources, evaluates, or executes its values.
+# All lane enumeration preserves the manifest's declaration order, which is
+# explicit and deterministic.
+
+lane_manifest__query() {
+  [ "$#" -ge 2 ] || return 2
+  lane_manifest_operation=$1
+  lane_manifest_manifest=$2
+  lane_manifest_query=${3-}
+
+  case "$lane_manifest_operation" in
+    validate|all|role-list|lane-valid|lane-role|lane-path|lane-idle|repository|default-branch)
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+  [ -f "$lane_manifest_manifest" ] && [ -r "$lane_manifest_manifest" ] || {
+    echo "LANE MANIFEST BLOCKED: manifest is not a readable regular file: $lane_manifest_manifest" >&2
+    return 1
+  }
+
+  LC_ALL=C awk \
+    -v operation="$lane_manifest_operation" \
+    -v query="$lane_manifest_query" '
+function blocked(message) {
+  if (!invalid) {
+    print "LANE MANIFEST BLOCKED: " message > "/dev/stderr"
+  }
+  invalid = 1
+}
+function valid_repository(value) {
+  return value ~ /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+}
+function valid_default_branch(value) {
+  if (value !~ /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/) {
+    return 0
+  }
+  if (value ~ /\/\// || value ~ /\/\.\.?($|\/)/ || value ~ /\.lock$/) {
+    return 0
+  }
+  return 1
+}
+function valid_path(value) {
+  if (value !~ /^\// || value == "/") {
+    return 0
+  }
+  if (value ~ /[[:space:]]/ || value ~ /\/\// || value ~ /\/\.\.?($|\/)/) {
+    return 0
+  }
+  return 1
+}
+function valid_role(value) {
+  return value == "implementation" || value == "human-test"
+}
+function valid_idle(value) {
+  return value == "branch" || value == "detached"
+}
+function emit_lanes(role,     i, name) {
+  for (i = 1; i <= lane_count; i++) {
+    name = lane_order[i]
+    if (role == "" || lane_field[name SUBSEP "role"] == role) {
+      print name
+    }
+  }
+}
+BEGIN {
+  invalid = 0
+  current_lane = ""
+  lane_count = 0
+  if (operation == "role-list" && query != "implementation" && query != "human-test") {
+    blocked("invalid role filter: " query)
+  }
+}
+{
+  line = $0
+  if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) {
+    next
+  }
+
+  if (line ~ /^\[lane [A-Za-z0-9][A-Za-z0-9._-]*\]$/) {
+    if (!has_version || !has_repository || !has_default_branch) {
+      blocked("lane section appears before the complete header")
+    }
+    current_lane = substr(line, 7, length(line) - 7)
+    if (current_lane in lane_present) {
+      blocked("duplicate lane name: " current_lane)
+    } else {
+      lane_present[current_lane] = 1
+      lane_order[++lane_count] = current_lane
+    }
+    next
+  }
+
+  if (line !~ /^[a-z_][a-z0-9_]*=[^[:space:]]+$/) {
+    blocked("malformed section or key: " line)
+    next
+  }
+
+  separator = index(line, "=")
+  key = substr(line, 1, separator - 1)
+  value = substr(line, separator + 1)
+  if (current_lane == "") {
+    if (key != "version" && key != "repository" && key != "default_branch") {
+      blocked("malformed header key: " key)
+      next
+    }
+    if (header_present[key]) {
+      blocked("duplicate header key: " key)
+      next
+    }
+    header_present[key] = 1
+    if (key == "version") {
+      has_version = 1
+      if (value != "1") {
+        blocked("unsupported version: " value)
+      }
+    } else if (key == "repository") {
+      has_repository = 1
+      repository = value
+      if (!valid_repository(value)) {
+        blocked("invalid repository identity: " value)
+      }
+    } else {
+      has_default_branch = 1
+      default_branch = value
+      if (!valid_default_branch(value)) {
+        blocked("invalid default branch: " value)
+      }
+    }
+    next
+  }
+
+  if (key != "role" && key != "path" && key != "idle") {
+    blocked("malformed lane key: " key)
+    next
+  }
+  field_key = current_lane SUBSEP key
+  if (field_key in lane_field) {
+    blocked("duplicate lane key: " current_lane "." key)
+    next
+  }
+  lane_field[field_key] = value
+}
+END {
+  if (!has_version) {
+    blocked("missing required key: version")
+  }
+  if (!has_repository) {
+    blocked("missing required key: repository")
+  }
+  if (!has_default_branch) {
+    blocked("missing required key: default_branch")
+  }
+  if (lane_count == 0) {
+    blocked("manifest declares no lanes")
+  }
+
+  for (i = 1; i <= lane_count; i++) {
+    name = lane_order[i]
+    for (j = 1; j <= 3; j++) {
+      if (j == 1) {
+        field = "role"
+      } else if (j == 2) {
+        field = "path"
+      } else {
+        field = "idle"
+      }
+      if (!(name SUBSEP field in lane_field)) {
+        blocked("missing required lane key: " name "." field)
+      }
+    }
+    if ((name SUBSEP "role") in lane_field && !valid_role(lane_field[name SUBSEP "role"])) {
+      blocked("invalid role for lane " name ": " lane_field[name SUBSEP "role"])
+    }
+    if ((name SUBSEP "path") in lane_field && !valid_path(lane_field[name SUBSEP "path"])) {
+      blocked("invalid checkout path for lane " name ": " lane_field[name SUBSEP "path"])
+    }
+    if ((name SUBSEP "idle") in lane_field && !valid_idle(lane_field[name SUBSEP "idle"])) {
+      blocked("invalid idle policy for lane " name ": " lane_field[name SUBSEP "idle"])
+    }
+  }
+
+  if (invalid) {
+    exit 1
+  }
+  if (operation == "validate") {
+    exit 0
+  }
+  if (operation == "all") {
+    emit_lanes("")
+    exit 0
+  }
+  if (operation == "role-list") {
+    emit_lanes(query)
+    exit 0
+  }
+  if (operation == "repository") {
+    print repository
+    exit 0
+  }
+  if (operation == "default-branch") {
+    print default_branch
+    exit 0
+  }
+  if (!(query in lane_present)) {
+    blocked("unknown lane name: " query)
+    exit 1
+  }
+  if (operation == "lane-valid") {
+    print query
+  } else if (operation == "lane-role") {
+    print lane_field[query SUBSEP "role"]
+  } else if (operation == "lane-path") {
+    print lane_field[query SUBSEP "path"]
+  } else if (operation == "lane-idle") {
+    print lane_field[query SUBSEP "idle"]
+  }
+}
+' "$lane_manifest_manifest"
+}
+
+lane_manifest_validate() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query validate "$1" >/dev/null
+}
+
+lane_manifest_all_lanes() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query all "$1"
+}
+
+lane_manifest_lanes_by_role() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query role-list "$1" "$2"
+}
+
+lane_manifest_validate_lane_name() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-valid "$1" "$2" >/dev/null
+}
+
+lane_manifest_lane_name_valid() {
+  lane_manifest_validate_lane_name "$@"
+}
+
+lane_manifest_lane_role() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-role "$1" "$2"
+}
+
+lane_manifest_lane_path() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-path "$1" "$2"
+}
+
+lane_manifest_lane_idle_policy() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-idle "$1" "$2"
+}
+
+lane_manifest_repository_identity() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query repository "$1"
+}
+
+lane_manifest_default_branch() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query default-branch "$1"
+}
+#!/bin/sh
+
+# Structural context boundary for standalone helpers.
+#
+# This source locates the project manifest from the helper's own versioned
+# scripts directory.  It deliberately does not parse or source the manifest;
+# manifest.sh owns that data-only grammar.
+
+lane_standalone_context_manifest() {
+  [ "$#" = 3 ] || return 2
+  lane_standalone_context_helper=$1
+  lane_standalone_context_selftest=$2
+  lane_standalone_context_override=$3
+
+  if [ -n "$lane_standalone_context_override" ] &&
+    [ "$lane_standalone_context_selftest" != 1 ]; then
+    echo 'BLOCKED: test-only manifest override is unavailable outside self-test mode' >&2
+    return 1
+  fi
+  if [ "$lane_standalone_context_selftest" = 1 ] &&
+    [ -n "$lane_standalone_context_override" ]; then
+    case "$lane_standalone_context_override" in
+      /*) ;;
+      *) echo 'BLOCKED: test manifest path must be absolute' >&2; return 1 ;;
+    esac
+    [ -f "$lane_standalone_context_override" ] &&
+      [ ! -L "$lane_standalone_context_override" ] &&
+      [ -r "$lane_standalone_context_override" ] || {
+        echo "BLOCKED: test manifest is not a readable regular file: $lane_standalone_context_override" >&2
+        return 1
+      }
+    printf '%s\n' "$lane_standalone_context_override"
+    return 0
+  fi
+
+  case "$lane_standalone_context_helper" in
+    */*) ;;
+    *) lane_standalone_context_helper=$(command -v -- "$lane_standalone_context_helper" 2>/dev/null || true) ;;
+  esac
+  [ -n "$lane_standalone_context_helper" ] || {
+    echo 'BLOCKED: standalone helper location cannot be proven' >&2
+    return 1
+  }
+  case "$lane_standalone_context_helper" in
+    /*) ;;
+    *) lane_standalone_context_helper=$(CDPATH= cd -- \
+      "$(dirname -- "$lane_standalone_context_helper")" 2>/dev/null &&
+      pwd -P)/$(basename -- "$lane_standalone_context_helper") || return 1 ;;
+  esac
+  [ -f "$lane_standalone_context_helper" ] &&
+    [ ! -L "$lane_standalone_context_helper" ] || {
+      echo 'BLOCKED: standalone helper location cannot be proven' >&2
+      return 1
+    }
+  lane_standalone_context_script_dir=$(CDPATH= cd -- \
+    "$(dirname -- "$lane_standalone_context_helper")" 2>/dev/null && pwd -P) || return 1
+  [ "$(basename -- "$lane_standalone_context_script_dir")" = scripts ] || {
+    echo 'BLOCKED: standalone helper is not in its versioned project scripts directory' >&2
+    return 1
+  }
+  lane_standalone_context_project_dir=$(CDPATH= cd -- \
+    "$lane_standalone_context_script_dir/.." 2>/dev/null && pwd -P) || return 1
+  lane_standalone_context_manifest=$lane_standalone_context_project_dir/LANES.conf
+  [ -f "$lane_standalone_context_manifest" ] &&
+    [ ! -L "$lane_standalone_context_manifest" ] &&
+    [ -r "$lane_standalone_context_manifest" ] || {
+      echo "BLOCKED: authoritative project lane manifest is missing or unreadable: $lane_standalone_context_manifest" >&2
+      return 1
+    }
+  printf '%s\n' "$lane_standalone_context_manifest"
+}
+#!/bin/sh
+
+# Generic runtime mechanics shared by manifest-driven lane operations and the
+# existing project command sources.  Lane identity, checkout path, idle form,
+# repository, and default branch are read from NUINUI_RUNTIME_MANIFEST.
+
+lane_execution_runtime_ready() {
+  [ -n "${NUINUI_RUNTIME_MANIFEST:-}" ] &&
+    lane_manifest_validate "$NUINUI_RUNTIME_MANIFEST"
+}
+
+lr() {
+  lane_execution_runtime_ready || return 1
+  lane_manifest_lane_path "$NUINUI_RUNTIME_MANIFEST" "$1"
+}
+
+il() {
+  lane_execution_runtime_ready || return 1
+  [ "$(lane_manifest_lane_role "$NUINUI_RUNTIME_MANIFEST" "$1" 2>/dev/null)" = implementation ]
+}
+
+gr() { [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+
+ao() {
+  runtime_origin=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+  runtime_origin=${runtime_origin%/}
+  runtime_expected=$2
+  case "$runtime_origin" in
+    *"/$runtime_expected"|*"/$runtime_expected.git"|*":$runtime_expected"|*":$runtime_expected.git"|"$runtime_expected"|"$runtime_expected.git") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cn() { [ -z "$(git -C "$1" status --porcelain 2>/dev/null)" ]; }
+bn() { git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true; }
+hh() { git -C "$1" rev-parse HEAD 2>/dev/null; }
+
+lane_execution_runtime_default_branch() {
+  if [ -n "${NUINUI_RUNTIME_MANIFEST:-}" ]; then
+    lane_manifest_default_branch "$NUINUI_RUNTIME_MANIFEST"
+  else
+    printf '%s\n' main
+  fi
+}
+
+om() { git -C "$1" rev-parse "origin/$(lane_execution_runtime_default_branch)" 2>/dev/null; }
+fm() { git -C "$1" fetch origin "$(lane_execution_runtime_default_branch)" >/dev/null 2>&1; }
+fp() { git -C "$1" fetch origin --prune >/dev/null 2>&1; }
+an() { git -C "$1" merge-base --is-ancestor "$2" "$3"; }
+sd() { git -C "$1" switch --detach "$2" >/dev/null; }
+gd() { git -C "$1" rev-parse --absolute-git-dir 2>/dev/null; }
+ip() { printf '%s/nuinui-implementation-v1\n' "$(gd "$1")"; }
+sp() { printf '%s/nuinui-implementation-slot\n' "$(gd "$1")"; }
+kp() { printf '%s/nuinui-implementation-lock\n' "$(gd "$1")"; }
+rp() { printf '%s/nuinui-implementation-slot.releasing.%s\n' "$(gd "$1")" "$2"; }
+rds() {
+  runtime_releasing_git_dir=$(gd "$1") || return 1
+  runtime_releasing=$(find "$runtime_releasing_git_dir" -maxdepth 1 -type d \
+    -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  [ -z "$runtime_releasing" ] || printf '%s\n' "$runtime_releasing" | LC_ALL=C sort
+}
+mp() { printf '%s/nuinui-slot\n' "$(gd "$1")"; }
+ep() { printf '%s/nuinui-e2e-session\n' "$(gd "$1")"; }
+
+wa() {
+  runtime_write_target=$1.tmp.$$
+  (umask 077; printf '%b' "$2" >"$runtime_write_target") && mv -- "$runtime_write_target" "$1"
+}
+
+gc() {
+  command -v uuidgen >/dev/null 2>&1 && uuidgen | tr A-Z a-z ||
+    printf '%s:%s:%s\n' $$ "$(date +%s)" "${RANDOM:-0}" | git hash-object --stdin
+}
+
+lo() {
+  runtime_lock_dir=$(kp "$1")
+  mkdir "$runtime_lock_dir" 2>/dev/null || return 1
+  wa "$runtime_lock_dir/state" \
+    "version=1\noperation=$2\nissue=$4\nbranch=$5\nbase=$6\ncheckpoint=$7\nclaim=$3\n"
+}
+
+ul() {
+  runtime_unlock_repo=$1
+  runtime_unlock_claim=$2
+  set -- $(nuinui_ownership_parse_lock "$(kp "$runtime_unlock_repo")/state") || return 1
+  [ "$6" = "$runtime_unlock_claim" ] || return 1
+  rm "$(kp "$runtime_unlock_repo")/state" && rmdir "$(kp "$runtime_unlock_repo")"
+}
+
+am() {
+  git -C "$1" ls-remote origin "refs/heads/$(lane_execution_runtime_default_branch)" 2>/dev/null |
+    awk 'NR == 1 {print $1}'
+}
+
+ab() {
+  git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null | awk 'NR == 1 {print $1}'
+}
+
+id() {
+  runtime_idle_lane=$1
+  runtime_idle_repo=$2
+  runtime_idle_head=$3
+  cn "$runtime_idle_repo" || return 1
+  [ "$(hh "$runtime_idle_repo")" = "$runtime_idle_head" ] || return 1
+  case "$(lane_manifest_lane_idle_policy "$NUINUI_RUNTIME_MANIFEST" "$runtime_idle_lane" 2>/dev/null)" in
+    branch) [ "$(bn "$runtime_idle_repo")" = "$(lane_execution_runtime_default_branch)" ] ;;
+    detached) [ -z "$(bn "$runtime_idle_repo")" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+nr() {
+  runtime_no_release_dirs=$(rds "$1") || return 1
+  [ -z "$runtime_no_release_dirs" ]
+}
+
+bo() {
+  runtime_branch_path=$(CDPATH= cd -- "$1" && pwd -P) || return 1
+  git -C "$1" worktree list --porcelain 2>/dev/null |
+    awk -v branch="refs/heads/$2" -v path="$runtime_branch_path" '
+      /^worktree / {worktree=substr($0, 10)}
+      /^branch / && substr($0, 8) == branch && worktree != path {print worktree; exit}
+    '
+}
+
+rr() { printf '%s/nuinui-implementation-release-receipt\n' "$(gd "$1")"; }
+
+lane_execution_prove_busy_retry() {
+  local attempt
+  for attempt in 1 2 3; do lane_execution__prove_busy "$@" && return 0; done
+  return 1
+}
+
+# Compatibility name retained for project integration code. Existing project
+# callers pass lane-first arguments; the generic owner receives the manifest.
+lifecycle_prove_busy_retry() {
+  [ "$#" = 6 ] || return 2
+  lane_execution_prove_busy_retry "$NUINUI_RUNTIME_MANIFEST" "$1" "$2" \
+    "$4" "$3" "$5" &&
+    [ "$lane_execution_proof_checkpoint" = "$6" ]
+}
+# E2E preparation runtime context, lane selection, and strict metadata helpers.
+VERSION="1.4.1"
+E2E_WT=""
+E2E_LANE=""
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
 DEFAULT_CDP_PORT="${NUINUI_E2E_CDP_PORT-9223}"
 E2E_TEMP_PARENT="${NUINUI_E2E_TEMP_PARENT-/private/tmp}"
-CURRENT_SESSION_KEYS='issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
+CURRENT_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
 LEGACY_SESSION_KEYS='issue,ref,root,handoff,cdp_port,launch_pid'
 CLEANUP_RECEIPT_KEYS='version,issue,ref,root'
-HANDOFF_KEYS='ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
+HANDOFF_KEYS='LANE,ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
+
+e2e_context() {
+  E2E_MANIFEST="$(lane_standalone_context_manifest "$0" \
+    "${NUINUI_E2E_SELFTEST:-0}" "${NUINUI_E2E_MANIFEST:-}")" || return 1
+  export NUINUI_RUNTIME_MANIFEST="$E2E_MANIFEST"
+  lane_manifest_validate "$E2E_MANIFEST" || {
+    echo "BLOCKED: authoritative project lane manifest is invalid"
+    return 1
+  }
+}
+
+select_human_lane() {
+  local requested="${1:-}" count=0 candidate
+  e2e_context || return 1
+  if [[ -n "$requested" ]]; then
+    lane_manifest_validate_lane_name "$E2E_MANIFEST" "$requested" >/dev/null 2>&1 || {
+      echo "BLOCKED: unknown Human-test lane: $requested"
+      return 1
+    }
+    [[ "$(lane_manifest_lane_role "$E2E_MANIFEST" "$requested")" == human-test ]] || {
+      echo "BLOCKED: selected lane is not a declared Human-test lane: $requested"
+      return 1
+    }
+    E2E_LANE="$requested"
+  else
+    while IFS= read -r candidate; do
+      [[ -n "$candidate" ]] || continue
+      E2E_LANE="$candidate"
+      (( count++ ))
+    done <<EOF
+$(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test)
+EOF
+    if (( count == 0 )); then
+      echo 'BLOCKED: no Human-test lane is declared'
+      return 1
+    fi
+    if (( count != 1 )); then
+      echo 'BLOCKED: explicit Human-test lane is required when multiple Human-test lanes are declared'
+      return 1
+    fi
+  fi
+  E2E_WT="$(lane_manifest_lane_path "$E2E_MANIFEST" "$E2E_LANE")" || return 1
+  [[ "$(lane_manifest_lane_idle_policy "$E2E_MANIFEST" "$E2E_LANE")" == detached ]] || {
+    echo 'BLOCKED: selected Human-test lane must declare idle=detached'
+    return 1
+  }
+  E2E_REPOSITORY="$(lane_manifest_repository_identity "$E2E_MANIFEST")" || return 1
+  E2E_DEFAULT_BRANCH="$(lane_manifest_default_branch "$E2E_MANIFEST")" || return 1
+}
+
 usage() {
   cat <<'EOF'
 Usage:
-  nuinui-e2e-prepare check <SAY-123> <tested-ref> <fixture-path>
-  nuinui-e2e-prepare prepare <SAY-123> <tested-ref> <fixture-path> [cdp-port]
-  nuinui-e2e-prepare status
-  nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
-  nuinui-e2e-prepare closure-check <SAY-123>
+  nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path>
+  nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+  nuinui-e2e-prepare status [<human-test-lane>]
+  nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
+  nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
 
 Closure order:
-  nuinui-e2e-prepare cleanup <SAY-123> <tested-ref> <e2e-root>
-  nuinui e2e-release <SAY-123> <tested-ref>
-  nuinui-e2e-prepare closure-check <Issue>
+  nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
+  nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>
+  nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>
 
 Exact duplicate prepare/cleanup: no-op; no status/confirmation. Near-match: BLOCKED.
+Every short form requires exactly one declared Human-test lane; a persisted
+session never disambiguates a zero- or multi-lane manifest.
 
 EOF
 }
@@ -97,6 +637,8 @@ load_session() {
   SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1; SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
   SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
   if [[ "$SESSION_KIND" == current ]]; then
+    SESSION_LANE="$(metadata_value "$metadata" lane)" || return 1
+    [[ -n "$SESSION_LANE" ]] || return 1
     SESSION_SOURCE_FIXTURE="$(metadata_value "$metadata" source_fixture)" || return 1
     case "$SESSION_SOURCE_FIXTURE" in /*) ;; *) return 1 ;; esac
     [[ "$SESSION_SOURCE_FIXTURE" != */ && "$SESSION_SOURCE_FIXTURE" != *'/./'* && "$SESSION_SOURCE_FIXTURE" != *'/../'* && "$SESSION_SOURCE_FIXTURE" != *//* ]] || return 1
@@ -139,6 +681,7 @@ assert_handoff_file() {
   local handoff="$1" issue="$2" tested_ref="$3" root="$4" cdp_port="$5" source_fixture="$6" prepared_fixture root_real
   [[ -f "$handoff" && ! -L "$handoff" ]] || return 1
   metadata_matches "$handoff" "$HANDOFF_KEYS" || return 1
+  [[ "$(handoff_value "$handoff" LANE)" == "$E2E_LANE" ]] || return 1
   prepared_fixture="$(handoff_value "$handoff" FIXTURE)" || return 1
   [[ -z "$source_fixture" || "$prepared_fixture" == "$root/$(basename "$source_fixture")" ]] || return 1
   [[ "$prepared_fixture" == "$root/"* && -f "$prepared_fixture" && ! -L "$prepared_fixture" ]] || return 1
@@ -267,7 +810,7 @@ assert_checkout() {
   local marker_issue=""
   local marker_ref=""
 
-  [[ -d "$repo" ]] || { echo "BLOCKED: e2e checkout does not exist"; echo "PATH: $repo"; return 1; }
+  [[ -d "$repo" ]] || { echo "BLOCKED: Human-test checkout does not exist"; echo "PATH: $repo"; return 1; }
   git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
     echo "BLOCKED: e2e checkout is not a Git worktree"
     echo "PATH: $repo"
@@ -278,7 +821,7 @@ assert_checkout() {
     echo "BLOCKED: e2e origin remote is missing"
     return 1
   }
-  [[ "$origin" == *"sayosomi/nuinuiCAD"* ]] || {
+  ao "$repo" "$E2E_REPOSITORY" || {
     echo "BLOCKED: unexpected e2e repository origin"
     echo "ACTUAL: $origin"
     return 1
@@ -292,11 +835,11 @@ assert_checkout() {
   }
 
   branch="$(git -C "$repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-  [[ -z "$branch" ]] || {
-    echo "BLOCKED: e2e checkout is not detached"
-    echo "BRANCH: $branch"
-    return 1
-  }
+  case "$(lane_manifest_lane_idle_policy "$E2E_MANIFEST" "$E2E_LANE")" in
+    detached) [[ -z "$branch" ]] || { echo "BLOCKED: Human-test checkout is not detached"; return 1; } ;;
+    branch) [[ "$branch" == "$E2E_DEFAULT_BRANCH" ]] || { echo "BLOCKED: Human-test checkout is not on the declared idle branch"; return 1; } ;;
+    *) echo 'BLOCKED: selected Human-test lane has unsupported idle policy'; return 1 ;;
+  esac
 
   head="$(git -C "$repo" rev-parse HEAD)" || return 1
   [[ "$head" == "$tested_ref" ]] || {
@@ -335,7 +878,7 @@ assert_checkout() {
   echo "  checkout=$repo"
   echo "  marker=$marker"
 }
-
+# E2E preparation session, closure, cleanup, and ownership helpers.
 ensure_dependencies() {
   local repo="$E2E_WT"
   local e2e_root="$1"
@@ -363,13 +906,14 @@ ensure_dependencies() {
 }
 
 write_session() {
-  local issue="$1"
-  local tested_ref="$2"
-  local source_fixture="$3"
-  local root="$4"
-  local handoff="$5"
-  local cdp_port="$6"
-  local launch_pid="$7"
+  local lane="$1"
+  local issue="$2"
+  local tested_ref="$3"
+  local source_fixture="$4"
+  local root="$5"
+  local handoff="$6"
+  local cdp_port="$7"
+  local launch_pid="$8"
   local session=""
   local temporary=""
 
@@ -390,6 +934,7 @@ write_session() {
     return 1
   }
   if ! {
+    printf 'lane=%s\n' "$lane"
     printf 'issue=%s\n' "$issue"
     printf 'ref=%s\n' "$tested_ref"
     printf 'source_fixture=%s\n' "$source_fixture"
@@ -440,7 +985,8 @@ status() {
   elif [[ -f "$session" && ! -L "$session" ]] && load_session "$session"; then
     issue="$SESSION_ISSUE"; tested_ref="$SESSION_REF"; source_fixture="$SESSION_SOURCE_FIXTURE"
     root="$SESSION_ROOT"; handoff="$SESSION_HANDOFF"; launch_pid="$SESSION_LAUNCH_PID"
-    if assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
+    if [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
+      assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
       session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
       echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"; echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
       if kill -0 "$launch_pid" >/dev/null 2>&1; then
@@ -462,7 +1008,7 @@ status() {
 }
 
 
-closure_check() {
+closure_check_lane() {
   setopt local_options null_glob
   local requested_issue="$1" issue_number="${1#SAY-}" session marker session_issue marker_issue temp_parent candidate processes result=0
   local -a temp_parents root_candidates
@@ -566,7 +1112,10 @@ cleanup() {
   local issue="$1"
   local tested_ref="$2"
   local requested_root="$3"
-  local session=""
+  local session="" session_snapshot="" session_final_snapshot=""
+  local session_snapshot_lane="" session_snapshot_issue="" session_snapshot_ref=""
+  local session_snapshot_source_fixture="" session_snapshot_root=""
+  local session_snapshot_handoff="" session_snapshot_cdp_port="" session_snapshot_launch_pid=""
   local handoff=""
 
   assert_cleanup_args "$issue" "$tested_ref" "$requested_root" || return $?
@@ -580,7 +1129,23 @@ cleanup() {
     return 1
   }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
-  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+  [[ "$SESSION_KIND" == current ]] || {
+    echo "BLOCKED: legacy E2E session cannot be cleaned by the current lifecycle"
+    return 1
+  }
+  session_snapshot="$(cat "$session"; printf '\001')" || {
+    echo "BLOCKED: could not snapshot E2E session metadata"
+    return 1
+  }
+  session_snapshot_lane="$SESSION_LANE"
+  session_snapshot_issue="$SESSION_ISSUE"
+  session_snapshot_ref="$SESSION_REF"
+  session_snapshot_source_fixture="$SESSION_SOURCE_FIXTURE"
+  session_snapshot_root="$SESSION_ROOT"
+  session_snapshot_handoff="$SESSION_HANDOFF"
+  session_snapshot_cdp_port="$SESSION_CDP_PORT"
+  session_snapshot_launch_pid="$SESSION_LAUNCH_PID"
+  [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
   }
@@ -603,8 +1168,30 @@ cleanup() {
     echo "BLOCKED: could not atomically write the E2E cleanup receipt; session retained"
     return 1
   }
+  [[ -f "$session" && ! -L "$session" ]] || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
+  session_final_snapshot="$(cat "$session"; printf '\001')" || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
+  [[ "$session_final_snapshot" == "$session_snapshot" ]] || {
+    echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
+    return 1
+  }
   load_session "$session" || { echo "BLOCKED: E2E session changed before metadata removal; receipt retained"; return 1; }
-  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+  [[ "$SESSION_KIND" == current &&
+    "$SESSION_LANE" == "$session_snapshot_lane" &&
+    "$SESSION_ISSUE" == "$session_snapshot_issue" &&
+    "$SESSION_REF" == "$session_snapshot_ref" &&
+    "$SESSION_SOURCE_FIXTURE" == "$session_snapshot_source_fixture" &&
+    "$SESSION_ROOT" == "$session_snapshot_root" &&
+    "$SESSION_HANDOFF" == "$session_snapshot_handoff" &&
+    "$SESSION_CDP_PORT" == "$session_snapshot_cdp_port" &&
+    "$SESSION_LAUNCH_PID" == "$session_snapshot_launch_pid" &&
+    "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" &&
+    "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
     return 1
   }
@@ -631,7 +1218,7 @@ assert_no_tracked_mutations() {
     return 1
   }
 }
-
+# E2E preparation command implementations and public dispatch.
 build_artifacts() {
   local repo="$E2E_WT"
 
@@ -674,7 +1261,7 @@ prepare_duplicate() {
   [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   [[ "$SESSION_KIND" == current ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
-  [[ "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
+  [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
     "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
@@ -809,6 +1396,7 @@ EOF
 
   handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
   cat > "$handoff" <<EOF
+LANE='$E2E_LANE'
 ISSUE='$issue'
 TESTED_REF='$tested_ref'
 CHECKOUT='$repo'
@@ -818,12 +1406,13 @@ CDP_PORT='$cdp_port'
 RUST_BIN='$rust_bin'
 EOF
 
-  write_session "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
+  write_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
     cleanup_failed_prepare 1
     return 1
   }
 
   echo "E2E SETUP READY"
+  echo "  lane=$E2E_LANE"
   echo "  issue=$issue"
   echo "  tested_ref=$tested_ref"
   echo "  checkout=$repo"
@@ -841,26 +1430,67 @@ case "${1:-}" in
     echo "$VERSION"
     ;;
   check)
-    [[ "$#" -eq 4 ]] || { usage; exit 2; }
-    assert_inputs "$2" "$3" "$4" || exit $?
-    assert_checkout "$2" "$3"
+    if [[ "$#" -eq 4 ]]; then
+      select_human_lane || exit $?
+      check_issue=$2; check_ref=$3; check_fixture=$4
+    elif [[ "$#" -eq 5 ]]; then
+      select_human_lane "$2" || exit $?
+      check_issue=$3; check_ref=$4; check_fixture=$5
+    else
+      usage; exit 2
+    fi
+    assert_inputs "$check_issue" "$check_ref" "$check_fixture" || exit $?
+    assert_checkout "$check_issue" "$check_ref"
     ;;
   prepare)
-    [[ "$#" -eq 4 || "$#" -eq 5 ]] || { usage; exit 2; }
-    assert_inputs "$2" "$3" "$4" || exit $?
-    prepare "$2" "$3" "$4" "${5:-$DEFAULT_CDP_PORT}"
+    if [[ "$#" -eq 4 ]]; then
+      select_human_lane || exit $?
+      prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port="${5:-$DEFAULT_CDP_PORT}"
+    elif [[ "$#" -eq 5 ]] && {
+      e2e_context || exit $?
+      lane_manifest_validate_lane_name "$E2E_MANIFEST" "$2" >/dev/null 2>&1 &&
+        [[ "$(lane_manifest_lane_role "$E2E_MANIFEST" "$2")" == human-test ]]
+    }; then
+      select_human_lane "$2" || exit $?
+      prepare_issue=$3; prepare_ref=$4; prepare_fixture=$5; prepare_port="${6:-$DEFAULT_CDP_PORT}"
+    elif [[ "$#" -eq 5 ]]; then
+      select_human_lane || exit $?
+      prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port=$5
+    elif [[ "$#" -eq 6 ]]; then
+      select_human_lane "$2" || exit $?
+      prepare_issue=$3; prepare_ref=$4; prepare_fixture=$5; prepare_port=$6
+    else
+      usage; exit 2
+    fi
+    assert_inputs "$prepare_issue" "$prepare_ref" "$prepare_fixture" || exit $?
+    prepare "$prepare_issue" "$prepare_ref" "$prepare_fixture" "$prepare_port"
     ;;
   status)
-    [[ "$#" -eq 1 ]] || { usage; exit 2; }
+    [[ "$#" -eq 1 || "$#" -eq 2 ]] || { usage; exit 2; }
+    if [[ "$#" -eq 2 ]]; then select_human_lane "$2" || exit $?; else select_human_lane || exit $?; fi
     status
     ;;
   closure-check)
-    [[ "$#" -eq 2 ]] || { usage; exit 2; }
-    closure_check "$2"
+    if [[ "$#" -eq 2 ]]; then
+      select_human_lane || exit $?
+      closure_check_lane "$2"
+    elif [[ "$#" -eq 3 ]]; then
+      select_human_lane "$2" || exit $?
+      closure_check_lane "$3"
+    else
+      usage; exit 2
+    fi
     ;;
   cleanup)
-    [[ "$#" -eq 4 ]] || { usage; exit 2; }
-    cleanup "$2" "$3" "$4"
+    if [[ "$#" -eq 4 ]]; then
+      select_human_lane || exit $?
+      cleanup "$2" "$3" "$4"
+    elif [[ "$#" -eq 5 ]]; then
+      select_human_lane "$2" || exit $?
+      cleanup "$3" "$4" "$5"
+    else
+      usage; exit 2
+    fi
     ;;
   *)
     usage
