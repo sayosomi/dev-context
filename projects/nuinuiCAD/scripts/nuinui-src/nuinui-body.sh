@@ -3,7 +3,7 @@
 # not depend on a healthy lane topology. standalone-context.sh owns the
 # structural helper/project relationship.
 
-V=1.8.0
+V=1.8.1
 P=$0
 case "$P" in
   */*) ;;

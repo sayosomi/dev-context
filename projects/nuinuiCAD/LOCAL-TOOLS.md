@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.8.0`。
+current standalone helper version: `1.8.1`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -209,6 +209,7 @@ current commands:
 | `nuinui verify <implementation-lane> <SAY-123> <expected-base-sha> <branch>` | manifestで宣言されたinitialized FREE implementation laneのstart preconditionをread-only検証 |
 | `nuinui lane-init <implementation-lane>` | manifestで宣言されたexact idle implementation laneへpermanent v1 ownership schema markerをbootstrap |
 | `nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory> [--forensic-worktree <absolute-path>]` | 全declared implementation laneのcomplete inventory、target FREE、mutation-boundary再比較とnew generation startを1 Human handoffで実行。直後の同一requestだけはexact duplicateとしてread-only認識。末尾optionはone-shot inventory exception |
+| `nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]` | named inputをread-only fresh preflight / canonical inventory / existing verifyへ渡し、copy/paste-readyなexact positional `nuinui begin` commandを生成。lane、branch、slot、lock、receipt、command-result、checkout stateを変更しない |
 | `nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始。末尾optionはone-shot inventory exception |
 | `nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
@@ -229,11 +230,30 @@ current commands:
 | `nuinui context-check` | dev-context Markdown local linksと`nuinui` CLI-doc整合をread-only検査 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported safety pathsをexercise |
 
+### Canonical begin-command handoff
+
+通常のstartupでは、ChatGPTがWork、selected implementation lane、caller-supplied Base、branchを確定し、Humanが同じterminalで次を実行する。
+
+```bash
+nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
+```
+
+`begin-command`はnormal runtime `LANES.conf`を解決・検証し、全laneのread-only fresh preflight（supplied forensic optionを含む）、generic ownerによるdeclaration-order implementation inventory、target `FREE`、既存のread-only verifyを通過した場合だけ、次のenvelopeと1行のexecutable commandを返す。
+
+```text
+BEGIN COMMAND READY
+<absolute-helper> begin <lane> <issue> <base> <branch> <canonical-inventory> [--forensic-worktree <absolute-path>]
+```
+
+Humanはその出力行を同じterminalで直ちに実行できる。後続の既存`begin`はcurrent full preflight、stale-inventory、target-FREE、mutation-boundary、duplicate-generation、forensic、claim、Base、checkpoint、lock、durable ownership checksを従来どおり再実行し、成功時に`IMPLEMENTATION STARTED`を返す。このhandoffはChatGPT/Humanのunconditionalな往復を追加しない。
+
+helper-generated canonical begin lineをChatGPTが受け取った場合も、Humanへ渡す・Humanが実行するcommandはその行をverbatimで使う。argumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ戻さない。別のdiagnostic preflight / recoveryが必要な場合の既存routingはこのhandoffで変更しない。
+
 旧claimless `resume <lane> <Issue> <checkpoint> <branch>`、旧`release <lane> <checkpoint>`、active checkoutをownershipへadoptするpublic commandはcurrent CLIではない。argument count mismatchはfail-closedでusage errorにする。
 
 ### Recoverable Human mutation results
 
-Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。Read-only commands, including `preflight`, `verify`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
+Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。Read-only commands, including `preflight`, `verify`, `begin-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
 
 The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-parse --absolute-git-dir)/nuinui-command-result-v1/` in the standard dev-context Git directory and contains only `state` and `output`。 It is recovery evidence only; lane ownership, claims, locks, release receipts, E2E markers/sessions, and other authorities remain authoritative. The production helper uses the canonical standard clone represented by `C`; isolated `NUINUI_SELFTEST` runs use an isolated dev-context repository and never the production store.
 

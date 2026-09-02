@@ -3431,7 +3431,7 @@ lane_execution_cli_implementation_operation() {
 # not depend on a healthy lane topology. standalone-context.sh owns the
 # structural helper/project relationship.
 
-V=1.8.0
+V=1.8.1
 P=$0
 case "$P" in
   */*) ;;
@@ -5732,8 +5732,8 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.8.0
-K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
+V=1.8.1
+K='preflight verify lane-init begin begin-command start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -5812,9 +5812,237 @@ nuinui_validate_public_issue_branch_human() {
   }
 }
 
+nuinui_shell_quote() {
+  nuinui_shell_quote_value=$(printf '%s' "$1" | sed "s/'/'\\\\''/g")
+  printf "'%s'" "$nuinui_shell_quote_value"
+}
+
+nuinui_begin_command_parse_args() {
+  nuinui_begin_command_lane=
+  nuinui_begin_command_issue=
+  nuinui_begin_command_base=
+  nuinui_begin_command_branch=
+  nuinui_begin_command_forensic=
+  nuinui_begin_command_lane_seen=0
+  nuinui_begin_command_issue_seen=0
+  nuinui_begin_command_base_seen=0
+  nuinui_begin_command_branch_seen=0
+  nuinui_begin_command_forensic_seen=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --lane)
+        [ "$nuinui_begin_command_lane_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --lane\n'
+          return 2
+        }
+        nuinui_begin_command_lane_seen=1
+        nuinui_begin_command_option_name=--lane
+        ;;
+      --issue)
+        [ "$nuinui_begin_command_issue_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --issue\n'
+          return 2
+        }
+        nuinui_begin_command_issue_seen=1
+        nuinui_begin_command_option_name=--issue
+        ;;
+      --base)
+        [ "$nuinui_begin_command_base_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --base\n'
+          return 2
+        }
+        nuinui_begin_command_base_seen=1
+        nuinui_begin_command_option_name=--base
+        ;;
+      --branch)
+        [ "$nuinui_begin_command_branch_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --branch\n'
+          return 2
+        }
+        nuinui_begin_command_branch_seen=1
+        nuinui_begin_command_option_name=--branch
+        ;;
+      --forensic-worktree)
+        [ "$nuinui_begin_command_forensic_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --forensic-worktree\n'
+          return 2
+        }
+        nuinui_begin_command_forensic_seen=1
+        nuinui_begin_command_option_name=--forensic-worktree
+        ;;
+      --*|-*)
+        printf 'ERROR: unknown option %s\n' "$1"
+        printf 'expected named options: --lane --issue --base --branch [--forensic-worktree]\n'
+        return 2
+        ;;
+      *)
+        printf 'ERROR: unexpected positional argument %s\n' "$1"
+        printf 'use named options: --lane --issue --base --branch [--forensic-worktree]\n'
+        return 2
+        ;;
+    esac
+
+    [ "$#" -ge 2 ] || {
+      printf 'ERROR: named option %s requires a non-empty value\n' \
+        "$nuinui_begin_command_option_name"
+      return 2
+    }
+    shift
+    [ -n "$1" ] || {
+      printf 'ERROR: named option %s requires a non-empty value\n' \
+        "$nuinui_begin_command_option_name"
+      return 2
+    }
+    case "$1" in
+      --*)
+        printf 'ERROR: named option %s is missing its value before %s\n' \
+          "$nuinui_begin_command_option_name" "$1"
+        return 2
+        ;;
+    esac
+    case "$nuinui_begin_command_option_name" in
+      --lane) nuinui_begin_command_lane=$1 ;;
+      --issue) nuinui_begin_command_issue=$1 ;;
+      --base) nuinui_begin_command_base=$1 ;;
+      --branch) nuinui_begin_command_branch=$1 ;;
+      --forensic-worktree) nuinui_begin_command_forensic=$1 ;;
+    esac
+    shift
+  done
+
+  [ "$nuinui_begin_command_lane_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --lane\n'
+    return 2
+  }
+  [ "$nuinui_begin_command_issue_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --issue\n'
+    return 2
+  }
+  [ "$nuinui_begin_command_base_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --base\n'
+    return 2
+  }
+  [ "$nuinui_begin_command_branch_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --branch\n'
+    return 2
+  }
+}
+
+nuinui_begin_command() {
+  nuinui_begin_command_parse_args "$@" || {
+    nuinui_begin_command_parse_rc=$?
+    return "$nuinui_begin_command_parse_rc"
+  }
+
+  nuinui_require_runtime_manifest || return 1
+  nuinui_begin_command_lane_output=$(lane_execution_cli_validate_implementation_lane \
+    "$NUINUI_RUNTIME_MANIFEST" "$nuinui_begin_command_lane" 2>&1) || {
+    [ -z "$nuinui_begin_command_lane_output" ] ||
+      printf '%s\n' "$nuinui_begin_command_lane_output"
+    printf 'BLOCKED: begin-command selected lane is not a declared implementation lane\n'
+    return 1
+  }
+
+  nuinui_begin_command_issue_output=$(nuinui_validate_public_issue_branch \
+    "$nuinui_begin_command_issue" "$nuinui_begin_command_branch" 2>&1) || {
+    [ -z "$nuinui_begin_command_issue_output" ] ||
+      printf '%s\n' "$nuinui_begin_command_issue_output"
+    printf 'ERROR: begin-command Issue/branch validation failed\n'
+    return 2
+  }
+  nuinui_ownership_valid_sha "$nuinui_begin_command_base" || {
+    printf 'ERROR: invalid --base; expected a full 40-character commit SHA\n'
+    printf 'found=%s\n' "$nuinui_begin_command_base"
+    return 2
+  }
+
+  nuinui_forensic_worktree=
+  nuinui_forensic_option_active=0
+  if [ "$nuinui_begin_command_forensic_seen" = 1 ]; then
+    nuinui_forensic_worktree=$nuinui_begin_command_forensic
+    nuinui_forensic_option_active=1
+  fi
+
+  nuinui_begin_command_preflight_output=
+  nuinui_begin_command_preflight_rc=0
+  if [ "$nuinui_forensic_option_active" = 1 ]; then
+    nuinui_begin_command_preflight_output=$(lane_execution_preflight \
+      "$NUINUI_RUNTIME_MANIFEST" --forensic-worktree "$nuinui_forensic_worktree" 2>&1) ||
+      nuinui_begin_command_preflight_rc=$?
+  else
+    nuinui_begin_command_preflight_output=$(lane_execution_preflight \
+      "$NUINUI_RUNTIME_MANIFEST" 2>&1) ||
+      nuinui_begin_command_preflight_rc=$?
+  fi
+  [ "$nuinui_begin_command_preflight_rc" = 0 ] || {
+    printf '%s\n' "$nuinui_begin_command_preflight_output"
+    printf 'BLOCKED: begin-command read-only preflight failed\n'
+    return 1
+  }
+
+  nuinui_begin_command_inventory=
+  nuinui_begin_command_inventory_rc=0
+  nuinui_begin_command_inventory=$(lane_execution_inventory_from_audit \
+    "$NUINUI_RUNTIME_MANIFEST" "$nuinui_begin_command_preflight_output" 2>&1) ||
+    nuinui_begin_command_inventory_rc=$?
+  [ "$nuinui_begin_command_inventory_rc" = 0 ] &&
+    [ -n "$nuinui_begin_command_inventory" ] || {
+    printf '%s\n' "$nuinui_begin_command_preflight_output"
+    [ -z "$nuinui_begin_command_inventory" ] ||
+      printf 'inventory_evidence:\n%s\n' "$nuinui_begin_command_inventory"
+    printf 'BLOCKED: begin-command canonical implementation inventory is unavailable\n'
+    return 1
+  }
+  nuinui_begin_command_target_state=$(lane_execution__inventory_value \
+    "$nuinui_begin_command_inventory" "$nuinui_begin_command_lane" 2>/dev/null || true)
+  [ "$nuinui_begin_command_target_state" = FREE ] || {
+    printf 'BLOCKED: begin-command target lane is not FREE in the current inventory\n'
+    printf 'implementation_inventory=%s\n' "$nuinui_begin_command_inventory"
+    return 1
+  }
+
+  nuinui_begin_command_verify_output=
+  nuinui_begin_command_verify_rc=0
+  nuinui_begin_command_verify_output=$(nuinui_lane_dispatch verify \
+    "$nuinui_begin_command_lane" "$nuinui_begin_command_issue" \
+    "$nuinui_begin_command_base" "$nuinui_begin_command_branch" 2>&1) ||
+    nuinui_begin_command_verify_rc=$?
+  [ "$nuinui_begin_command_verify_rc" = 0 ] || {
+    printf 'BLOCKED: begin-command read-only verify failed; Base, branch, ownership, or current start precondition is stale or conflicting\n'
+    [ -z "$nuinui_begin_command_verify_output" ] ||
+      printf 'verify_evidence:\n%s\n' "$nuinui_begin_command_verify_output"
+    return 1
+  }
+
+  printf '%s\n' 'BEGIN COMMAND READY'
+  if [ "$nuinui_begin_command_forensic_seen" = 1 ]; then
+    printf '%s %s %s %s %s %s %s %s %s\n' \
+      "$(nuinui_shell_quote "$P")" \
+      "$(nuinui_shell_quote begin)" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_lane")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_issue")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_base")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_branch")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_inventory")" \
+      "$(nuinui_shell_quote --forensic-worktree)" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_forensic")"
+  else
+    printf '%s %s %s %s %s %s %s\n' \
+      "$(nuinui_shell_quote "$P")" \
+      "$(nuinui_shell_quote begin)" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_lane")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_issue")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_base")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_branch")" \
+      "$(nuinui_shell_quote "$nuinui_begin_command_inventory")"
+  fi
+}
+
 nuinui_usage() {
   echo "nuinui $V"
   echo "Commands: $K"
+  echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
 }
 
 nuinui_render_human_output() {
@@ -6053,6 +6281,11 @@ case "$1" in
       nuinui_run_tracked begin "$#" "$@" nuinui_lane_dispatch begin \
         "$2" "$3" "$4" "$5" "$6"
     fi
+    exit $?
+    ;;
+  begin-command)
+    shift
+    nuinui_run_public begin-command nuinui_begin_command "$@"
     exit $?
     ;;
   start)

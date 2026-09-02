@@ -58,11 +58,22 @@ versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent
 
 ### Preflight diagnostic / routing rule
 
-`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue startは、ChatGPTがfresh remote / current occupancy / parallel-admission decisionからtarget implementation laneとcomplete inventory expectationを確定した後、次の1 commandへ進む。
+`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument handoffを実行する。
 
 ```bash
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
 ```
+
+このhelperはnormal runtime manifestをread-onlyで解決し、fresh full preflight、canonical declaration-order inventory、target `FREE`、existing read-only verifyを行って、copy/paste-readyな次の既存positional commandを出力する。
+
+```text
+BEGIN COMMAND READY
+<absolute-helper> begin <lane> <issue> <base> <branch> <canonical-inventory> [--forensic-worktree <absolute-path>]
+```
+
+Humanはその出力行をChatGPTへ戻さず、同じterminalでverbatimに実行する。既存`begin`が通常のmutation-time revalidationを行い、成功後に`IMPLEMENTATION STARTED`、normal checkpoint / continuationへ進む。generated lineはargumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ変換しない。
+
+これはChatGPT/Humanのunconditionalなround-tripではない。以下の別diagnostic preflight / recovery条件はそのまま維持する。
 
 ChatGPTがactual local inventoryを知らず、begin / resume / release / handoff-checkがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。ただし、exact pushed-checkpoint Luna handoffのinitial failureのfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に実行する。
 

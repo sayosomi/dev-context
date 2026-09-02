@@ -8,6 +8,9 @@ trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 fail() { echo "LIFECYCLE TEST FAIL: $*" >&2; exit 1; }
 assert_contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
 assert_not_contains() { if printf '%s\n' "$1" | grep -Fq -- "$2"; then fail "$3"; fi; }
+assert_no_executable_begin_line() {
+  assert_not_contains "$1" "'$HELPER' 'begin'" "$2"
+}
 
 PROJECT=$ROOT/project
 HELPER=$PROJECT/scripts/nuinui
@@ -71,6 +74,8 @@ export NUINUI_SELFTEST=1
 export NUINUI_SELFTEST_RESULT_REPO=$RESULT
 unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 cd "$ROOT/unrelated"
+
+"$HELPER" lane-init source >/dev/null
 
 gitdir() { git -C "$IMPL" rev-parse --absolute-git-dir; }
 slot_dir() { printf '%s/nuinui-implementation-slot\n' "$(gitdir)"; }
@@ -193,6 +198,192 @@ expect_duplicate_success() {
 prepare_duplicate
 DUPLICATE_CHECKPOINT=$BASE
 expect_duplicate_success
+
+prepare_duplicate
+if MISSING_NAMED_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-300 --base "$BASE" 2>&1
+); then
+  printf '%s\n' "$MISSING_NAMED_OUTPUT"
+  fail 'missing required named option unexpectedly succeeded'
+fi
+assert_contains "$MISSING_NAMED_OUTPUT" \
+  'ERROR: missing required named option --branch' \
+  'missing required named option was not diagnosed'
+assert_no_executable_begin_line "$MISSING_NAMED_OUTPUT" \
+  'missing required named option emitted an executable begin line'
+echo 'PASS: begin-command missing required named option'
+
+prepare_duplicate
+if DUPLICATE_NAMED_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-300 --base "$BASE" \
+    --branch codex/SAY-300-duplicate --lane impl 2>&1
+); then
+  printf '%s\n' "$DUPLICATE_NAMED_OUTPUT"
+  fail 'duplicate named option unexpectedly succeeded'
+fi
+assert_contains "$DUPLICATE_NAMED_OUTPUT" \
+  'ERROR: duplicate named option --lane' \
+  'duplicate named option was not diagnosed'
+assert_no_executable_begin_line "$DUPLICATE_NAMED_OUTPUT" \
+  'duplicate named option emitted an executable begin line'
+echo 'PASS: begin-command duplicate named option'
+
+prepare_duplicate
+if UNKNOWN_NAMED_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-300 --base "$BASE" \
+    --branch codex/SAY-300-unknown --unknown value 2>&1
+); then
+  printf '%s\n' "$UNKNOWN_NAMED_OUTPUT"
+  fail 'unknown named option unexpectedly succeeded'
+fi
+assert_contains "$UNKNOWN_NAMED_OUTPUT" 'ERROR: unknown option --unknown' \
+  'unknown named option was not diagnosed'
+assert_no_executable_begin_line "$UNKNOWN_NAMED_OUTPUT" \
+  'unknown named option emitted an executable begin line'
+echo 'PASS: begin-command unknown named option'
+
+prepare_duplicate
+if WRONG_ROLE_NAMED_OUTPUT=$(
+  "$HELPER" begin-command --lane human --issue SAY-300 --base "$BASE" \
+    --branch codex/SAY-300-wrong-role 2>&1
+); then
+  printf '%s\n' "$WRONG_ROLE_NAMED_OUTPUT"
+  fail 'wrong-role lane unexpectedly succeeded'
+fi
+assert_contains "$WRONG_ROLE_NAMED_OUTPUT" \
+  'selected lane is not a declared implementation lane' \
+  'wrong-role lane was not diagnosed'
+assert_no_executable_begin_line "$WRONG_ROLE_NAMED_OUTPUT" \
+  'wrong-role lane emitted an executable begin line'
+echo 'PASS: begin-command invalid lane role'
+
+prepare_duplicate
+if INVALID_RELATION_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-300 --base "$BASE" \
+    --branch codex/SAY-301-invalid-relation 2>&1
+); then
+  printf '%s\n' "$INVALID_RELATION_OUTPUT"
+  fail 'invalid Issue/branch relation unexpectedly succeeded'
+fi
+assert_contains "$INVALID_RELATION_OUTPUT" \
+  'branch issue identifier does not match requested Issue' \
+  'invalid Issue/branch relation was not diagnosed'
+assert_no_executable_begin_line "$INVALID_RELATION_OUTPUT" \
+  'invalid Issue/branch relation emitted an executable begin line'
+echo 'PASS: begin-command invalid Issue/branch relation'
+
+prepare_duplicate
+if INVALID_SHA_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-300 --base invalid-sha \
+    --branch codex/SAY-300-invalid-sha 2>&1
+); then
+  printf '%s\n' "$INVALID_SHA_OUTPUT"
+  fail 'invalid SHA unexpectedly succeeded'
+fi
+assert_contains "$INVALID_SHA_OUTPUT" 'ERROR: invalid --base' \
+  'invalid SHA was not diagnosed'
+assert_no_executable_begin_line "$INVALID_SHA_OUTPUT" \
+  'invalid SHA emitted an executable begin line'
+echo 'PASS: begin-command invalid SHA'
+
+prepare_duplicate
+STALE_BASE=$(printf '%s\n' stale | git -C "$IMPL" commit-tree \
+  "${BASE}^{tree}" -m stale-base)
+if STALE_BASE_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-300 --base "$STALE_BASE" \
+    --branch codex/SAY-300-stale-base 2>&1
+); then
+  printf '%s\n' "$STALE_BASE_OUTPUT"
+  fail 'stale Base unexpectedly succeeded'
+fi
+assert_contains "$STALE_BASE_OUTPUT" \
+  'read-only verify failed' 'stale Base was not rejected by read-only verify'
+assert_no_executable_begin_line "$STALE_BASE_OUTPUT" \
+  'stale Base emitted an executable begin line'
+echo 'PASS: begin-command stale Base'
+
+prepare_duplicate
+READ_ONLY_BEFORE=$(lane_snapshot)
+if READ_ONLY_OUTPUT=$(
+  "$HELPER" begin-command --branch codex/SAY-300-read-only --base "$BASE" \
+    --issue SAY-300 --lane impl 2>&1
+); then
+  :
+else
+  printf '%s\n' "$READ_ONLY_OUTPUT"
+  fail 'read-only begin-command unexpectedly failed'
+fi
+assert_contains "$READ_ONLY_OUTPUT" 'BEGIN COMMAND READY' \
+  'successful begin-command omitted its readiness envelope'
+READ_ONLY_LINE=$(printf '%s\n' "$READ_ONLY_OUTPUT" |
+  sed -n '/^BEGIN COMMAND READY$/{n;p;}')
+assert_contains "$READ_ONLY_LINE" "'source=FREE,impl=FREE'" \
+  'successful begin-command did not emit canonical complete inventory'
+READ_ONLY_AFTER=$(lane_snapshot)
+[ "$READ_ONLY_BEFORE" = "$READ_ONLY_AFTER" ] ||
+  fail 'successful begin-command changed lifecycle state'
+echo 'PASS: begin-command success preserves read-only state'
+
+prepare_duplicate
+BUSY_OUTPUT=$(
+  "$HELPER" start impl SAY-301 "$BASE" codex/SAY-301-busy
+) || fail 'could not prepare busy target for begin-command'
+BUSY_CLAIM=$(printf '%s\n' "$BUSY_OUTPUT" | sed -n 's/^claim=//p')
+[ -n "$BUSY_CLAIM" ] || fail 'busy target did not expose its claim'
+BUSY_BEFORE=$(lane_snapshot)
+if TARGET_BUSY_OUTPUT=$(
+  "$HELPER" begin-command --lane impl --issue SAY-302 --base "$BASE" \
+    --branch codex/SAY-302-target-busy 2>&1
+); then
+  printf '%s\n' "$TARGET_BUSY_OUTPUT"
+  fail 'busy target unexpectedly generated a begin command'
+fi
+assert_contains "$TARGET_BUSY_OUTPUT" \
+  'target lane is not FREE' 'busy target was not rejected'
+BUSY_AFTER=$(lane_snapshot)
+[ "$BUSY_BEFORE" = "$BUSY_AFTER" ] ||
+  fail 'busy-target begin-command changed lifecycle state'
+assert_no_executable_begin_line "$TARGET_BUSY_OUTPUT" \
+  'busy-target failure emitted an executable begin line'
+"$HELPER" release impl "$BASE" "$BUSY_CLAIM" >/dev/null ||
+  fail 'could not release busy target after begin-command test'
+echo 'PASS: begin-command rejects a non-FREE target read-only'
+
+prepare_duplicate
+FORENSIC="$ROOT/forensic path's"
+git -C "$MAIN" worktree add -q --detach "$FORENSIC" origin/main
+if FORENSIC_OUTPUT=$(
+  "$HELPER" begin-command --issue SAY-303 --base "$BASE" --branch \
+    codex/SAY-303-forensic --lane impl --forensic-worktree "$FORENSIC" 2>&1
+); then
+  :
+else
+  printf '%s\n' "$FORENSIC_OUTPUT"
+  fail 'forensic begin-command unexpectedly failed'
+fi
+assert_contains "$FORENSIC_OUTPUT" 'BEGIN COMMAND READY' \
+  'forensic begin-command omitted its readiness envelope'
+FORENSIC_LINE=$(printf '%s\n' "$FORENSIC_OUTPUT" |
+  sed -n '/^BEGIN COMMAND READY$/{n;p;}')
+FORENSIC_QUOTED=$(printf '%s' "$FORENSIC" | sed "s/'/'\\\\''/g")
+FORENSIC_QUOTED="'$FORENSIC_QUOTED'"
+case "$FORENSIC_LINE" in
+  *" '--forensic-worktree' $FORENSIC_QUOTED") ;;
+  *) fail 'forensic option was not emitted at the supported final position with shell-safe quoting' ;;
+esac
+FORENSIC_BEGIN_OUTPUT=$(sh -c "$FORENSIC_LINE") || {
+  printf '%s\n' "$FORENSIC_BEGIN_OUTPUT"
+  fail 'generated forensic begin command was not executable by POSIX shell'
+}
+assert_contains "$FORENSIC_BEGIN_OUTPUT" 'IMPLEMENTATION STARTED' \
+  'generated forensic begin command did not start implementation'
+assert_contains "$FORENSIC_BEGIN_OUTPUT" 'forensic_exception=active' \
+  'generated forensic begin command did not retain forensic evidence'
+git -C "$MAIN" worktree remove --force "$FORENSIC"
+FORENSIC_CLAIM=$(printf '%s\n' "$FORENSIC_BEGIN_OUTPUT" | sed -n 's/^claim=//p')
+"$HELPER" release impl "$BASE" "$FORENSIC_CLAIM" >/dev/null ||
+  fail 'could not release forensic begin-command generation'
+echo 'PASS: begin-command forensic final position and shell-safe quoting'
 
 prepare_duplicate
 rm "$(marker_path)"
