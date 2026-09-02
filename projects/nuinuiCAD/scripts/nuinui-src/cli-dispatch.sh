@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.6.22
+V=1.7.1
 K='preflight verify lane-init begin start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
@@ -170,14 +170,6 @@ nuinui_render_human_output() {
         sub(/^SELFTEST BLOCKED:/, "⛔ SELFTEST BLOCKED:", line)
       }
 
-      if (line ~ /^main path=/) {
-        sub(/^main path=/, "1️⃣ main path=", line)
-      } else if (line ~ /^sub path=/) {
-        sub(/^sub path=/, "2️⃣ sub path=", line)
-      } else if (line ~ /^e2e path=/) {
-        sub(/^e2e path=/, "🖐️ e2e path=", line)
-      }
-
       if (line ~ /^[[:space:]]*state=FREE/) {
         line = decorate_prefix(line, "🟢 ")
       } else if (line ~ /^[[:space:]]*state=BUSY/) {
@@ -251,6 +243,24 @@ nuinui_run_tracked() {
   return "$nuinui_tracked_rc"
 }
 
+nuinui_lane_dispatch() {
+  NUINUI_COMMAND_RESULT_LANE=-
+  case "$1" in
+    e2e-start|e2e-start-local-main|e2e-release)
+      if [ "$#" = 4 ]; then
+        NUINUI_COMMAND_RESULT_LANE=$2
+      else
+        NUINUI_COMMAND_RESULT_LANE=$(lane_execution_cli_resolve_human_test_lane \
+          "$NUINUI_RUNTIME_MANIFEST" 2>/dev/null) || return 1
+      fi
+      ;;
+    verify|lane-init|begin|start|resume|release|recover|integrate-clean)
+      NUINUI_COMMAND_RESULT_LANE=$2
+      ;;
+  esac
+  lane_execution_cli_command "$NUINUI_RUNTIME_MANIFEST" "$@"
+}
+
 nuinui_forensic_worktree=
 nuinui_forensic_option_active=0
 
@@ -272,18 +282,26 @@ case "$1" in
       echo 'Usage: nuinui preflight [--forensic-worktree <absolute-path>]'
       exit 2
     fi
-    nuinui_run_public preflight pf
+    nuinui_require_runtime_manifest || exit 1
+    if [ "$nuinui_forensic_option_active" = 1 ]; then
+      nuinui_run_public preflight lane_execution_preflight "$NUINUI_RUNTIME_MANIFEST" \
+        --forensic-worktree "$nuinui_forensic_worktree"
+    else
+      nuinui_run_public preflight lane_execution_preflight "$NUINUI_RUNTIME_MANIFEST"
+    fi
     exit $?
     ;;
   verify)
-    [ "$#" = 5 ] || { echo 'Usage: nuinui verify <main|sub> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    [ "$#" = 5 ] || { echo 'Usage: nuinui verify <implementation-lane> <SAY-123> <expected-base-sha> <branch>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
     nuinui_validate_public_issue_branch_human verify "$3" "$5" || exit $?
-    nuinui_run_public verify vr "$2" "$3" "$4" "$5"
+    nuinui_run_public verify nuinui_lane_dispatch verify "$2" "$3" "$4" "$5"
     exit $?
     ;;
   lane-init)
-    [ "$#" = 2 ] || { echo 'Usage: nuinui lane-init <main|sub>'; exit 2; }
-    nuinui_run_tracked lane-init "$#" "$@" li "$2"
+    [ "$#" = 2 ] || { echo 'Usage: nuinui lane-init <implementation-lane>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked lane-init "$#" "$@" nuinui_lane_dispatch lane-init "$2"
     exit $?
     ;;
   begin)
@@ -291,11 +309,18 @@ case "$1" in
       nuinui_forensic_worktree=$8
       nuinui_forensic_option_active=1
     elif [ "$#" != 6 ]; then
-      echo 'Usage: nuinui begin <main|sub> <SAY-123> <expected-base-sha> <branch> <FREE|SAY-123> [--forensic-worktree <absolute-path>]'
+      echo 'Usage: nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory> [--forensic-worktree <absolute-path>]'
       exit 2
     fi
+    nuinui_require_runtime_manifest || exit 1
     nuinui_validate_public_issue_branch_human begin "$3" "$5" || exit $?
-    nuinui_run_tracked begin "$#" "$@" lifecycle_begin "$2" "$3" "$4" "$5" "$6"
+    if [ "$nuinui_forensic_option_active" = 1 ]; then
+      nuinui_run_tracked begin "$#" "$@" nuinui_lane_dispatch begin \
+        "$2" "$3" "$4" "$5" "$6" --forensic-worktree "$8"
+    else
+      nuinui_run_tracked begin "$#" "$@" nuinui_lane_dispatch begin \
+        "$2" "$3" "$4" "$5" "$6"
+    fi
     exit $?
     ;;
   start)
@@ -303,26 +328,36 @@ case "$1" in
       nuinui_forensic_worktree=$7
       nuinui_forensic_option_active=1
     elif [ "$#" != 5 ]; then
-      echo 'Usage: nuinui start <main|sub> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]'
+      echo 'Usage: nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]'
       exit 2
     fi
+    nuinui_require_runtime_manifest || exit 1
     nuinui_validate_public_issue_branch_human start "$3" "$5" || exit $?
-    nuinui_run_tracked start "$#" "$@" lifecycle_start_command "$2" "$3" "$4" "$5"
+    if [ "$nuinui_forensic_option_active" = 1 ]; then
+      nuinui_run_tracked start "$#" "$@" nuinui_lane_dispatch start \
+        "$2" "$3" "$4" "$5" --forensic-worktree "$7"
+    else
+      nuinui_run_tracked start "$#" "$@" nuinui_lane_dispatch start \
+        "$2" "$3" "$4" "$5"
+    fi
     exit $?
     ;;
   resume)
-    [ "$#" = 7 ] || { echo 'Usage: nuinui resume <main|sub> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>'; exit 2; }
-    nuinui_run_tracked resume "$#" "$@" lifecycle_resume_command "$2" "$3" "$4" "$5" "$6" "$7"
+    [ "$#" = 7 ] || { echo 'Usage: nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked resume "$#" "$@" nuinui_lane_dispatch resume "$2" "$3" "$4" "$5" "$6" "$7"
     exit $?
     ;;
   release)
-    [ "$#" = 4 ] || { echo 'Usage: nuinui release <main|sub> <merged-checkpoint-sha> <expected-claim>'; exit 2; }
-    nuinui_run_tracked release "$#" "$@" lifecycle_release_command "$2" "$3" "$4"
+    [ "$#" = 4 ] || { echo 'Usage: nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked release "$#" "$@" nuinui_lane_dispatch release "$2" "$3" "$4"
     exit $?
     ;;
   recover)
-    [ "$#" = 3 ] || { echo 'Usage: nuinui recover <main|sub> <expected-claim>'; exit 2; }
-    nuinui_run_tracked recover "$#" "$@" rc "$2" "$3"
+    [ "$#" = 3 ] || { echo 'Usage: nuinui recover <implementation-lane> <expected-claim>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked recover "$#" "$@" nuinui_lane_dispatch recover "$2" "$3"
     exit $?
     ;;
   pr-auto-merge)
@@ -331,23 +366,45 @@ case "$1" in
     exit $?
     ;;
   integrate-clean)
-    [ "$#" = 8 ] || { echo 'Usage: nuinui integrate-clean <main|sub> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->'; exit 2; }
-    nuinui_run_tracked integrate-clean "$#" "$@" integration_clean_command "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    [ "$#" = 8 ] || { echo 'Usage: nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked integrate-clean "$#" "$@" nuinui_lane_dispatch integrate-clean "$2" "$3" "$4" "$5" "$6" "$7" "$8"
     exit $?
     ;;
   e2e-start)
-    [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-start <SAY-123> <tested-ref>'; exit 2; }
-    nuinui_run_tracked e2e-start "$#" "$@" es "$2" "$3"
+    [ "$#" = 3 ] || [ "$#" = 4 ] || { echo 'Usage: nuinui e2e-start [<human-test-lane>] <SAY-123> <tested-ref>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    if [ "$#" = 4 ]; then
+      nuinui_run_tracked e2e-start "$#" "$@" nuinui_lane_dispatch \
+        e2e-start "$2" "$3" "$4"
+    else
+      nuinui_run_tracked e2e-start "$#" "$@" nuinui_lane_dispatch \
+        e2e-start "$2" "$3"
+    fi
     exit $?
     ;;
   e2e-start-local-main)
-    [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-start-local-main <SAY-123> <tested-ref>'; exit 2; }
-    nuinui_run_tracked e2e-start-local-main "$#" "$@" el "$2" "$3"
+    [ "$#" = 3 ] || [ "$#" = 4 ] || { echo 'Usage: nuinui e2e-start-local-main [<human-test-lane>] <SAY-123> <tested-ref>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    if [ "$#" = 4 ]; then
+      nuinui_run_tracked e2e-start-local-main "$#" "$@" nuinui_lane_dispatch \
+        e2e-start-local-main "$2" "$3" "$4"
+    else
+      nuinui_run_tracked e2e-start-local-main "$#" "$@" nuinui_lane_dispatch \
+        e2e-start-local-main "$2" "$3"
+    fi
     exit $?
     ;;
   e2e-release)
-    [ "$#" = 3 ] || { echo 'Usage: nuinui e2e-release <SAY-123> <tested-ref>'; exit 2; }
-    nuinui_run_tracked e2e-release "$#" "$@" ee "$2" "$3"
+    [ "$#" = 3 ] || [ "$#" = 4 ] || { echo 'Usage: nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>'; exit 2; }
+    nuinui_require_runtime_manifest || exit 1
+    if [ "$#" = 4 ]; then
+      nuinui_run_tracked e2e-release "$#" "$@" nuinui_lane_dispatch \
+        e2e-release "$2" "$3" "$4"
+    else
+      nuinui_run_tracked e2e-release "$#" "$@" nuinui_lane_dispatch \
+        e2e-release "$2" "$3"
+    fi
     exit $?
     ;;
   context-audit)

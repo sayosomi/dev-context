@@ -2,10 +2,11 @@
 
 # Generic manifest-driven lane preflight and registered-worktree inventory.
 #
-# This source is deliberately separate from the legacy Fixed 2+1 runtime.  It
-# consumes the data-only manifest API and adapts the existing v1 ownership
-# readers/classification rules without assigning meaning to lane names.
+# This source consumes the data-only manifest API and adapts the existing v1
+# ownership readers/classification rules without assigning meaning to lane
+# names.
 
+# BEGIN DEVELOPMENT-ONLY SOURCE LOADING
 lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
 if [ -z "$lane_execution_source_dir" ] && [ "${LANE_EXECUTION_PREFLIGHT_EXECUTE:-0}" = 1 ]; then
   lane_execution_source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
@@ -15,12 +16,14 @@ if ! command -v lane_manifest_validate >/dev/null 2>&1 && [ -n "$lane_execution_
   . "$lane_execution_source_dir/manifest.sh"
 fi
 
+if ! command -v nuinui_ownership_read_fields >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
+  . "$lane_execution_source_dir/ownership.sh"
+fi
+# END DEVELOPMENT-ONLY SOURCE LOADING
+
 # Reuse the established v1 field reader and generic scalar validators.  The
 # generic parser below supplies the lane-independent slot/lock checks while
 # keeping project Work-ID / branch policy in an explicit callback.
-if ! command -v nuinui_ownership_read_fields >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
-  . "$lane_execution_source_dir/../fixed-2plus1/ownership-schema.sh"
-fi
 
 lane_execution_validate_issue_branch() {
   # Project adapters may replace this callback with their stricter Work-ID /

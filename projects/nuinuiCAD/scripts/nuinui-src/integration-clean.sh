@@ -71,10 +71,10 @@ integration_clean_receipt_read() {
   INTEGRATION_CLEAN_RECEIPT_FILE_SET=$(nuinui_ownership_field "$receipt" file_set) || return 1
 
   [ "$INTEGRATION_CLEAN_RECEIPT_VERSION" = 1 ] || return 1
-  case "$INTEGRATION_CLEAN_RECEIPT_LANE" in
-    main|sub) ;;
-    *) return 1 ;;
-  esac
+  lane_manifest_validate_lane_name "$NUINUI_RUNTIME_MANIFEST" \
+    "$INTEGRATION_CLEAN_RECEIPT_LANE" >/dev/null 2>&1 || return 1
+  [ "$(lane_manifest_lane_role "$NUINUI_RUNTIME_MANIFEST" \
+    "$INTEGRATION_CLEAN_RECEIPT_LANE" 2>/dev/null || true)" = implementation ] || return 1
   nuinui_ownership_valid_issue "$INTEGRATION_CLEAN_RECEIPT_ISSUE" || return 1
   nuinui_ownership_valid_claim "$INTEGRATION_CLEAN_RECEIPT_CLAIM" || return 1
   nuinui_ownership_validate_issue_branch \
@@ -317,13 +317,14 @@ integration_clean_command() {
   verifier=$6
   manifest=$7
 
-  case "$lane" in
-    main|sub) ;;
-    *)
-      echo 'ERROR: lane must be main or sub'
-      return 2
-      ;;
-  esac
+  lane_manifest_validate_lane_name "$NUINUI_RUNTIME_MANIFEST" "$lane" >/dev/null 2>&1 || {
+    echo 'ERROR: lane is not declared in the runtime manifest'
+    return 2
+  }
+  [ "$(lane_manifest_lane_role "$NUINUI_RUNTIME_MANIFEST" "$lane" 2>/dev/null || true)" = implementation ] || {
+    echo 'ERROR: lane must be an implementation lane'
+    return 2
+  }
   nuinui_ownership_valid_issue "$issue" || {
     echo 'ERROR: Issue must look like SAY-123'
     return 2
@@ -405,12 +406,13 @@ integration_clean_command() {
     return 1
   fi
 
-  git -C "$repo" fetch --no-tags origin main >/dev/null 2>&1 || {
-    echo 'ERROR: failed to fetch current main'
+  integration_clean_default_branch=$(lane_execution_runtime_default_branch) || return 1
+  git -C "$repo" fetch --no-tags origin "$integration_clean_default_branch" >/dev/null 2>&1 || {
+    echo 'ERROR: failed to fetch the current default branch'
     return 1
   }
   [ "$(om "$repo" 2>/dev/null || true)" = "$expected_main" ] || {
-    echo 'BLOCKED: fetched origin/main does not match expected main'
+    echo 'BLOCKED: fetched origin default branch does not match expected main'
     printf 'expected_main=%s\nactual_origin_main=%s\n' \
       "$expected_main" "$(om "$repo" 2>/dev/null || printf '-')"
     return 1

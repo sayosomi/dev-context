@@ -9,7 +9,7 @@ else
   HELPER=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui
 fi
 
-ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-integrate-clean-test.XXXXXX")
+ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-integrate-clean-test.XXXXXX")" && pwd -P)
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 
 fail() {
@@ -33,6 +33,7 @@ helper() {
   NUINUI_SUB_WT="$S" \
   NUINUI_E2E_WT="$E" \
   NUINUI_DEV_CONTEXT_WT="$CASE_ROOT/context" \
+  NUINUI_SELFTEST_MANIFEST="$CASE_ROOT/LANES.conf" \
   "$HELPER" "$@"
 }
 
@@ -40,11 +41,11 @@ setup_case() {
   case_name=$1
   case_mode=${2:-clean}
   CASE_ROOT=$ROOT/$case_name
-  O=$CASE_ROOT/origin.git
+  O=$CASE_ROOT/sayosomi/nuinuiCAD.git
   M=$CASE_ROOT/main
   S=$CASE_ROOT/sub
   E=$CASE_ROOT/e2e
-  mkdir -p "$CASE_ROOT"
+  mkdir -p "$CASE_ROOT/sayosomi"
   git init -q --bare "$O"
   git init -q -b main "$M"
   git -C "$M" config user.name test
@@ -61,6 +62,25 @@ setup_case() {
   git -C "$S" config user.email test@example.com
   git -C "$E" config user.name test
   git -C "$E" config user.email test@example.com
+  printf '%s\n' \
+    'version=1' \
+    'repository=sayosomi/nuinuiCAD' \
+    'default_branch=main' \
+    '' \
+    '[lane main]' \
+    'role=implementation' \
+    "path=$M" \
+    'idle=branch' \
+    '' \
+    '[lane sub]' \
+    'role=implementation' \
+    "path=$S" \
+    'idle=detached' \
+    '' \
+    '[lane e2e]' \
+    'role=human-test' \
+    "path=$E" \
+    'idle=detached' > "$CASE_ROOT/LANES.conf"
 
   helper lane-init main >/dev/null || fail "$case_name lane-init main failed"
   helper lane-init sub >/dev/null || fail "$case_name lane-init sub failed"
@@ -315,7 +335,7 @@ run_failure dirty 'active lane checkpoint could not be proven clean and exact' \
 rm "$S/dirty.tmp"
 
 setup_case wrong-lane
-run_failure wrong-lane 'lane must be main or sub' \
+run_failure wrong-lane 'selected lane is not a declared implementation lane' \
   helper integrate-clean e2e SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" -
 
 setup_case wrong-issue
@@ -457,6 +477,7 @@ if output=$(NUINUI_SELFTEST=1 \
   NUINUI_SUB_WT="$S" \
   NUINUI_E2E_WT="$E" \
   NUINUI_DEV_CONTEXT_WT="$CASE_ROOT/context" \
+  NUINUI_SELFTEST_MANIFEST="$CASE_ROOT/LANES.conf" \
   PATH="$WRAP_DIR:$PATH" REAL_GIT="$REAL_GIT" \
   "$HELPER" integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" - 2>&1); then
   printf '%s\n' "$output"

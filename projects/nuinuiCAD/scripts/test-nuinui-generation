@@ -3,13 +3,19 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
 repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
-nuinui_profile_source=$script_dir/nuinui-src/project-profile.sh
-ownership_source=$repo_root/shared/local-tools/fixed-2plus1/ownership-schema.sh
-nuinui_profile_contract_source=$repo_root/shared/local-tools/fixed-2plus1/profile-contract.sh
-nuinui_implementation_core_source=$repo_root/shared/local-tools/fixed-2plus1/implementation-core.sh
-nuinui_facade_source=$repo_root/shared/local-tools/fixed-2plus1/lifecycle-facade.sh
-nuinui_release_facade_source=$repo_root/shared/local-tools/fixed-2plus1/release-facade.sh
-nuinui_human_test_core_source=$repo_root/shared/local-tools/fixed-2plus1/human-test-core.sh
+nuinui_project_policy_source=$script_dir/nuinui-src/lane-execution-profile.sh
+nuinui_e2e_policy_source=$script_dir/nuinui-src/lane-execution-e2e-policy.sh
+nuinui_ownership_source=$repo_root/shared/local-tools/lane-execution/ownership.sh
+nuinui_manifest_source=$repo_root/shared/local-tools/lane-execution/manifest.sh
+nuinui_runtime_source=$repo_root/shared/local-tools/lane-execution/runtime.sh
+nuinui_preflight_source=$repo_root/shared/local-tools/lane-execution/preflight.sh
+nuinui_inventory_source=$repo_root/shared/local-tools/lane-execution/inventory.sh
+nuinui_lifecycle_source=$repo_root/shared/local-tools/lane-execution/lifecycle.sh
+nuinui_human_test_source=$repo_root/shared/local-tools/lane-execution/human-test.sh
+nuinui_cli_source=$repo_root/shared/local-tools/lane-execution/cli.sh
+nuinui_render_source=$repo_root/shared/local-tools/lane-execution/render.sh
+nuinui_implementation_operations_source=$repo_root/shared/local-tools/lane-execution/implementation-operations.sh
+nuinui_release_safety_source=$repo_root/shared/local-tools/lane-execution/release-safety.sh
 nuinui_body_source=$script_dir/nuinui-src/nuinui-body.sh
 nuinui_github_pr_source=$script_dir/nuinui-src/github-pr.sh
 nuinui_required_checks_source=$script_dir/nuinui-src/required-checks.sh
@@ -37,18 +43,18 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-[ -f "$nuinui_profile_source" ] || fail 'project profile source is missing'
-[ -f "$ownership_source" ] || fail 'ownership source is missing'
-[ -f "$nuinui_profile_contract_source" ] || fail 'profile contract source is missing'
-[ -f "$nuinui_implementation_core_source" ] || fail 'implementation core source is missing'
-[ -f "$nuinui_facade_source" ] || fail 'lifecycle facade source is missing'
-[ -f "$nuinui_release_facade_source" ] || fail 'release facade source is missing'
-[ -f "$nuinui_human_test_core_source" ] || fail 'Human-test core source is missing'
+[ -f "$nuinui_project_policy_source" ] || fail 'project lane policy source is missing'
+[ -f "$nuinui_e2e_policy_source" ] || fail 'E2E lane policy source is missing'
+for generic_source in "$nuinui_ownership_source" "$nuinui_manifest_source" \
+  "$nuinui_runtime_source" "$nuinui_preflight_source" "$nuinui_inventory_source" \
+  "$nuinui_lifecycle_source" "$nuinui_human_test_source" "$nuinui_cli_source" \
+  "$nuinui_render_source" "$nuinui_implementation_operations_source" "$nuinui_release_safety_source"; do
+  [ -f "$generic_source" ] || fail "generic runtime source is missing: $generic_source"
+done
 [ -f "$nuinui_body_source" ] || fail 'nuinui body source is missing'
 [ -f "$nuinui_github_pr_source" ] || fail 'nuinui GitHub PR source is missing'
 [ -f "$nuinui_required_checks_source" ] || fail 'nuinui required-checks source is missing'
 [ -f "$nuinui_pr_auto_merge_source" ] || fail 'nuinui pr-auto-merge source is missing'
-[ -f "$nuinui_facade_source" ] || fail 'nuinui lifecycle façade source is missing'
 [ -f "$nuinui_integration_clean_source" ] || fail 'nuinui integration-clean source is missing'
 [ -f "$nuinui_e2e_source" ] || fail 'nuinui E2E source is missing'
 [ -f "$nuinui_context_sync_source" ] || fail 'nuinui context-sync source is missing'
@@ -81,8 +87,20 @@ test_generator() {
   candidate_version=$("$candidate_a" version)
   [ "$candidate_version" = "$expected_version" ] || fail "$name generated candidate version is $candidate_version"
 
+  if [ "$name" = nuinui ]; then
+    for obsolete_marker in fixed_2plus1 fixed-2plus1 peer_lane expected_peer \
+      '/Users/yosomi/Code/nuinuiCAD-sub'; do
+      if grep -Fq -- "$obsolete_marker" "$candidate_a"; then
+        fail "$name candidate contains obsolete production topology marker: $obsolete_marker"
+      fi
+    done
+    if grep -Eq '^[[:space:]]*\.[[:space:]]+.*\.sh' "$candidate_a"; then
+      fail "$name candidate contains runtime source loading"
+    fi
+  fi
+
   protected_paths="$artifact_path"
-  [ "$name" = nuinui ] && protected_paths="$protected_paths $nuinui_profile_source $ownership_source $nuinui_profile_contract_source $nuinui_implementation_core_source $nuinui_facade_source $nuinui_release_facade_source $nuinui_human_test_core_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_self_test_source $nuinui_dispatch_source"
+  [ "$name" = nuinui ] && protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_self_test_source $nuinui_dispatch_source"
   for protected_path in $protected_paths; do
     protected_before=$(shasum -a 256 "$protected_path" | awk 'NR == 1 {print $1}')
     if "$generator" "$protected_path" >"$root/$name-protected-output.log" 2>&1; then
@@ -104,6 +122,6 @@ test_generator() {
   echo "PASS: $name generation candidate_sha256=$candidate_sha256 candidate_git_blob=$candidate_git_blob"
 }
 
-test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.6.22
+test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.7.1
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.0.0
 echo 'GENERATION PASS'

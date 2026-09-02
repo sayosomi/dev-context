@@ -1,112 +1,137 @@
-# nuinuiCAD-specific remainder for the generated standalone helper.
-# Fixed implementation ownership and lifecycle mechanics live in the shared
-# fixed-2+1 source modules.
+# nuinuiCAD-specific runtime shell helpers for the generated standalone CLI.
+# The product manifest is resolved lazily so version/help/context commands do
+# not depend on a healthy lane topology.
 
-V=1.6.22
+V=1.7.1
 P=$0
-D=$(CDPATH= cd -- "$(dirname -- "$P")" && pwd -P)
+case "$P" in
+  */*) ;;
+  *) P=$(command -v -- "$P" 2>/dev/null || true) ;;
+esac
+[ -n "$P" ] && case "$P" in /*) ;; *) P=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P)/$(basename -- "$P") || true ;; esac
+D=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P || printf '')
 EH=${NUINUI_E2E_STATUS_HELPER:-$D/nuinui-e2e-prepare}
-M=$(fixed_2plus1_profile_lane_path "$(fixed_2plus1_profile_implementation_lane_a_name)")
-S=$(fixed_2plus1_profile_lane_path "$(fixed_2plus1_profile_implementation_lane_b_name)")
-E=$(fixed_2plus1_profile_lane_path "$(fixed_2plus1_profile_human_test_lane_name)")
-RT=$(fixed_2plus1_profile_repository_identity)
 
 if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
-  C=${NUINUI_DEV_CONTEXT_WT:-}
+  C=${NUINUI_DEV_CONTEXT_WT:-$D}
+  CD=${NUINUI_DEV_CONTEXT_DEV_WT:-$D}
+  CT=${NUINUI_SELFTEST_EXPECTED_ORIGIN:-sayosomi/dev-context}
 else
   C=/Users/yosomi/Code/dev-context
-fi
-if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
-  CD=${NUINUI_DEV_CONTEXT_DEV_WT:-}
-  [ -z "${NUINUI_SELFTEST_EXPECTED_ORIGIN:-}" ] || CT=$NUINUI_SELFTEST_EXPECTED_ORIGIN
-else
   CD=/Users/yosomi/Code/dev-context-dev
   CT=sayosomi/dev-context
 fi
 
+nuinui_runtime_resolve_manifest() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ] && [ -n "${NUINUI_SELFTEST_MANIFEST:-}" ]; then
+    case "$NUINUI_SELFTEST_MANIFEST" in /*) ;; *) echo 'BLOCKED: test manifest path must be absolute' >&2; return 1 ;; esac
+    [ -f "$NUINUI_SELFTEST_MANIFEST" ] && [ ! -L "$NUINUI_SELFTEST_MANIFEST" ] &&
+      [ -r "$NUINUI_SELFTEST_MANIFEST" ] || {
+        echo "BLOCKED: test manifest is not a readable regular file: $NUINUI_SELFTEST_MANIFEST" >&2
+        return 1
+      }
+    printf '%s\n' "$NUINUI_SELFTEST_MANIFEST"
+    return 0
+  fi
+  [ -n "$P" ] && [ -f "$P" ] && [ ! -L "$P" ] || {
+    echo 'BLOCKED: generated helper location cannot be proven' >&2
+    return 1
+  }
+  nuinui_runtime_script_dir=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P) || return 1
+  [ "$(basename -- "$nuinui_runtime_script_dir")" = scripts ] || {
+    echo 'BLOCKED: generated helper is not in its versioned project scripts directory' >&2
+    return 1
+  }
+  nuinui_runtime_project_dir=$(CDPATH= cd -- "$nuinui_runtime_script_dir/.." 2>/dev/null && pwd -P) || return 1
+  nuinui_runtime_manifest=$nuinui_runtime_project_dir/LANES.conf
+  [ -f "$nuinui_runtime_manifest" ] && [ ! -L "$nuinui_runtime_manifest" ] &&
+    [ -r "$nuinui_runtime_manifest" ] || {
+      echo "BLOCKED: authoritative project lane manifest is missing or unreadable: $nuinui_runtime_manifest" >&2
+      return 1
+    }
+  printf '%s\n' "$nuinui_runtime_manifest"
+}
+
+nuinui_require_runtime_manifest() {
+  NUINUI_RUNTIME_MANIFEST=$(nuinui_runtime_resolve_manifest) || return 1
+  export NUINUI_RUNTIME_MANIFEST
+  lane_manifest_validate "$NUINUI_RUNTIME_MANIFEST" || {
+    echo "BLOCKED: authoritative project lane manifest is invalid: $NUINUI_RUNTIME_MANIFEST" >&2
+    return 1
+  }
+}
+
 nuinui_validate_forensic_worktree() {
-  local forensic physical fixed_a fixed_b fixed_h registered expected actual
-  forensic=$1
+  [ "$#" = 1 ] || return 2
   nuinui_forensic_reason=
-  case "$forensic" in /*) ;; *) nuinui_forensic_reason=non-absolute-path; return 1 ;; esac
-  [ -d "$forensic" ] || { nuinui_forensic_reason=missing-or-not-directory; return 1; }
-  physical=$(CDPATH= cd -- "$forensic" && pwd -P) || {
+  case "$1" in /*) ;; *) nuinui_forensic_reason=non-absolute-path; return 1 ;; esac
+  [ -d "$1" ] || { nuinui_forensic_reason=missing-or-not-directory; return 1; }
+  nuinui_forensic_physical=$(CDPATH= cd -- "$1" && pwd -P) || {
     nuinui_forensic_reason=non-canonical-path; return 1;
   }
-  [ "$physical" = "$forensic" ] || {
+  [ "$nuinui_forensic_physical" = "$1" ] || {
     nuinui_forensic_reason=non-canonical-path; return 1;
   }
-  fixed_a=$(CDPATH= cd -- "$M" && pwd -P) || {
-    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
-  }
-  fixed_b=$(CDPATH= cd -- "$S" && pwd -P) || {
-    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
-  }
-  fixed_h=$(CDPATH= cd -- "$E" && pwd -P) || {
-    nuinui_forensic_reason=registered-inventory-mismatch; return 1;
-  }
-  case "$physical" in
-    "$fixed_a"|"$fixed_b"|"$fixed_h")
-      nuinui_forensic_reason=fixed-lane-path; return 1 ;;
-  esac
-  gr "$forensic" || { nuinui_forensic_reason=not-registered-worktree; return 1; }
-  registered=$(git -C "$M" worktree list --porcelain | sed -n 's/^worktree //p')
-  printf '%s\n' "$registered" | grep -Fqx "$forensic" || {
+  nuinui_forensic_anchor=
+  nuinui_forensic_expected=
+  while IFS= read -r nuinui_forensic_lane || [ -n "$nuinui_forensic_lane" ]; do
+    [ -n "$nuinui_forensic_lane" ] || continue
+    nuinui_forensic_path=$(lane_manifest_lane_path "$NUINUI_RUNTIME_MANIFEST" "$nuinui_forensic_lane") || return 1
+    nuinui_forensic_path=$(lane_execution__canonical_path "$nuinui_forensic_path") || return 1
+    [ -n "$nuinui_forensic_anchor" ] || nuinui_forensic_anchor=$nuinui_forensic_path
+    nuinui_forensic_expected=$nuinui_forensic_expected$nuinui_forensic_path\n
+    [ "$nuinui_forensic_path" != "$nuinui_forensic_physical" ] || {
+      nuinui_forensic_reason=declared-lane-path; return 1
+    }
+  done <<EOF
+$(lane_manifest_all_lanes "$NUINUI_RUNTIME_MANIFEST")
+EOF
+  gr "$1" || { nuinui_forensic_reason=not-registered-worktree; return 1; }
+  nuinui_forensic_registered=$(git -C "$nuinui_forensic_anchor" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p') || return 1
+  printf '%s\n' "$nuinui_forensic_registered" | grep -Fqx "$1" || {
     nuinui_forensic_reason=not-registered-worktree; return 1;
   }
-  expected=$(printf '%s\n' "$fixed_a" "$fixed_b" "$fixed_h" "$forensic" | sort)
-  actual=$(printf '%s\n' "$registered" | sort)
-  [ "$actual" = "$expected" ] || {
+  nuinui_forensic_expected=$(printf '%b%s\n' "$nuinui_forensic_expected" "$nuinui_forensic_physical" | LC_ALL=C sort)
+  nuinui_forensic_actual=$(printf '%s\n' "$nuinui_forensic_registered" | LC_ALL=C sort)
+  [ "$nuinui_forensic_expected" = "$nuinui_forensic_actual" ] || {
     nuinui_forensic_reason=registered-inventory-mismatch; return 1;
   }
 }
 
-wt() {
-  local lane_a lane_b human_lane expected actual
-  lane_a=$(CDPATH= cd -- "$M" && pwd -P) || return 1
-  lane_b=$(CDPATH= cd -- "$S" && pwd -P) || return 1
-  human_lane=$(CDPATH= cd -- "$E" && pwd -P) || return 1
-  expected=$(printf '%s\n' "$lane_a" "$lane_b" "$human_lane" | sort) || return 1
-  actual=$(git -C "$M" worktree list --porcelain | sed -n 's/^worktree //p' | sort)
-  echo worktrees:
-  git -C "$M" worktree list | sed 's/^/  /'
-  if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
-    [ "${nuinui_forensic_preflight_result:-1}" = 0 ]
-  else
-    [ "$expected" = "$actual" ]
-  fi
-}
-
-fixed_2plus1_profile_inventory_guard() {
-  local result=0
-  nuinui_forensic_preflight_result=0
-  if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
-    nuinui_validate_forensic_worktree "${nuinui_forensic_worktree:-}" || {
-      nuinui_forensic_preflight_result=1
-      result=1
-    }
-  fi
-  wt || result=1
-  if [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
-    if [ "$nuinui_forensic_preflight_result" = 0 ]; then
-      echo 'forensic_exception=active'
-    else
-      echo 'forensic_exception=BLOCKED'
-      echo "forensic_reason=$nuinui_forensic_reason"
-    fi
-    echo "forensic_worktree=$nuinui_forensic_worktree"
-    [ "$nuinui_forensic_preflight_result" = 0 ] || result=1
-  fi
-  return "$result"
-}
-
-fixed_2plus1_profile_after_begin_start() {
-  local peer
-  peer=$2
-  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
-    case "${NUINUI_SELFTEST_BEGIN_AFTER_START:-}" in
-      dirty-peer) printf '%s\n' selftest > "$(lr "$peer")/nuinui-selftest-peer-dirty" ;;
-      dirty-e2e) printf '%s\n' selftest > "$E/nuinui-selftest-e2e-dirty" ;;
+nuinui_run_public() {
+  nuinui_public_name=$1
+  shift
+  nuinui_public_output=
+  nuinui_public_rc=0
+  nuinui_public_output=$("$@" 2>&1) || nuinui_public_rc=$?
+  if [ "$nuinui_public_rc" = 0 ] && [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
+    case "$nuinui_public_name" in
+      begin|start)
+        nuinui_public_output=$(printf '%s\nforensic_exception=active\nforensic_worktree=%s' \
+          "$nuinui_public_output" "$nuinui_forensic_worktree") ;;
     esac
   fi
+  [ -n "$nuinui_public_output" ] ||
+    nuinui_public_output=$(printf 'ERROR: public command %s failed without a diagnostic' "$nuinui_public_name")
+  printf '%s\n' "$nuinui_public_output" | nuinui_render_human_output "$nuinui_public_name"
+  return "$nuinui_public_rc"
 }
+
+nuinui_run_tracked() {
+  nuinui_tracked_name=$1
+  nuinui_tracked_request_count=$2
+  shift 2
+  nuinui_tracked_display_file=$(mktemp "${TMPDIR:-/tmp}/nuinui-human-output.XXXXXX") || {
+    printf 'ERROR: unable to capture tracked command output\n' | nuinui_render_human_output "$nuinui_tracked_name"
+    return 1
+  }
+  nuinui_tracked_rc=0
+  nuinui_command_result_run "$nuinui_tracked_name" "$nuinui_tracked_request_count" "$@" \
+    >"$nuinui_tracked_display_file" 2>&1 || nuinui_tracked_rc=$?
+  nuinui_render_human_output "$nuinui_tracked_name" <"$nuinui_tracked_display_file"
+  rm -f -- "$nuinui_tracked_display_file"
+  return "$nuinui_tracked_rc"
+}
+
+nuinui_forensic_worktree=
+nuinui_forensic_option_active=0

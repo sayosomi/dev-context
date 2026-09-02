@@ -2,7 +2,7 @@
 set -eu
 
 HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
-ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-command-result.XXXXXX")
+ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-command-result.XXXXXX")" && pwd -P)
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
 
 fail() {
@@ -55,12 +55,13 @@ last_result() {
 setup_case() {
   CASE=$1
   CASE_ROOT=$ROOT/$CASE
-  ORIGIN=$CASE_ROOT/origin.git
+  ORIGIN=$CASE_ROOT/sayosomi/nuinuiCAD.git
   M=$CASE_ROOT/main
   S=$CASE_ROOT/sub
   E=$CASE_ROOT/e2e
   CONTEXT=$CASE_ROOT/context
-  mkdir -p "$CASE_ROOT"
+  MANIFEST=$CASE_ROOT/LANES.conf
+  mkdir -p "$CASE_ROOT/sayosomi"
   git init -q --bare "$ORIGIN"
   git init -q -b main "$M"
   git -C "$M" config user.name test
@@ -76,11 +77,31 @@ setup_case() {
   git -C "$S" config user.email test@example.invalid
   git -C "$E" config user.name test
   git -C "$E" config user.email test@example.invalid
+  printf '%s\n' \
+    'version=1' \
+    'repository=sayosomi/nuinuiCAD' \
+    'default_branch=main' \
+    '' \
+    '[lane main]' \
+    'role=implementation' \
+    "path=$M" \
+    'idle=branch' \
+    '' \
+    '[lane sub]' \
+    'role=implementation' \
+    "path=$S" \
+    'idle=detached' \
+    '' \
+    '[lane e2e]' \
+    'role=human-test' \
+    "path=$E" \
+    'idle=detached' > "$MANIFEST"
   git init -q "$CONTEXT"
   export NUINUI_SELFTEST=1
   export NUINUI_MAIN_WT="$M"
   export NUINUI_SUB_WT="$S"
   export NUINUI_E2E_WT="$E"
+  export NUINUI_SELFTEST_MANIFEST="$MANIFEST"
   export NUINUI_SELFTEST_RESULT_REPO="$CONTEXT"
 }
 
@@ -156,8 +177,8 @@ assert_footer "$already_initialized_output" duplicate-initialization
 setup_case no-op
 initialize_lanes
 BASE=$(git -C "$M" rev-parse origin/main)
-"$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result FREE >/dev/null
-noop_output=$("$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result FREE)
+"$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result 'main=FREE,sub=FREE' >/dev/null
+noop_output=$("$HELPER" begin main SAY-10 "$BASE" sayosomi/say-10-command-result 'main=FREE,sub=FREE')
 assert_contains "$noop_output" 'mutation=no-op' 'exact duplicate did not preserve no-op evidence'
 assert_exact_line "$noop_output" '⭕ result=SUCCESS' 'exact duplicate result was not decorated'
 assert_footer "$noop_output" no-op
@@ -168,9 +189,9 @@ assert_contains "$last_output" 'mutation=no' 'no-op mutation was not classified 
 setup_case blocked-before-mutation
 initialize_lanes
 BASE=$(git -C "$M" rev-parse origin/main)
-"$HELPER" begin main SAY-20 "$BASE" sayosomi/say-20-command-result FREE >/dev/null
+"$HELPER" begin main SAY-20 "$BASE" sayosomi/say-20-command-result 'main=FREE,sub=FREE' >/dev/null
 before_blocked=$(git -C "$M" rev-parse HEAD):$(git -C "$M" status --porcelain):$(git -C "$S" rev-parse HEAD)
-if blocked_output=$("$HELPER" begin main SAY-21 "$BASE" sayosomi/say-21-command-result FREE 2>&1); then
+if blocked_output=$("$HELPER" begin main SAY-21 "$BASE" sayosomi/say-21-command-result 'main=FREE,sub=FREE' 2>&1); then
   printf '%s\n' "$blocked_output"
   fail 'blocked mutation unexpectedly succeeded'
 else
@@ -178,7 +199,7 @@ else
 fi
 [ "$blocked_rc" -ne 0 ] || fail 'blocked mutation returned zero'
 assert_contains "$blocked_output" 'BLOCKED:' 'blocked mutation was not classified'
-assert_exact_line "$blocked_output" '⛔ BLOCKED: begin target lane is not FREE' 'blocked mutation headline was not decorated'
+assert_exact_line "$blocked_output" '⛔ BLOCKED: target occupancy does not prove requested duplicate or FREE state' 'blocked mutation headline was not decorated'
 assert_footer "$blocked_output" blocked-before-mutation
 assert_exact_line "$blocked_output" '⛔ result=BLOCKED' 'blocked footer result is not decorated'
 assert_contains "$blocked_output" 'mutation=no' 'blocked footer mutation is wrong'
@@ -283,13 +304,13 @@ expect_invalid unsafe-output
 setup_case superseded
 initialize_lanes
 BASE=$(git -C "$M" rev-parse origin/main)
-first_output=$("$HELPER" begin main SAY-40 "$BASE" sayosomi/say-40-command-result-a FREE)
+first_output=$("$HELPER" begin main SAY-40 "$BASE" sayosomi/say-40-command-result-a 'main=FREE,sub=FREE')
 first_operation=$(printf '%s\n' "$first_output" | sed -n 's/^operation_id=//p')
 first_claim=$(printf '%s\n' "$first_output" | sed -n 's/^claim=//p')
 [ -n "$first_claim" ] || fail 'first same-lane generation did not expose its claim'
 git -C "$M" push -qu origin HEAD
 "$HELPER" release main "$BASE" "$first_claim" >/dev/null
-second_output=$("$HELPER" begin main SAY-41 "$BASE" sayosomi/say-41-command-result-b FREE)
+second_output=$("$HELPER" begin main SAY-41 "$BASE" sayosomi/say-41-command-result-b 'main=FREE,sub=FREE')
 second_operation=$(printf '%s\n' "$second_output" | sed -n 's/^operation_id=//p')
 [ -n "$first_operation" ] && [ -n "$second_operation" ] || fail 'operation identities were not emitted'
 [ "$first_operation" != "$second_operation" ] || fail 'operation identity was reused'

@@ -14,8 +14,8 @@ nuinui_command_result_repo() {
       printf '%s\n' "$NUINUI_SELFTEST_RESULT_REPO"
       return 0
     fi
-    [ -n "${M:-}" ] || return 1
-    nuinui_command_result_selftest_parent=$(CDPATH= cd -- "$(dirname -- "$M")" 2>/dev/null && pwd -P) || return 1
+    [ -n "${C:-}" ] || return 1
+    nuinui_command_result_selftest_parent=$(CDPATH= cd -- "$(dirname -- "$C")" 2>/dev/null && pwd -P) || return 1
     printf '%s/nuinui-selftest-dev-context\n' "$nuinui_command_result_selftest_parent"
     return 0
   fi
@@ -149,12 +149,19 @@ nuinui_command_result_request_metadata() {
       nuinui_command_result_meta_claim=$4
       ;;
     e2e-start|e2e-start-local-main|e2e-release)
-      nuinui_command_result_meta_lane=e2e
-      nuinui_command_result_meta_issue=$2
+      nuinui_command_result_meta_lane=${NUINUI_COMMAND_RESULT_LANE:--}
+      if [ "$#" = 4 ]; then
+        nuinui_command_result_meta_issue=$3
+      else
+        nuinui_command_result_meta_issue=$2
+      fi
       ;;
     context-sync|context-dev-transition) nuinui_command_result_meta_lane=dev-context ;;
   esac
-  case "$nuinui_command_result_meta_lane" in main|sub|e2e|dev-context) ;; *) nuinui_command_result_meta_lane=- ;; esac
+  case "$nuinui_command_result_meta_lane" in
+    -|dev-context|[A-Za-z0-9._-]*) ;;
+    *) nuinui_command_result_meta_lane=- ;;
+  esac
   nuinui_ownership_valid_issue "$nuinui_command_result_meta_issue" || nuinui_command_result_meta_issue=-
   nuinui_ownership_valid_claim "$nuinui_command_result_meta_claim" || nuinui_command_result_meta_claim=-
 }
@@ -184,7 +191,7 @@ nuinui_command_result_state_valid() {
       if (values["command"] !~ /^(lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition)$/) invalid=1
       if (values["phase"] !~ /^(STARTED|TERMINAL)$/) invalid=1
       if (values["result"] !~ /^(INCOMPLETE|SUCCESS|BLOCKED|ERROR)$/) invalid=1
-      if (values["lane"] !~ /^(main|sub|e2e|dev-context|-)$/) invalid=1
+      if (values["lane"] !~ /^([A-Za-z0-9._-]+|dev-context|-)$/) invalid=1
       if (values["issue"] !~ /^(SAY-[0-9]+|-)$/) invalid=1
       if (values["claim"] != "-" && values["claim"] !~ /^[0-9A-Za-z][0-9A-Za-z._-]{7,127}$/) invalid=1
       if (values["request_sha256"] !~ /^[0-9a-f]{64}$/) invalid=1
@@ -196,13 +203,13 @@ nuinui_command_result_state_valid() {
       if (values["phase"] == "TERMINAL" && values["result"] == "SUCCESS" && values["exit"] + 0 != 0) invalid=1
       if (values["phase"] == "TERMINAL" && values["result"] ~ /^(BLOCKED|ERROR)$/ && values["exit"] + 0 == 0) invalid=1
       if (values["phase"] == "TERMINAL" && values["result"] == "SUCCESS") {
-        if (values["command"] == "lane-init" && (values["lane"] !~ /^(main|sub)$/ || values["issue"] != "-" || values["claim"] != "-")) invalid=1
-        if (values["command"] ~ /^(begin|start)$/ && (values["lane"] !~ /^(main|sub)$/ || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
-        if (values["command"] == "resume" && (values["lane"] !~ /^(main|sub)$/ || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
-        if (values["command"] ~ /^(release|recover)$/ && (values["lane"] !~ /^(main|sub)$/ || values["issue"] != "-" || values["claim"] == "-")) invalid=1
+        if (values["command"] == "lane-init" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
+        if (values["command"] ~ /^(begin|start)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
+        if (values["command"] == "resume" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
+        if (values["command"] ~ /^(release|recover)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] != "-" || values["claim"] == "-")) invalid=1
         if (values["command"] == "pr-auto-merge" && (values["lane"] != "-" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
-        if (values["command"] == "integrate-clean" && (values["lane"] !~ /^(main|sub)$/ || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
-        if (values["command"] ~ /^(e2e-start|e2e-start-local-main|e2e-release)$/ && (values["lane"] != "e2e" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
+        if (values["command"] == "integrate-clean" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
+        if (values["command"] ~ /^(e2e-start|e2e-start-local-main|e2e-release)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
         if (values["command"] ~ /^(context-sync|context-dev-transition)$/ && (values["lane"] != "dev-context" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
       }
       if (invalid) exit 1
