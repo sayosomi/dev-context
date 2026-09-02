@@ -322,6 +322,39 @@ expect_active_blocked() {
   expect_blocked "$1" "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM"
 }
 
+setup_started SAY-219 codex/SAY-219-resume-pre-mutation
+RESUME_BEFORE=$(lane_snapshot)
+RESUME_REAL_GIT=$(command -v git)
+RESUME_FAKE_GIT_BIN=$ROOT/fake-resume-git
+mkdir -p "$RESUME_FAKE_GIT_BIN"
+{
+  printf '%s\n' '#!/bin/sh' 'case "$3:$4:$5:$6" in' \
+    'ls-remote:--exit-code:--heads:origin)' '  exit 93;;' 'esac'
+  printf 'exec %s "$@"\n' "$RESUME_REAL_GIT"
+} > "$RESUME_FAKE_GIT_BIN/git"
+chmod 755 "$RESUME_FAKE_GIT_BIN/git"
+if RESUME_FAILURE_OUTPUT=$(PATH="$RESUME_FAKE_GIT_BIN:$ORIGINAL_PATH" "$HELPER" \
+  resume impl "$ACTIVE_ISSUE" "$BASE" "$BASE" "$ACTIVE_BRANCH" "$ACTIVE_CLAIM" 2>&1); then
+  printf '%s\n' "$RESUME_FAILURE_OUTPUT"
+  fail 'resume pre-mutation failure unexpectedly succeeded'
+fi
+assert_contains "$RESUME_FAILURE_OUTPUT" 'command=resume' \
+  'resume pre-mutation failure did not report the public resume command'
+assert_contains "$RESUME_FAILURE_OUTPUT" 'result=ERROR' \
+  'resume pre-mutation failure did not fail through the public error envelope'
+RESUME_AFTER=$(lane_snapshot)
+[ "$RESUME_BEFORE" = "$RESUME_AFTER" ] ||
+  fail 'resume pre-mutation failure changed generation or durable state'
+[ ! -e "$(lock_dir)" ] || fail 'resume pre-mutation failure retained mutation lock'
+RESUME_SUCCESS_OUTPUT=$("$HELPER" resume impl "$ACTIVE_ISSUE" "$BASE" "$BASE" \
+  "$ACTIVE_BRANCH" "$ACTIVE_CLAIM") || {
+  printf '%s\n' "$RESUME_SUCCESS_OUTPUT"
+  fail 'resume did not remain valid after pre-mutation failure'
+}
+assert_contains "$RESUME_SUCCESS_OUTPUT" 'IMPLEMENTATION RESUMED' \
+  'resume after pre-mutation failure did not prove active generation'
+echo 'PASS: resume pre-mutation failure releases lock without changing generation'
+
 assert_release_success() {
   success_output=$("$HELPER" release impl "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM") || {
     printf '%s\n' "$success_output"
