@@ -47,12 +47,25 @@ Human action待ちになる場合:
 
 Linear `In Progress`は「開始予定」ではなくactual implementation laneでexecution開始済みを表す。
 
-Human terminal handoffでcanonical `nuinui begin`またはexplicit low-level `nuinui start` / `nuinui resume`を使う場合:
+Human terminal handoffでnamed-argument `nuinui begin-command`、helper-generated canonical `nuinui begin`、またはexplicit low-level `nuinui start` / `nuinui resume`を使う場合:
 
-1. fresh remote / Linear current implementation `In Progress`集合をIssue identity単位で照合し、target FREE declared implementation lane、Base、branch、complete inventory expectationを決める。
-2. known-Issueの通常startupでは別Human `preflight`を要求せず、`begin`を1つ提示する。
-3. `begin`のfull local auditとsuccessful `IMPLEMENTATION STARTED` envelopeが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で`In Progress`へ変更する。低レベル`start`を使う場合も、そのlocal envelopeを確認する。
-4. 同じcontinuationで`Implementation checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従いread-backする。
+1. fresh remote / Linear current implementation `In Progress`集合をIssue identity単位で照合し、target FREE declared implementation lane、caller-supplied Base、branchを決める。
+2. Humanがnamed `begin-command`を同じterminalで実行する。helperはfresh full preflight、canonical declaration-order inventory、target FREE、existing read-only verifyを行い、exact positional `begin` lineを生成する。
+3. Humanは`BEGIN COMMAND READY`の後に出力されたlineをChatGPTへ戻さず、同じterminalでverbatimに実行する。argumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ戻さない。
+4. 既存`begin`のfull local audit、mutation-time revalidation、successful `IMPLEMENTATION STARTED` envelopeが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で`In Progress`へ変更する。低レベル`start`を使う場合も、そのlocal envelopeを確認する。
+5. 同じcontinuationで`Implementation checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従いread-backする。
+
+このflowは次のconceptual sequenceであり、通常startupにunconditionalなChatGPT/Human round-tripを追加しない。
+
+```text
+ChatGPT selects Work, lane, Base, and branch
+-> Human runs named-argument begin-command handoff
+-> helper performs read-only fresh preflight and emits canonical existing begin command
+-> Human executes the emitted line verbatim in the same terminal without returning to ChatGPT first
+-> existing begin performs normal mutation-time revalidation
+-> IMPLEMENTATION STARTED
+-> normal checkpoint / continuation
+```
 
 If a Human reports terminal disappearance or lost output after `begin`, `start`, `resume`, `release`, `integrate-clean`, or another tracked mutation, request the single exact command `nuinui last-result` rather than asking for the mutation again. If it returns `recovery=READY` with the expected command and identity and `result=SUCCESS`, continue directly from the recovered checkpoint into the normal fresh remote / blocking-review / PR workflow. If `result=BLOCKED` or `result=ERROR`, continue from that exact terminal state. If recovery is `NONE`, `INVALID`, or `INCOMPLETE`, or the identity does not match the intended handoff, use the existing diagnostic/preflight routing. Do not demand duplicate state paste merely because stdout was lost.
 

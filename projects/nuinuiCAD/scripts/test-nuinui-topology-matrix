@@ -106,13 +106,39 @@ run_topology() {
     2) inventory="build=FREE,compile=FREE"; expected_inventory="build=FREE,compile=$issue" ;;
     3) inventory="build=FREE,compile=FREE,review=FREE"; expected_inventory="build=FREE,compile=FREE,review=$issue" ;;
   esac
-  begin_output=$("$matrix_helper" begin "$selected" "$issue" "$matrix_base" "$begin_branch" "$inventory") || fail "$matrix_name begin"
+
+  if [ "$matrix_name" = two-plus-two ]; then
+    busy_output=$("$matrix_helper" start build "$issue" "$matrix_base" \
+      codex/SAY-104-busy) || fail "$matrix_name mixed inventory setup"
+    busy_claim=$(printf '%s\n' "$busy_output" | sed -n 's/^claim=//p')
+    [ -n "$busy_claim" ] || fail "$matrix_name mixed inventory claim"
+    inventory="build=$issue,compile=FREE"
+    expected_inventory="build=$issue,compile=$issue"
+  fi
+
+  begin_command_output=$("$matrix_helper" begin-command \
+    --branch "$begin_branch" --base "$matrix_base" --lane "$selected" \
+    --issue "$issue") || fail "$matrix_name begin-command generation"
+  contains "$begin_command_output" 'BEGIN COMMAND READY' \
+    "$matrix_name begin-command envelope"
+  begin_command=$(printf '%s\n' "$begin_command_output" |
+    sed -n '/^BEGIN COMMAND READY$/{n;p;}')
+  [ -n "$begin_command" ] || fail "$matrix_name begin-command executable line"
+  contains "$begin_command" "'$inventory'" \
+    "$matrix_name begin-command canonical declaration-order inventory"
+  begin_output=$(sh -c "$begin_command") || fail "$matrix_name generated begin execution"
   contains "$begin_output" 'IMPLEMENTATION STARTED' "$matrix_name begin routing"
   contains "$begin_output" "implementation_inventory=$expected_inventory" "$matrix_name complete inventory"
   claim=$(printf '%s\n' "$begin_output" | sed -n 's/^claim=//p')
   [ -n "$claim" ] || fail "$matrix_name begin claim"
   release_output=$("$matrix_helper" release "$selected" "$matrix_base" "$claim") || fail "$matrix_name begin release"
   contains "$release_output" 'IMPLEMENTATION RELEASED' "$matrix_name release routing"
+  if [ "$matrix_name" = two-plus-two ]; then
+    busy_release_output=$("$matrix_helper" release build "$matrix_base" "$busy_claim") ||
+      fail "$matrix_name mixed inventory release"
+    contains "$busy_release_output" 'IMPLEMENTATION RELEASED' \
+      "$matrix_name mixed inventory release routing"
+  fi
 
   start_output=$("$matrix_helper" start "$selected" "$issue" "$matrix_base" "$begin_branch") || fail "$matrix_name start"
   start_claim=$(printf '%s\n' "$start_output" | sed -n 's/^claim=//p')
