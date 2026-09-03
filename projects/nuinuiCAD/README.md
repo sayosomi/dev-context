@@ -40,11 +40,12 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | shared CI incident / declared-lane reproduction | [Shared CI incident escalation](./CI-INCIDENTS.md) |
 | Manual E2E Judgment / Human Executor / PASS-FAIL-BLOCKED | [Manual E2E execution rules](./MANUAL-E2E.md) |
 | VS Code isolated Manual E2E host | [VS Code Manual E2E environment](./VS-CODE-E2E.md) |
+| VS Code locale-specific / translated-UI Manual E2E | [VS Code locale Manual E2E](./VS-CODE-E2E-LOCALE.md) — **load only when display-language / locale-specific verification is required** |
 | Luna Manual E2E prompt / evidence / pitfalls | [Luna Manual E2E playbook](./LUNA-E2E-PLAYBOOK.md) — **Inactive; do not load/use unless Human explicitly reactivates Luna E2E** |
 | implementation contract judgment | [Implementation contract decision rule](./CONTRACT-DECISIONS.md) |
 | user-facing command contract | [Command contract policy](./COMMAND-CONTRACTS.md) |
 | explicit contract re-audit | [Contract re-audit policy](./CONTRACT-REAUDIT.md) |
-| Linear Free plan capacity | [Linear free-plan capacity policy](./LINEAR-CAPACITY.md) |
+| Linear Free plan capacity | [Linear Free plan capacity policy](./LINEAR-CAPACITY.md) |
 | GitHub Issues public mirror | [GitHub Issues sync](./GITHUB-ISSUES-SYNC.md) |
 | legacy Notion | [Legacy Notion archive](./NOTION-LEGACY.md) |
 
@@ -118,7 +119,7 @@ implementation lanesは互いの途中変更を取り込まない。
 8. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`。
 9. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`。詳細は`LINEAR.md`のroutingに従う。
 10. **PR create / review / merge / Auto-merge / PR authorization judgment:** [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)。
-11. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`。VS Code hostなら`VS-CODE-E2E.md`。Manual E2E executorはHuman固定。`LUNA-E2E-PLAYBOOK.md`はInactiveで、HumanがLuna E2Eの再有効化を明示的に検討・指示した場合だけ読む。
+11. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`。VS Code hostなら`VS-CODE-E2E.md`。**display-language / locale-specific verificationが必要な場合だけ**`VS-CODE-E2E-LOCALE.md`を追加で読む。Manual E2E executorはHuman固定。`LUNA-E2E-PLAYBOOK.md`はInactiveで、HumanがLuna E2Eの再有効化を明示的に検討・指示した場合だけ読む。
 12. **Shared CI incident suspicion / local reproduction:** strong signalがある場合だけ`CI-INCIDENTS.md`。reproductionにもFREEなdeclared implementation laneだけを使う。
 13. **User-facing command追加・surface変更:** `COMMAND-CONTRACTS.md`。
 14. **Legacy履歴または移行中例外:** 必要なときだけ`NOTION-LEGACY.md`。
