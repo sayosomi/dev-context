@@ -380,7 +380,7 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.4.0`。
+current Human E2E preparation helper version: `1.4.2`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
