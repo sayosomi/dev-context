@@ -146,5 +146,5 @@ test_generator() {
 
 test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.8.1
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.1.1
-test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.5.2
+test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.5.3
 echo 'GENERATION PASS'
