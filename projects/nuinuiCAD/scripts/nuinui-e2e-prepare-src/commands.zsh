@@ -59,7 +59,7 @@ prepare_duplicate() {
   assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 1 || return 1
   assert_cdp_reachable "$SESSION_CDP_PORT" || { echo "BLOCKED: recorded CDP host is unreachable"; return 1; }
   if [[ "$locale" == ja ]]; then
-    inspect_japanese_effective_locale "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || {
+    wait_for_japanese_effective_locale "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || {
       echo "BLOCKED: Japanese locale host/environment readiness could not be proven"
       echo "  requested_locale=ja"
       echo "  effective_locale=${EFFECTIVE_LOCALE:-unknown}"
@@ -170,10 +170,10 @@ prepare() {
         cleanup_failed_prepare 1
         return 1
       }
-    wait_for_japanese_language_pack_state "$e2e_root" || {
+    wait_for_japanese_extension_installation "$e2e_root" "$code_bin" || {
       report_locale_failure \
-        'locale host/environment preparation failed before launch (Japanese language-pack state was not ready)' \
-        "${JAPANESE_LANGUAGE_PACK_STATE_ERROR:-unknown}"
+        'locale host/environment preparation failed before launch (Japanese extension installation was not proven)' \
+        "${JAPANESE_EXTENSION_INSTALLATION_ERROR:-unknown}"
       cleanup_failed_prepare 1
       return 1
     }
@@ -247,7 +247,14 @@ EOF
     return 1
   fi
 
-  if [[ "$locale" == ja ]] && ! inspect_japanese_effective_locale "$e2e_root" "$vscode_pid"; then
+  if [[ "$locale" == ja ]] && ! wait_for_japanese_effective_locale "$e2e_root" "$vscode_pid"; then
+    if ! wait_for_japanese_language_pack_state "$e2e_root"; then
+      report_locale_failure \
+        'locale host/environment preparation failed (post-first-launch Japanese language-pack cache was not ready)' \
+        "${JAPANESE_LANGUAGE_PACK_STATE_ERROR:-unknown}"
+      cleanup_failed_prepare 1
+      return 1
+    fi
     if (( relaunch_count == 0 )); then
       stop_owned_processes "$e2e_root" "$vscode_pid" || {
         report_locale_failure \
@@ -259,7 +266,7 @@ EOF
       relaunch_count=1
       launch_host
       wait_for_host
-      if [[ "$ready" == 1 ]] && inspect_japanese_effective_locale "$e2e_root" "$vscode_pid"; then
+      if [[ "$ready" == 1 ]] && wait_for_japanese_effective_locale "$e2e_root" "$vscode_pid"; then
         :
       else
         if [[ "$ready" == 1 ]]; then

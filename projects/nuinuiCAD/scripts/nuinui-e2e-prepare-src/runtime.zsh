@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.5.1"
+VERSION="1.5.2"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -228,6 +228,66 @@ nls_config_value() {
   print -r -- "$nls_config" | plutil -extract "$key" raw -o - - 2>/dev/null
 }
 
+japanese_readiness_attempts() {
+  local timeout="$JAPANESE_LANGUAGE_PACK_READY_TIMEOUT"
+  [[ "$timeout" =~ '^[1-9][0-9]*$' ]] || timeout=30
+  if (( timeout > 30 )); then
+    timeout=30
+  fi
+  print -r -- "$(( timeout * 2 ))"
+}
+
+validate_japanese_extension_installation() {
+  local root="$1" code_bin="$2" listing listing_status=0 extension_line evidence="$root/evidence/japanese-extension-list.txt"
+  JAPANESE_EXTENSION_INSTALLATION_ERROR=''
+  : > "$evidence" || {
+    JAPANESE_EXTENSION_INSTALLATION_ERROR='could not create isolated extension-list evidence'
+    return 1
+  }
+  listing="$("$code_bin" \
+    --user-data-dir="$root/user-data" \
+    --extensions-dir="$root/extensions" \
+    --list-extensions \
+    --show-versions 2>/dev/null)" || listing_status=$?
+  if (( listing_status != 0 )); then
+    JAPANESE_EXTENSION_INSTALLATION_ERROR='isolated VS Code CLI extension listing failed'
+    return 1
+  fi
+  extension_line="$(print -r -- "$listing" | awk '
+    {
+      line=$0
+      sub(/^[[:space:]]+/, "", line)
+      lower=tolower(line)
+      if (lower ~ /^ms-ceintl[.]vscode-language-pack-ja(@|[[:space:]]|$)/) {
+        print line
+        found=1
+        exit
+      }
+    }
+    END { if (!found) exit 1 }
+  ')" || true
+  if [[ -n "$extension_line" ]]; then
+    print -r -- "$extension_line" > "$evidence"
+    return 0
+  fi
+  JAPANESE_EXTENSION_INSTALLATION_ERROR="isolated VS Code CLI did not list $JAPANESE_LANGUAGE_PACK"
+  return 1
+}
+
+wait_for_japanese_extension_installation() {
+  local root="$1" code_bin="$2" attempts attempt
+  attempts="$(japanese_readiness_attempts)" || return 1
+  for attempt in $(seq 1 "$attempts"); do
+    if validate_japanese_extension_installation "$root" "$code_bin"; then
+      return 0
+    fi
+    if (( attempt < attempts )); then
+      sleep 0.5
+    fi
+  done
+  return 1
+}
+
 inspect_japanese_effective_locale() {
   local root="$1" launch_pid="$2" pid command_line nls_config user_locale resolved_locale
   local language_pack_hash language_pack_id language_pack_support translations_config translations_config_real messages_file messages_real user_data_real
@@ -256,7 +316,11 @@ inspect_japanese_effective_locale() {
     resolved_locale="$(nls_config_value "$nls_config" resolvedLanguage || true)"
     [[ -n "$resolved_locale" ]] && EFFECTIVE_LOCALE="$resolved_locale"
     if [[ "$user_locale" != ja || "$resolved_locale" != ja ]]; then
-      reason="running VS Code host did not resolve Japanese (userLocale=${user_locale:-unknown}, resolvedLanguage=${resolved_locale:-unknown})"
+      reason="running VS Code host did not resolve Japanese (userLocale=$user_locale, resolvedLanguage=$resolved_locale)"
+      continue
+    fi
+    if ! validate_japanese_language_pack_state "$root"; then
+      reason="Japanese language-pack cache was not valid ($JAPANESE_LANGUAGE_PACK_STATE_ERROR)"
       continue
     fi
     language_pack_id="$(nls_config_value "$nls_config" _languagePackId || true)"
@@ -282,6 +346,21 @@ inspect_japanese_effective_locale() {
   return 1
 }
 
+wait_for_japanese_effective_locale() {
+  local root="$1" launch_pid="$2" attempts attempt
+  attempts="$(japanese_readiness_attempts)" || return 1
+  for attempt in $(seq 1 "$attempts"); do
+    if inspect_japanese_effective_locale "$root" "$launch_pid"; then
+      return 0
+    fi
+    [[ -n "$EFFECTIVE_LOCALE" ]] && return 1
+    if (( attempt < attempts )); then
+      sleep 0.5
+    fi
+  done
+  return 1
+}
+
 wait_for_cdp() {
   local cdp_port="$1" evidence="$2"
   for _ in $(seq 1 120); do
@@ -296,17 +375,15 @@ wait_for_cdp() {
 }
 
 wait_for_japanese_language_pack_state() {
-  local root="$1" timeout="$JAPANESE_LANGUAGE_PACK_READY_TIMEOUT" attempts
-  [[ "$timeout" =~ '^[1-9][0-9]*$' ]] || timeout=30
-  if (( timeout > 30 )); then
-    timeout=30
-  fi
-  attempts=$(( timeout * 2 ))
-  for _ in $(seq 1 "$attempts"); do
+  local root="$1" attempts attempt
+  attempts="$(japanese_readiness_attempts)" || return 1
+  for attempt in $(seq 1 "$attempts"); do
     if validate_japanese_language_pack_state "$root"; then
       return 0
     fi
-    sleep 0.5
+    if (( attempt < attempts )); then
+      sleep 0.5
+    fi
   done
   return 1
 }
@@ -330,6 +407,10 @@ validate_japanese_language_pack_state() {
   translation="$(plutil -extract ja.translations.vscode raw -expect string -o - "$languagepacks" 2>/dev/null || true)"
   [[ "$translation" == /* ]] || {
     JAPANESE_LANGUAGE_PACK_STATE_ERROR='ja translations.vscode is not an absolute path'
+    return 1
+  }
+  [[ -f "$translation" && ! -L "$translation" ]] || {
+    JAPANESE_LANGUAGE_PACK_STATE_ERROR='ja translations.vscode does not resolve to a regular file'
     return 1
   }
   translation_real="$(resolve_existing_path "$translation" || true)"

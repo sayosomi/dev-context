@@ -380,7 +380,7 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.5.1`。
+current Human E2E preparation helper version: `1.5.2`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
@@ -394,7 +394,7 @@ nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
 
 Explicit lane forms are required when zero or multiple Human-test lanes are declared. Short forms remain compatible only when exactly one Human-test lane exists; persisted sessions carry their exact lane identity for status and cleanup.
 
-末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallし、`VS_CODE_APP/Contents/Info.plist`の`CFBundleExecutable`から解決したapplication executableへ`--locale=ja`を渡す。install後はisolated `languagepacks.json`とJapanese translation fileの状態を検証し、起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/support）まで証明して初めてREADYを返す。最初のfully prepared hostがwrong localeへresolveした場合、helperは同じowned root・fixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.1`のまま変更しない。
+末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.1`のまま変更しない。
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。locale-specific `check`は既存のcheckout / ref / fixture / lane validationに加えて、resolved VS Code CLI、Info.plistの`CFBundleExecutable`、および`Contents/MacOS/<CFBundleExecutable>`のexecutable proofをread-onlyで行う。通常のnon-locale `prepare`は現在のCLI launch pathを維持する。
 
