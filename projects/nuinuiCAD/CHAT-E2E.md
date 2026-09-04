@@ -80,6 +80,14 @@ nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <
 
 この例外経路は、stale session rootに属すると証明できるprocess・handoff・rootだけを停止／削除し、marker Bとcheckout Bを保持したままsessionを除去して、canonical statusをread-backする。成功後はgeneration Bの通常prepareを新しいexact identityで開始する。
 
+prepare ownerが終了して`kind=preparing` reservationだけが残った場合は、markerとcheckoutが同じexact generationであることを確認してから、選択したHuman-test laneを明示し、次を使う。
+
+```text
+nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e-root>
+```
+
+この経路はrecorded prepare PIDがdeadであること、handoff（存在する場合）とroot内の全processのownership、marker/session snapshotの不変性を証明できた場合だけ、stale preparationのprocess・handoff・root・preparing sessionを除去する。live owner、wrong/active/malformed identity、foreignまたはambiguous artifact、concurrent changeは`BLOCKED`であり、markerとcheckoutを変更しない。
+
 ## Loading rule
 
 E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読み、READMEのManual E2E loading ruleに従う。

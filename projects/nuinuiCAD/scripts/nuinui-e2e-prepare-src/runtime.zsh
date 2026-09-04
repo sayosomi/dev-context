@@ -76,6 +76,7 @@ Usage:
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
   nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
   nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>
+  nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e-root>
 
 Closure order:
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
@@ -87,6 +88,8 @@ Every short form requires exactly one declared Human-test lane; a persisted
 session never disambiguates a zero- or multi-lane manifest.
 recover-split always requires its explicit Human-test lane and only repairs an
 exact marker/session split after proving both identities and ownership.
+recover-preparing always requires its explicit Human-test lane and only repairs
+an exact stale kind=preparing session after proving owner exit and ownership.
 
 EOF
 }
