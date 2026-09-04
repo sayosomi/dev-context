@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.5.3"
+VERSION="1.6.0"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -10,9 +10,11 @@ JAPANESE_LANGUAGE_PACK='MS-CEINTL.vscode-language-pack-ja'
 JAPANESE_LANGUAGE_PACK_READY_TIMEOUT="${NUINUI_E2E_JAPANESE_LANGUAGE_PACK_TIMEOUT-30}"
 CURRENT_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid,locale'
 PRE_LOCALE_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
+PREPARING_SESSION_KEYS='kind,lane,issue,ref,root,prepare_owner,prepare_pid'
 LEGACY_SESSION_KEYS='issue,ref,root,handoff,cdp_port,launch_pid'
 CLEANUP_RECEIPT_KEYS='version,issue,ref,root'
 HANDOFF_KEYS='LANE,ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
+PREPARING_SESSION_OWNER='nuinui-e2e-prepare'
 VS_CODE_APP_REAL=''
 VS_CODE_APPLICATION_EXECUTABLE=''
 
@@ -73,6 +75,8 @@ Usage:
   nuinui-e2e-prepare status [<human-test-lane>]
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
   nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
+  nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>
+  nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e-root>
 
 Closure order:
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
@@ -82,6 +86,10 @@ Closure order:
 Exact duplicate prepare/cleanup: no-op; no status/confirmation. Near-match: BLOCKED.
 Every short form requires exactly one declared Human-test lane; a persisted
 session never disambiguates a zero- or multi-lane manifest.
+recover-split always requires its explicit Human-test lane and only repairs an
+exact marker/session split after proving both identities and ownership.
+recover-preparing always requires its explicit Human-test lane and only repairs
+an exact stale kind=preparing session after proving owner exit and ownership.
 
 EOF
 }
@@ -539,15 +547,32 @@ session_kind() {
   local metadata="$1"
   metadata_matches "$metadata" "$CURRENT_SESSION_KEYS" && { echo current; return 0; }
   metadata_matches "$metadata" "$PRE_LOCALE_SESSION_KEYS" && { echo pre-locale; return 0; }
+  metadata_matches "$metadata" "$PREPARING_SESSION_KEYS" && { echo preparing; return 0; }
   metadata_matches "$metadata" "$LEGACY_SESSION_KEYS" && { echo legacy; return 0; }
   return 1
 }
 
 load_session() {
   local metadata="$1"
+  SESSION_LANE=''; SESSION_SOURCE_FIXTURE=''; SESSION_LOCALE=''
+  SESSION_PREPARE_OWNER=''; SESSION_PREPARE_PID=''
+  SESSION_HANDOFF=''; SESSION_CDP_PORT=''; SESSION_LAUNCH_PID=''
   SESSION_KIND="$(session_kind "$metadata")" || return 1
   SESSION_ISSUE="$(metadata_value "$metadata" issue)" || return 1; SESSION_REF="$(metadata_value "$metadata" ref)" || return 1
-  SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1; SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
+  SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1
+  if [[ "$SESSION_KIND" == preparing ]]; then
+    SESSION_LANE="$(metadata_value "$metadata" lane)" || return 1
+    SESSION_PREPARE_OWNER="$(metadata_value "$metadata" prepare_owner)" || return 1
+    SESSION_PREPARE_PID="$(metadata_value "$metadata" prepare_pid)" || return 1
+    [[ "$SESSION_LANE" =~ '^[A-Za-z0-9._-]+$' &&
+      "$SESSION_PREPARE_OWNER" == "$PREPARING_SESSION_OWNER" &&
+      "$SESSION_PREPARE_PID" =~ '^[1-9][0-9]*$' ]] || return 1
+    [[ "$SESSION_ISSUE" =~ '^SAY-[0-9]+$' &&
+      "$SESSION_REF" =~ '^[0-9a-fA-F]{40}$' ]] || return 1
+    assert_session_root "$SESSION_ROOT" || return 1
+    return 0
+  fi
+  SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
   SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
   if [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]]; then
     SESSION_LANE="$(metadata_value "$metadata" lane)" || return 1

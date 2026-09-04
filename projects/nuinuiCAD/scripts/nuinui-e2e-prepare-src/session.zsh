@@ -25,6 +25,116 @@ ensure_dependencies() {
   echo "DEPENDENCIES: READY"
 }
 
+write_preparing_session() {
+  local lane="$1"
+  local issue="$2"
+  local tested_ref="$3"
+  local root="$4"
+  local prepare_pid="$5"
+  local session=""
+  local temporary=""
+
+  session="$(session_path)" || return 1
+  [[ ! -e "$session" && ! -L "$session" ]] || {
+    echo "BLOCKED: E2E session metadata already exists"
+    echo "SESSION: $session"
+    return 1
+  }
+  [[ "$lane" =~ '^[A-Za-z0-9._-]+$' && "$issue" =~ '^SAY-[0-9]+$' &&
+    "$tested_ref" =~ '^[0-9a-fA-F]{40}$' &&
+    "$prepare_pid" =~ '^[1-9][0-9]*$' ]] || return 1
+  assert_session_root "$root" || return 1
+
+  temporary="$(mktemp "${session}.XXXXXX")" || {
+    echo "ERROR: could not create preparing E2E session metadata"
+    return 1
+  }
+  if ! {
+    printf 'kind=preparing\n'
+    printf 'lane=%s\n' "$lane"
+    printf 'issue=%s\n' "$issue"
+    printf 'ref=%s\n' "$tested_ref"
+    printf 'root=%s\n' "$root"
+    printf 'prepare_owner=%s\n' "$PREPARING_SESSION_OWNER"
+    printf 'prepare_pid=%s\n' "$prepare_pid"
+  } > "$temporary"; then
+    rm -f -- "$temporary"
+    echo "ERROR: could not write preparing E2E session metadata"
+    return 1
+  fi
+  if ! ln "$temporary" "$session"; then
+    rm -f -- "$temporary"
+    echo "BLOCKED: E2E session metadata appeared during preparation reservation"
+    return 1
+  fi
+  rm -f -- "$temporary"
+}
+
+write_current_session_metadata() {
+  local temporary="$1"
+  local lane="$2"
+  local issue="$3"
+  local tested_ref="$4"
+  local source_fixture="$5"
+  local root="$6"
+  local handoff="$7"
+  local cdp_port="$8"
+  local launch_pid="$9"
+  local locale="${10}"
+
+  {
+    printf 'lane=%s\n' "$lane"
+    printf 'issue=%s\n' "$issue"
+    printf 'ref=%s\n' "$tested_ref"
+    printf 'source_fixture=%s\n' "$source_fixture"
+    printf 'root=%s\n' "$root"
+    printf 'handoff=%s\n' "$handoff"
+    printf 'cdp_port=%s\n' "$cdp_port"
+    printf 'launch_pid=%s\n' "$launch_pid"
+    printf 'locale=%s\n' "$locale"
+  } > "$temporary"
+}
+
+write_handoff_file() {
+  local handoff="$1"
+  local lane="$2"
+  local issue="$3"
+  local tested_ref="$4"
+  local checkout="$5"
+  local root="$6"
+  local prepared_fixture="$7"
+  local cdp_port="$8"
+  local rust_bin="$9"
+  local temporary=""
+
+  assert_session_handoff "$issue" "$handoff" || return 1
+  assert_session_root "$root" || return 1
+  [[ "$lane" == "$E2E_LANE" && -f "$prepared_fixture" && ! -L "$prepared_fixture" ]] || return 1
+  temporary="$(mktemp "${handoff}.XXXXXX")" || {
+    echo "ERROR: could not create E2E handoff metadata"
+    return 1
+  }
+  if ! {
+    printf "LANE='%s'\n" "$lane"
+    printf "ISSUE='%s'\n" "$issue"
+    printf "TESTED_REF='%s'\n" "$tested_ref"
+    printf "CHECKOUT='%s'\n" "$checkout"
+    printf "E2E_ROOT='%s'\n" "$root"
+    printf "FIXTURE='%s'\n" "$prepared_fixture"
+    printf "CDP_PORT='%s'\n" "$cdp_port"
+    printf "RUST_BIN='%s'\n" "$rust_bin"
+  } > "$temporary"; then
+    rm -f -- "$temporary"
+    echo "ERROR: could not write E2E handoff metadata"
+    return 1
+  fi
+  mv -- "$temporary" "$handoff" || {
+    rm -f -- "$temporary"
+    echo "ERROR: could not publish E2E handoff metadata"
+    return 1
+  }
+}
+
 write_session() {
   local lane="$1"
   local issue="$2"
@@ -55,17 +165,8 @@ write_session() {
     echo "ERROR: could not create E2E session metadata"
     return 1
   }
-  if ! {
-    printf 'lane=%s\n' "$lane"
-    printf 'issue=%s\n' "$issue"
-    printf 'ref=%s\n' "$tested_ref"
-    printf 'source_fixture=%s\n' "$source_fixture"
-    printf 'root=%s\n' "$root"
-    printf 'handoff=%s\n' "$handoff"
-    printf 'cdp_port=%s\n' "$cdp_port"
-    printf 'launch_pid=%s\n' "$launch_pid"
-    printf 'locale=%s\n' "$locale"
-  } > "$temporary"; then
+  if ! write_current_session_metadata "$temporary" "$lane" "$issue" "$tested_ref" \
+    "$source_fixture" "$root" "$handoff" "$cdp_port" "$launch_pid" "$locale"; then
     rm -f -- "$temporary"
     echo "ERROR: could not write E2E session metadata"
     return 1
@@ -77,9 +178,153 @@ write_session() {
   }
 }
 
+assert_preparing_session_snapshot() {
+  local expected_snapshot="$1"
+  local lane="$2"
+  local issue="$3"
+  local tested_ref="$4"
+  local root="$5"
+  local session="" actual_snapshot=""
+
+  session="$(session_path)" || return 1
+  [[ -n "$expected_snapshot" && -f "$session" && ! -L "$session" ]] || {
+    echo "BLOCKED: preparing E2E session is missing or not a regular file"
+    return 1
+  }
+  actual_snapshot="$(cat "$session"; printf '\001')" || return 1
+  [[ "$actual_snapshot" == "$expected_snapshot" ]] || {
+    echo "BLOCKED: preparing E2E session changed before owned cleanup"
+    return 1
+  }
+  load_session "$session" || {
+    echo "BLOCKED: preparing E2E session became invalid before owned cleanup"
+    return 1
+  }
+  [[ "$SESSION_KIND" == preparing &&
+    "$SESSION_LANE" == "$lane" && "$SESSION_ISSUE" == "$issue" &&
+    "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$root" &&
+    "$SESSION_PREPARE_OWNER" == "$PREPARING_SESSION_OWNER" ]] || {
+    echo "BLOCKED: preparing E2E session identity or ownership mismatch during cleanup"
+    return 1
+  }
+}
+
+remove_owned_preparing_session() {
+  local expected_snapshot="$1"
+  local lane="$2"
+  local issue="$3"
+  local tested_ref="$4"
+  local root="$5"
+  assert_preparing_session_snapshot "$expected_snapshot" "$lane" "$issue" "$tested_ref" "$root" || return 1
+  [[ "$SESSION_PREPARE_PID" == "$$" ]] || {
+    echo "BLOCKED: preparing E2E session ownership mismatch during cleanup"
+    return 1
+  }
+  local session="$(session_path)" || return 1
+  rm -- "$session" || {
+    echo "ERROR: could not remove preparing E2E session metadata"
+    return 1
+  }
+}
+
+remove_stale_preparing_session() {
+  local expected_snapshot="$1"
+  local lane="$2"
+  local issue="$3"
+  local tested_ref="$4"
+  local root="$5"
+  local session=""
+
+  assert_preparing_session_snapshot "$expected_snapshot" "$lane" "$issue" "$tested_ref" "$root" || return 1
+  session="$(session_path)" || return 1
+  if kill -0 "$SESSION_PREPARE_PID" >/dev/null 2>&1; then
+    echo "BLOCKED: recorded preparing owner PID is still running"
+    echo "  prepare_pid=$SESSION_PREPARE_PID"
+    return 1
+  fi
+  rm -- "$session" || {
+    echo "ERROR: could not remove stale preparing E2E session metadata"
+    return 1
+  }
+}
+
+replace_preparing_session() {
+  local lane="$1"
+  local issue="$2"
+  local tested_ref="$3"
+  local source_fixture="$4"
+  local root="$5"
+  local handoff="$6"
+  local cdp_port="$7"
+  local launch_pid="$8"
+  local locale="$9"
+  local expected_snapshot="${10}"
+  local session="" actual_snapshot="" temporary=""
+
+  session="$(session_path)" || return 1
+  [[ -n "$expected_snapshot" && -f "$session" && ! -L "$session" ]] || {
+    echo "BLOCKED: preparing E2E session is missing before active publication"
+    return 1
+  }
+  actual_snapshot="$(cat "$session"; printf '\001')" || return 1
+  [[ "$actual_snapshot" == "$expected_snapshot" ]] || {
+    echo "BLOCKED: preparing E2E session changed before active publication"
+    return 1
+  }
+  load_session "$session" || {
+    echo "BLOCKED: preparing E2E session is invalid before active publication"
+    return 1
+  }
+  [[ "$SESSION_KIND" == preparing && "$SESSION_LANE" == "$lane" &&
+    "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
+    "$SESSION_ROOT" == "$root" &&
+    "$SESSION_PREPARE_OWNER" == "$PREPARING_SESSION_OWNER" &&
+    "$SESSION_PREPARE_PID" == "$$" ]] || {
+    echo "BLOCKED: preparing E2E session identity or ownership mismatch before active publication"
+    return 1
+  }
+  assert_session_root "$root" || return 1
+  assert_session_handoff "$issue" "$handoff" || return 1
+  assert_handoff_file "$handoff" "$issue" "$tested_ref" "$root" "$cdp_port" "$source_fixture" || {
+    echo "BLOCKED: E2E handoff is invalid before active publication"
+    return 1
+  }
+  [[ -n "$source_fixture" ]] || return 1
+  assert_port "$cdp_port" || return 1
+  [[ "$launch_pid" =~ '^[1-9][0-9]*$' ]] || return 1
+  assert_locale "$locale" || return 1
+  assert_process_ownership "$root" "$launch_pid" 1 || return 1
+
+  temporary="$(mktemp "${session}.XXXXXX")" || {
+    echo "ERROR: could not create active E2E session metadata"
+    return 1
+  }
+  if ! write_current_session_metadata "$temporary" "$lane" "$issue" "$tested_ref" \
+    "$source_fixture" "$root" "$handoff" "$cdp_port" "$launch_pid" "$locale"; then
+    rm -f -- "$temporary"
+    echo "ERROR: could not write active E2E session metadata"
+    return 1
+  fi
+  actual_snapshot="$(cat "$session"; printf '\001')" || {
+    rm -f -- "$temporary"
+    echo "BLOCKED: preparing E2E session could not be revalidated before active publication"
+    return 1
+  }
+  [[ "$actual_snapshot" == "$expected_snapshot" ]] || {
+    rm -f -- "$temporary"
+    echo "BLOCKED: preparing E2E session changed before active publication"
+    return 1
+  }
+  mv "$temporary" "$session" || {
+    rm -f -- "$temporary"
+    echo "ERROR: could not publish active E2E session metadata"
+    return 1
+  }
+}
+
 status() {
   setopt local_options null_glob
-  local repo="$E2E_WT" session marker head branch dirty issue tested_ref source_fixture root handoff launch_pid command_line candidate
+  local repo="$E2E_WT" session marker head branch dirty issue tested_ref source_fixture root handoff launch_pid prepare_pid command_line candidate
   local result=0 session_valid=0
   local -a root_candidates handoff_candidates
   [[ -d "$repo" ]] && git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "BLOCKED: e2e checkout is unavailable"; return 1; }
@@ -108,7 +353,31 @@ status() {
   elif [[ -f "$session" && ! -L "$session" ]] && load_session "$session"; then
     issue="$SESSION_ISSUE"; tested_ref="$SESSION_REF"; source_fixture="$SESSION_SOURCE_FIXTURE"
     root="$SESSION_ROOT"; handoff="$SESSION_HANDOFF"; launch_pid="$SESSION_LAUNCH_PID"
-    if [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
+    if [[ "$SESSION_KIND" == preparing ]]; then
+      prepare_pid="$SESSION_PREPARE_PID"
+      if [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
+        assert_session_root "$root" >/dev/null 2>&1; then
+        session_valid=1
+        echo "  session=preparing"
+        echo "  issue=$issue"
+        echo "  ref=$tested_ref"
+        echo "  prepare_owner=$SESSION_PREPARE_OWNER"
+        if kill -0 "$prepare_pid" >/dev/null 2>&1; then
+          echo "  prepare_pid=$prepare_pid (running)"
+        else
+          echo "  prepare_pid=$prepare_pid (not-running)"
+        fi
+        echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"
+        echo '  handoff=not-published'
+        echo '  preparation=in-flight'
+        result=1
+        [[ "$MARKER_ISSUE" == "$issue" && "$MARKER_REF" == "$tested_ref" ]] &&
+          echo '  session_marker=consistent' || { echo '  session_marker=INCONSISTENT'; result=1; }
+      else
+        echo '  session=INVALID'
+        result=1
+      fi
+    elif [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
       assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
       session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
       echo "  locale=$SESSION_LOCALE"

@@ -40,6 +40,16 @@ prepare_duplicate() {
   local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5" locale="$6"
   [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
+  if [[ "$SESSION_KIND" == preparing ]]; then
+    echo "BLOCKED: E2E preparation is already in flight"
+    echo "  lane=$SESSION_LANE"
+    echo "  issue=$SESSION_ISSUE"
+    echo "  ref=$SESSION_REF"
+    echo "  root=$SESSION_ROOT"
+    echo "  prepare_owner=$SESSION_PREPARE_OWNER"
+    echo "  prepare_pid=$SESSION_PREPARE_PID"
+    return 1
+  fi
   [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
   if [[ "$SESSION_KIND" == pre-locale && "$locale" == ja ]]; then
     echo "BLOCKED: pre-locale E2E session cannot qualify for Japanese duplicate prepare"
@@ -92,15 +102,40 @@ prepare() {
   local launch_output="/dev/null"
   local relaunch_count=0
   local launch_bin=""
+  local preparing_session_snapshot=""
+  local preparation_reserved=0
+  local generation_error=""
   local -a launch_args
 
   cleanup_failed_prepare() {
-    local result="$1"
-    if [[ -n "$vscode_pid" ]]; then
-      stop_owned_processes "$e2e_root" "$vscode_pid" >/dev/null 2>&1 || true
+    local result="$1" cleanup_result=0
+    if [[ -n "$e2e_root" ]]; then
+      if [[ -n "$vscode_pid" ]]; then
+        stop_owned_processes "$e2e_root" "$vscode_pid" >/dev/null 2>&1 || cleanup_result=1
+      else
+        assert_process_ownership "$e2e_root" "" 0 >/dev/null 2>&1 || cleanup_result=1
+      fi
+      (( cleanup_result == 0 )) &&
+        assert_no_owned_processes "$e2e_root" >/dev/null 2>&1 || cleanup_result=1
+      if (( cleanup_result == 0 )); then
+        [[ -z "$handoff" || ! -e "$handoff" && ! -L "$handoff" ]] || {
+          rm -f -- "$handoff" || cleanup_result=1
+        }
+      fi
+      if (( cleanup_result == 0 )); then
+        [[ -z "$e2e_root" || ! -e "$e2e_root" && ! -L "$e2e_root" ]] || {
+          rm -rf -- "$e2e_root" || cleanup_result=1
+        }
+      fi
     fi
-    [[ -z "$handoff" || ! -e "$handoff" ]] || rm -f -- "$handoff"
-    [[ -z "$e2e_root" || ! -e "$e2e_root" ]] || rm -rf -- "$e2e_root"
+    if (( preparation_reserved == 1 && cleanup_result == 0 )); then
+      remove_owned_preparing_session "$preparing_session_snapshot" "$E2E_LANE" \
+        "$issue" "$tested_ref" "$e2e_root" || cleanup_result=1
+    fi
+    if (( cleanup_result != 0 )); then
+      echo "BLOCKED: owned E2E prepare cleanup could not be proven complete"
+      return 1
+    fi
     return "$result"
   }
 
@@ -153,6 +188,25 @@ prepare() {
     return 1
   }
   mkdir -p "$e2e_root/user-data/User" "$e2e_root/extensions" "$e2e_root/evidence" || {
+    cleanup_failed_prepare 1
+    return 1
+  }
+
+  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  write_preparing_session "$E2E_LANE" "$issue" "$tested_ref" "$e2e_root" "$$" || {
+    cleanup_failed_prepare 1
+    return 1
+  }
+  preparation_reserved=1
+  preparing_session_snapshot="$(cat "$session"; printf '\001')" || {
+    cleanup_failed_prepare 1
+    return 1
+  }
+  generation_error="$(assert_checkout "$issue" "$tested_ref" 2>&1)" || {
+    printf '%s\n' "$generation_error"
+    echo "BLOCKED: E2E prepare generation drift detected after reservation"
+    echo "  expected_issue=$issue"
+    echo "  expected_ref=$tested_ref"
     cleanup_failed_prepare 1
     return 1
   }
@@ -286,22 +340,28 @@ EOF
     fi
   fi
 
-  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
-  cat > "$handoff" <<EOF
-LANE='$E2E_LANE'
-ISSUE='$issue'
-TESTED_REF='$tested_ref'
-CHECKOUT='$repo'
-E2E_ROOT='$e2e_root'
-FIXTURE='$prepared_fixture'
-CDP_PORT='$cdp_port'
-RUST_BIN='$rust_bin'
-EOF
-
-  write_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" "$locale" || {
+  write_handoff_file "$handoff" "$E2E_LANE" "$issue" "$tested_ref" "$repo" \
+    "$e2e_root" "$prepared_fixture" "$cdp_port" "$rust_bin" || {
     cleanup_failed_prepare 1
     return 1
   }
+
+  generation_error="$(assert_checkout "$issue" "$tested_ref" 2>&1)" || {
+    printf '%s\n' "$generation_error"
+    echo "BLOCKED: E2E prepare generation drift detected before active publication"
+    echo "  expected_issue=$issue"
+    echo "  expected_ref=$tested_ref"
+    cleanup_failed_prepare 1
+    return 1
+  }
+
+  replace_preparing_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" \
+    "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" "$locale" \
+    "$preparing_session_snapshot" || {
+    cleanup_failed_prepare 1
+    return 1
+  }
+  preparation_reserved=0
 
   echo "E2E SETUP READY"
   echo "  lane=$E2E_LANE"
@@ -316,6 +376,376 @@ EOF
   echo "  handoff=$handoff"
   echo "  session=$session"
   echo "READY FOR HUMAN E2E"
+}
+
+recover_split() {
+  local marker_issue="$1"
+  local marker_ref="$2"
+  local session_issue="$3"
+  local session_ref="$4"
+  local requested_root="$5"
+  local session="" marker="" handoff=""
+  local marker_snapshot="" session_snapshot=""
+  local marker_after="" session_after=""
+  local status_output=""
+
+  [[ "$marker_issue" =~ '^SAY-[0-9]+$' && "$session_issue" =~ '^SAY-[0-9]+$' ]] || {
+    echo 'ERROR: marker and session Issues must look like SAY-123'
+    return 2
+  }
+  [[ "$marker_ref" =~ '^[0-9a-fA-F]{40}$' && "$session_ref" =~ '^[0-9a-fA-F]{40}$' ]] || {
+    echo 'ERROR: marker and session refs must be full commit SHAs'
+    return 2
+  }
+  assert_session_root "$requested_root" || {
+    echo 'BLOCKED: split recovery root is invalid'
+    return 1
+  }
+  session="$(session_path)" || { echo 'BLOCKED: cannot resolve E2E session path'; return 1; }
+  marker="$(marker_path)" || { echo 'BLOCKED: cannot resolve E2E marker path'; return 1; }
+
+  [[ -f "$marker" && ! -L "$marker" ]] || {
+    echo 'BLOCKED: split recovery marker is missing or invalid'
+    return 1
+  }
+  assert_marker "$marker" || return 1
+  [[ "$MARKER_ISSUE" == "$marker_issue" && "$MARKER_REF" == "$marker_ref" ]] || {
+    echo 'BLOCKED: split recovery marker identity mismatch'
+    echo "  expected_issue=$marker_issue"
+    echo "  expected_ref=$marker_ref"
+    echo "  actual_issue=$MARKER_ISSUE"
+    echo "  actual_ref=$MARKER_REF"
+    return 1
+  }
+  marker_snapshot="$(cat "$marker"; printf '\001')" || {
+    echo 'BLOCKED: could not snapshot E2E marker'
+    return 1
+  }
+  assert_checkout "$marker_issue" "$marker_ref" >/dev/null || return $?
+
+  [[ -f "$session" && ! -L "$session" ]] || {
+    echo 'BLOCKED: split recovery active session is missing or invalid'
+    return 1
+  }
+  load_session "$session" || {
+    echo 'BLOCKED: split recovery active session metadata is malformed'
+    return 1
+  }
+  session_snapshot="$(cat "$session"; printf '\001')" || {
+    echo 'BLOCKED: could not snapshot E2E session'
+    return 1
+  }
+  [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || {
+    echo 'BLOCKED: split recovery requires a normal active E2E session'
+    return 1
+  }
+  [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$session_issue" &&
+    "$SESSION_REF" == "$session_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+    echo 'BLOCKED: split recovery session identity mismatch'
+    echo "  expected_issue=$session_issue"
+    echo "  expected_ref=$session_ref"
+    echo "  expected_root=$requested_root"
+    echo "  actual_issue=$SESSION_ISSUE"
+    echo "  actual_ref=$SESSION_REF"
+    echo "  actual_root=$SESSION_ROOT"
+    return 1
+  }
+  if [[ "$marker_issue" == "$session_issue" && "$marker_ref" == "$session_ref" ]]; then
+    echo 'BLOCKED: marker and active session are consistent; split recovery is not applicable'
+    return 1
+  fi
+  assert_session_root "$SESSION_ROOT" || {
+    echo 'BLOCKED: split recovery session root is invalid'
+    return 1
+  }
+  handoff="$SESSION_HANDOFF"
+  assert_session_handoff "$SESSION_ISSUE" "$handoff" || {
+    echo 'BLOCKED: split recovery session handoff path is invalid'
+    return 1
+  }
+  assert_handoff_file "$handoff" "$SESSION_ISSUE" "$SESSION_REF" "$SESSION_ROOT" \
+    "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || {
+    echo 'BLOCKED: split recovery session handoff metadata is invalid'
+    return 1
+  }
+  assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 0 || {
+    echo 'BLOCKED: split recovery process ownership could not be proven'
+    return 1
+  }
+
+  revalidate_split_snapshots() {
+    local current_marker="" current_session=""
+    current_marker="$(cat "$marker"; printf '\001')" || return 1
+    current_session="$(cat "$session"; printf '\001')" || return 1
+    [[ "$current_marker" == "$marker_snapshot" && "$current_session" == "$session_snapshot" ]] || {
+      echo 'BLOCKED: marker or active session changed during split recovery'
+      return 1
+    }
+    assert_checkout "$marker_issue" "$marker_ref" >/dev/null || return 1
+  }
+
+  revalidate_split_snapshots || return 1
+  stop_owned_processes "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || {
+    echo 'BLOCKED: split recovery could not stop only owned E2E processes'
+    return 1
+  }
+  assert_no_owned_processes "$SESSION_ROOT" || {
+    echo 'BLOCKED: split recovery found an owned E2E process after stop'
+    return 1
+  }
+  if path_exists "$handoff"; then
+    rm -f -- "$handoff" || {
+      echo 'ERROR: could not remove stale E2E handoff'
+      return 1
+    }
+  fi
+  if path_exists "$requested_root"; then
+    rm -rf -- "$requested_root" || {
+      echo 'ERROR: could not remove stale E2E root'
+      return 1
+    }
+  fi
+  [[ ! -e "$handoff" && ! -L "$handoff" && ! -e "$requested_root" && ! -L "$requested_root" ]] || {
+    echo 'BLOCKED: stale E2E artifacts remain after split recovery cleanup'
+    return 1
+  }
+
+  revalidate_split_snapshots || return 1
+  load_session "$session" || {
+    echo 'BLOCKED: active E2E session changed before split recovery removal'
+    return 1
+  }
+  [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || {
+    echo 'BLOCKED: active E2E session changed before split recovery removal'
+    return 1
+  }
+  [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$session_issue" &&
+    "$SESSION_REF" == "$session_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
+    echo 'BLOCKED: active E2E session identity changed before split recovery removal'
+    return 1
+  }
+  rm -- "$session" || {
+    echo 'ERROR: could not remove stale E2E session metadata'
+    return 1
+  }
+
+  status_output="$(status 2>&1)" || {
+    printf '%s\n' "$status_output"
+    echo 'BLOCKED: split recovery read-back did not prove canonical status'
+    return 1
+  }
+  echo 'E2E SPLIT RECOVERED'
+  echo "  marker_issue=$marker_issue"
+  echo "  marker_ref=$marker_ref"
+  echo "  session_issue=$session_issue"
+  echo "  session_ref=$session_ref"
+  echo "  root=$requested_root"
+  echo '  mutation=yes'
+  echo '  status=canonical'
+  printf '%s\n' "$status_output"
+}
+
+recover_preparing() {
+  local issue="$1"
+  local tested_ref="$2"
+  local requested_root="$3"
+  local session="" marker="" handoff=""
+  local marker_snapshot="" session_snapshot="" handoff_snapshot=""
+  local current_marker="" current_session="" current_handoff=""
+  local handoff_cdp_port="" status_output=""
+
+  [[ "$issue" =~ '^SAY-[0-9]+$' ]] || {
+    echo 'ERROR: Issue must look like SAY-123'
+    return 2
+  }
+  [[ "$tested_ref" =~ '^[0-9a-fA-F]{40}$' ]] || {
+    echo 'ERROR: tested-ref must be a full commit SHA'
+    return 2
+  }
+  assert_session_root "$requested_root" || {
+    echo 'BLOCKED: stale preparing root is invalid'
+    return 1
+  }
+  session="$(session_path)" || { echo 'BLOCKED: cannot resolve E2E session path'; return 1; }
+  marker="$(marker_path)" || { echo 'BLOCKED: cannot resolve E2E marker path'; return 1; }
+
+  [[ -f "$marker" && ! -L "$marker" ]] || {
+    echo 'BLOCKED: E2E marker is missing or invalid'
+    return 1
+  }
+  assert_marker "$marker" || return 1
+  [[ "$MARKER_ISSUE" == "$issue" && "$MARKER_REF" == "$tested_ref" ]] || {
+    echo 'BLOCKED: E2E marker identity mismatch'
+    echo "  expected_issue=$issue"
+    echo "  expected_ref=$tested_ref"
+    echo "  actual_issue=$MARKER_ISSUE"
+    echo "  actual_ref=$MARKER_REF"
+    return 1
+  }
+  marker_snapshot="$(cat "$marker"; printf '\001')" || {
+    echo 'BLOCKED: could not snapshot E2E marker'
+    return 1
+  }
+  assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
+
+  [[ -f "$session" && ! -L "$session" ]] || {
+    echo 'BLOCKED: preparing E2E session is missing or invalid'
+    return 1
+  }
+  load_session "$session" || {
+    echo 'BLOCKED: preparing E2E session metadata is malformed'
+    return 1
+  }
+  [[ "$SESSION_KIND" == preparing ]] || {
+    echo 'BLOCKED: recover-preparing requires a kind=preparing session'
+    return 1
+  }
+  session_snapshot="$(cat "$session"; printf '\001')" || {
+    echo 'BLOCKED: could not snapshot preparing E2E session'
+    return 1
+  }
+  [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" &&
+    "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" &&
+    "$SESSION_PREPARE_OWNER" == "$PREPARING_SESSION_OWNER" ]] || {
+    echo 'BLOCKED: preparing E2E session identity or ownership mismatch'
+    echo "  expected_issue=$issue"
+    echo "  expected_ref=$tested_ref"
+    echo "  expected_root=$requested_root"
+    echo "  actual_issue=$SESSION_ISSUE"
+    echo "  actual_ref=$SESSION_REF"
+    echo "  actual_root=$SESSION_ROOT"
+    return 1
+  }
+  if kill -0 "$SESSION_PREPARE_PID" >/dev/null 2>&1; then
+    echo 'BLOCKED: recorded preparing owner PID is still running'
+    echo "  prepare_pid=$SESSION_PREPARE_PID"
+    return 1
+  fi
+
+  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  if path_exists "$handoff"; then
+    [[ -f "$handoff" && ! -L "$handoff" ]] || {
+      echo 'BLOCKED: canonical E2E handoff is ambiguous'
+      return 1
+    }
+    handoff_cdp_port="$(handoff_value "$handoff" CDP_PORT)" || {
+      echo 'BLOCKED: canonical E2E handoff CDP port is malformed'
+      return 1
+    }
+    assert_port "$handoff_cdp_port" || {
+      echo 'BLOCKED: canonical E2E handoff CDP port is invalid'
+      return 1
+    }
+    assert_handoff_file "$handoff" "$issue" "$tested_ref" "$requested_root" "$handoff_cdp_port" "" || {
+      echo 'BLOCKED: canonical E2E handoff identity or ownership could not be proven'
+      return 1
+    }
+    handoff_snapshot="$(cat "$handoff"; printf '\001')" || {
+      echo 'BLOCKED: could not snapshot E2E handoff'
+      return 1
+    }
+  else
+    handoff_snapshot='__ABSENT__'
+  fi
+  assert_process_ownership "$requested_root" "" 0 || {
+    echo 'BLOCKED: stale preparing process ownership could not be proven'
+    return 1
+  }
+
+  revalidate_preparing_state() {
+    current_marker="$(cat "$marker"; printf '\001')" || return 1
+    current_session="$(cat "$session"; printf '\001')" || return 1
+    [[ "$current_marker" == "$marker_snapshot" &&
+      "$current_session" == "$session_snapshot" ]] || {
+      echo 'BLOCKED: marker or preparing session changed during recovery'
+      return 1
+    }
+    assert_checkout "$issue" "$tested_ref" >/dev/null || return 1
+  }
+
+  revalidate_preparing_handoff() {
+    if [[ "$handoff_snapshot" == '__ABSENT__' ]]; then
+      path_exists "$handoff" && {
+        echo 'BLOCKED: canonical E2E handoff appeared during recovery'
+        return 1
+      }
+      return 0
+    fi
+    [[ -f "$handoff" && ! -L "$handoff" ]] || {
+      echo 'BLOCKED: canonical E2E handoff changed during recovery'
+      return 1
+    }
+    current_handoff="$(cat "$handoff"; printf '\001')" || return 1
+    [[ "$current_handoff" == "$handoff_snapshot" ]] || {
+      echo 'BLOCKED: canonical E2E handoff changed during recovery'
+      return 1
+    }
+    assert_handoff_file "$handoff" "$issue" "$tested_ref" "$requested_root" "$handoff_cdp_port" "" || {
+      echo 'BLOCKED: canonical E2E handoff ownership changed during recovery'
+      return 1
+    }
+  }
+
+  revalidate_preparing_state || return 1
+  revalidate_preparing_handoff || return 1
+  stop_owned_processes "$requested_root" "" || {
+    echo 'BLOCKED: could not stop only stale root-owned E2E processes'
+    return 1
+  }
+  assert_no_owned_processes "$requested_root" || {
+    echo 'BLOCKED: stale root-owned E2E processes remain after stop'
+    return 1
+  }
+  revalidate_preparing_state || return 1
+  revalidate_preparing_handoff || return 1
+
+  if [[ "$handoff_snapshot" != '__ABSENT__' ]]; then
+    rm -f -- "$handoff" || {
+      echo 'ERROR: could not remove stale E2E handoff'
+      return 1
+    }
+  fi
+  if path_exists "$requested_root"; then
+    rm -rf -- "$requested_root" || {
+      echo 'ERROR: could not remove stale E2E root'
+      return 1
+    }
+  fi
+  [[ ! -e "$requested_root" && ! -L "$requested_root" ]] || {
+    echo 'BLOCKED: stale E2E root remains after recovery cleanup'
+    return 1
+  }
+  [[ ! -e "$handoff" && ! -L "$handoff" ]] || {
+    echo 'BLOCKED: stale E2E handoff remains after recovery cleanup'
+    return 1
+  }
+  revalidate_preparing_state || return 1
+  remove_stale_preparing_session "$session_snapshot" "$E2E_LANE" \
+    "$issue" "$tested_ref" "$requested_root" || return 1
+  [[ ! -e "$session" && ! -L "$session" ]] || {
+    echo 'BLOCKED: stale preparing E2E session remains after recovery'
+    return 1
+  }
+  assert_checkout "$issue" "$tested_ref" >/dev/null || {
+    echo 'BLOCKED: marker or checkout changed during recovery read-back'
+    return 1
+  }
+  assert_no_owned_processes "$requested_root" || {
+    echo 'BLOCKED: stale root-owned E2E process remains after recovery read-back'
+    return 1
+  }
+  status_output="$(status 2>&1)" || {
+    printf '%s\n' "$status_output"
+    echo 'BLOCKED: recover-preparing read-back did not prove canonical status'
+    return 1
+  }
+  echo 'E2E PREPARATION RECOVERED'
+  echo "  lane=$E2E_LANE"
+  echo "  issue=$issue"
+  echo "  ref=$tested_ref"
+  echo "  e2e_root=$requested_root"
+  echo '  mutation=yes'
+  printf '%s\n' "$status_output"
 }
 
 case "${1:-}" in
@@ -403,6 +833,16 @@ case "${1:-}" in
     else
       usage; exit 2
     fi
+    ;;
+  recover-split)
+    [[ "$#" -eq 7 ]] || { usage; exit 2; }
+    select_human_lane "$2" || exit $?
+    recover_split "$3" "$4" "$5" "$6" "$7"
+    ;;
+  recover-preparing)
+    [[ "$#" -eq 5 ]] || { usage; exit 2; }
+    select_human_lane "$2" || exit $?
+    recover_preparing "$3" "$4" "$5"
     ;;
   *)
     usage
