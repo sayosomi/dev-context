@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.5.2"
+VERSION="1.5.3"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -191,32 +191,87 @@ process_command_line_owned() {
     "$command_line" == *"$VS_CODE_APP_REAL/Contents/"* ]]
 }
 
+extract_nls_config_object() {
+  awk -v marker='VSCODE_NLS_CONFIG=' '
+    BEGIN {
+      quote = sprintf("%c", 34)
+      backslash = sprintf("%c", 92)
+    }
+    {
+      if (!found) {
+        marker_pos = index($0, marker)
+        if (marker_pos == 0) {
+          next
+        }
+        text = substr($0, marker_pos + length(marker))
+        if (substr(text, 1, 1) != "{") {
+          exit 1
+        }
+        found = 1
+      } else {
+        text = $0
+      }
+      for (i = 1; i <= length(text); i++) {
+        ch = substr(text, i, 1)
+        if (in_string) {
+          result = result ch
+          if (escaped) {
+            escaped = 0
+            continue
+          }
+          if (ch == backslash) {
+            escaped = 1
+            continue
+          }
+          if (ch == quote) {
+            in_string = 0
+          }
+          continue
+        }
+        if (ch == quote) {
+          in_string = 1
+          result = result ch
+          continue
+        }
+        if (ch == "{") {
+          depth++
+          result = result ch
+          continue
+        }
+        if (ch == "}") {
+          if (depth == 0) {
+            exit 1
+          }
+          depth--
+          result = result ch
+          if (depth == 0) {
+            print result
+            done = 1
+            exit 0
+          }
+          continue
+        }
+        result = result ch
+      }
+    }
+    END {
+      if (!done) {
+        exit 1
+      }
+    }
+  '
+}
+
 process_nls_config() {
   local root="$1" pid="$2" command_line process_environment nls_config
   command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
   [[ -n "$command_line" ]] || return 1
   process_command_line_owned "$root" "$command_line" || return 1
   process_environment="$(ps -wwE -p "$pid" -o command= 2>/dev/null || true)"
-  nls_config="$(print -r -- "$process_environment" | awk '{
-    for (i = 1; i <= NF; i++) {
-      if ($i ~ /^VSCODE_NLS_CONFIG=/) {
-        sub(/^VSCODE_NLS_CONFIG=/, "", $i)
-        print $i
-        exit
-      }
-    }
-  }')"
+  nls_config="$(print -r -- "$process_environment" | extract_nls_config_object || true)"
   if [[ -z "$nls_config" ]]; then
     process_environment="$(ps eww -p "$pid" -o command= 2>/dev/null || true)"
-    nls_config="$(print -r -- "$process_environment" | awk '{
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /^VSCODE_NLS_CONFIG=/) {
-          sub(/^VSCODE_NLS_CONFIG=/, "", $i)
-          print $i
-          exit
-        }
-      }
-    }')"
+    nls_config="$(print -r -- "$process_environment" | extract_nls_config_object || true)"
   fi
   [[ -n "$nls_config" ]] || return 1
   print -r -- "$nls_config"

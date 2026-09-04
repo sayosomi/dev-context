@@ -175,6 +175,11 @@ case "${NUINUI_FAKE_LANGUAGE_PACK_STATE:-valid}" in
     ;;
 esac
 delayed_nls=0
+nls_config_json() {
+  local clp_dir="$1"
+  print -r -- '{"userLocale":"ja","resolvedLanguage":"ja","_languagePackId":"fake-hash.ja","_languagePackSupport":true,"defaultMessagesFile":"/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json","escaped":"quote \" and slash \\ with brace } and { still text","_translationsConfigFile":"'"$clp_dir"'/tcf.json","languagePack":{"messagesFile":"'"$clp_dir"'/messages.json"}}'
+}
+clp_dir="$root/user-data/clp/fake hash.ja"
 case "${NUINUI_FAKE_LOCALE_MODE:-ja}" in
   en)
     print -u2 -- 'fake VS Code NLS resolved en'
@@ -182,23 +187,23 @@ case "${NUINUI_FAKE_LOCALE_MODE:-ja}" in
     ;;
   delayed-nls)
     delayed_nls=1
-    nls_config='{"userLocale":"ja","resolvedLanguage":"ja","_languagePackId":"fake-hash.ja","_languagePackSupport":true,"_translationsConfigFile":"'"$root"'/user-data/clp/fake-hash.ja/tcf.json","languagePack":{"messagesFile":"'"$root"'/user-data/clp/fake-hash.ja/messages.json"}}'
+    nls_config="$(nls_config_json "$clp_dir")"
     ;;
   flip)
     if [[ "$launch_count" == 1 ]]; then
       nls_config='{"userLocale":"ja","resolvedLanguage":"en"}'
     else
-      nls_config='{"userLocale":"ja","resolvedLanguage":"ja","_languagePackId":"fake-hash.ja","_languagePackSupport":true,"_translationsConfigFile":"'"$root"'/user-data/clp/fake-hash.ja/tcf.json","languagePack":{"messagesFile":"'"$root"'/user-data/clp/fake-hash.ja/messages.json"}}'
+      nls_config="$(nls_config_json "$clp_dir")"
     fi
     ;;
   *)
-    nls_config='{"userLocale":"ja","resolvedLanguage":"ja","_languagePackId":"fake-hash.ja","_languagePackSupport":true,"_translationsConfigFile":"'"$root"'/user-data/clp/fake-hash.ja/tcf.json","languagePack":{"messagesFile":"'"$root"'/user-data/clp/fake-hash.ja/messages.json"}}'
+    nls_config="$(nls_config_json "$clp_dir")"
     ;;
 esac
 if [[ "${NUINUI_FAKE_LOCALE_MODE:-ja}" != missing-nls ]]; then
-  mkdir -p "$root/user-data/clp/fake-hash.ja"
-  print -r -- '{"messages":{"fake":"Japanese"}}' > "$root/user-data/clp/fake-hash.ja/messages.json"
-  print -r -- '{}' > "$root/user-data/clp/fake-hash.ja/tcf.json"
+  mkdir -p "$clp_dir"
+  print -r -- '{"messages":{"fake":"Japanese"}}' > "$clp_dir/messages.json"
+  print -r -- '{}' > "$clp_dir/tcf.json"
   if [[ "$delayed_nls" == 1 ]]; then
     ( sleep 0.5; print -r -- "$nls_config" > "$root/evidence/fake-vscode-nls-config" ) &
   else
@@ -264,7 +269,7 @@ if [[ "$show_environment" == 1 && -n "$pid" ]]; then
   root_user_data="$(print -r -- "$command_line" | sed -n 's/.*--user-data-dir=\([^ ]*\).*/\1/p')"
   nls_file="${root_user_data:h}/evidence/fake-vscode-nls-config"
   if [[ -n "$command_line" && -f "$nls_file" ]]; then
-    print -r -- "$command_line VSCODE_NLS_CONFIG=$(<"$nls_file")"
+    print -r -- "$command_line VSCODE_NLS_CONFIG=$(<"$nls_file") OTHER_FAKE_ENV=after-nls"
   else
     print -r -- "$command_line"
   fi
@@ -378,7 +383,7 @@ print -r -- "$self_path_invalid_out" | grep -Fq \
   || { print -r -- "$self_path_invalid_out"; fail "invalid standalone helper placement did not fail closed"; }
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.5.2" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.5.3" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
@@ -525,6 +530,12 @@ fi
 if print -r -- "$locale_prepare_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
   fail "Japanese prepare emitted the full process environment"
 fi
+if print -r -- "$locale_prepare_out" | grep -Fq 'OTHER_FAKE_ENV'; then
+  fail "Japanese prepare emitted an environment assignment after VSCODE_NLS_CONFIG"
+fi
+grep -Fq -- 'defaultMessagesFile":"/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json' "$locale_root/evidence/fake-vscode-nls-config" || fail "Japanese fake NLS evidence omitted the spaced defaultMessagesFile"
+grep -Fq -- "$locale_root/user-data/clp/fake hash.ja/tcf.json" "$locale_root/evidence/fake-vscode-nls-config" || fail "Japanese fake NLS evidence omitted the spaced translations path"
+grep -Fq -- 'escaped":"quote \" and slash \\ with brace } and { still text' "$locale_root/evidence/fake-vscode-nls-config" || fail "Japanese fake NLS evidence omitted escaped quote/backslash content"
 locale_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "Japanese status"
 print -r -- "$locale_status_out" | grep -Fq 'session=active' || fail "Japanese status omitted active session"
 print -r -- "$locale_status_out" | grep -Fq 'locale=ja' || fail "Japanese status omitted locale"
@@ -548,6 +559,29 @@ print -r -- "$locale_duplicate_wrong_out" | grep -Fq 'effective_locale=en' \
   || fail "Japanese duplicate failure omitted effective locale"
 if print -r -- "$locale_duplicate_wrong_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
   fail "Japanese duplicate emitted the full process environment"
+fi
+if print -r -- "$locale_duplicate_wrong_out" | grep -Fq 'OTHER_FAKE_ENV'; then
+  fail "Japanese duplicate emitted an environment assignment after VSCODE_NLS_CONFIG"
+fi
+print -r -- "$locale_nls_before" > "$locale_root/evidence/fake-vscode-nls-config"
+print -r -- '{"userLocale":"ja","resolvedLanguage":"ja"' > "$locale_root/evidence/fake-vscode-nls-config"
+if locale_unbalanced_out="$(env "${common_env[@]}" NUINUI_E2E_JAPANESE_LANGUAGE_PACK_TIMEOUT=1 zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja 2>&1)"; then
+  print -r -- "$locale_unbalanced_out"
+  fail "Japanese duplicate accepted unbalanced NLS JSON"
+fi
+print -r -- "$locale_unbalanced_out" | grep -Fq 'effective_locale=unknown' || fail "unbalanced NLS JSON did not fail closed with unknown effective locale"
+if print -r -- "$locale_unbalanced_out" | grep -Fq 'VSCODE_NLS_CONFIG={'; then
+  fail "unbalanced NLS failure emitted the full process environment"
+fi
+print -r -- "$locale_nls_before" > "$locale_root/evidence/fake-vscode-nls-config"
+rm -f -- "$locale_root/evidence/fake-vscode-nls-config"
+if locale_missing_nls_out="$(env "${common_env[@]}" NUINUI_E2E_JAPANESE_LANGUAGE_PACK_TIMEOUT=1 zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja 2>&1)"; then
+  print -r -- "$locale_missing_nls_out"
+  fail "Japanese duplicate accepted missing NLS JSON"
+fi
+print -r -- "$locale_missing_nls_out" | grep -Fq 'effective_locale=unknown' || fail "missing NLS did not fail closed with unknown effective locale"
+if print -r -- "$locale_missing_nls_out" | grep -Fq 'VSCODE_NLS_CONFIG={'; then
+  fail "missing NLS failure emitted the full process environment"
 fi
 print -r -- "$locale_nls_before" > "$locale_root/evidence/fake-vscode-nls-config"
 if locale_conflict_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
@@ -590,6 +624,9 @@ relaunch_pid="$(sed -n 's/^launch_pid=//p' "$session")"
 print -r -- "$relaunch_out" | grep -Fq 'READY FOR HUMAN E2E' || fail "Japanese relaunch did not become READY"
 if print -r -- "$relaunch_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
   fail "Japanese relaunch emitted the full process environment"
+fi
+if print -r -- "$relaunch_out" | grep -Fq 'OTHER_FAKE_ENV'; then
+  fail "Japanese relaunch emitted an environment assignment after VSCODE_NLS_CONFIG"
 fi
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$relaunch_root" >/dev/null \
   || fail "cleanup after successful Japanese relaunch"
@@ -660,6 +697,9 @@ print -r -- "$wrong_locale_out" | grep -Fq 'fake VS Code NLS resolved en' \
   || fail "wrong-locale preparation did not perform exactly one relaunch"
 if print -r -- "$wrong_locale_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
   fail "wrong-locale preparation emitted the full process environment"
+fi
+if print -r -- "$wrong_locale_out" | grep -Fq 'OTHER_FAKE_ENV'; then
+  fail "wrong-locale preparation emitted an environment assignment after VSCODE_NLS_CONFIG"
 fi
 [[ -z "$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print -quit)" ]] \
   || fail "wrong-locale preparation left an E2E root"
