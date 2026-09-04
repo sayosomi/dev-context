@@ -104,12 +104,17 @@ skill selectionは`main` / `sub`のどちらでも同じ。
 
 `Judgment: Human` / `Executor: Human` unit、implementation、blocking-fix、open-ended investigationにはE2E skillを使わない。
 
-## nuinuiCAD work packet
+## Work packet overlay
 
-`nuinuicad-work-packet`（[`skills/nuinuicad-work-packet/SKILL.md`](./skills/nuinuicad-work-packet/SKILL.md)）
+共通のpacket semanticsは [`../../shared/skills/work-packet/SKILL.md`](../../shared/skills/work-packet/SKILL.md) がownerする。nuinuiCAD側では、そのshared skillを使い、次のproject-specific authority / state modelだけをoverlayする。
 
-ChatGPT、Luna/implementation agent、Coordinator、Human E2Eの間でIssue/checkpointを渡す際に、現行authorityを参照し、未確認事項を保持した共通packetを生成・refresh・validateする。Codex系ではcontract・base/head・scope・verification・blocker・next・stopを中心にcontext効率を測定し、Human向けでは理由、十分な背景、値埋め済みcommand、Manual E2E手順を欠落させない。
+- current contract authorityはLinearのcurrent Work / Issueとする。
+- repository / declared-lane / checkpoint stateは [`CHECKOUTS.md`](./CHECKOUTS.md)、[`CODING-AGENT.md`](./CODING-AGENT.md)、およびshared declared-lane ownerに従う。
+- active interim routingは [`CODEX-ONLY-INTERIM.md`](./CODEX-ONLY-INTERIM.md) がActiveな場合に読み、現在のruleを記録する。
+- recipient / executorごとのroutingは [`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md)、[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)、[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)、[`MANUAL-E2E.md`](./MANUAL-E2E.md)、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) のうちrelevantなownerを読む。
+- `nuinui` local-state evidenceとManual E2Eのcurrent oracleは、shared packet contractに必要な場合だけproject ownerからfreshに取得する。
+- nuinuiCAD固有のLinear、declared-lane、checkpoint、Manual E2E、recipient / executor terminologyをshared skillへ戻さない。
 
-このskillはpolicy本文の複製、Issue選択、send/resume、Linear/GitHub/local外部write、merge、lane/worktree操作、implementation判断を行わない。Active interimと通常運用のどちらでも、先にREADMEとcurrent authorityを読み、競合・stale evidence・不明ownerは推測せず停止する。
+このoverlayはshared skillのfreshness、unknown preservation、no-guessing、no-write、stop-condition semanticsを弱めない。policy本文をpacketへ複製せず、競合・stale evidence・不明ownerは推測で埋めず停止する。
 
 すべてのskillはparent task、repository `AGENTS.md`、current Linear contract、declared-lane policyを上書きしない。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Work Packet"
+  short_description: "Generate, refresh, or validate authority-safe handoff packets"
+  default_prompt: "Use $work-packet to generate, refresh, or validate an authority-safe temporary handoff packet. Read current authority, preserve unknowns, and do not select work, send or resume execution, write external state, or decide implementation."

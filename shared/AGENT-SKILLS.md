@@ -46,6 +46,19 @@ Skill は parent task、project 固有の `AGENTS.md`、task contract、reposito
 - 既存 owner に自然に収まる小さな変更なら、大きな file でも local edit を優先する。
 - 新しい独立責務が生まれた場合だけ narrow module への分離を検討する。
 
+## Work Packet
+
+`work-packet`（[`skills/work-packet/SKILL.md`](./skills/work-packet/SKILL.md)）
+
+複数のrecipient間で一時的なhandoff contextを渡すための、authority-safeなpacketの共通semantic owner。
+
+- packetをsource of truthではなくtemporary context carrierとして扱う。
+- `generate` / `refresh` / `validate`を提供し、authority reference、適用可能なexact stateとfreshness、scope / non-goal、owner、evidence、unknown / blocker、one next atomic operation、stop / decision checkpointを保持する。
+- unknown / unverified / not applicableを明示し、authority conflictやstale evidenceを推測で埋めない。
+- project、work-management、repository、execution環境に固有のauthority / state modelは各project ownerへrouteする。
+- workの選択、send / resume、repositoryやwork-management stateのwrite、merge、execution contextの変更、implementation / product / architecture判断を行わない。
+- Human向けterminal commandは [`skills/human-terminal-instructions/SKILL.md`](./skills/human-terminal-instructions/SKILL.md) へrouteし、command safety policyを重複定義しない。
+
 ## Fix Precommit Errors
 
 `fix-precommit-errors`
