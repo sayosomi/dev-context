@@ -58,6 +58,8 @@ Handoff前に、ChatGPTはcurrent Taskがmissing architecture / product / contra
 
 次のcontract fieldsをすべて埋めてgateを通過させる。各fieldは、適用されない場合だけcurrent Taskに即した理由を明記してinapplicableとできる。未確定のowner、boundary、behavior、decisionを省略してはならない。このgateはfail-closedであり、under-specified implementation contractをhandoffしてはならない。
 
+`expected remote state`と`branch / base`は、先行する`Pre-prompt remote freshness gate`でestablishまたはrevalidateされた値を使う。freshness前のobservationだけでは、このfinal completeness gateを満たさない。
+
 - repository
 - expected remote state
 - branch / base
@@ -106,10 +108,10 @@ Manual E2Eではproject-specific Manual E2E authority / playbookをrole authorit
 新規開発Taskでwork-management Issueの新規作成が必要でも、Issue作成をimplementation Coding Agent開始の前提にしない。
 
 1. remote state確認、existing Issue / Spec検索、repository調査を行い、implementation contractを確定する。
-2. `Prompt-completeness gate`を通過する。
-3. `Pre-prompt remote freshness gate`を通過する。
-4. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
-5. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
+2. `Pre-prompt remote freshness gate`を通過する。
+3. expected remote state / branch / baseをfreshness gateの結果でrefreshし、relevantなremote changeがcurrent Taskのcontract / semantic owner / slicingへ影響する場合は再評価する。branch名は、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させずに決める。
+4. `Prompt-completeness gate`を、finalなimplementation-contract completeness approvalとして通過する。
+5. 両gateを通過した後だけimplementation promptを完成・提示する。新規Issueが必要な場合も、branch名を決めてpromptを完成させてからIssueを作る。
 6. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
 7. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
 
