@@ -89,7 +89,7 @@ Luna result
 -> blocking review
 -> [Auto-merge: exact-head reservation -> task ends without CI wait]
    or
-   [manual merge: fresh CI -> merge -> merged-state verification -> Linear synchronization]
+   [manual merge: fresh CI -> merge -> merged-state verification -> completed-generation release -> Linear synchronization]
 ```
 
 Auto-mergeのprecondition / CI failure terminal stop / manual merge continuationは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)をauthorityとする。Humanに何もする必要がないremote-only intermediate stateをhandoff boundaryにしない。
@@ -103,15 +103,15 @@ local deterministic releaseだけが残る場合はWork completion / Linear stat
 implementationがmergeされ、authoritative read-backでrequired Manual E2Eだけが残ると確認できた場合は、次のbarrierを完了してからnormal E2E startupへ進む。
 
 - implementation executionは終了している。
-- normal E2E startupより先にIssueを`In Review`へ同期する。
-- E2Eを待つ間も実行中も、old implementation claimを保持しない。
-- exact current implementation generationを、既存の`nuinui release <implementation-lane> <checkpoint> <claim>` contractでreleaseする。
+- non-local post-merge bookkeepingより先に、exact current implementation generationを既存の`nuinui release <implementation-lane> <checkpoint> <claim>` contractでreleaseする。
 - successful release後、`IMPLEMENTATION RELEASED`を確認し、Lane release checkpointをrecordしてread-backする。
+- release成功後にIssueを`In Review`へ同期する。
+- E2Eを待つ間も実行中も、old implementation claimを保持しない。
 - E2E laneのavailabilityは、completed implementation laneをreleaseするかどうかを制御しない。
 
 release anomalyがpost-merge E2E-only handoffで発生した場合:
 
-- Work statusは`In Review`に保つ。
+- 最初のrelease attempt後、authoritative merged + E2E-only evidenceに従ってWork statusを`In Review`へ同期し、すでに`In Review`ならそのまま保つ。
 - physical `FREE`を推測しない。
 - `BUSY`、`BLOCKED`、`RELEASE-PENDING`のcleanup stateはcapacity unavailableとして扱う。
 - release failureがslot rename前に起きた場合、physical laneが`BUSY`のままでもIssueを`In Progress`へ戻さない。
@@ -138,9 +138,9 @@ Issue `Done`とimplementation laneを含むexecution lifecycle final closureを�
 
 declared implementation laneを使用したWorkで「完全終了」「追加作業なし」と宣言してよいのは:
 
-1. Work completion / Issue status synchronization完了;
-2. [`CHECKOUTS.md`](./CHECKOUTS.md)に従うlane release成功、actual lane FREE;
-3. current Linear Issueへ`Lane release checkpoint`記録;
+1. [`CHECKOUTS.md`](./CHECKOUTS.md)に従うlane release成功、actual lane FREE;
+2. current Linear Issueへ`Lane release checkpoint`記録;
+3. Work completion / Issue status synchronization完了;
 4. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のPost-write verification完了。
 
 merge後にrequired Manual E2Eだけが残る場合、このfinal closureではなく先にPost-merge E2E-only handoff barrierを完了する。E2E closureが終わるまでfinal closureを宣言しない。
@@ -148,14 +148,15 @@ merge後にrequired Manual E2Eだけが残る場合、このfinal closureでは�
 Human boundaryは次の1回だけにする。
 
 ```text
-merge / Work completion
+merge / Work completion evidence
 -> exact nuinui release command
 -> complete IMPLEMENTATION RELEASED envelope
 -> Lane release checkpointの記録 / read-back
+-> Work status synchronization / post-write verification
 -> final closure
 ```
 
-Humanからfresh successful release outputが返った場合はactual local evidenceとして扱い、Linear操作可能なら同じcontinuationでrelease checkpoint記録とread-backまで進める。complete `IMPLEMENTATION RELEASED` envelopeのためだけに別preflightを要求しない。
+Humanからfresh successful release outputが返った場合はactual local evidenceとして扱い、Linear操作可能なら同じcontinuationでrelease checkpoint記録、Work status synchronization、read-backまで進める。complete `IMPLEMENTATION RELEASED` envelopeのためだけに別preflightを要求しない。
 
 IssueがDoneでもrelease / release checkpoint / read-backが残る場合はfinal closure未完了として報告する。Linear write失敗でsuccessful physical releaseを巻き戻さない。
 

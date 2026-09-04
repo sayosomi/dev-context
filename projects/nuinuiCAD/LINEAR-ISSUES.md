@@ -41,11 +41,22 @@ Readyだけを理由にIn Progressへしない。actual durable lane assignment�
 
 ## #129 release-before-E2E barrier
 
-implementation mergeとauthoritative read-backでrequired Manual E2Eだけが残ることを確認したIssueは、`In Review`へ同期する。physical implementation cleanup stateはWork statusとは別である。
+implementation mergeとauthoritative read-backでrequired Manual E2Eだけが残ることを確認したIssueでは、normal pathとしてstatus bookkeepingより先にexact current implementation generationをreleaseする。
 
-post-merge E2E-only release anomalyでは、physical declared implementation laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でもIssue statusは`In Review`に保つ。slot rename前のrelease failureでphysical laneが`BUSY`のままでも、old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。interrupted cleanupを含むcleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
+```text
+merged + E2E-only evidence
+-> exact nuinui release
+-> IMPLEMENTATION RELEASED / lane FREE
+-> Lane release checkpoint record / read-back
+-> In Review synchronization
+-> normal E2E startup
+```
 
-この間に unrelated new implementation admissionを判定する場合も、そのlaneはunavailableとして数える。ただし、そのlaneのowner Issueをcurrent implementation `In Progress`集合へ戻してはならない。release / recoveryが成功した後、Lane release checkpointをrecordしてread-backし、laneを通常の`FREE` capacityへ戻す。
+successful complete release envelopeの後、physical FREEを再発見するための別preflightを要求しない。physical implementation cleanup stateとWork statusは別authorityだが、normal final-merge operation orderではscarce implementation capacityのreleaseを先に完了する。
+
+post-merge E2E-only release anomalyでは、最初のrelease attemptがfail / interruptedした後にauthoritative merged + E2E-only evidenceへ従ってIssueを`In Review`へ同期し、すでに`In Review`ならそのまま保つ。physical declared implementation laneが`BUSY`、`BLOCKED`、または`RELEASE-PENDING`でも、old durable slotが残っていることだけを理由にowner Issueを`In Progress`へreconcileしない。interrupted cleanupを含むcleanup anomaly中のlaneはactual `FREE`が証明されるまでoccupied / unavailable capacityとして扱う。
+
+この間に unrelated new implementation admissionを判定する場合も、そのlaneはunavailableとして数える。ただし、そのlaneのowner Issueをcurrent implementation `In Progress`集合へ戻してはならない。release / recoveryが成功した後、未記録ならLane release checkpointをrecordしてread-backし、laneを通常の`FREE` capacityへ戻す。release anomalyが解消するまでnormal E2E startupは行わない。
 
 このexceptionはmerged + E2E-only evidenceがあるpost-merge cleanupに限る。通常のactive implementationで、同じevidenceなしにBUSY laneとstatusが一致しない場合は、既存のoccupancy reconciliationを変更せずfail-closedにする。
 
@@ -193,9 +204,9 @@ Humanからfresh successful `nuinui release` outputが返された場合actual l
 
 release envelopeの`issue`、`saved_checkpoint`、`released_claim`、`released_branch`、`idle_branch`、`idle_head`、`origin_main`、`clean=yes`、`state=FREE`をそのままLane release checkpointの入力として使う。Issue Done（Work completion）とphysical lane FREE（capacity cleanup）は引き続き別の条件である。
 
-final closureは`merge / Work completion -> exact nuinui release -> complete IMPLEMENTATION RELEASED envelope -> Lane release checkpointのrecord / read-back -> closure`の順で行う。successful release envelope後にphysical FREEを再発見するためのHuman preflightは要求しない。
+normal final closureは`merge / Work completion evidence -> exact nuinui release -> complete IMPLEMENTATION RELEASED envelope -> Lane release checkpointのrecord / read-back -> Work status synchronization -> closure`の順で行う。successful release envelope後にphysical FREEを再発見するためのHuman preflightは要求しない。
 
-checkpointはphysical release成立条件そのものではない。actual local FREEはCHECKOUTS authority。ただしImplementation chat final closureにはrecord + Post-write verificationを含む。
+checkpointはphysical release成立条件そのものではない。actual local FREEはCHECKOUTS authority。ただしImplementation chat final closureにはrecord + Work status synchronization + Post-write verificationを含む。
 
 ## In Review
 
@@ -208,6 +219,8 @@ In Review + manual_e2e_only + Manual E2E: Ready to Run
 In Review + manual_e2e_only + Manual E2E: Running
 In Review + manual_e2e_only + Manual E2E: Deferred
 ```
+
+normal final-merge pathでは、completed implementation generationのsuccessful releaseとLane release checkpoint record / read-backの後に`In Review`へ同期する。最初のrelease attemptがfail / interruptedした場合だけ、physical laneをunavailable capacityとして保持したままauthoritative merged + E2E-only evidenceに従って`In Review`へ同期してよい。
 
 `manual_e2e_only`はimplementation / review / merge / management workがなくrequired Manual E2Eだけが残るleaf Issueにだけ付ける。PR open / CI / blocking review中をIn Reviewとは呼ばない。
 
@@ -222,7 +235,7 @@ confirmed Manual E2E implementation failure:
 3. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
 4. new implementation laneが未割当の間はstatusを`Todo`に保ち、fix contract / re-audit / dependency organization / rerun-plan synchronization中も`Todo`とする;
 5. laterにcurrently `FREE`なdeclared implementation laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
-6. fix merge後にrequired E2Eだけが残れば`manual_e2e_only` + `In Review`へ戻し、同じrelease-before-E2E barrierを適用;
+6. fix merge後にrequired E2Eだけが残れば、completed fix generationへ同じrelease-before-status barrierを適用してから`manual_e2e_only` + `In Review`へ戻す;
 7. new exact tested commitでaffected E2E rerun。
 
 これはconfirmed Manual E2E implementation failureからnew generation startまでのnarrow #129 exceptionであり、unrelated Pending / Blocked Issueの既存Backlog readiness precedenceを変更しない。
@@ -237,6 +250,8 @@ E2E failure / re-auditだけでIn Progressへ進めない。e2e checkoutをimple
 - required Manual E2E `Passed`または`Not Required`;
 - unfinished blockerなし;
 - Done-before Ready contract freshness check完了。
+
+final implementation mergeから直接Doneへ進むnormal pathでは、completed implementation generationを先にreleaseし、Lane release checkpointをrecord / read-backしてからDone synchronizationを行う。最初のrelease attemptがfail / interruptedした場合だけ、laneをunavailable capacityとして保持したままauthoritative completion evidenceに従ってDoneへ同期してよい。
 
 Deferred / Running / FailedのままDoneにしない。implementation lane RELEASE-PENDING自体はDone blockerではない。DoneはWork completion、lane cleanupはcapacity stateとして別に完了させる。
 

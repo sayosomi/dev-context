@@ -67,7 +67,7 @@ reservation helperが`BLOCKED: all required checks are already complete`で停�
 
 Humanがfailure後に明示resumeした時だけ、fresh PR/head/base/Actions/contract evidenceから再開する。failure evidenceによりapproved contract・scope・current architecture内の次の修正が一意なら継続してよい。複数の妥当なimplementation案、product / UX / contract判断、scope拡大、authority conflict、architecture owner変更、acceptance変更、Manual E2E judgment、destructive / external-state riskではHumanへ再承認を求める。同一failureの反復やflaky / retry-onlyは根拠なくgreenまでretryせず、まずCI incident routeとmodel escalationを使う。PR/head/base identity ambiguity、auth / permission、GitHub outageは実装判断ではなく`BLOCKED`として停止・報告する。
 
-Auto-merge後のLinear syncは、Discord merge通知だけを根拠に実行しない。Humanの明示resume後、authoritative merged commit、remaining acceptance、Manual E2E stateを再確認してからこのdocumentのstatus ruleに従う。
+Auto-merge後のLinear syncは、Discord merge通知だけを根拠に実行しない。Humanの明示resume後、authoritative merged commit、remaining acceptance、Manual E2E stateを再確認する。final implementation mergeならcompleted implementation generationをreleaseしてLane release checkpointをrecord / read-backした後、このdocumentのstatus ruleに従う。最初のrelease attemptがfail / interruptedなら、physical laneをunavailableのまま扱い、authoritative merged stateに基づくstatus synchronizationへ進んでから既存release / recovery routeを継続する。
 
 PR前の包括承認は、少なくとも次を値埋めして記録する。
 
@@ -87,36 +87,44 @@ manual mergeまたはHuman明示resume後に確認したfinal implementation mer
 
 ```text
 Manual E2E: Not Required
+-> implementation execution終了
+-> exact current implementation generation release
+-> Lane release checkpoint record / read-back
 -> Done-before Ready contract freshness check
 -> Done
 
 Manual E2E: Required
 -> implementation execution終了
+-> exact current implementation generation release
+-> Lane release checkpoint record / read-back
 -> applicable leafはmanual_e2e_onlyへtransition
 -> In Review + Manual E2E: Ready to Run / Deferred
 ```
 
-Manual E2EがrequiredなIssueでは、implementation開始 / 継続許可をManual E2E実行許可として流用しない。通常のimplementation execution trackは`In Review`へのhandoffで終了し、その先のManual E2E executionは [`MANUAL-E2E.md`](./MANUAL-E2E.md) とexecution-owner ruleに従う。
+最初のrelease attemptがfail / interruptedの場合だけ、laneを`BUSY` / `BLOCKED` / `RELEASE-PENDING`等のactual cleanup stateに応じてunavailable capacityとして保持したまま、authoritative merge / remaining Work evidenceに従って`Done`または`In Review`等のstatus synchronizationへ進む。release anomalyだけを理由にcompleted repository implementationを`In Progress`へ戻さない。
+
+Manual E2EがrequiredなIssueでは、implementation開始 / 継続許可をManual E2E実行許可として流用しない。通常のimplementation execution trackはcompleted generation release後の`In Review`へのhandoffで終了し、その先のManual E2E executionは [`MANUAL-E2E.md`](./MANUAL-E2E.md) とexecution-owner ruleに従う。
 
 ### Merge completion vs local lane cleanup
 
-GitHub上でrequired merge gateを満たしてimplementation PRがintended baseへmergeされた時点で、repository implementation executionは終了する。local `main` / `sub` checkoutがまだTask branchにいることやidle stateへのdeterministic cleanupが未完了であることを、Issueを`In Progress`へ保持する理由にしない。
+GitHub上でrequired merge gateを満たしてfinal implementation PRがintended baseへmergeされた時点で、repository implementation executionは終了する。local checkoutがまだTask branchにいることやidle stateへのdeterministic cleanupが未完了であることを、Issueを`In Progress`へ保持する理由にしない。
 
-merge後の責務を分離する。
+normal final-merge pathでは、scarce implementation capacityをbookkeepingより先に解放する。
 
 ```text
-remote merge / implementation completion
--> Linear statusをactual remaining Workへ同期
--> local checkoutがidleでなければ lane = RELEASE-PENDING
--> deterministic lane cleanup
+remote final merge / implementation completion
+-> exact current implementation generation release
 -> lane = FREE
+-> Lane release checkpoint record / read-back
+-> Linear statusをactual remaining Workへ同期
 ```
 
-- Issue statusはmerge / remaining acceptance / Manual E2E / completion gateに従う。
-- physical lane cleanupは[`CHECKOUTS.md`](./CHECKOUTS.md)の`RELEASE-PENDING` / release ruleに従う。
-- `RELEASE-PENDING` laneは新Issueへ割り当てないが、前Issueのimplementationがまだ実行中であることを意味しない。
-- local cleanup failureはlane availabilityのblockerとして扱い、すでに成立したremote mergeやIssue completion stateを巻き戻さない。ただしcleanup中にunmerged / unsaved workが判明した場合は新しいstateとして再評価する。
-- intermediate PR merge後にremaining implementation acceptanceがある場合はsequential PR ruleに従い、次sliceを即時開始していなければ`LINEAR-ISSUES.md`のstatus precedenceへ同期する。local cleanup待ちだけで`In Progress`を維持しない。
+- status meaning自体はmerge / remaining acceptance / Manual E2E / completion gateに従うが、normal final-merge operation orderではrelease成功とrelease checkpointをstatus writeより先に行う。
+- successful complete `IMPLEMENTATION RELEASED` envelope後にphysical FREEを再発見するための別preflightを要求しない。
+- 最初のrelease attemptがfail / interruptedした場合、physical lane cleanupは[`CHECKOUTS.md`](./CHECKOUTS.md)のactual `BUSY` / `BLOCKED` / `RELEASE-PENDING` / recovery ruleに従い、new Issueへ割り当てない。その後はauthoritative merged stateからIssue statusを同期し、cleanup anomalyだけを理由にmergeやcompletion stateを巻き戻さない。
+- local cleanup中にunmerged / unsaved workが新たに判明した場合は新しいstateとして再評価する。
+- intermediate PR merge後にremaining implementation acceptanceがありsame active generationでnext sliceを継続する場合、このfinal-merge release orderingは適用しない。sequential PR ruleに従い、mergeしたという理由だけでcurrent generationをreleaseしない。
+- intermediate merge後にcurrent generationをpause / releaseしてnext sliceを待つ場合は[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)と[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のpause / checkpoint ruleに従う。
 
 ## Pull request automations
 
@@ -140,8 +148,8 @@ PR lifecycleだけでIssue statusを決めない。
 - PR open → status変更なし
 - PR review request / activity → status変更なし
 - PR ready for merge → status変更なし
-- manual PR merge → current Manual E2E / execution ownershipを確認してChatGPTがstatusを同期
-- auto-merge → Discord通知後のHuman明示resumeでauthoritative merged stateを再確認してから同期
+- manual PR merge → current Manual E2E / execution ownershipを確認し、final implementation mergeならcompleted generation release barrier後にChatGPTがstatusを同期
+- auto-merge → Discord通知後のHuman明示resumeでauthoritative merged stateを再確認し、final implementation mergeならcompleted generation release barrier後に同期
 
 通常、実装開始済みTaskはPR作成・blocking review・merge直前まで`In Progress`のまま。
 
@@ -151,12 +159,15 @@ Pre-merge Manual E2Eは、Task contractがunusual risk等の理由で明示し�
 
 PR merge checkpointでは少なくとも次を確認する。
 
-- same Issueにremaining acceptanceがあるintermediate PR → `IMPLEMENTATION-SLICING.md`のimplementation checkpointを記録し、Issue completion transitionを行わない
+- same Issueにremaining acceptanceがあるintermediate PR → `IMPLEMENTATION-SLICING.md`のimplementation checkpointを記録し、Issue completion transitionを行わない。same active generationでnext sliceを継続するならfinal-merge release barrierを適用しない
+- final implementation merge → exact current implementation generationのreleaseを最初のlocal lifecycle actionとして試行し、successならLane release checkpointをrecord / read-backしてから以下のstatus transitionを行う
 - Manual E2Eが`Passed` → completion条件を確認して`Done`
 - Manual E2Eが`Not Required` → completion条件を確認して`Done`
 - required Manual E2Eがあり、merge後すぐ実行可能 → leafのexecution ownershipを確認し、通常`In Review + Manual E2E: Ready to Run`
 - required Manual E2Eを意図的に後回し → `In Review + Manual E2E: Deferred`
 - `manual_e2e_only` transition条件を満たすleaf → [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のlabel/status条件を確認し、[`CHAT-E2E.md`](./CHAT-E2E.md) / [`MANUAL-E2E.md`](./MANUAL-E2E.md) のexecution ownerへhandoff
+
+最初のfinal-merge release attemptがfail / interruptedした場合はphysical laneをunavailable capacityとして保持し、authoritative merge / remaining Work evidenceからstatus transitionを行う。normal E2E startupはrelease anomalyが解消するまで開始しない。
 
 merge後Manual E2Eで`FAIL`した場合は、同じIssueのscopeなら通常のfix → automated verification → review → merge → affected Manual E2E rerunへ戻す。post-merge FAILが起こり得ること自体を理由にdefaultをpre-mergeへ変更しない。
 
