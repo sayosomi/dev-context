@@ -133,8 +133,98 @@ common_env=(
   "PATH=$fake_bin:$PATH"
 )
 
+self_path_project="$TEST_ROOT/self-path-project"
+self_path_helper="$self_path_project/scripts/nuinui-e2e-prepare"
+self_path_invalid_helper="$TEST_ROOT/invalid-helper/nuinui-e2e-prepare"
+self_path_cwd_a="$TEST_ROOT/cwd-a"
+self_path_cwd_b="$TEST_ROOT/cwd-b"
+self_path_root=""
+self_path_env=(
+  "NUINUI_E2E_TEMP_PARENT=$temp_parent"
+  "TMPDIR=$closure_parent/"
+  "NUINUI_E2E_VSCODE_APP=$fake_app"
+  "NUINUI_FAKE_REPO=$repo"
+  "NUINUI_TEST_REAL_MV=$real_mv"
+  "PATH=$fake_bin:$PATH"
+)
+
+mkdir -p "$self_path_project/scripts" "$self_path_invalid_helper:h" \
+  "$self_path_cwd_a" "$self_path_cwd_b" || fail "self-path setup directories"
+cp "$PREPARE_SCRIPT" "$self_path_helper" || fail "copy self-path helper"
+cp "$PREPARE_SCRIPT" "$self_path_invalid_helper" || fail "copy invalid-placement helper"
+chmod +x "$self_path_helper" "$self_path_invalid_helper"
+cat > "$self_path_project/LANES.conf" <<MANIFEST
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane self-human]
+role=human-test
+path=$repo
+idle=detached
+MANIFEST
+
+run_self_path_helper() {
+  local helper="$1" cwd="$2"
+  shift 2
+  (
+    cd "$cwd" || exit 1
+    env -u NUINUI_E2E_SELFTEST -u NUINUI_E2E_MANIFEST \
+      "${self_path_env[@]}" zsh "$helper" "$@"
+  )
+}
+
+echo "TEST: standalone helper resolves its own project context under default zsh options"
+zsh -fc '[[ -o functionargzero ]]' || fail "default zsh options do not enable FUNCTION_ARGZERO"
+self_path_status_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_a" status)" || {
+  print -r -- "$self_path_status_out"
+  fail "self-path status"
+}
+print -r -- "$self_path_status_out" | grep -Fq 'session=none' || fail "self-path status did not use its project manifest"
+print -r -- "$self_path_status_out" | grep -Fq 'E2E STATUS COMPLETE' || fail "self-path status did not complete"
+self_path_check_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_b" \
+  check SAY-999 "$tested_ref" "$fixture")" || {
+  print -r -- "$self_path_check_out"
+  fail "self-path check"
+}
+print -r -- "$self_path_check_out" | grep -Fq 'E2E CHECKOUT VERIFIED' || fail "self-path check did not complete"
+self_path_prepare_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_a" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9558)" || {
+  print -r -- "$self_path_prepare_out"
+  fail "self-path prepare"
+}
+print -r -- "$self_path_prepare_out" | grep -Fq 'lane=self-human' || fail "self-path prepare did not use project manifest lane"
+self_path_root="$(sed -n 's/^root=//p' "$session")"
+[[ -d "$self_path_root" && -f "$session" ]] || fail "self-path prepare did not record session"
+self_path_status_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_b" status)" || {
+  print -r -- "$self_path_status_out"
+  fail "self-path active status"
+}
+print -r -- "$self_path_status_out" | grep -Fq 'session=active' || fail "self-path active status did not complete"
+self_path_cleanup_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_b" \
+  cleanup SAY-999 "$tested_ref" "$self_path_root")" || {
+  print -r -- "$self_path_cleanup_out"
+  fail "self-path cleanup"
+}
+print -r -- "$self_path_cleanup_out" | grep -Fq 'E2E CLEANUP COMPLETE' || fail "self-path cleanup did not complete"
+[[ ! -e "$session" && ! -e "$self_path_root" ]] || fail "self-path cleanup retained state"
+self_path_closure_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_a" \
+  closure-check SAY-998)" || {
+  print -r -- "$self_path_closure_out"
+  fail "self-path closure-check"
+}
+print -r -- "$self_path_closure_out" | grep -Fq 'E2E CLOSURE CLEAN' || fail "self-path closure-check did not complete"
+self_path_invalid_out="$(run_self_path_helper "$self_path_invalid_helper" "$self_path_cwd_a" \
+  status 2>&1)" && {
+  print -r -- "$self_path_invalid_out"
+  fail "invalid standalone helper placement was accepted"
+}
+print -r -- "$self_path_invalid_out" | grep -Fq \
+  'BLOCKED: standalone helper is not in its versioned project scripts directory' \
+  || { print -r -- "$self_path_invalid_out"; fail "invalid standalone helper placement did not fail closed"; }
+
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.4.1" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.4.2" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"

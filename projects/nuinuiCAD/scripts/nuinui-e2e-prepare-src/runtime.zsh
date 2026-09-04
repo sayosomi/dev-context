@@ -1,5 +1,6 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.4.1"
+VERSION="1.4.2"
+E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
@@ -11,7 +12,7 @@ CLEANUP_RECEIPT_KEYS='version,issue,ref,root'
 HANDOFF_KEYS='LANE,ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
 
 e2e_context() {
-  E2E_MANIFEST="$(lane_standalone_context_manifest "$0" \
+  E2E_MANIFEST="$(lane_standalone_context_manifest "$E2E_HELPER_INVOCATION" \
     "${NUINUI_E2E_SELFTEST:-0}" "${NUINUI_E2E_MANIFEST:-}")" || return 1
   export NUINUI_RUNTIME_MANIFEST="$E2E_MANIFEST"
   lane_manifest_validate "$E2E_MANIFEST" || {
