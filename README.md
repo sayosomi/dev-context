@@ -19,6 +19,7 @@ root README は repository overview / router であり、詳細な development w
 ## Projects
 
 - [nuinuiCAD](./projects/nuinuiCAD/README.md)
+- [fanbox-level-manager](./projects/fanbox-level-manager/README.md)
 
 ## Shared context
 
