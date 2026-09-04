@@ -380,13 +380,13 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.4.2`。
+current Human E2E preparation helper version: `1.5.0`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
 ```text
-nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path>
-nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [--locale ja]
+nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port] [--locale ja]
 nuinui-e2e-prepare status [<human-test-lane>]
 nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
 nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
@@ -394,7 +394,9 @@ nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
 
 Explicit lane forms are required when zero or multiple Human-test lanes are declared. Short forms remain compatible only when exactly one Human-test lane exists; persisted sessions carry their exact lane identity for status and cleanup.
 
-`prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。
+末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallし、`VS_CODE_APP/Contents/Info.plist`の`CFBundleExecutable`から解決したapplication executableへ`--locale=ja`を渡す。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.1`のまま変更しない。
+
+`prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。locale-specific `check`は既存のcheckout / ref / fixture / lane validationに加えて、resolved VS Code CLI、Info.plistの`CFBundleExecutable`、および`Contents/MacOS/<CFBundleExecutable>`のexecutable proofをread-onlyで行う。通常のnon-locale `prepare`は現在のCLI launch pathを維持する。
 
 healthyなexact duplicate `prepare`は、active session、handoff、prepared fixture、owned process、CDPをread-onlyで完全一致検証した場合だけ次の成功 envelopeを返す。
 
@@ -421,7 +423,7 @@ nuinui e2e-release <human-test-lane> <SAY-123> <tested-ref>
 nuinui-e2e-prepare closure-check <human-test-lane> <SAY-123>
 ```
 
-session metadataはcurrent generationではstrictな`issue / ref / source_fixture / root / handoff / cdp_port / launch_pid`を保持する。legacyな6-field metadataはrollout/cleanup互換のためだけに認識し、duplicate prepareの成功には使わない。`cleanup <Issue> <tested-ref> <e2e-root>`はcallerのrootまでidentity照合し、owned process / temporary root / handoff / session metadataだけを削除する。完了時はGit dirの`nuinui-e2e-cleanup-receipt`（`version=1 / issue / ref / root`）を先にatomically保存する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
+session metadataはcurrent generationではstrictな`issue / ref / source_fixture / root / handoff / cdp_port / launch_pid / locale`を保持し、通常sessionは`locale=default`、Japanese sessionは`locale=ja`とする。1.4.2の8-field metadataは`pre-locale` compatibility generationとして認識し、statusでは`locale=pre-locale/default` evidenceを表示する。pre-locale sessionはcanonical cleanupと既存identity proofが十分な通常のduplicate prepareだけを許可し、Japanese duplicateとしては受理しない。legacyな6-field metadataはrollout/cleanup互換のためだけに認識し、duplicate prepareの成功には使わない。`cleanup <Issue> <tested-ref> <e2e-root>`はcallerのrootまでidentity照合し、owned process / temporary root / handoff / session metadataだけを削除する。process ownershipはrecorded isolated root/user-data identityとconfigured `VS_CODE_APP/Contents/` identityの両方をnon-empty command lineで証明し、enumeration後に`ps`が空になった消滅raceはexited-processとして扱う。完了時はGit dirの`nuinui-e2e-cleanup-receipt`（`version=1 / issue / ref / root`）を先にatomically保存する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
 
 `status`と`closure-check`はread-only。unmanaged artifactや別Issue stateを勝手にcleanupしない。`closure-check`はe2e-release後だけに行うfinal read-only closure proofであり、cleanupとe2e-releaseの間の通常のrelease-precondition checkではない。同一Issue markerが残っている間は`closure-check`が`BLOCKED`になるfail-closed semanticsを維持する。markerがない場合も、matchingなstrict E2E release receipt、idle clean detached checkout、current authoritative `origin/main`を証明できるexact duplicate releaseだけを`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先される。
 

@@ -1,15 +1,19 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.4.2"
+VERSION="1.5.0"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
 DEFAULT_CDP_PORT="${NUINUI_E2E_CDP_PORT-9223}"
 E2E_TEMP_PARENT="${NUINUI_E2E_TEMP_PARENT-/private/tmp}"
-CURRENT_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
+JAPANESE_LANGUAGE_PACK='MS-CEINTL.vscode-language-pack-ja'
+CURRENT_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid,locale'
+PRE_LOCALE_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
 LEGACY_SESSION_KEYS='issue,ref,root,handoff,cdp_port,launch_pid'
 CLEANUP_RECEIPT_KEYS='version,issue,ref,root'
 HANDOFF_KEYS='LANE,ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
+VS_CODE_APP_REAL=''
+VS_CODE_APPLICATION_EXECUTABLE=''
 
 e2e_context() {
   E2E_MANIFEST="$(lane_standalone_context_manifest "$E2E_HELPER_INVOCATION" \
@@ -63,8 +67,8 @@ EOF
 usage() {
   cat <<'EOF'
 Usage:
-  nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path>
-  nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+  nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [--locale ja]
+  nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port] [--locale ja]
   nuinui-e2e-prepare status [<human-test-lane>]
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
   nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
@@ -79,6 +83,111 @@ Every short form requires exactly one declared Human-test lane; a persisted
 session never disambiguates a zero- or multi-lane manifest.
 
 EOF
+}
+
+parse_locale_options() {
+  local -a args
+  local i=1 arg locale_value option_count=0
+
+  LOCALE='default'
+  LOCALE_ARGS=()
+  args=("$@")
+  while (( i <= $# )); do
+    arg="${args[i]}"
+    case "$arg" in
+      --locale)
+        (( option_count++ ))
+        (( option_count == 1 )) || {
+          echo 'ERROR: duplicate --locale option'
+          return 2
+        }
+        (( i < $# )) || {
+          echo 'ERROR: --locale requires a value'
+          return 2
+        }
+        locale_value="${args[i+1]}"
+        [[ -n "$locale_value" && "$locale_value" != --* ]] || {
+          echo 'ERROR: --locale requires a value'
+          return 2
+        }
+        (( i + 1 == $# )) || {
+          echo 'ERROR: --locale must be the trailing option'
+          return 2
+        }
+        [[ "$locale_value" == ja ]] || {
+          echo "ERROR: unsupported locale: $locale_value"
+          return 2
+        }
+        LOCALE='ja'
+        (( i += 2 ))
+        ;;
+      --locale=*|--locale?*)
+        echo "ERROR: malformed locale option: $arg"
+        return 2
+        ;;
+      *)
+        LOCALE_ARGS+=("$arg")
+        (( i++ ))
+        ;;
+    esac
+  done
+}
+
+assert_locale() {
+  case "$1" in
+    default|ja) ;;
+    *) echo "ERROR: unsupported locale: $1"; return 2 ;;
+  esac
+}
+
+resolve_vscode_app_identity() {
+  VS_CODE_APP_REAL="$(resolve_existing_path "$VS_CODE_APP")" || return 1
+  [[ -d "$VS_CODE_APP_REAL/Contents" && ! -L "$VS_CODE_APP_REAL/Contents" ]] || return 1
+}
+
+plist_cf_bundle_executable() {
+  local plist="$1" value=''
+
+  if command -v plutil >/dev/null 2>&1; then
+    value="$(plutil -extract CFBundleExecutable raw -o - "$plist" 2>/dev/null || true)"
+  fi
+  if [[ -z "$value" && -x /usr/libexec/PlistBuddy ]]; then
+    value="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist" 2>/dev/null || true)"
+  fi
+  if [[ -z "$value" ]]; then
+    value="$(awk '
+      /<key>CFBundleExecutable<\/key>/ { wanted=1; next }
+      wanted && /<string>/ {
+        line=$0
+        sub(/^.*<string>/, "", line)
+        sub(/<\/string>.*$/, "", line)
+        print line
+        exit
+      }
+      wanted && /<key>/ { exit }
+    ' "$plist" 2>/dev/null || true)"
+  fi
+  [[ -n "$value" && "$value" != */* && "$value" != '.' && "$value" != '..' ]] || return 1
+  print -r -- "$value"
+}
+
+resolve_vscode_application_executable() {
+  local plist executable_name
+  resolve_vscode_app_identity || return 1
+  plist="$VS_CODE_APP_REAL/Contents/Info.plist"
+  [[ -f "$plist" && ! -L "$plist" ]] || return 1
+  executable_name="$(plist_cf_bundle_executable "$plist")" || return 1
+  VS_CODE_APPLICATION_EXECUTABLE="$VS_CODE_APP_REAL/Contents/MacOS/$executable_name"
+  [[ -x "$VS_CODE_APPLICATION_EXECUTABLE" && ! -d "$VS_CODE_APPLICATION_EXECUTABLE" ]] || return 1
+}
+
+process_command_line_owned() {
+  local root="$1" command_line="$2"
+  [[ -n "$command_line" ]] || return 2
+  [[ "$command_line" == *"$root/user-data"* ]] || return 1
+  resolve_vscode_app_identity || return 1
+  [[ "$command_line" == *"$VS_CODE_APP/Contents/"* ||
+    "$command_line" == *"$VS_CODE_APP_REAL/Contents/"* ]]
 }
 resolve_existing_path() {
   local input_path="$1"
@@ -139,6 +248,7 @@ metadata_matches() {
 session_kind() {
   local metadata="$1"
   metadata_matches "$metadata" "$CURRENT_SESSION_KEYS" && { echo current; return 0; }
+  metadata_matches "$metadata" "$PRE_LOCALE_SESSION_KEYS" && { echo pre-locale; return 0; }
   metadata_matches "$metadata" "$LEGACY_SESSION_KEYS" && { echo legacy; return 0; }
   return 1
 }
@@ -149,13 +259,19 @@ load_session() {
   SESSION_ISSUE="$(metadata_value "$metadata" issue)" || return 1; SESSION_REF="$(metadata_value "$metadata" ref)" || return 1
   SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1; SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
   SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
-  if [[ "$SESSION_KIND" == current ]]; then
+  if [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]]; then
     SESSION_LANE="$(metadata_value "$metadata" lane)" || return 1
     [[ -n "$SESSION_LANE" ]] || return 1
     SESSION_SOURCE_FIXTURE="$(metadata_value "$metadata" source_fixture)" || return 1
     case "$SESSION_SOURCE_FIXTURE" in /*) ;; *) return 1 ;; esac
     [[ "$SESSION_SOURCE_FIXTURE" != */ && "$SESSION_SOURCE_FIXTURE" != *'/./'* && "$SESSION_SOURCE_FIXTURE" != *'/../'* && "$SESSION_SOURCE_FIXTURE" != *//* ]] || return 1
     [[ ! -e "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" || -f "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" && "$(resolve_existing_path "$SESSION_SOURCE_FIXTURE")" == "$SESSION_SOURCE_FIXTURE" ]] || return 1
+    if [[ "$SESSION_KIND" == current ]]; then
+      SESSION_LOCALE="$(metadata_value "$metadata" locale)" || return 1
+      assert_locale "$SESSION_LOCALE" >/dev/null || return 1
+    else
+      SESSION_LOCALE='pre-locale/default'
+    fi
   fi
   [[ "$SESSION_ISSUE" =~ '^SAY-[0-9]+$' && "$SESSION_REF" =~ '^[0-9a-fA-F]{40}$' && -n "$SESSION_ROOT" && -n "$SESSION_HANDOFF" && -n "$SESSION_CDP_PORT" && -n "$SESSION_LAUNCH_PID" ]] || return 1
   assert_port "$SESSION_CDP_PORT" || return 1
@@ -219,7 +335,14 @@ assert_process_ownership() {
   assert_session_root "$root" || return 1
   if [[ -n "$launch_pid" && "$launch_pid" =~ '^[1-9][0-9]*$' ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
     command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"$root"* ]] || { echo "BLOCKED: launch PID ownership mismatch"; return 1; }
+    if [[ -z "$command_line" ]]; then
+      if [[ "$require_launch" == 1 ]]; then
+        echo "BLOCKED: recorded launch PID is not running"
+        return 1
+      fi
+    else
+      process_command_line_owned "$root" "$command_line" || { echo "BLOCKED: launch PID ownership mismatch"; return 1; }
+    fi
   elif [[ "$require_launch" == 1 ]]; then
     echo "BLOCKED: recorded launch PID is not running"
     return 1
@@ -228,7 +351,8 @@ assert_process_ownership() {
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
     command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"$root"* ]] || { echo "BLOCKED: E2E process ownership is ambiguous"; return 1; }
+    [[ -n "$command_line" ]] || continue
+    process_command_line_owned "$root" "$command_line" || { echo "BLOCKED: E2E process ownership is ambiguous"; return 1; }
   done
 }
 
@@ -246,17 +370,27 @@ stop_owned_processes() {
   assert_process_ownership "$root" "$launch_pid" 0 || return 1
   matching_pids=()
   if [[ -n "$launch_pid" ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
-    matching_pids+=("$launch_pid")
+    command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
+    if [[ -n "$command_line" ]]; then
+      process_command_line_owned "$root" "$command_line" || return 1
+      matching_pids+=("$launch_pid")
+    fi
   fi
   pids=("${(@f)$(process_ids_for_root "$root")}")
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
     command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"$root"* ]] || return 1
+    [[ -n "$command_line" ]] || continue
+    process_command_line_owned "$root" "$command_line" || return 1
     (( ${matching_pids[(Ie)$pid]} == 0 )) && matching_pids+=("$pid")
   done
 
-  for pid in "${matching_pids[@]}"; do kill -TERM "$pid" >/dev/null 2>&1 || return 1; done
+  for pid in "${matching_pids[@]}"; do
+    kill -TERM "$pid" >/dev/null 2>&1 || {
+      kill -0 "$pid" >/dev/null 2>&1 || continue
+      return 1
+    }
+  done
   for _ in $(seq 1 10); do
     remaining=0
     for pid in "${matching_pids[@]}"; do
@@ -267,7 +401,10 @@ stop_owned_processes() {
   done
   for pid in "${matching_pids[@]}"; do
     kill -0 "$pid" >/dev/null 2>&1 || continue
-    kill -KILL "$pid" >/dev/null 2>&1 || return 1
+    kill -KILL "$pid" >/dev/null 2>&1 || {
+      kill -0 "$pid" >/dev/null 2>&1 || continue
+      return 1
+    }
   done
   return 0
 }

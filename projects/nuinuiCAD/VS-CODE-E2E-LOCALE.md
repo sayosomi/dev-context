@@ -76,9 +76,20 @@ current validated appでは`APP_BIN`は次になる。
 /Applications/Visual Studio Code.app/Contents/MacOS/Code
 ```
 
+## Standard Japanese path
+
+Japanese locale E2Eはversioned `nuinui-e2e-prepare`をcanonical pathとして使う。まずread-only checkを行い、その同じexact identityでprepareする。
+
+```text
+nuinui-e2e-prepare check <human-test-lane> <SAY-123> <tested-ref> <fixture-path> --locale ja
+nuinui-e2e-prepare prepare <human-test-lane> <SAY-123> <tested-ref> <fixture-path> [cdp-port] --locale ja
+```
+
+Helper version `1.5.0`はlanguage packのisolated install、`Info.plist`の`CFBundleExecutable`からのdirect application launch、`--locale=ja`、session/statusのlocale identity、canonical cleanupを一体で管理する。cleanupと`e2e-release`の順序、tested ref、fixture、Rust evaluator、CDP、ownership proofは通常のcanonical lifecycleに従う。`--locale ja`を使わない通常のprepareは従来のCLI launch pathを使う。
+
 ## Reference Japanese host preparation
 
-これはlocale-specific operationをcurrent versioned helperがsupportしていない場合のreference fallback。通常E2Eで毎回再生成するtemplateではない。
+これはlocale-specific operationでversioned helperが利用できない場合だけのhandwritten reference fallback。通常のJapanese E2Eで使うtemplateではなく、canonical session/stateの代替でもない。
 
 `<...>`はcurrent E2E runでChatGPTがlatest external stateから固定した値へ置き換える。
 
@@ -310,24 +321,8 @@ Do not:
 - `/Contents/MacOS/Electron`等、application executable名を推測する。
 - normal VS Code profileへlanguage pack / locale変更を入れて代用する。
 
-## Future helper direction
+## Helper status
 
-locale-specific host preparationが繰り返し必要になる場合、手書きfallbackを恒久運用せずversioned `nuinui-e2e-prepare`へ昇格する。
+versioned `nuinui-e2e-prepare --locale ja` is now the normal Japanese locale path. Keep the handwritten launcher and cleanup above only as fallback/reference for helper-unavailable situations; do not use them to create a second canonical lifecycle or separate active state authority.
 
-望ましいpublic contract例:
-
-```text
-nuinui-e2e-prepare prepare <human-test-lane> <SAY-123> <tested-ref> <fixture> [port] --locale ja
-```
-
-helper化する場合は少なくとも次を一体管理する。
-
-- locale -> required language pack resolution
-- isolated language-pack installation
-- direct application executable resolution
-- `--locale=<locale>` launch
-- localeを含むsession identity / status evidence
-- canonical cleanup / closure proof
-- existing non-locale `prepare`とのbackward compatibility
-
-actual helper contract / version / promotion lifecycleは [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) がownerする。
+The GUI display-language restart path remains non-canonical: locale must be fixed at host launch, the user-data and extensions directories must remain isolated, and cleanup must prove both the recorded isolated root and the configured VS Code application identity before stopping any process. The actual helper contract, version, and promotion lifecycle are owned by [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md).

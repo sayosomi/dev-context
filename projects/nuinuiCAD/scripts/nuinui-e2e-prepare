@@ -487,17 +487,21 @@ lifecycle_prove_busy_retry() {
     [ "$lane_execution_proof_checkpoint" = "$6" ]
 }
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.4.2"
+VERSION="1.5.0"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
 VS_CODE_APP="${NUINUI_E2E_VSCODE_APP-/Applications/Visual Studio Code.app}"
 DEFAULT_CDP_PORT="${NUINUI_E2E_CDP_PORT-9223}"
 E2E_TEMP_PARENT="${NUINUI_E2E_TEMP_PARENT-/private/tmp}"
-CURRENT_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
+JAPANESE_LANGUAGE_PACK='MS-CEINTL.vscode-language-pack-ja'
+CURRENT_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid,locale'
+PRE_LOCALE_SESSION_KEYS='lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid'
 LEGACY_SESSION_KEYS='issue,ref,root,handoff,cdp_port,launch_pid'
 CLEANUP_RECEIPT_KEYS='version,issue,ref,root'
 HANDOFF_KEYS='LANE,ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
+VS_CODE_APP_REAL=''
+VS_CODE_APPLICATION_EXECUTABLE=''
 
 e2e_context() {
   E2E_MANIFEST="$(lane_standalone_context_manifest "$E2E_HELPER_INVOCATION" \
@@ -551,8 +555,8 @@ EOF
 usage() {
   cat <<'EOF'
 Usage:
-  nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path>
-  nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port]
+  nuinui-e2e-prepare check [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [--locale ja]
+  nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-path> [cdp-port] [--locale ja]
   nuinui-e2e-prepare status [<human-test-lane>]
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
   nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
@@ -567,6 +571,111 @@ Every short form requires exactly one declared Human-test lane; a persisted
 session never disambiguates a zero- or multi-lane manifest.
 
 EOF
+}
+
+parse_locale_options() {
+  local -a args
+  local i=1 arg locale_value option_count=0
+
+  LOCALE='default'
+  LOCALE_ARGS=()
+  args=("$@")
+  while (( i <= $# )); do
+    arg="${args[i]}"
+    case "$arg" in
+      --locale)
+        (( option_count++ ))
+        (( option_count == 1 )) || {
+          echo 'ERROR: duplicate --locale option'
+          return 2
+        }
+        (( i < $# )) || {
+          echo 'ERROR: --locale requires a value'
+          return 2
+        }
+        locale_value="${args[i+1]}"
+        [[ -n "$locale_value" && "$locale_value" != --* ]] || {
+          echo 'ERROR: --locale requires a value'
+          return 2
+        }
+        (( i + 1 == $# )) || {
+          echo 'ERROR: --locale must be the trailing option'
+          return 2
+        }
+        [[ "$locale_value" == ja ]] || {
+          echo "ERROR: unsupported locale: $locale_value"
+          return 2
+        }
+        LOCALE='ja'
+        (( i += 2 ))
+        ;;
+      --locale=*|--locale?*)
+        echo "ERROR: malformed locale option: $arg"
+        return 2
+        ;;
+      *)
+        LOCALE_ARGS+=("$arg")
+        (( i++ ))
+        ;;
+    esac
+  done
+}
+
+assert_locale() {
+  case "$1" in
+    default|ja) ;;
+    *) echo "ERROR: unsupported locale: $1"; return 2 ;;
+  esac
+}
+
+resolve_vscode_app_identity() {
+  VS_CODE_APP_REAL="$(resolve_existing_path "$VS_CODE_APP")" || return 1
+  [[ -d "$VS_CODE_APP_REAL/Contents" && ! -L "$VS_CODE_APP_REAL/Contents" ]] || return 1
+}
+
+plist_cf_bundle_executable() {
+  local plist="$1" value=''
+
+  if command -v plutil >/dev/null 2>&1; then
+    value="$(plutil -extract CFBundleExecutable raw -o - "$plist" 2>/dev/null || true)"
+  fi
+  if [[ -z "$value" && -x /usr/libexec/PlistBuddy ]]; then
+    value="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist" 2>/dev/null || true)"
+  fi
+  if [[ -z "$value" ]]; then
+    value="$(awk '
+      /<key>CFBundleExecutable<\/key>/ { wanted=1; next }
+      wanted && /<string>/ {
+        line=$0
+        sub(/^.*<string>/, "", line)
+        sub(/<\/string>.*$/, "", line)
+        print line
+        exit
+      }
+      wanted && /<key>/ { exit }
+    ' "$plist" 2>/dev/null || true)"
+  fi
+  [[ -n "$value" && "$value" != */* && "$value" != '.' && "$value" != '..' ]] || return 1
+  print -r -- "$value"
+}
+
+resolve_vscode_application_executable() {
+  local plist executable_name
+  resolve_vscode_app_identity || return 1
+  plist="$VS_CODE_APP_REAL/Contents/Info.plist"
+  [[ -f "$plist" && ! -L "$plist" ]] || return 1
+  executable_name="$(plist_cf_bundle_executable "$plist")" || return 1
+  VS_CODE_APPLICATION_EXECUTABLE="$VS_CODE_APP_REAL/Contents/MacOS/$executable_name"
+  [[ -x "$VS_CODE_APPLICATION_EXECUTABLE" && ! -d "$VS_CODE_APPLICATION_EXECUTABLE" ]] || return 1
+}
+
+process_command_line_owned() {
+  local root="$1" command_line="$2"
+  [[ -n "$command_line" ]] || return 2
+  [[ "$command_line" == *"$root/user-data"* ]] || return 1
+  resolve_vscode_app_identity || return 1
+  [[ "$command_line" == *"$VS_CODE_APP/Contents/"* ||
+    "$command_line" == *"$VS_CODE_APP_REAL/Contents/"* ]]
 }
 resolve_existing_path() {
   local input_path="$1"
@@ -627,6 +736,7 @@ metadata_matches() {
 session_kind() {
   local metadata="$1"
   metadata_matches "$metadata" "$CURRENT_SESSION_KEYS" && { echo current; return 0; }
+  metadata_matches "$metadata" "$PRE_LOCALE_SESSION_KEYS" && { echo pre-locale; return 0; }
   metadata_matches "$metadata" "$LEGACY_SESSION_KEYS" && { echo legacy; return 0; }
   return 1
 }
@@ -637,13 +747,19 @@ load_session() {
   SESSION_ISSUE="$(metadata_value "$metadata" issue)" || return 1; SESSION_REF="$(metadata_value "$metadata" ref)" || return 1
   SESSION_ROOT="$(metadata_value "$metadata" root)" || return 1; SESSION_HANDOFF="$(metadata_value "$metadata" handoff)" || return 1
   SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
-  if [[ "$SESSION_KIND" == current ]]; then
+  if [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]]; then
     SESSION_LANE="$(metadata_value "$metadata" lane)" || return 1
     [[ -n "$SESSION_LANE" ]] || return 1
     SESSION_SOURCE_FIXTURE="$(metadata_value "$metadata" source_fixture)" || return 1
     case "$SESSION_SOURCE_FIXTURE" in /*) ;; *) return 1 ;; esac
     [[ "$SESSION_SOURCE_FIXTURE" != */ && "$SESSION_SOURCE_FIXTURE" != *'/./'* && "$SESSION_SOURCE_FIXTURE" != *'/../'* && "$SESSION_SOURCE_FIXTURE" != *//* ]] || return 1
     [[ ! -e "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" || -f "$SESSION_SOURCE_FIXTURE" && ! -L "$SESSION_SOURCE_FIXTURE" && "$(resolve_existing_path "$SESSION_SOURCE_FIXTURE")" == "$SESSION_SOURCE_FIXTURE" ]] || return 1
+    if [[ "$SESSION_KIND" == current ]]; then
+      SESSION_LOCALE="$(metadata_value "$metadata" locale)" || return 1
+      assert_locale "$SESSION_LOCALE" >/dev/null || return 1
+    else
+      SESSION_LOCALE='pre-locale/default'
+    fi
   fi
   [[ "$SESSION_ISSUE" =~ '^SAY-[0-9]+$' && "$SESSION_REF" =~ '^[0-9a-fA-F]{40}$' && -n "$SESSION_ROOT" && -n "$SESSION_HANDOFF" && -n "$SESSION_CDP_PORT" && -n "$SESSION_LAUNCH_PID" ]] || return 1
   assert_port "$SESSION_CDP_PORT" || return 1
@@ -707,7 +823,14 @@ assert_process_ownership() {
   assert_session_root "$root" || return 1
   if [[ -n "$launch_pid" && "$launch_pid" =~ '^[1-9][0-9]*$' ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
     command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"$root"* ]] || { echo "BLOCKED: launch PID ownership mismatch"; return 1; }
+    if [[ -z "$command_line" ]]; then
+      if [[ "$require_launch" == 1 ]]; then
+        echo "BLOCKED: recorded launch PID is not running"
+        return 1
+      fi
+    else
+      process_command_line_owned "$root" "$command_line" || { echo "BLOCKED: launch PID ownership mismatch"; return 1; }
+    fi
   elif [[ "$require_launch" == 1 ]]; then
     echo "BLOCKED: recorded launch PID is not running"
     return 1
@@ -716,7 +839,8 @@ assert_process_ownership() {
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
     command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"$root"* ]] || { echo "BLOCKED: E2E process ownership is ambiguous"; return 1; }
+    [[ -n "$command_line" ]] || continue
+    process_command_line_owned "$root" "$command_line" || { echo "BLOCKED: E2E process ownership is ambiguous"; return 1; }
   done
 }
 
@@ -734,17 +858,27 @@ stop_owned_processes() {
   assert_process_ownership "$root" "$launch_pid" 0 || return 1
   matching_pids=()
   if [[ -n "$launch_pid" ]] && kill -0 "$launch_pid" >/dev/null 2>&1; then
-    matching_pids+=("$launch_pid")
+    command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
+    if [[ -n "$command_line" ]]; then
+      process_command_line_owned "$root" "$command_line" || return 1
+      matching_pids+=("$launch_pid")
+    fi
   fi
   pids=("${(@f)$(process_ids_for_root "$root")}")
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
     command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-    [[ "$command_line" == *"$root"* ]] || return 1
+    [[ -n "$command_line" ]] || continue
+    process_command_line_owned "$root" "$command_line" || return 1
     (( ${matching_pids[(Ie)$pid]} == 0 )) && matching_pids+=("$pid")
   done
 
-  for pid in "${matching_pids[@]}"; do kill -TERM "$pid" >/dev/null 2>&1 || return 1; done
+  for pid in "${matching_pids[@]}"; do
+    kill -TERM "$pid" >/dev/null 2>&1 || {
+      kill -0 "$pid" >/dev/null 2>&1 || continue
+      return 1
+    }
+  done
   for _ in $(seq 1 10); do
     remaining=0
     for pid in "${matching_pids[@]}"; do
@@ -755,7 +889,10 @@ stop_owned_processes() {
   done
   for pid in "${matching_pids[@]}"; do
     kill -0 "$pid" >/dev/null 2>&1 || continue
-    kill -KILL "$pid" >/dev/null 2>&1 || return 1
+    kill -KILL "$pid" >/dev/null 2>&1 || {
+      kill -0 "$pid" >/dev/null 2>&1 || continue
+      return 1
+    }
   done
   return 0
 }
@@ -915,6 +1052,7 @@ write_session() {
   local handoff="$6"
   local cdp_port="$7"
   local launch_pid="$8"
+  local locale="$9"
   local session=""
   local temporary=""
 
@@ -929,6 +1067,7 @@ write_session() {
   [[ -n "$source_fixture" ]] || return 1
   assert_port "$cdp_port" || return 1
   [[ "$launch_pid" =~ '^[1-9][0-9]*$' ]] || return 1
+  assert_locale "$locale" || return 1
 
   temporary="$(mktemp "${session}.XXXXXX")" || {
     echo "ERROR: could not create E2E session metadata"
@@ -943,6 +1082,7 @@ write_session() {
     printf 'handoff=%s\n' "$handoff"
     printf 'cdp_port=%s\n' "$cdp_port"
     printf 'launch_pid=%s\n' "$launch_pid"
+    printf 'locale=%s\n' "$locale"
   } > "$temporary"; then
     rm -f -- "$temporary"
     echo "ERROR: could not write E2E session metadata"
@@ -989,10 +1129,16 @@ status() {
     if [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
       assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
       session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
+      echo "  locale=$SESSION_LOCALE"
       echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"; echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
       if kill -0 "$launch_pid" >/dev/null 2>&1; then
         command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
-        [[ "$command_line" == *"$root"* ]] && echo "  launch_pid=$launch_pid (owned-process-running)" || { echo "  launch_pid=$launch_pid (process-ownership-mismatch)"; result=1; }
+        if [[ -n "$command_line" ]] && assert_process_ownership "$root" "$launch_pid" 1 >/dev/null 2>&1; then
+          echo "  launch_pid=$launch_pid (owned-process-running)"
+        else
+          echo "  launch_pid=$launch_pid (process-ownership-mismatch)"
+          result=1
+        fi
       else echo "  launch_pid=$launch_pid (not-running)"; fi
       [[ "$MARKER_ISSUE" == "$issue" && "$MARKER_REF" == "$tested_ref" ]] && echo "  session_marker=consistent" || { echo "  session_marker=INCONSISTENT"; result=1; }
     else echo "  session=INVALID"; result=1
@@ -1077,12 +1223,15 @@ assert_cleanup_args() {
 
 assert_no_owned_processes() {
   local root="$1"
-  local pid
+  local pid command_line
   local -a pids
   assert_process_ownership "$root" "" 0 || return 1
   pids=("${(@f)$(process_ids_for_root "$root")}")
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
+    command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+    [[ -n "$command_line" ]] || continue
+    process_command_line_owned "$root" "$command_line" || return 1
     echo "BLOCKED: E2E process still belongs to the cleaned root (PID $pid)"
     return 1
   done
@@ -1117,6 +1266,7 @@ cleanup() {
   local session_snapshot_lane="" session_snapshot_issue="" session_snapshot_ref=""
   local session_snapshot_source_fixture="" session_snapshot_root=""
   local session_snapshot_handoff="" session_snapshot_cdp_port="" session_snapshot_launch_pid=""
+  local session_snapshot_locale="" session_snapshot_kind=""
   local handoff=""
 
   assert_cleanup_args "$issue" "$tested_ref" "$requested_root" || return $?
@@ -1130,7 +1280,7 @@ cleanup() {
     return 1
   }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
-  [[ "$SESSION_KIND" == current ]] || {
+  [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || {
     echo "BLOCKED: legacy E2E session cannot be cleaned by the current lifecycle"
     return 1
   }
@@ -1146,6 +1296,8 @@ cleanup() {
   session_snapshot_handoff="$SESSION_HANDOFF"
   session_snapshot_cdp_port="$SESSION_CDP_PORT"
   session_snapshot_launch_pid="$SESSION_LAUNCH_PID"
+  session_snapshot_locale="$SESSION_LOCALE"
+  session_snapshot_kind="$SESSION_KIND"
   [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
@@ -1182,7 +1334,7 @@ cleanup() {
     return 1
   }
   load_session "$session" || { echo "BLOCKED: E2E session changed before metadata removal; receipt retained"; return 1; }
-  [[ "$SESSION_KIND" == current &&
+  [[ "$SESSION_KIND" == "$session_snapshot_kind" &&
     "$SESSION_LANE" == "$session_snapshot_lane" &&
     "$SESSION_ISSUE" == "$session_snapshot_issue" &&
     "$SESSION_REF" == "$session_snapshot_ref" &&
@@ -1191,6 +1343,7 @@ cleanup() {
     "$SESSION_HANDOFF" == "$session_snapshot_handoff" &&
     "$SESSION_CDP_PORT" == "$session_snapshot_cdp_port" &&
     "$SESSION_LAUNCH_PID" == "$session_snapshot_launch_pid" &&
+    "$SESSION_LOCALE" == "$session_snapshot_locale" &&
     "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" &&
     "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: E2E session changed before metadata removal; receipt retained"
@@ -1258,12 +1411,17 @@ resolve_code_bin() {
 }
 
 prepare_duplicate() {
-  local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5"
+  local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5" locale="$6"
   [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
-  [[ "$SESSION_KIND" == current ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
+  [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
+  if [[ "$SESSION_KIND" == pre-locale && "$locale" == ja ]]; then
+    echo "BLOCKED: pre-locale E2E session cannot qualify for Japanese duplicate prepare"
+    return 1
+  fi
   [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
-    "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" ]] || {
+    "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" &&
+    ( "$SESSION_KIND" == pre-locale || "$SESSION_LOCALE" == "$locale" ) ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
   }
@@ -1283,7 +1441,8 @@ prepare() {
   local issue="$1"
   local tested_ref="$2"
   local fixture="$3"
-  local cdp_port="${4:-$DEFAULT_CDP_PORT}"
+  local locale="$4"
+  local cdp_port="${5:-$DEFAULT_CDP_PORT}"
   local source_fixture=""
   local repo="$E2E_WT"
   local code_bin=""
@@ -1295,6 +1454,8 @@ prepare() {
   local session=""
   local ready=0
   local vscode_pid=""
+  local launch_bin=""
+  local -a launch_args
 
   cleanup_failed_prepare() {
     local result="$1"
@@ -1306,6 +1467,7 @@ prepare() {
     return "$result"
   }
 
+  assert_locale "$locale" || return $?
   assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
   assert_port "$cdp_port" || { echo "ERROR: CDP port must be between 1 and 65535"; return 2; }
   source_fixture="$(resolve_existing_path "$fixture")" || {
@@ -1315,7 +1477,7 @@ prepare() {
 
   session="$(session_path)" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
   if path_exists "$session"; then
-    prepare_duplicate "$issue" "$tested_ref" "$source_fixture" "$cdp_port" "$session"
+    prepare_duplicate "$issue" "$tested_ref" "$source_fixture" "$cdp_port" "$session" "$locale"
     return $?
   fi
 
@@ -1323,6 +1485,12 @@ prepare() {
     echo "BLOCKED: VS Code CLI executable not found"
     return 1
   }
+  if [[ "$locale" == ja ]]; then
+    resolve_vscode_application_executable || {
+      echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
+      return 1
+    }
+  fi
 
   if lsof -nP -iTCP:"$cdp_port" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "BLOCKED: CDP port already in use"
@@ -1341,6 +1509,18 @@ prepare() {
 
   ensure_dependencies "$e2e_root" || { cleanup_failed_prepare 1; return 1; }
   build_artifacts || { cleanup_failed_prepare 1; return 1; }
+
+  if [[ "$locale" == ja ]]; then
+    "$code_bin" \
+      --user-data-dir="$e2e_root/user-data" \
+      --extensions-dir="$e2e_root/extensions" \
+      --install-extension "$JAPANESE_LANGUAGE_PACK" \
+      --force >/dev/null 2>&1 || {
+        echo "ERROR: Japanese language pack installation failed"
+        cleanup_failed_prepare 1
+        return 1
+      }
+  fi
 
   cat > "$e2e_root/user-data/User/settings.json" <<'EOF'
 {
@@ -1363,19 +1543,28 @@ EOF
 
   rust_bin="$repo/rust-evaluator/target/debug/evaluation_stdio"
 
+  launch_args=(
+    --new-window
+    --user-data-dir="$e2e_root/user-data"
+    --extensions-dir="$e2e_root/extensions"
+    --extensionDevelopmentPath="$repo/vscode-extension"
+    --remote-debugging-port="$cdp_port"
+    '--remote-allow-origins=*'
+    --skip-welcome
+    --skip-sessions-welcome
+    --skip-release-notes
+    --disable-workspace-trust
+  )
+  if [[ "$locale" == ja ]]; then
+    launch_bin="$VS_CODE_APPLICATION_EXECUTABLE"
+    launch_args=(--locale=ja "${launch_args[@]}")
+  else
+    launch_bin="$code_bin"
+  fi
+
   NUINUICAD_RUST_EVALUATION_BINARY="$rust_bin" \
   NUINUICAD_MCP_OBSERVATION=1 \
-  "$code_bin" --new-window \
-    --user-data-dir="$e2e_root/user-data" \
-    --extensions-dir="$e2e_root/extensions" \
-    --extensionDevelopmentPath="$repo/vscode-extension" \
-    --remote-debugging-port="$cdp_port" \
-    '--remote-allow-origins=*' \
-    --skip-welcome \
-    --skip-sessions-welcome \
-    --skip-release-notes \
-    --disable-workspace-trust \
-    "$prepared_fixture" >/dev/null 2>&1 &
+  "$launch_bin" "${launch_args[@]}" "$prepared_fixture" >/dev/null 2>&1 &
   vscode_pid=$!
 
   for _ in $(seq 1 120); do
@@ -1407,7 +1596,7 @@ CDP_PORT='$cdp_port'
 RUST_BIN='$rust_bin'
 EOF
 
-  write_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
+  write_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" "$locale" || {
     cleanup_failed_prepare 1
     return 1
   }
@@ -1421,6 +1610,7 @@ EOF
   echo "  fixture=$prepared_fixture"
   echo "  source_fixture=$source_fixture"
   echo "  cdp_port=$cdp_port"
+  echo "  locale=$locale"
   echo "  handoff=$handoff"
   echo "  session=$session"
   echo "READY FOR HUMAN E2E"
@@ -1431,6 +1621,9 @@ case "${1:-}" in
     echo "$VERSION"
     ;;
   check)
+    parse_locale_options "${@:2}" || exit $?
+    assert_locale "$LOCALE" || exit $?
+    set -- "$1" "${LOCALE_ARGS[@]}"
     if [[ "$#" -eq 4 ]]; then
       select_human_lane || exit $?
       check_issue=$2; check_ref=$3; check_fixture=$4
@@ -1442,8 +1635,24 @@ case "${1:-}" in
     fi
     assert_inputs "$check_issue" "$check_ref" "$check_fixture" || exit $?
     assert_checkout "$check_issue" "$check_ref"
+    if [[ "$LOCALE" == ja ]]; then
+      check_code_bin="$(resolve_code_bin)" || {
+        echo "BLOCKED: VS Code CLI executable not found"
+        exit 1
+      }
+      resolve_vscode_application_executable || {
+        echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
+        exit 1
+      }
+      echo "  locale=ja"
+      echo "  vscode_cli=$check_code_bin"
+      echo "  vscode_application_executable=$VS_CODE_APPLICATION_EXECUTABLE"
+    fi
     ;;
   prepare)
+    parse_locale_options "${@:2}" || exit $?
+    assert_locale "$LOCALE" || exit $?
+    set -- "$1" "${LOCALE_ARGS[@]}"
     if [[ "$#" -eq 4 ]]; then
       select_human_lane || exit $?
       prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port="${5:-$DEFAULT_CDP_PORT}"
@@ -1464,7 +1673,7 @@ case "${1:-}" in
       usage; exit 2
     fi
     assert_inputs "$prepare_issue" "$prepare_ref" "$prepare_fixture" || exit $?
-    prepare "$prepare_issue" "$prepare_ref" "$prepare_fixture" "$prepare_port"
+    prepare "$prepare_issue" "$prepare_ref" "$prepare_fixture" "$LOCALE" "$prepare_port"
     ;;
   status)
     [[ "$#" -eq 1 || "$#" -eq 2 ]] || { usage; exit 2; }
