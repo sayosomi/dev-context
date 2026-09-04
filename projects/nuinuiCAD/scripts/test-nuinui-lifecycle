@@ -4,6 +4,7 @@ set -eu
 SOURCE_HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
 ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-lifecycle.XXXXXX")" && pwd -P)
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+export NUINUI_E2E_TEMP_PARENT=$ROOT
 
 fail() { echo "LIFECYCLE TEST FAIL: $*" >&2; exit 1; }
 assert_contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
@@ -139,37 +140,73 @@ HUMAN_GIT_DIR=$(git -C "$HUMAN" rev-parse --absolute-git-dir)
 HUMAN_MARKER=$HUMAN_GIT_DIR/nuinui-slot
 HUMAN_SESSION=$HUMAN_GIT_DIR/nuinui-e2e-session
 HUMAN_FIXTURE=$ROOT/human-fixture.nui
-HUMAN_SESSION_ROOT=$ROOT/nuinui-vscode-e2e-human
+HUMAN_FIXTURE_SYMLINK=$ROOT/human-fixture.symlink
+HUMAN_FIXTURE_DIR=$ROOT/human-fixture-dir
+HUMAN_FIXTURE_DIR_SYMLINK=$ROOT/human-fixture-dir.symlink
+HUMAN_FIXTURE_NONCANONICAL=$HUMAN_FIXTURE_DIR_SYMLINK/fixture.nui
+HUMAN_SESSION_ROOT=$ROOT/nuinui-vscode-e2e.human
 HUMAN_HANDOFF=$ROOT/nuinui-SAY-401-human-e2e.env
+HUMAN_BAD_ROOT=$(dirname "$ROOT")/nuinui-vscode-e2e.invalid
+HUMAN_BAD_HANDOFF=$ROOT/wrong-handoff.env
 printf '%s\n' fixture > "$HUMAN_FIXTURE"
+ln -s "$HUMAN_FIXTURE" "$HUMAN_FIXTURE_SYMLINK"
+mkdir "$HUMAN_FIXTURE_DIR"
+printf '%s\n' fixture > "$HUMAN_FIXTURE_DIR/fixture.nui"
+ln -s "$HUMAN_FIXTURE_DIR" "$HUMAN_FIXTURE_DIR_SYMLINK"
 
 clear_human_state() {
   rm -f "$HUMAN_MARKER" "$HUMAN_SESSION" "$HUMAN/human-dirty-file"
   git -C "$HUMAN" switch --detach -q "$BASE"
 }
 
+human_state_snapshot() {
+  printf 'branch=%s\n' "$(git -C "$HUMAN" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  printf 'head=%s\n' "$(git -C "$HUMAN" rev-parse HEAD)"
+  printf 'status=%s\n' "$(git -C "$HUMAN" status --porcelain)"
+  printf 'marker=%s\n' "$(metadata_snapshot "$HUMAN_MARKER")"
+  printf 'session=%s\n' "$(metadata_snapshot "$HUMAN_SESSION")"
+}
+
+human_handoff_for_issue() {
+  printf '%s/nuinui-%s-human-e2e.env\n' "$ROOT" "$1"
+}
+
 write_human_marker() {
   printf 'issue=%s\nref=%s\n' "$1" "$2" > "$HUMAN_MARKER"
 }
 
+write_human_current_session_values() {
+  printf 'lane=%s\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\nlocale=default\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" > "$HUMAN_SESSION"
+}
+
 write_human_current_session() {
-  printf 'lane=human\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\nlocale=default\n' \
-    "$1" "$2" "$HUMAN_FIXTURE" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+  write_human_current_session_values human "$1" "$2" "$HUMAN_FIXTURE" \
+    "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue "$1")"
+}
+
+write_human_pre_locale_session_values() {
+  printf 'lane=%s\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" > "$HUMAN_SESSION"
 }
 
 write_human_pre_locale_session() {
-  printf 'lane=human\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\n' \
-    "$1" "$2" "$HUMAN_FIXTURE" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+  write_human_pre_locale_session_values human "$1" "$2" "$HUMAN_FIXTURE" \
+    "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue "$1")"
+}
+
+write_human_preparing_session_values() {
+  printf 'kind=preparing\nlane=human\nissue=%s\nref=%s\nroot=%s\nprepare_owner=nuinui-e2e-prepare\nprepare_pid=1\n' \
+    "$1" "$2" "$3" > "$HUMAN_SESSION"
 }
 
 write_human_preparing_session() {
-  printf 'kind=preparing\nlane=human\nissue=%s\nref=%s\nroot=%s\nprepare_owner=nuinui-e2e-prepare\nprepare_pid=1\n' \
-    "$1" "$2" "$HUMAN_SESSION_ROOT" > "$HUMAN_SESSION"
+  write_human_preparing_session_values "$1" "$2" "$HUMAN_SESSION_ROOT"
 }
 
 write_human_legacy_session() {
   printf 'issue=%s\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\n' \
-    "$1" "$2" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+    "$1" "$2" "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue "$1")" > "$HUMAN_SESSION"
 }
 
 run_human_preflight() {
@@ -262,7 +299,7 @@ expect_duplicate_success
 echo 'TEST: preparing Human-test session is blocked in lane preflight'
 HUMAN_GIT_DIR=$(git -C "$HUMAN" rev-parse --absolute-git-dir) || fail 'Human-test git directory lookup'
 HUMAN_SESSION=$HUMAN_GIT_DIR/nuinui-e2e-session
-HUMAN_PREPARING_ROOT=$ROOT/nuinui-vscode-e2e-preparing
+HUMAN_PREPARING_ROOT=$ROOT/nuinui-vscode-e2e.preparing
 printf 'kind=preparing\nlane=human\nissue=SAY-400\nref=%s\nroot=%s\nprepare_owner=nuinui-e2e-prepare\nprepare_pid=%s\n' \
   "$BASE" "$HUMAN_PREPARING_ROOT" "$$" > "$HUMAN_SESSION"
 HUMAN_PREFLIGHT_OUTPUT=$(
@@ -328,9 +365,11 @@ clear_human_state
 write_human_marker SAY-404 "$BASE"
 write_human_legacy_session SAY-404 "$BASE"
 run_human_preflight
-[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'legacy session was not valid BUSY'
-assert_human_state human BUSY
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'legacy session was accepted as BUSY'
+assert_human_state human BLOCKED
 assert_contains "$(human_lane_block human)" 'session_kind=legacy' 'legacy session kind evidence'
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=unsupported-session-kind' \
+  'legacy session unsupported-kind reason'
 clear_human_state
 
 printf 'issue=SAY-405\n' > "$HUMAN_MARKER"
@@ -384,15 +423,103 @@ assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=marker-session-ref-mismatch' \
 clear_human_state
 
 write_human_marker SAY-412 "$BASE"
-printf 'lane=other-human\nissue=SAY-412\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\nlocale=default\n' \
-  "$BASE" "$HUMAN_FIXTURE" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+write_human_current_session_values other-human SAY-412 "$BASE" "$HUMAN_FIXTURE" \
+  "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue SAY-412)"
 run_human_preflight
 [ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'session lane mismatch was accepted'
 assert_human_state human BLOCKED
 assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=session-lane-mismatch' 'session lane mismatch reason'
+human_lane_mismatch_before=$(human_state_snapshot)
+human_lane_mismatch_duplicate=$(
+  "$HELPER" e2e-start human SAY-412 "$BASE" 2>&1
+) && fail 'duplicate E2E start accepted a mismatched session lane'
+assert_contains "$human_lane_mismatch_duplicate" 'session lane mismatch' \
+  'duplicate session lane mismatch reason'
+human_lane_mismatch_after=$(human_state_snapshot)
+[ "$human_lane_mismatch_before" = "$human_lane_mismatch_after" ] || \
+  fail 'duplicate session lane mismatch changed Human-test state'
 clear_human_state
 
-write_human_marker SAY-413 "$HUMAN_OTHER_REF"
+write_human_marker SAY-413 "$BASE"
+write_human_current_session_values human SAY-413 "$BASE" "$HUMAN_FIXTURE_SYMLINK" \
+  "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue SAY-413)"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'current symlink source fixture was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'current symlink source fixture reason'
+clear_human_state
+
+write_human_marker SAY-414 "$BASE"
+write_human_pre_locale_session_values human SAY-414 "$BASE" "$HUMAN_FIXTURE_SYMLINK" \
+  "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue SAY-414)"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'pre-locale symlink source fixture was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'pre-locale symlink source fixture reason'
+clear_human_state
+
+write_human_marker SAY-415 "$BASE"
+write_human_current_session_values human SAY-415 "$BASE" "$HUMAN_FIXTURE_NONCANONICAL" \
+  "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue SAY-415)"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'current noncanonical source fixture was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'current noncanonical source fixture reason'
+clear_human_state
+
+write_human_marker SAY-415 "$BASE"
+write_human_current_session_values human SAY-415 "$BASE" "$HUMAN_FIXTURE" \
+  "$HUMAN_BAD_ROOT" "$(human_handoff_for_issue SAY-415)"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'current invalid session root was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'current invalid session root reason'
+clear_human_state
+
+write_human_marker SAY-416 "$BASE"
+write_human_pre_locale_session_values human SAY-416 "$BASE" "$HUMAN_FIXTURE" \
+  "$HUMAN_BAD_ROOT" "$(human_handoff_for_issue SAY-416)"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'pre-locale invalid session root was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'pre-locale invalid session root reason'
+clear_human_state
+
+write_human_marker SAY-417 "$BASE"
+write_human_preparing_session_values human SAY-417 "$BASE" "$HUMAN_BAD_ROOT"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'preparing invalid session root was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'preparing invalid session root reason'
+clear_human_state
+
+write_human_marker SAY-418 "$BASE"
+write_human_current_session_values human SAY-418 "$BASE" "$HUMAN_FIXTURE" \
+  "$HUMAN_SESSION_ROOT" "$HUMAN_BAD_HANDOFF"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'current invalid handoff path was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'current invalid handoff path reason'
+clear_human_state
+
+write_human_marker SAY-419 "$BASE"
+write_human_pre_locale_session_values human SAY-419 "$BASE" "$HUMAN_FIXTURE" \
+  "$HUMAN_SESSION_ROOT" "$HUMAN_BAD_HANDOFF"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'pre-locale invalid handoff path was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'pre-locale invalid handoff path reason'
+clear_human_state
+
+write_human_marker SAY-420 "$HUMAN_OTHER_REF"
 run_human_preflight
 [ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'marker/checkout HEAD mismatch was accepted'
 assert_human_state human BLOCKED
