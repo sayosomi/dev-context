@@ -28,7 +28,7 @@ Expected: a compact Coding Agent packet centered on contract, base/head, scope, 
 
 Facts: `WORK-203`; tested commit `abc1234`; the validation oracle is the current Work plan; a Human must run the exact command `project-tool verify --work WORK-203 --commit abc1234` in the fixed test environment; expected observation is the oracle's named UI state; current result is unknown.
 
-Expected: preserve why the run is needed, authority/oracle reference, exact command and environment, expected observation, and a clear stop/report checkpoint. Do not optimize for character reduction, invent `PASS` / `FAIL`, or ask the Human to fill placeholders.
+Expected: preserve why the run is needed, authority/oracle reference, exact command and environment, expected observation, and a clear stop/report checkpoint. Verify that Human terminal-command construction and safety route through `shared/skills/human-terminal-instructions/SKILL.md`; do not duplicate that owner's shell-safety rules in this fixture. Do not optimize for character reduction, invent `PASS` / `FAIL`, or ask the Human to fill placeholders.
 
 ## Acceptance checklist
 

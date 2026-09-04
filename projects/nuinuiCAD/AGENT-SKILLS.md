@@ -108,6 +108,7 @@ skill selectionは`main` / `sub`のどちらでも同じ。
 
 共通のpacket semanticsは [`../../shared/skills/work-packet/SKILL.md`](../../shared/skills/work-packet/SKILL.md) がownerする。nuinuiCAD側では、そのshared skillを使い、次のproject-specific authority / state modelだけをoverlayする。
 
+- Read [`projects/nuinuiCAD/README.md`](./README.md) first as the nuinuiCAD project entrypoint before applying this project-specific authority / state overlay.
 - current contract authorityはLinearのcurrent Work / Issueとする。
 - repository / declared-lane / checkpoint stateは [`CHECKOUTS.md`](./CHECKOUTS.md)、[`CODING-AGENT.md`](./CODING-AGENT.md)、およびshared declared-lane ownerに従う。
 - active interim routingは [`CODEX-ONLY-INTERIM.md`](./CODEX-ONLY-INTERIM.md) がActiveな場合に読み、現在のruleを記録する。

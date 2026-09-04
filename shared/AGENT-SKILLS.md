@@ -52,6 +52,8 @@ Skill は parent task、project 固有の `AGENTS.md`、task contract、reposito
 
 複数のrecipient間で一時的なhandoff contextを渡すための、authority-safeなpacketの共通semantic owner。
 
+Activation trigger: Use `work-packet` when ChatGPT needs to generate, refresh, or validate a temporary handoff/checkpoint packet across ChatGPT/coordinator-style, Coding Agent/implementation, or Human collaboration.
+
 - packetをsource of truthではなくtemporary context carrierとして扱う。
 - `generate` / `refresh` / `validate`を提供し、authority reference、適用可能なexact stateとfreshness、scope / non-goal、owner、evidence、unknown / blocker、one next atomic operation、stop / decision checkpointを保持する。
 - unknown / unverified / not applicableを明示し、authority conflictやstale evidenceを推測で埋めない。
