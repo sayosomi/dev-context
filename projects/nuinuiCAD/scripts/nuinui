@@ -2590,8 +2590,9 @@ lane_execution_nuinui_e2e__absolute_path() {
     /*) ;;
     *) return 1 ;;
   esac
-  [ "$1" != */ ] && [ "$1" != *'/./'* ] &&
-    [ "$1" != *'/../'* ] && [ "$1" != *//* ]
+  case "$1" in
+    */|*/./*|*/../*|*//*) return 1 ;;
+  esac
 }
 
 lane_execution_nuinui_e2e__valid_source_fixture() {
@@ -2621,7 +2622,9 @@ lane_execution_nuinui_e2e__valid_session_root() {
     nuinui-vscode-e2e.*) ;;
     *) return 1 ;;
   esac
-  [ "$lane_execution_nuinui_e2e_relative" != */* ] || return 1
+  case "$lane_execution_nuinui_e2e_relative" in
+    */*) return 1 ;;
+  esac
   [ ! -L "$lane_execution_nuinui_e2e_root" ] || return 1
   lane_execution_nuinui_e2e_parent_real=$(realpath \
     "$lane_execution_nuinui_e2e_temp_parent" 2>/dev/null) || return 1
@@ -6006,7 +6009,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.8.2
+V=1.8.3
 K='preflight verify lane-init begin begin-command start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {

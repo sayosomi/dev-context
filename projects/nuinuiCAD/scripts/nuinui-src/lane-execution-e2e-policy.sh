@@ -29,8 +29,9 @@ lane_execution_nuinui_e2e__absolute_path() {
     /*) ;;
     *) return 1 ;;
   esac
-  [ "$1" != */ ] && [ "$1" != *'/./'* ] &&
-    [ "$1" != *'/../'* ] && [ "$1" != *//* ]
+  case "$1" in
+    */|*/./*|*/../*|*//*) return 1 ;;
+  esac
 }
 
 lane_execution_nuinui_e2e__valid_source_fixture() {
@@ -60,7 +61,9 @@ lane_execution_nuinui_e2e__valid_session_root() {
     nuinui-vscode-e2e.*) ;;
     *) return 1 ;;
   esac
-  [ "$lane_execution_nuinui_e2e_relative" != */* ] || return 1
+  case "$lane_execution_nuinui_e2e_relative" in
+    */*) return 1 ;;
+  esac
   [ ! -L "$lane_execution_nuinui_e2e_root" ] || return 1
   lane_execution_nuinui_e2e_parent_real=$(realpath \
     "$lane_execution_nuinui_e2e_temp_parent" 2>/dev/null) || return 1
