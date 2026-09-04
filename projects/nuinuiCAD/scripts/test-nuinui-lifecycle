@@ -199,6 +199,31 @@ prepare_duplicate
 DUPLICATE_CHECKPOINT=$BASE
 expect_duplicate_success
 
+echo 'TEST: preparing Human-test session is blocked in lane preflight'
+HUMAN_GIT_DIR=$(git -C "$HUMAN" rev-parse --absolute-git-dir) || fail 'Human-test git directory lookup'
+HUMAN_SESSION=$HUMAN_GIT_DIR/nuinui-e2e-session
+HUMAN_PREPARING_ROOT=$ROOT/nuinui-vscode-e2e-preparing
+printf 'kind=preparing\nlane=human\nissue=SAY-400\nref=%s\nroot=%s\nprepare_owner=nuinui-e2e-prepare\nprepare_pid=%s\n' \
+  "$BASE" "$HUMAN_PREPARING_ROOT" "$$" > "$HUMAN_SESSION"
+HUMAN_PREFLIGHT_OUTPUT=$(
+  "$HELPER" preflight 2>&1
+) || true
+HUMAN_PREFLIGHT_LINE=$(printf '%s\n' "$HUMAN_PREFLIGHT_OUTPUT" | \
+  grep -F 'lane name=human role=human-test ' | head -n 1) || \
+  fail 'preflight did not report the Human-test lane'
+assert_contains "$HUMAN_PREFLIGHT_LINE" 'lane name=human role=human-test' \
+  'preflight Human-test lane identity missing'
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'session=present' \
+  'preflight did not report the preparing Human-test session'
+HUMAN_PREFLIGHT_STATE=$(printf '%s\n' "$HUMAN_PREFLIGHT_OUTPUT" | awk '
+  /^lane name=human role=human-test / { found=1; next }
+  found && /state=/ { print; exit }
+')
+assert_contains "$HUMAN_PREFLIGHT_STATE" 'state=BLOCKED' \
+  'preflight projected a preparing Human-test session as available'
+rm -f "$HUMAN_SESSION"
+echo 'PASS: preparing Human-test session blocks FREE preflight projection'
+
 prepare_duplicate
 if MISSING_NAMED_OUTPUT=$(
   "$HELPER" begin-command --lane impl --issue SAY-300 --base "$BASE" 2>&1

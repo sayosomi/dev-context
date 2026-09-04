@@ -8,6 +8,18 @@ TEST_ROOT="$(mktemp -d "${TMPDIR:-/private/tmp}/nuinui-e2e-prepare-test.XXXXXX")
 TEST_ROOT="${TEST_ROOT:A}"
 
 cleanup_test_root() {
+  if [[ -n "${race_prepare_pid:-}" ]]; then
+    kill -TERM "$race_prepare_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${drift_prepare_pid:-}" ]]; then
+    kill -TERM "$drift_prepare_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${recovery_unrelated_pid:-}" ]]; then
+    kill -TERM "$recovery_unrelated_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${recovery_wrong_pid:-}" ]]; then
+    kill -TERM "$recovery_wrong_pid" >/dev/null 2>&1 || true
+  fi
   [[ -d "$TEST_ROOT" ]] && rm -rf -- "$TEST_ROOT"
 }
 trap cleanup_test_root EXIT
@@ -28,10 +40,15 @@ session=""
 tested_ref=""
 handoff=""
 root=""
+cleanup_receipt=""
 status_out=""
 marker_contents=""
 manifest="$TEST_ROOT/LANES.conf"
 language_pack='MS-CEINTL.vscode-language-pack-ja'
+race_prepare_pid=""
+drift_prepare_pid=""
+recovery_unrelated_pid=""
+recovery_wrong_pid=""
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" "$fake_app/Contents/MacOS" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -79,6 +96,12 @@ if [[ "${NUINUI_FAKE_NPM_FAIL:-0}" == "1" ]]; then
   exit 1
 fi
 if [[ "${1:-}" == "ci" ]]; then
+  if [[ -n "${NUINUI_TEST_PREPARE_READY_FILE:-}" ]]; then
+    print -r -- ready > "$NUINUI_TEST_PREPARE_READY_FILE"
+    while [[ -e "${NUINUI_TEST_PREPARE_PAUSE_FILE:-}" ]]; do
+      sleep 0.05
+    done
+  fi
   mkdir -p "$repo/node_modules/.bin"
   print -r -- '#!/bin/zsh' > "$repo/node_modules/.bin/esbuild"
   chmod +x "$repo/node_modules/.bin/esbuild"
@@ -229,6 +252,7 @@ EOF
 chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" \
   "$fake_bin/fake-vscode" "$fake_app/Contents/Resources/app/bin/code" "$fake_app/Contents/MacOS/Fake VS Code"
 real_mv="$(command -v mv)"
+real_rm="$(command -v rm)"
 real_ps="$(command -v ps)"
 cat > "$fake_bin/mv" <<'EOF'
 #!/bin/zsh
@@ -245,6 +269,17 @@ if [[ "${NUINUI_TEST_MUTATE_SESSION_ON_RECEIPT:-0}" == 1 &&
 fi
 EOF
 chmod +x "$fake_bin/mv"
+cat > "$fake_bin/rm" <<'EOF'
+#!/bin/zsh
+"$NUINUI_TEST_REAL_RM" "$@"
+if [[ "${NUINUI_TEST_MUTATE_SPLIT_SESSION_ON_HANDOFF:-0}" == 1 &&
+  "$*" == *"${NUINUI_TEST_SPLIT_HANDOFF:-}"* ]]; then
+  sed 's/^ref=.*/ref=0000000000000000000000000000000000000001/' \
+    "$NUINUI_TEST_SPLIT_SESSION" > "$NUINUI_TEST_SPLIT_SESSION.tmp"
+  "$NUINUI_TEST_REAL_MV" "$NUINUI_TEST_SPLIT_SESSION.tmp" "$NUINUI_TEST_SPLIT_SESSION"
+fi
+EOF
+chmod +x "$fake_bin/rm"
 cat > "$fake_bin/ps" <<'EOF'
 #!/bin/zsh
 if [[ -n "${NUINUI_TEST_EMPTY_PS_PID:-}" ]]; then
@@ -287,6 +322,7 @@ common_env=(
   "NUINUI_E2E_VSCODE_APP=$fake_app"
   "NUINUI_FAKE_REPO=$repo"
   "NUINUI_TEST_REAL_MV=$real_mv"
+  "NUINUI_TEST_REAL_RM=$real_rm"
   "NUINUI_TEST_REAL_PS=$real_ps"
   "PATH=$fake_bin:$PATH"
 )
@@ -303,6 +339,7 @@ self_path_env=(
   "NUINUI_E2E_VSCODE_APP=$fake_app"
   "NUINUI_FAKE_REPO=$repo"
   "NUINUI_TEST_REAL_MV=$real_mv"
+  "NUINUI_TEST_REAL_RM=$real_rm"
   "NUINUI_TEST_REAL_PS=$real_ps"
   "PATH=$fake_bin:$PATH"
 )
@@ -382,10 +419,272 @@ print -r -- "$self_path_invalid_out" | grep -Fq \
   'BLOCKED: standalone helper is not in its versioned project scripts directory' \
   || { print -r -- "$self_path_invalid_out"; fail "invalid standalone helper placement did not fail closed"; }
 
+echo "TEST: preparing reservation blocks E2E release and another start"
+nuinui_result="$TEST_ROOT/nuinui-result"
+git init -q "$nuinui_result" || fail "nuinui result repository setup"
+nuinui_env=(
+  "NUINUI_SELFTEST=1"
+  "NUINUI_SELFTEST_MANIFEST=$manifest"
+  "NUINUI_SELFTEST_RESULT_REPO=$nuinui_result"
+  "NUINUI_E2E_STATUS_HELPER=$PREPARE_SCRIPT"
+  "NUINUI_TEST_REAL_MV=$real_mv"
+  "NUINUI_TEST_REAL_PS=$real_ps"
+  "PATH=$fake_bin:$PATH"
+)
+race_gate="$TEST_ROOT/race-gate"
+race_ready="$TEST_ROOT/race-ready"
+race_log="$TEST_ROOT/race-prepare.log"
+: > "$race_gate"
+env "${common_env[@]}" \
+  "NUINUI_TEST_PREPARE_PAUSE_FILE=$race_gate" \
+  "NUINUI_TEST_PREPARE_READY_FILE=$race_ready" \
+  zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 > "$race_log" 2>&1 &
+race_prepare_pid=$!
+for _ in $(seq 1 100); do
+  if [[ -f "$race_ready" && -f "$session" ]] && grep -Fq 'kind=preparing' "$session"; then
+    break
+  fi
+  sleep 0.05
+done
+[[ -f "$race_ready" && -f "$session" ]] || fail "prepare did not publish a durable preparing reservation"
+grep -Fq 'kind=preparing' "$session" || fail "prepare reservation schema was not strict preparing"
+
+if race_release_out="$(env "${nuinui_env[@]}" "$SCRIPT_DIR/nuinui" \
+  e2e-release test-human SAY-999 "$tested_ref" 2>&1)"; then
+  print -r -- "$race_release_out"
+  fail "e2e-release passed while prepare was paused"
+fi
+print -r -- "$race_release_out" | grep -Fq 'BLOCKED' || {
+  print -r -- "$race_release_out"
+  fail "e2e-release did not fail closed on preparing reservation"
+}
+
+if race_closure_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  closure-check SAY-999 2>&1)"; then
+  print -r -- "$race_closure_out"
+  fail "closure-check passed while prepare was paused"
+fi
+print -r -- "$race_closure_out" | grep -Fq 'BLOCKING-SAME-ISSUE' || {
+  print -r -- "$race_closure_out"
+  fail "closure-check did not block on the preparing same-Issue session"
+}
+
+if race_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status 2>&1)"; then
+  print -r -- "$race_status_out"
+  fail "status passed while prepare was paused"
+fi
+print -r -- "$race_status_out" | grep -Fq 'session=preparing' || {
+  print -r -- "$race_status_out"
+  fail "status did not report preparing state"
+}
+print -r -- "$race_status_out" | grep -Fq 'preparation=in-flight' || {
+  print -r -- "$race_status_out"
+  fail "status did not report in-flight preparation"
+}
+! print -r -- "$race_status_out" | grep -Fq 'session=active' || \
+  fail "status misclassified preparing state as active"
+
+if race_start_out="$(env "${nuinui_env[@]}" "$SCRIPT_DIR/nuinui" \
+  e2e-start test-human SAY-998 "$tested_ref" 2>&1)"; then
+  print -r -- "$race_start_out"
+  fail "another e2e-start passed while prepare was paused"
+fi
+print -r -- "$race_start_out" | grep -Fq 'BLOCKED' || {
+  print -r -- "$race_start_out"
+  fail "another e2e-start did not fail closed on preparing reservation"
+}
+grep -Fq 'kind=preparing' "$session" || fail "guard attempts changed preparing reservation"
+rm -f -- "$race_gate"
+wait "$race_prepare_pid" || {
+  cat "$race_log"
+  fail "paused prepare did not complete after resumption"
+}
+race_prepare_pid=""
+grep -Fq 'E2E SETUP READY' "$race_log" || fail "resumed prepare did not publish the active session"
+grep -Fq 'issue=SAY-999' "$session" || fail "resumed prepare did not retain Issue A"
+! grep -Fq 'kind=preparing' "$session" || fail "resumed prepare left preparing session metadata"
+grep -Fq "ref=$tested_ref" "$session" || fail "resumed prepare did not retain ref A"
+grep -Fq 'issue=SAY-999' "$marker" || fail "race preparation changed marker Issue"
+grep -Fq "ref=$tested_ref" "$marker" || fail "race preparation changed marker ref"
+race_root="$(sed -n 's/^root=//p' "$session")"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" \
+  "$race_root" >/dev/null || fail "race session cleanup"
+cleanup_receipt="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-cleanup-receipt"
+rm -f -- "$marker" "$cleanup_receipt"
+echo "PASS: preparing reservation closed the release/start race"
+
+echo "TEST: final generation revalidation rejects stale active publication"
+drift_ref="$(git -C "$repo" commit-tree "$(git -C "$repo" rev-parse "$tested_ref^{tree}")" \
+  -p "$tested_ref" -m generation-drift)" || fail "generation drift commit"
+git -C "$repo" switch --detach -q "$tested_ref" || fail "generation drift baseline checkout"
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+drift_gate="$TEST_ROOT/drift-gate"
+drift_ready="$TEST_ROOT/drift-ready"
+drift_log="$TEST_ROOT/drift-prepare.log"
+: > "$drift_gate"
+env "${common_env[@]}" \
+  "NUINUI_TEST_PREPARE_PAUSE_FILE=$drift_gate" \
+  "NUINUI_TEST_PREPARE_READY_FILE=$drift_ready" \
+  zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 > "$drift_log" 2>&1 &
+drift_prepare_pid=$!
+for _ in $(seq 1 100); do
+  if [[ -f "$drift_ready" && -f "$session" ]] && grep -Fq 'kind=preparing' "$session"; then
+    break
+  fi
+  sleep 0.05
+done
+[[ -f "$drift_ready" && -f "$session" ]] || fail "generation-drift prepare did not publish reservation"
+drift_root="$(sed -n 's/^root=//p' "$session")"
+git -C "$repo" switch --detach -q "$drift_ref" || fail "generation drift checkout mutation"
+printf 'issue=SAY-998\nref=%s\n' "$drift_ref" > "$marker"
+rm -f -- "$drift_gate"
+if wait "$drift_prepare_pid"; then
+  cat "$drift_log"
+  fail "stale generation prepare unexpectedly succeeded"
+fi
+drift_prepare_pid=""
+grep -Fq 'generation drift detected before active publication' "$drift_log" || {
+  cat "$drift_log"
+  fail "generation drift was not reported before active publication"
+}
+[[ ! -e "$session" && ! -e "$drift_root" && \
+  ! -e "$temp_parent/nuinui-SAY-999-human-e2e.env" ]] || \
+  fail "generation drift retained owned session/root/handoff"
+[[ "$(sed -n 's/^issue=//p' "$marker")" == SAY-998 && \
+  "$(sed -n 's/^ref=//p' "$marker")" == "$drift_ref" ]] || \
+  fail "generation drift changed the newer marker"
+[[ "$(git -C "$repo" rev-parse HEAD)" == "$drift_ref" ]] || fail "generation drift changed newer checkout"
+[[ -z "$(git -C "$repo" status --porcelain)" ]] || fail "generation drift dirtied newer checkout"
+git -C "$repo" switch --detach -q "$tested_ref" || fail "generation drift reset checkout"
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+echo "PASS: final generation revalidation prevented stale session publication"
+
+echo "TEST: recover-split repairs only an exact owned marker/session split"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null \
+  || fail "split recovery active session setup"
+recovery_root="$(sed -n 's/^root=//p' "$session")"
+recovery_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+recovery_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+recovery_session_before="$(cat "$session")"
+git -C "$repo" switch --detach -q "$drift_ref" || fail "split recovery marker generation checkout"
+printf 'issue=SAY-998\nref=%s\n' "$drift_ref" > "$marker"
+recovery_unrelated_root="$temp_parent/nuinui-vscode-e2e-unrelated"
+"$fake_app/Contents/MacOS/Fake VS Code" \
+  --user-data-dir="$recovery_unrelated_root/user-data" \
+  --extensions-dir="$recovery_unrelated_root/extensions" >/dev/null 2>&1 &
+recovery_unrelated_pid=$!
+sleep 0.1
+recovery_output="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-998 "$drift_ref" SAY-999 "$tested_ref" "$recovery_root" 2>&1)" || {
+  print -r -- "$recovery_output"
+  fail "exact split recovery failed"
+}
+print -r -- "$recovery_output" | grep -Fq 'E2E SPLIT RECOVERED' || fail "split recovery omitted success evidence"
+print -r -- "$recovery_output" | grep -Fq 'status=canonical' || fail "split recovery omitted canonical status evidence"
+[[ "$(sed -n 's/^issue=//p' "$marker")" == SAY-998 && \
+  "$(sed -n 's/^ref=//p' "$marker")" == "$drift_ref" ]] || fail "split recovery changed marker B"
+[[ "$(git -C "$repo" rev-parse HEAD)" == "$drift_ref" ]] || fail "split recovery changed checkout B"
+[[ ! -e "$session" && ! -e "$recovery_root" && ! -e "$recovery_handoff" ]] || \
+  fail "split recovery retained stale session/root/handoff"
+kill -0 "$recovery_pid" >/dev/null 2>&1 && fail "split recovery did not stop owned stale process"
+kill -0 "$recovery_unrelated_pid" >/dev/null 2>&1 || fail "split recovery stopped unrelated process"
+kill -TERM "$recovery_unrelated_pid" >/dev/null 2>&1 || true
+wait "$recovery_unrelated_pid" >/dev/null 2>&1 || true
+recovery_unrelated_pid=""
+git -C "$repo" switch --detach -q "$tested_ref" || fail "split recovery fixture reset"
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+echo "PASS: recover-split preserved marker B and unrelated process while removing owned split state"
+
+echo "TEST: recover-split rejects wrong identities, consistent state, ownership mismatch, and concurrent change"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null \
+  || fail "split recovery rejection setup"
+recovery_root="$(sed -n 's/^root=//p' "$session")"
+recovery_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+recovery_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+recovery_session_before="$(cat "$session")"
+git -C "$repo" switch --detach -q "$drift_ref" || fail "split recovery rejection checkout"
+printf 'issue=SAY-998\nref=%s\n' "$drift_ref" > "$marker"
+
+split_rejection_before="$(cat "$session")"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-997 "$drift_ref" SAY-999 "$tested_ref" "$recovery_root" >/dev/null 2>&1; then
+  fail "wrong marker identity unexpectedly recovered split"
+fi
+[[ "$(cat "$session")" == "$split_rejection_before" ]] || fail "wrong marker identity changed session"
+[[ "$(sed -n 's/^issue=//p' "$marker")" == SAY-998 ]] || fail "wrong marker identity changed marker"
+
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-998 "$drift_ref" SAY-998 "$tested_ref" "$recovery_root" >/dev/null 2>&1; then
+  fail "wrong session Issue unexpectedly recovered split"
+fi
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-998 "$drift_ref" SAY-999 0000000000000000000000000000000000000001 "$recovery_root" >/dev/null 2>&1; then
+  fail "wrong session ref unexpectedly recovered split"
+fi
+wrong_recovery_root="$temp_parent/nuinui-vscode-e2e-wrong-root"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-998 "$drift_ref" SAY-999 "$tested_ref" "$wrong_recovery_root" >/dev/null 2>&1; then
+  fail "wrong session root unexpectedly recovered split"
+fi
+[[ "$(cat "$session")" == "$split_rejection_before" && -d "$recovery_root" ]] || \
+  fail "wrong session identity changed split state"
+
+consistent_session="$(cat "$session")"
+sed -e 's/^issue=SAY-999$/issue=SAY-998/' -e "s/^ref=$tested_ref$/ref=$drift_ref/" \
+  -e 's/^ISSUE=.*/ISSUE=SAY-998/' -e "s/^TESTED_REF=.*/TESTED_REF=$drift_ref/" \
+  "$session" > "$session.tmp" || fail "consistent split fixture"
+mv -- "$session.tmp" "$session"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-998 "$drift_ref" SAY-998 "$drift_ref" "$recovery_root" >/dev/null 2>&1; then
+  fail "consistent marker/session unexpectedly recovered"
+fi
+print -r -- "$consistent_session" > "$session"
+
+wrong_owner_app="$TEST_ROOT/wrong-owner-app"
+print -r -- '#!/bin/zsh
+sleep 30' > "$wrong_owner_app"
+chmod +x "$wrong_owner_app"
+"$wrong_owner_app" "--user-data-dir=$recovery_root/user-data" >/dev/null 2>&1 &
+recovery_wrong_pid=$!
+sleep 0.1
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" recover-split \
+  test-human SAY-998 "$drift_ref" SAY-999 "$tested_ref" "$recovery_root" >/dev/null 2>&1; then
+  fail "process ownership mismatch unexpectedly recovered split"
+fi
+kill -0 "$recovery_pid" >/dev/null 2>&1 || fail "ownership mismatch stopped owned process"
+kill -0 "$recovery_wrong_pid" >/dev/null 2>&1 || fail "ownership mismatch process disappeared"
+kill -TERM "$recovery_wrong_pid" >/dev/null 2>&1 || true
+wait "$recovery_wrong_pid" >/dev/null 2>&1 || true
+recovery_wrong_pid=""
+
+if concurrent_output="$(env "${common_env[@]}" \
+  "NUINUI_TEST_MUTATE_SPLIT_SESSION_ON_HANDOFF=1" \
+  "NUINUI_TEST_SPLIT_HANDOFF=$recovery_handoff" \
+  "NUINUI_TEST_SPLIT_SESSION=$session" \
+  zsh "$PREPARE_SCRIPT" recover-split test-human SAY-998 "$drift_ref" \
+  SAY-999 "$tested_ref" "$recovery_root" 2>&1)"; then
+  print -r -- "$concurrent_output"
+  fail "concurrent split snapshot change unexpectedly succeeded"
+fi
+print -r -- "$concurrent_output" | grep -Fq 'changed during split recovery' || {
+  print -r -- "$concurrent_output"
+  fail "concurrent split snapshot change was not reported"
+}
+[[ -f "$session" && "$(sed -n 's/^ref=//p' "$session")" == \
+  0000000000000000000000000000000000000001 ]] || fail "concurrent snapshot change did not retain changed session"
+[[ "$(sed -n 's/^issue=//p' "$marker")" == SAY-998 && \
+  "$(sed -n 's/^ref=//p' "$marker")" == "$drift_ref" ]] || fail "concurrent snapshot change changed marker"
+[[ ! -e "$recovery_root" && ! -e "$recovery_handoff" ]] || fail "concurrent snapshot change retained cleaned artifacts"
+rm -f -- "$session"
+git -C "$repo" switch --detach -q "$tested_ref" || fail "split recovery rejection fixture reset"
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+echo "PASS: recover-split fail-closed regression coverage"
+
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.5.3" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.6.0" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
+print -r -- "$help_out" | grep -Fq "nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>" || fail "help omitted explicit recover-split arguments"
 cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
 release_line="$(print -r -- "$help_out" | grep -nF "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" | head -n 1 | cut -d: -f1)"
 closure_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>" | head -n 1 | cut -d: -f1)"
@@ -1163,6 +1462,17 @@ expect_short_blocked "2+2 short prepare" two prepare SAY-997 "$tested_ref_two" "
 expect_short_blocked "2+2 short status before session" two status
 expect_short_blocked "2+2 short cleanup before session" two cleanup SAY-997 "$tested_ref_two" "$temp_parent/nuinui-vscode-e2e.two"
 expect_short_blocked "2+2 short closure-check before session" two closure-check SAY-997
+if two_recover_short_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
+  recover-split SAY-998 "$tested_ref_two" SAY-997 "$tested_ref_two" \
+  "$temp_parent/nuinui-vscode-e2e.two" 2>&1)"; then
+  print -r -- "$two_recover_short_output"
+  fail '2+2 short recover-split unexpectedly selected a lane'
+fi
+print -r -- "$two_recover_short_output" | grep -Fq \
+  'nuinui-e2e-prepare recover-split <human-test-lane>' || {
+  print -r -- "$two_recover_short_output"
+  fail '2+2 short recover-split did not require an explicit lane'
+}
 [[ "$(two_snapshot)" == "$two_before" ]] || fail "2+2 short-form rejection mutated fixture state"
 
 two_status_a="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" status human-a)" || fail "explicit Human-test status before prepare"

@@ -72,6 +72,14 @@ E2E chatのrotation自体はTask pauseではない。tested commit、marker、la
 
 新chatで再開する場合は[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)のexternal-state recovery順に従い、current Issue / tested ref / actual e2e lane stateから再構築する。過去chatのsummaryだけでcurrent tested stateを決めない。
 
+markerとactive sessionが別世代に分かれた場合だけ、owner documentのexact proofを満たしたうえで、選択したHuman-test laneを明示して次を使う。marker/sessionが一致する、caller identityと実状態が違う、rootやhandoffが不正、process ownershipが証明できない、またはsnapshotが変化した場合は`BLOCKED`であり、marker・session・rootを手で削除しない。
+
+```text
+nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>
+```
+
+この例外経路は、stale session rootに属すると証明できるprocess・handoff・rootだけを停止／削除し、marker Bとcheckout Bを保持したままsessionを除去して、canonical statusをread-backする。成功後はgeneration Bの通常prepareを新しいexact identityで開始する。
+
 ## Loading rule
 
 E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読み、READMEのManual E2E loading ruleに従う。
