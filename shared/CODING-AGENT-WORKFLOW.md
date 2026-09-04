@@ -4,7 +4,7 @@
 
 この文書は**implementation agent専用**。Manual E2E test operatorなど、repository implementationを変更しないexecution roleには適用しない。
 
-Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先する。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従う。
+Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先し、shared ruleよりstricterなrequirementを追加できる。ただし、このshared completeness gateを省略してunder-specified promptをexecutableに扱ってはならない。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従う。
 
 Projectがimplementation Coding Agentのdefault product / reasoning effort / resource policyを定義している場合は、そのproject-specific authorityを使う。ユーザーまたはcurrent Taskの明示指定はproject defaultより優先する。Project-specific defaultがない場合、このshared workflowだけを根拠に特定Coding Agent product / effortを仮定しない。
 
@@ -16,6 +16,7 @@ ChatGPTが担当する。
 - architecture把握
 - actual owner / change locationの特定
 - implementation contract決定
+- implementation prompt completenessの判定
 - blocking review
 - ChatGPTで実行できる調査・設計・管理作業
 
@@ -49,26 +50,40 @@ preparation中にauthoritative remote stateがadvanceしていた場合:
 
 ## Implementation prompt
 
-current implementation Taskの実行に必要な情報だけを書く。
+Implementation promptはhigh-level task descriptionではなく、executable implementation contractとして扱う。current implementation Taskの実行に必要な情報だけを書く。
 
-原則として次を渡す。
+### Prompt-completeness gate
+
+Handoff前に、ChatGPTはcurrent Taskがmissing architecture / product / contract decisionをCoding Agentへ委ねずに実行できる具体性を持つことを確認する。`implement feature X`、`fix Issue X`、`follow the Issue`、または同等のhigh-level wordingだけではgateを通過しない。
+
+次のcontract fieldsをすべて埋めてgateを通過させる。各fieldは、適用されない場合だけcurrent Taskに即した理由を明記してinapplicableとできる。未確定のowner、boundary、behavior、decisionを省略してはならない。このgateはfail-closedであり、under-specified implementation contractをhandoffしてはならない。
 
 - repository
 - expected remote state
 - branch / base
-- change target
+- concrete semantic owner and change boundary
 - concrete required changes
+- Task-specific acceptance criteria
 - required tests / verification
+- explicit non-goals
+- Git safety conditions
 - commit / push requirement
-- blocking conditions
+- blocking / stop conditions
+- required completion report
+
+`concrete semantic owner and change boundary`には、適用される場合、exact files、symbols、API boundaries、data contracts、state transitions、persistence boundaries、またはその他のconcrete implementation targetsを含める。意味のあるboundaryが本当に存在しないTaskではその理由を示すが、unspecified boundaryをCoding Agentの調査へ委ねてはならない。
+
+`concrete required changes`には、feature名やIssue番号だけでなく、Taskに必要なobservable behaviorとrelevant data、state、validation、error、compatibility、side-effect semanticsを含める。
+
+`Task-specific acceptance criteria`はTask完了時にtrueであるべきことを定義し、`required tests / verification`はそのacceptanceをどのtest、command、oracle、またはevidenceで証明するかを定義する。acceptanceとverificationを同じ曖昧なstatementで代用しない。
+
+`explicit non-goals`はgeneric policyの反復ではなく、current executable scopeをboundするTask-specificな除外事項として必須にする。
+
+`Git safety conditions`には、Coding Agent側の`git fetch origin --prune`、expected remote stateとの照合、cleanなintended checkout、mismatch時のreset / rebase / merge / force-pushによるrecovery禁止、および指定branchへの通常のcommit / push条件を含める。詳細なprocedureは [`GIT-WORKFLOW.md`](./GIT-WORKFLOW.md) に従う。
+
+required architecture、product、design decisionが未確定、またはcontractがこのgateを満たさない場合、ChatGPTはhandoffせず調査またはcontract workを継続する。Coding Agentをmissing ChatGPT-side investigationの代替にせず、incomplete promptを実行可能にするためのalternate design探索やarchitecture決定をCoding Agentへ指示しない。
 
 Promptのlanguage / formatting / directnessは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) をauthorityとする。
-
-Implementation promptでは次を省略しない。
-
-- Git safety condition
-- blocking condition
-- current Task固有のacceptance
 
 ## Excluded execution roles
 
@@ -91,11 +106,12 @@ Manual E2Eではproject-specific Manual E2E authority / playbookをrole authorit
 新規開発Taskでwork-management Issueの新規作成が必要でも、Issue作成をimplementation Coding Agent開始の前提にしない。
 
 1. remote state確認、existing Issue / Spec検索、repository調査を行い、implementation contractを確定する。
-2. `Pre-prompt remote freshness gate`を通過する。
-3. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
-4. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
-5. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
-6. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
+2. `Prompt-completeness gate`を通過する。
+3. `Pre-prompt remote freshness gate`を通過する。
+4. 新規Issueを作る前にbranch名を決め、implementation promptを完成させてユーザーへ提示する。
+5. branch名を、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させない。
+6. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
+7. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
 
 existing Issue / Specのreadがcontract確定に必要なら先に行う。後回しにするのは、contract確定後の新規Issue createやstatus update等、Coding Agent開始を待たせる必要のないmanagement action。
 
@@ -104,12 +120,30 @@ existing IssueがあるTaskはそのIssueを再利用するが、management upda
 ## Execution boundary
 
 - Implementation Coding Agentは確定済みcontractに従いimplementation / test / git作業を行う。
-- current Task scope外のcleanup / future workを先取りしない。
+- settled scopeをsilently broadenしてはならない。current contractに明示的に含まれないunrelated refactoring、cleanup、dependency addition / change、architecture change、product / design change、future-work implementationを行わない。これらはcurrent contractが明示的にauthorizeした場合に限り許可される。
+- 実行中に、settled contractが許可していないmaterialなdesign choice、architecture change、dependency change、またはscope expansionが必要になった場合は、Coding Agentは独自判断せず`BLOCKED`として報告する。
+- settled contractを満たすために必要なnarrowなimplementation-side diagnosisとfixはCoding Agentのworkに含まれ、これを禁止事項と解釈しない。
 - implementation後はChatGPTがrequired blocking review / verificationを行う。
 - blocking issueのfixはcurrent planに従う。Coding Agentへproduct redesignを委ねない。
 - commit / push / branch / review ruleは [`GIT-WORKFLOW.md`](./GIT-WORKFLOW.md) を参照する。
 
 Agent skillを使う場合は [`AGENT-SKILLS.md`](./AGENT-SKILLS.md) とproject固有skill policyからcurrent Taskに必要なものだけ選ぶ。
+
+## Completion report
+
+Coding Agentはimplementation runの完了時に、applicableな次の事項を報告する。
+
+- branch
+- base
+- final HEAD
+- changed files
+- concise implementation summary
+- each required verificationとそのresult
+- 各acceptance criterionがどのようにcoveredされたか
+- scope deviation（なければnone、あればexactな内容）
+- remaining blockersまたはresidual risks（なければnone、あればexactな内容）
+
+normal successful completionでは、scope deviationがないこととremaining blockerがないことを明示する。
 
 ## Continuity and user-facing handoff
 
