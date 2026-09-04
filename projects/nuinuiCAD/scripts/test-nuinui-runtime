@@ -94,7 +94,7 @@ unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 
 cd "$ROOT/cwd"
 VERSION_OUTPUT=$($HELPER version)
-[ "$VERSION_OUTPUT" = 1.8.1 ] || fail "version output changed: $VERSION_OUTPUT"
+[ "$VERSION_OUTPUT" = 1.8.2 ] || fail "version output changed: $VERSION_OUTPUT"
 HELP_OUTPUT=$($HELPER --help)
 assert_contains "$HELP_OUTPUT" 'begin-command' \
   'public help did not include begin-command'

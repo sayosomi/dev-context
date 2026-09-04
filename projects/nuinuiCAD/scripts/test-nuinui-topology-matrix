@@ -160,6 +160,30 @@ run_topology() {
     expect_blocked "$matrix_name rejects ambiguous Human-test short form" "$matrix_helper" e2e-start "$issue" "$matrix_base"
     human_output=$("$matrix_helper" e2e-start manual-b "$issue" "$matrix_base") || fail "$matrix_name explicit Human-test start"
     contains "$human_output" 'E2E STARTED' "$matrix_name explicit Human-test routing"
+    matrix_preflight=$("$matrix_helper" preflight 2>&1) || fail "$matrix_name preflight with active Human-test lane"
+    contains "$matrix_preflight" 'PREFLIGHT PASS' "$matrix_name active Human-test preflight"
+    human_busy_block=$(printf '%s\n' "$matrix_preflight" | awk '
+      index($0, "lane name=manual-b role=human-test ") == 1 { found=1; print; next }
+      found && /^lane name=/ { exit }
+      found { print }
+    ')
+    human_free_block=$(printf '%s\n' "$matrix_preflight" | awk '
+      index($0, "lane name=manual-a role=human-test ") == 1 { found=1; print; next }
+      found && /^lane name=/ { exit }
+      found { print }
+    ')
+    contains "$human_busy_block" 'state=BUSY' "$matrix_name active Human-test is BUSY"
+    contains "$human_busy_block" "owner_issue=$issue" "$matrix_name Human-test owner Issue"
+    contains "$human_busy_block" "owner_ref=$matrix_base" "$matrix_name Human-test owner ref"
+    contains "$human_free_block" 'state=FREE' "$matrix_name other Human-test remains FREE"
+    human_free_count=$(printf '%s\n' "$matrix_preflight" | awk '
+      /^lane name=.* role=human-test / { human=1; next }
+      /^lane name=/ { human=0 }
+      human && /state=FREE/ { count++ }
+      END { print count + 0 }
+    ')
+    [ "$human_free_count" = 1 ] || fail "$matrix_name expected exactly one FREE Human-test lane"
+    echo "PASS: $matrix_name Human-test occupancy has one FREE lane"
     "$matrix_helper" e2e-release manual-b "$issue" "$matrix_base" >/dev/null || fail "$matrix_name explicit Human-test release"
   fi
   echo "PASS: topology $matrix_name (${matrix_impl_count} implementation + ${matrix_human_count} Human-test) helper_sha256=$SOURCE_HELPER_SHA256 helper_blob=$SOURCE_HELPER_BLOB"

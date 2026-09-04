@@ -24,39 +24,254 @@ lane_execution_nuinui_e2e__regular_file() {
   [ -f "$1" ] && [ ! -L "$1" ]
 }
 
+lane_execution_nuinui_e2e__absolute_path() {
+  case "$1" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  [ "$1" != */ ] && [ "$1" != *'/./'* ] &&
+    [ "$1" != *'/../'* ] && [ "$1" != *//* ]
+}
+
+lane_execution_nuinui_e2e__valid_port() {
+  printf '%s\n' "$1" | grep -Eq '^[1-9][0-9]{0,4}$' || return 1
+  if [ "$1" -le 65535 ] 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
 lane_execution_nuinui_e2e__read_session() {
   lane_execution_nuinui_e2e_session_path=$1
+  lane_execution_nuinui_e2e_session_kind=
+  lane_execution_nuinui_e2e_session_lane=
+  lane_execution_nuinui_e2e_session_issue=
+  lane_execution_nuinui_e2e_session_ref=
+  lane_execution_nuinui_e2e_session_source_fixture=
+  lane_execution_nuinui_e2e_session_root=
+  lane_execution_nuinui_e2e_session_handoff=
+  lane_execution_nuinui_e2e_session_cdp=
+  lane_execution_nuinui_e2e_session_pid=
+  lane_execution_nuinui_e2e_session_locale=
+  lane_execution_nuinui_e2e_session_prepare_owner=
+  lane_execution_nuinui_e2e_session_prepare_pid=
   lane_execution_nuinui_e2e__regular_file \
     "$lane_execution_nuinui_e2e_session_path" || return 1
+
   if nuinui_ownership_validate_exact_file "$lane_execution_nuinui_e2e_session_path" \
-    issue,ref,source_fixture,root,handoff,cdp_port,launch_pid; then
-    lane_execution_nuinui_e2e_source_fixture=$(nuinui_ownership_field \
-      "$lane_execution_nuinui_e2e_session_path" source_fixture) || return 1
-    case "$lane_execution_nuinui_e2e_source_fixture" in /*) ;; *) return 1 ;; esac
-  elif ! nuinui_ownership_validate_exact_file \
+    lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid,locale; then
+    lane_execution_nuinui_e2e_session_kind=current
+  elif nuinui_ownership_validate_exact_file "$lane_execution_nuinui_e2e_session_path" \
+    lane,issue,ref,source_fixture,root,handoff,cdp_port,launch_pid; then
+    lane_execution_nuinui_e2e_session_kind=pre-locale
+  elif nuinui_ownership_validate_exact_file "$lane_execution_nuinui_e2e_session_path" \
+    kind,lane,issue,ref,root,prepare_owner,prepare_pid; then
+    lane_execution_nuinui_e2e_session_kind=preparing
+  elif nuinui_ownership_validate_exact_file \
     "$lane_execution_nuinui_e2e_session_path" issue,ref,root,handoff,cdp_port,launch_pid; then
+    lane_execution_nuinui_e2e_session_kind=legacy
+  else
     return 1
   fi
+
+  if [ "$lane_execution_nuinui_e2e_session_kind" = current ] ||
+    [ "$lane_execution_nuinui_e2e_session_kind" = pre-locale ] ||
+    [ "$lane_execution_nuinui_e2e_session_kind" = preparing ]; then
+    lane_execution_nuinui_e2e_session_lane=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_e2e_session_path" lane) || return 1
+    nuinui_ownership_valid_lane_name \
+      "$lane_execution_nuinui_e2e_session_lane" || return 1
+  fi
+
   lane_execution_nuinui_e2e_session_issue=$(nuinui_ownership_field \
     "$lane_execution_nuinui_e2e_session_path" issue) || return 1
   lane_execution_nuinui_e2e_session_ref=$(nuinui_ownership_field \
     "$lane_execution_nuinui_e2e_session_path" ref) || return 1
   lane_execution_nuinui_e2e_session_root=$(nuinui_ownership_field \
     "$lane_execution_nuinui_e2e_session_path" root) || return 1
-  lane_execution_nuinui_e2e_session_handoff=$(nuinui_ownership_field \
-    "$lane_execution_nuinui_e2e_session_path" handoff) || return 1
-  lane_execution_nuinui_e2e_session_cdp=$(nuinui_ownership_field \
-    "$lane_execution_nuinui_e2e_session_path" cdp_port) || return 1
-  lane_execution_nuinui_e2e_session_pid=$(nuinui_ownership_field \
-    "$lane_execution_nuinui_e2e_session_path" launch_pid) || return 1
   lane_execution_validate_work_id "$lane_execution_nuinui_e2e_session_issue" &&
     nuinui_ownership_valid_sha "$lane_execution_nuinui_e2e_session_ref" || return 1
-  [ -n "$lane_execution_nuinui_e2e_session_root" ] &&
-    [ -n "$lane_execution_nuinui_e2e_session_handoff" ] || return 1
-  printf '%s\n' "$lane_execution_nuinui_e2e_session_cdp" |
-    grep -Eq '^[0-9]+$' || return 1
+  lane_execution_nuinui_e2e__absolute_path \
+    "$lane_execution_nuinui_e2e_session_root" || return 1
+
+  if [ "$lane_execution_nuinui_e2e_session_kind" = preparing ]; then
+    lane_execution_nuinui_e2e_session_prepare_owner=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_e2e_session_path" prepare_owner) || return 1
+    [ "$lane_execution_nuinui_e2e_session_prepare_owner" = \
+      nuinui-e2e-prepare ] || return 1
+    lane_execution_nuinui_e2e_session_prepare_pid=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_e2e_session_path" prepare_pid) || return 1
+    printf '%s\n' "$lane_execution_nuinui_e2e_session_prepare_pid" |
+      grep -Eq '^[1-9][0-9]*$' || return 1
+    return 0
+  fi
+
+  lane_execution_nuinui_e2e_session_handoff=$(nuinui_ownership_field \
+    "$lane_execution_nuinui_e2e_session_path" handoff) || return 1
+  lane_execution_nuinui_e2e__absolute_path \
+    "$lane_execution_nuinui_e2e_session_handoff" || return 1
+  lane_execution_nuinui_e2e_session_cdp=$(nuinui_ownership_field \
+    "$lane_execution_nuinui_e2e_session_path" cdp_port) || return 1
+  lane_execution_nuinui_e2e__valid_port \
+    "$lane_execution_nuinui_e2e_session_cdp" || return 1
+  lane_execution_nuinui_e2e_session_pid=$(nuinui_ownership_field \
+    "$lane_execution_nuinui_e2e_session_path" launch_pid) || return 1
   printf '%s\n' "$lane_execution_nuinui_e2e_session_pid" |
-    grep -Eq '^[0-9]+$' || return 1
+    grep -Eq '^[1-9][0-9]*$' || return 1
+
+  if [ "$lane_execution_nuinui_e2e_session_kind" = current ] ||
+    [ "$lane_execution_nuinui_e2e_session_kind" = pre-locale ]; then
+    lane_execution_nuinui_e2e_session_source_fixture=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_e2e_session_path" source_fixture) || return 1
+    lane_execution_nuinui_e2e__absolute_path \
+      "$lane_execution_nuinui_e2e_session_source_fixture" || return 1
+  fi
+  if [ "$lane_execution_nuinui_e2e_session_kind" = current ]; then
+    lane_execution_nuinui_e2e_session_locale=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_e2e_session_path" locale) || return 1
+    case "$lane_execution_nuinui_e2e_session_locale" in
+      default|ja) ;;
+      *) return 1 ;;
+    esac
+  fi
+}
+
+lane_execution_nuinui_human_test__blocked() {
+  printf '  state=BLOCKED reason=%s\n' "$1"
+  return 1
+}
+
+lane_execution_nuinui_human_test_classify() {
+  [ "$#" = 3 ] || return 2
+  lane_execution_nuinui_human_lane=$1
+  lane_execution_nuinui_human_repo=$2
+  lane_execution_nuinui_human_manifest=$3
+  lane_execution_nuinui_human_git_dir=$(lane_execution__git_dir \
+    "$lane_execution_nuinui_human_repo" 2>/dev/null || true)
+  [ -n "$lane_execution_nuinui_human_git_dir" ] || {
+    printf '  branch=DETACHED\n  head=\n  clean=no\n  marker=unknown\n  session=unknown\n'
+    lane_execution_nuinui_human_test__blocked invalid-checkout
+    return 1
+  }
+  lane_execution_nuinui_human_marker=$(lane_execution_human_test_marker_path \
+    "$lane_execution_nuinui_human_repo") || return 1
+  lane_execution_nuinui_human_session=$(lane_execution_human_test_session_path \
+    "$lane_execution_nuinui_human_repo") || return 1
+  lane_execution_nuinui_human_marker_present=0
+  lane_execution_nuinui_human_session_present=0
+  lane_execution_nuinui_human_marker_exists=0
+  lane_execution_nuinui_human_session_exists=0
+  lane_execution_nuinui_human_marker_record=
+  lane_execution_nuinui_human_session_kind=
+  lane_execution_nuinui_human_checkout_readable=1
+
+  lane_execution_nuinui_human_branch=$(git -C \
+    "$lane_execution_nuinui_human_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  lane_execution_nuinui_human_head=$(git -C \
+    "$lane_execution_nuinui_human_repo" rev-parse HEAD 2>/dev/null || true)
+  if lane_execution_nuinui_human_dirty=$(git -C \
+    "$lane_execution_nuinui_human_repo" status --porcelain 2>/dev/null); then
+    :
+  else
+    lane_execution_nuinui_human_dirty=
+    lane_execution_nuinui_human_checkout_readable=0
+  fi
+  lane_execution_nuinui_e2e__path_exists \
+    "$lane_execution_nuinui_human_marker" && {
+    lane_execution_nuinui_human_marker_present=1
+    lane_execution_nuinui_human_marker_exists=1
+  }
+  lane_execution_nuinui_e2e__path_exists \
+    "$lane_execution_nuinui_human_session" && {
+    lane_execution_nuinui_human_session_present=1
+    lane_execution_nuinui_human_session_exists=1
+  }
+  printf '  branch=%s\n' "${lane_execution_nuinui_human_branch:-DETACHED}"
+  printf '  head=%s\n' "$lane_execution_nuinui_human_head"
+  printf '  clean=%s\n' "$([ "$lane_execution_nuinui_human_checkout_readable" = 1 ] &&
+    [ -z "$lane_execution_nuinui_human_dirty" ] && echo yes || echo no)"
+  printf '  marker=%s\n' "$([ "$lane_execution_nuinui_human_marker_present" = 1 ] &&
+    echo present || echo none)"
+  printf '  session=%s\n' "$([ "$lane_execution_nuinui_human_session_present" = 1 ] &&
+    echo present || echo none)"
+
+  if [ "$lane_execution_nuinui_human_marker_present" = 1 ]; then
+    lane_execution_nuinui_e2e__regular_file \
+      "$lane_execution_nuinui_human_marker" ||
+      { lane_execution_nuinui_human_test__blocked invalid-marker-type; return 1; }
+    lane_execution_nuinui_human_marker_issue=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_human_marker" issue 2>/dev/null || true)
+    lane_execution_nuinui_human_marker_ref=$(nuinui_ownership_field \
+      "$lane_execution_nuinui_human_marker" ref 2>/dev/null || true)
+    nuinui_ownership_validate_exact_file \
+      "$lane_execution_nuinui_human_marker" issue,ref ||
+      { lane_execution_nuinui_human_test__blocked invalid-marker; return 1; }
+    lane_execution_validate_work_id \
+      "$lane_execution_nuinui_human_marker_issue" &&
+      nuinui_ownership_valid_sha \
+        "$lane_execution_nuinui_human_marker_ref" ||
+      { lane_execution_nuinui_human_test__blocked invalid-marker-identity; return 1; }
+  fi
+
+  if [ "$lane_execution_nuinui_human_marker_present" = 0 ]; then
+    [ "$lane_execution_nuinui_human_session_present" = 0 ] ||
+      { lane_execution_nuinui_human_test__blocked orphan-session; return 1; }
+    [ "$lane_execution_nuinui_human_checkout_readable" = 1 ] ||
+      { lane_execution_nuinui_human_test__blocked checkout-unreadable; return 1; }
+    [ -z "$lane_execution_nuinui_human_dirty" ] ||
+      { lane_execution_nuinui_human_test__blocked dirty-checkout; return 1; }
+    [ -z "$lane_execution_nuinui_human_branch" ] ||
+      { lane_execution_nuinui_human_test__blocked named-checkout; return 1; }
+    nuinui_ownership_valid_sha "$lane_execution_nuinui_human_head" ||
+      { lane_execution_nuinui_human_test__blocked invalid-head; return 1; }
+    git -C "$lane_execution_nuinui_human_repo" cat-file -e \
+      "$lane_execution_nuinui_human_head^{commit}" 2>/dev/null ||
+      { lane_execution_nuinui_human_test__blocked invalid-head; return 1; }
+    echo '  state=FREE'
+    return 0
+  fi
+
+  [ "$lane_execution_nuinui_human_checkout_readable" = 1 ] ||
+    { lane_execution_nuinui_human_test__blocked checkout-unreadable; return 1; }
+  [ -z "$lane_execution_nuinui_human_dirty" ] ||
+    { lane_execution_nuinui_human_test__blocked dirty-checkout; return 1; }
+  [ -z "$lane_execution_nuinui_human_branch" ] ||
+    { lane_execution_nuinui_human_test__blocked named-checkout; return 1; }
+  nuinui_ownership_valid_sha "$lane_execution_nuinui_human_head" ||
+    { lane_execution_nuinui_human_test__blocked invalid-head; return 1; }
+  git -C "$lane_execution_nuinui_human_repo" cat-file -e \
+    "$lane_execution_nuinui_human_head^{commit}" 2>/dev/null ||
+    { lane_execution_nuinui_human_test__blocked invalid-head; return 1; }
+  [ "$lane_execution_nuinui_human_head" = \
+    "$lane_execution_nuinui_human_marker_ref" ] ||
+    { lane_execution_nuinui_human_test__blocked checkout-head-mismatch; return 1; }
+
+  if [ "$lane_execution_nuinui_human_session_present" = 1 ]; then
+    lane_execution_nuinui_e2e__regular_file \
+      "$lane_execution_nuinui_human_session" ||
+      { lane_execution_nuinui_human_test__blocked invalid-session-type; return 1; }
+    lane_execution_nuinui_e2e__read_session \
+      "$lane_execution_nuinui_human_session" ||
+      { lane_execution_nuinui_human_test__blocked invalid-session; return 1; }
+    lane_execution_nuinui_human_session_kind=$lane_execution_nuinui_e2e_session_kind
+    printf '  session_kind=%s\n' "$lane_execution_nuinui_human_session_kind"
+    [ "$lane_execution_nuinui_e2e_session_issue" = \
+      "$lane_execution_nuinui_human_marker_issue" ] ||
+      { lane_execution_nuinui_human_test__blocked marker-session-issue-mismatch; return 1; }
+    [ "$lane_execution_nuinui_e2e_session_ref" = \
+      "$lane_execution_nuinui_human_marker_ref" ] ||
+      { lane_execution_nuinui_human_test__blocked marker-session-ref-mismatch; return 1; }
+    if [ -n "$lane_execution_nuinui_e2e_session_lane" ]; then
+      [ "$lane_execution_nuinui_e2e_session_lane" = \
+        "$lane_execution_nuinui_human_lane" ] ||
+        { lane_execution_nuinui_human_test__blocked session-lane-mismatch; return 1; }
+    fi
+  fi
+
+  printf '  owner_issue=%s\n  owner_ref=%s\n  state=BUSY\n' \
+    "$lane_execution_nuinui_human_marker_issue" \
+    "$lane_execution_nuinui_human_marker_ref"
+  return 0
 }
 
 lane_execution_human_test_start_guard() {

@@ -135,6 +135,66 @@ sync_idle() {
   git -C "$IMPL" switch -q --detach "$BASE"
 }
 
+HUMAN_GIT_DIR=$(git -C "$HUMAN" rev-parse --absolute-git-dir)
+HUMAN_MARKER=$HUMAN_GIT_DIR/nuinui-slot
+HUMAN_SESSION=$HUMAN_GIT_DIR/nuinui-e2e-session
+HUMAN_FIXTURE=$ROOT/human-fixture.nui
+HUMAN_SESSION_ROOT=$ROOT/nuinui-vscode-e2e-human
+HUMAN_HANDOFF=$ROOT/nuinui-SAY-401-human-e2e.env
+printf '%s\n' fixture > "$HUMAN_FIXTURE"
+
+clear_human_state() {
+  rm -f "$HUMAN_MARKER" "$HUMAN_SESSION" "$HUMAN/human-dirty-file"
+  git -C "$HUMAN" switch --detach -q "$BASE"
+}
+
+write_human_marker() {
+  printf 'issue=%s\nref=%s\n' "$1" "$2" > "$HUMAN_MARKER"
+}
+
+write_human_current_session() {
+  printf 'lane=human\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\nlocale=default\n' \
+    "$1" "$2" "$HUMAN_FIXTURE" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+}
+
+write_human_pre_locale_session() {
+  printf 'lane=human\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\n' \
+    "$1" "$2" "$HUMAN_FIXTURE" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+}
+
+write_human_preparing_session() {
+  printf 'kind=preparing\nlane=human\nissue=%s\nref=%s\nroot=%s\nprepare_owner=nuinui-e2e-prepare\nprepare_pid=1\n' \
+    "$1" "$2" "$HUMAN_SESSION_ROOT" > "$HUMAN_SESSION"
+}
+
+write_human_legacy_session() {
+  printf 'issue=%s\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\n' \
+    "$1" "$2" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+}
+
+run_human_preflight() {
+  HUMAN_PREFLIGHT_RC=0
+  HUMAN_PREFLIGHT_OUTPUT=$("$HELPER" preflight 2>&1) || HUMAN_PREFLIGHT_RC=$?
+}
+
+human_lane_block() {
+  human_lane_name=$1
+  printf '%s\n' "$HUMAN_PREFLIGHT_OUTPUT" | awk -v lane="$human_lane_name" '
+    index($0, "lane name=" lane " role=human-test ") == 1 { found=1; print; next }
+    found && /^lane name=/ { exit }
+    found { print }
+  '
+}
+
+assert_human_state() {
+  human_expected_lane=$1
+  human_expected_state=$2
+  human_block=$(human_lane_block "$human_expected_lane") || true
+  [ -n "$human_block" ] || fail "missing Human-test lane block for $human_expected_lane"
+  assert_contains "$human_block" "state=$human_expected_state" \
+    "Human-test lane $human_expected_lane state=$human_expected_state"
+}
+
 prepare_duplicate() {
   sync_idle
   rm -rf "$(slot_dir)" "$(lock_dir)" "$(receipt_path)"
@@ -223,6 +283,154 @@ assert_contains "$HUMAN_PREFLIGHT_STATE" 'state=BLOCKED' \
   'preflight projected a preparing Human-test session as available'
 rm -f "$HUMAN_SESSION"
 echo 'PASS: preparing Human-test session blocks FREE preflight projection'
+
+echo 'TEST: Human-test occupancy classifier covers marker, session, and checkout authority'
+clear_human_state
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'clean detached Human-test lane was not FREE'
+assert_human_state human FREE
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'marker=none' 'idle Human-test marker evidence'
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'session=none' 'idle Human-test session evidence'
+
+write_human_marker SAY-401 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'marker-only Human-test lane was not valid BUSY'
+assert_human_state human BUSY
+human_busy_block=$(human_lane_block human)
+assert_contains "$human_busy_block" 'owner_issue=SAY-401' 'marker-only owner Issue evidence'
+assert_contains "$human_busy_block" "owner_ref=$BASE" 'marker-only owner ref evidence'
+assert_contains "$human_busy_block" 'session=none' 'marker-only session evidence'
+echo 'PASS: marker-only active generation is BUSY with exact owner evidence'
+
+write_human_current_session SAY-401 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'current session was not valid BUSY'
+assert_human_state human BUSY
+assert_contains "$(human_lane_block human)" 'session_kind=current' 'current session kind evidence'
+clear_human_state
+
+write_human_marker SAY-402 "$BASE"
+write_human_pre_locale_session SAY-402 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'pre-locale session was not valid BUSY'
+assert_human_state human BUSY
+assert_contains "$(human_lane_block human)" 'session_kind=pre-locale' 'pre-locale session kind evidence'
+clear_human_state
+
+write_human_marker SAY-403 "$BASE"
+write_human_preparing_session SAY-403 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'preparing session was not valid BUSY'
+assert_human_state human BUSY
+assert_contains "$(human_lane_block human)" 'session_kind=preparing' 'preparing session kind evidence'
+clear_human_state
+
+write_human_marker SAY-404 "$BASE"
+write_human_legacy_session SAY-404 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'legacy session was not valid BUSY'
+assert_human_state human BUSY
+assert_contains "$(human_lane_block human)" 'session_kind=legacy' 'legacy session kind evidence'
+clear_human_state
+
+printf 'issue=SAY-405\n' > "$HUMAN_MARKER"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'malformed Human-test marker was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-marker' 'malformed marker reason'
+clear_human_state
+
+write_human_current_session SAY-406 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'orphan current session was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=orphan-session' 'orphan current session reason'
+clear_human_state
+
+write_human_preparing_session SAY-407 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'orphan preparing session was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=orphan-session' 'orphan preparing session reason'
+clear_human_state
+
+write_human_marker SAY-408 "$BASE"
+printf 'lane=human\nissue=SAY-408\n' > "$HUMAN_SESSION"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'malformed Human-test session was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' 'malformed session reason'
+clear_human_state
+
+write_human_marker SAY-409 "$BASE"
+write_human_current_session SAY-410 "$BASE"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'marker/session Issue mismatch was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=marker-session-issue-mismatch' \
+  'marker/session Issue mismatch reason'
+clear_human_state
+
+HUMAN_OTHER_REF=$(git -C "$HUMAN" commit --allow-empty -qm classifier-ref-mismatch &&
+  git -C "$HUMAN" rev-parse HEAD)
+git -C "$HUMAN" switch --detach -q "$BASE"
+write_human_marker SAY-411 "$BASE"
+write_human_current_session SAY-411 "$HUMAN_OTHER_REF"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'marker/session ref mismatch was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=marker-session-ref-mismatch' \
+  'marker/session ref mismatch reason'
+clear_human_state
+
+write_human_marker SAY-412 "$BASE"
+printf 'lane=other-human\nissue=SAY-412\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\nlocale=default\n' \
+  "$BASE" "$HUMAN_FIXTURE" "$HUMAN_SESSION_ROOT" "$HUMAN_HANDOFF" > "$HUMAN_SESSION"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'session lane mismatch was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=session-lane-mismatch' 'session lane mismatch reason'
+clear_human_state
+
+write_human_marker SAY-413 "$HUMAN_OTHER_REF"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'marker/checkout HEAD mismatch was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=checkout-head-mismatch' \
+  'marker/checkout HEAD mismatch reason'
+clear_human_state
+
+write_human_marker SAY-414 "$BASE"
+touch "$HUMAN/human-dirty-file"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'dirty active Human-test checkout was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=dirty-checkout' 'dirty active checkout reason'
+clear_human_state
+
+write_human_marker SAY-415 "$BASE"
+git -C "$HUMAN" switch -q -c classifier-named-checkout
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'named active Human-test checkout was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=named-checkout' 'named active checkout reason'
+clear_human_state
+
+ln -s "$HUMAN_FIXTURE" "$HUMAN_MARKER"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'symlink Human-test marker was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-marker-type' 'symlink marker reason'
+clear_human_state
+echo 'PASS: Human-test marker/session/checkout classification matrix'
+
+echo 'TEST: e2e-start exact duplicate remains a read-only already-active generation'
+e2e_start_output=$("$HELPER" e2e-start human SAY-416 "$BASE") || fail 'initial exact duplicate setup start'
+assert_contains "$e2e_start_output" 'E2E STARTED' 'initial Human-test start'
+e2e_duplicate_output=$("$HELPER" e2e-start human SAY-416 "$BASE") || fail 'exact duplicate Human-test start'
+assert_contains "$e2e_duplicate_output" 'E2E ALREADY STARTED' 'exact duplicate Human-test start no-op'
+"$HELPER" e2e-release human SAY-416 "$BASE" >/dev/null || fail 'exact duplicate cleanup release'
+echo 'PASS: e2e-start exact duplicate remains read-only'
 
 prepare_duplicate
 if MISSING_NAMED_OUTPUT=$(
