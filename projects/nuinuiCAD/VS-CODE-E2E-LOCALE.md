@@ -85,7 +85,7 @@ nuinui-e2e-prepare check <human-test-lane> <SAY-123> <tested-ref> <fixture-path>
 nuinui-e2e-prepare prepare <human-test-lane> <SAY-123> <tested-ref> <fixture-path> [cdp-port] --locale ja
 ```
 
-Helper version `1.5.0`はlanguage packのisolated install、`Info.plist`の`CFBundleExecutable`からのdirect application launch、`--locale=ja`、session/statusのlocale identity、canonical cleanupを一体で管理する。cleanupと`e2e-release`の順序、tested ref、fixture、Rust evaluator、CDP、ownership proofは通常のcanonical lifecycleに従う。`--locale ja`を使わない通常のprepareは従来のCLI launch pathを使う。
+Helper version `1.5.1`はlanguage packのisolated install、install後のlanguage-pack state validation、`Info.plist`の`CFBundleExecutable`からのdirect application launch、`--locale=ja`、running hostのeffective Japanese NLS proof、session/statusのlocale identity、canonical cleanupを一体で管理する。JapaneseのREADYは`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportを持つowned VS Code hostを証明した場合だけ返る。最初のfully prepared hostがwrong localeへresolveした場合、helperは同じisolated rootを保ったまま最大1回だけowned relaunchを行い、2回目もJapaneseを証明できなければenvironment preparation failureとして失敗する。cleanupと`e2e-release`の順序、tested ref、fixture、Rust evaluator、CDP、ownership proofは通常のcanonical lifecycleに従う。`--locale ja`を使わない通常のprepareは従来のCLI launch pathを使う。
 
 ## Reference Japanese host preparation
 
