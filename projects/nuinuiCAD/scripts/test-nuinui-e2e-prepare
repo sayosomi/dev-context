@@ -31,8 +31,9 @@ root=""
 status_out=""
 marker_contents=""
 manifest="$TEST_ROOT/LANES.conf"
+language_pack='MS-CEINTL.vscode-language-pack-ja'
 
-mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" || fail "setup directories"
+mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" "$fake_app/Contents/MacOS" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
 git -C "$repo" config user.name "nuinui e2e prepare selftest"
 git -C "$repo" config user.email "nuinui-e2e-prepare-selftest@example.invalid"
@@ -100,12 +101,52 @@ cat > "$fake_bin/curl" <<'EOF'
 #!/bin/zsh
 print -r -- '{}'
 EOF
-cat > "$fake_app/Contents/Resources/app/bin/code" <<'EOF'
+cat > "$fake_bin/fake-vscode" <<'EOF'
 #!/bin/zsh
+user_data=""
+extensions_dir=""
+install_extension=""
+next_is_extension=0
+for arg in "$@"; do
+  if [[ "$next_is_extension" == 1 ]]; then
+    install_extension="$arg"
+    next_is_extension=0
+    continue
+  fi
+  case "$arg" in
+    --user-data-dir=*) user_data="${arg#--user-data-dir=}" ;;
+    --extensions-dir=*) extensions_dir="${arg#--extensions-dir=}" ;;
+    --install-extension) next_is_extension=1 ;;
+  esac
+done
+if [[ -n "$install_extension" ]]; then
+  mkdir -p "$extensions_dir/$install_extension"
+  print -r -- "$*" > "$extensions_dir/install-args"
+  exit 0
+fi
+[[ -n "$user_data" ]] && {
+  print -r -- "executable=$0" > "${user_data:h}/launch-args"
+  print -r -- "args=$*" >> "${user_data:h}/launch-args"
+}
+[[ "$*" == *"--child-only"* ]] && { sleep 30; exit 0; }
 sleep 30
 EOF
-chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" "$fake_app/Contents/Resources/app/bin/code"
+cp "$fake_bin/fake-vscode" "$fake_app/Contents/Resources/app/bin/code" || fail "fake CLI setup"
+cp "$fake_bin/fake-vscode" "$fake_app/Contents/MacOS/Fake VS Code" || fail "fake application setup"
+cat > "$fake_app/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>Fake VS Code</string>
+</dict>
+</plist>
+EOF
+chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" \
+  "$fake_bin/fake-vscode" "$fake_app/Contents/Resources/app/bin/code" "$fake_app/Contents/MacOS/Fake VS Code"
 real_mv="$(command -v mv)"
+real_ps="$(command -v ps)"
 cat > "$fake_bin/mv" <<'EOF'
 #!/bin/zsh
 if [[ "${1:-}" == -- ]]; then
@@ -121,6 +162,16 @@ if [[ "${NUINUI_TEST_MUTATE_SESSION_ON_RECEIPT:-0}" == 1 &&
 fi
 EOF
 chmod +x "$fake_bin/mv"
+cat > "$fake_bin/ps" <<'EOF'
+#!/bin/zsh
+if [[ -n "${NUINUI_TEST_EMPTY_PS_PID:-}" ]]; then
+  for arg in "$@"; do
+    [[ "$arg" == "$NUINUI_TEST_EMPTY_PS_PID" ]] && exit 0
+  done
+fi
+"$NUINUI_TEST_REAL_PS" "$@"
+EOF
+chmod +x "$fake_bin/ps"
 
 common_env=(
   "NUINUI_E2E_SELFTEST=1"
@@ -130,6 +181,7 @@ common_env=(
   "NUINUI_E2E_VSCODE_APP=$fake_app"
   "NUINUI_FAKE_REPO=$repo"
   "NUINUI_TEST_REAL_MV=$real_mv"
+  "NUINUI_TEST_REAL_PS=$real_ps"
   "PATH=$fake_bin:$PATH"
 )
 
@@ -145,6 +197,7 @@ self_path_env=(
   "NUINUI_E2E_VSCODE_APP=$fake_app"
   "NUINUI_FAKE_REPO=$repo"
   "NUINUI_TEST_REAL_MV=$real_mv"
+  "NUINUI_TEST_REAL_PS=$real_ps"
   "PATH=$fake_bin:$PATH"
 )
 
@@ -224,7 +277,7 @@ print -r -- "$self_path_invalid_out" | grep -Fq \
   || { print -r -- "$self_path_invalid_out"; fail "invalid standalone helper placement did not fail closed"; }
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.4.2" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.5.0" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
@@ -279,6 +332,121 @@ rm -rf -- "$closure_parent/nuinui-say888-e2e.orphan"
 
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" closure-check SAY-998 >/dev/null \
   || fail "closure-check did not become clean"
+
+echo "TEST: locale option parsing and Japanese check are fail-closed and read-only"
+locale_root_snapshot="$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print | sort)"
+for locale_case in unsupported missing duplicate non-trailing malformed; do
+  case "$locale_case" in
+    unsupported) locale_args=(SAY-999 "$tested_ref" "$fixture" 9554 --locale fr) ;;
+    missing) locale_args=(SAY-999 "$tested_ref" "$fixture" 9554 --locale) ;;
+    duplicate) locale_args=(SAY-999 "$tested_ref" "$fixture" 9554 --locale ja --locale ja) ;;
+    non-trailing) locale_args=(SAY-999 "$tested_ref" "$fixture" 9554 --locale ja trailing) ;;
+    malformed) locale_args=(SAY-999 "$tested_ref" "$fixture" 9554 --locale=ja) ;;
+  esac
+  if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare "${locale_args[@]}" >/dev/null 2>&1; then
+    fail "$locale_case locale option was accepted"
+  fi
+done
+[[ "$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print | sort)" == "$locale_root_snapshot" ]] \
+  || fail "invalid locale option created an E2E root"
+[[ ! -e "$session" ]] || fail "invalid locale option created session metadata"
+
+locale_check_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" check SAY-999 "$tested_ref" "$fixture" --locale ja)" \
+  || fail "short Japanese check"
+print -r -- "$locale_check_out" | grep -Fq 'locale=ja' || fail "short Japanese check omitted locale"
+print -r -- "$locale_check_out" | grep -Fq 'vscode_cli=' || fail "Japanese check did not prove the VS Code CLI"
+print -r -- "$locale_check_out" | grep -Fq 'vscode_application_executable=' \
+  || fail "Japanese check did not prove the application executable"
+locale_check_explicit_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  check test-human SAY-999 "$tested_ref" "$fixture" --locale ja)" \
+  || fail "explicit-lane Japanese check"
+print -r -- "$locale_check_explicit_out" | grep -Fq 'E2E CHECKOUT VERIFIED' \
+  || fail "explicit-lane Japanese check did not complete"
+
+echo "TEST: Japanese prepare isolates the language pack and launches the plist executable"
+locale_prepare_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja)" || fail "Japanese prepare"
+[[ -f "$session" ]] || fail "Japanese prepare did not write session metadata"
+locale_root="$(sed -n 's/^root=//p' "$session")"
+locale_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+[[ "$(sed -n 's/^locale=//p' "$session")" == ja ]] || fail "Japanese session omitted locale=ja"
+[[ -d "$locale_root/extensions/$language_pack" ]] || fail "language pack was not installed in isolated extensions"
+grep -Fq -- "--user-data-dir=$locale_root/user-data" "$locale_root/extensions/install-args" \
+  || fail "language-pack install omitted isolated user-data-dir"
+grep -Fq -- "--extensions-dir=$locale_root/extensions" "$locale_root/extensions/install-args" \
+  || fail "language-pack install omitted isolated extensions-dir"
+grep -Fq -- '--install-extension MS-CEINTL.vscode-language-pack-ja --force' \
+  "$locale_root/extensions/install-args" || fail "language-pack install arguments were not observable"
+grep -Fq -- "executable=$fake_app/Contents/MacOS/Fake VS Code" "$locale_root/launch-args" \
+  || fail "Japanese prepare did not launch the CFBundleExecutable path"
+grep -Fq -- 'args=--locale=ja' "$locale_root/launch-args" || fail "Japanese launch omitted --locale=ja"
+grep -Fq -- "--extensionDevelopmentPath=$repo/vscode-extension" "$locale_root/launch-args" \
+  || fail "Japanese launch omitted extensionDevelopmentPath"
+grep -Fq -- "--user-data-dir=$locale_root/user-data" "$locale_root/launch-args" \
+  || fail "Japanese launch omitted isolated user-data-dir"
+grep -Fq -- "--extensions-dir=$locale_root/extensions" "$locale_root/launch-args" \
+  || fail "Japanese launch omitted isolated extensions-dir"
+grep -Fq -- '--remote-debugging-port=9554' "$locale_root/launch-args" \
+  || fail "Japanese launch omitted CDP port"
+grep -Fq -- "$locale_root/$(basename "$fixture")" "$locale_root/launch-args" \
+  || fail "Japanese launch omitted copied fixture"
+if find "$fake_app" -type d -name "$language_pack" -print | grep -q .; then
+  fail "language pack was installed in the application tree"
+fi
+locale_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "Japanese status"
+print -r -- "$locale_status_out" | grep -Fq 'session=active' || fail "Japanese status omitted active session"
+print -r -- "$locale_status_out" | grep -Fq 'locale=ja' || fail "Japanese status omitted locale"
+locale_session_before="$(cat "$session")"
+locale_duplicate_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja)" || fail "same-locale duplicate prepare"
+print -r -- "$locale_duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' \
+  || fail "same-locale duplicate prepare was not a no-op"
+[[ "$(cat "$session")" == "$locale_session_before" && -d "$locale_root" ]] \
+  || fail "same-locale duplicate prepare mutated state"
+if locale_conflict_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 2>&1)"; then
+  print -r -- "$locale_conflict_out"
+  fail "different-locale duplicate prepare was accepted"
+fi
+print -r -- "$locale_conflict_out" | grep -Fq 'BLOCKED: active session identity mismatch' \
+  || fail "different-locale duplicate prepare did not fail closed"
+[[ "$(cat "$session")" == "$locale_session_before" && -d "$locale_root" ]] \
+  || fail "different-locale duplicate prepare mutated state"
+kill -TERM "$locale_pid" >/dev/null 2>&1 || true
+wait "$locale_pid" >/dev/null 2>&1 || true
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$locale_root" >/dev/null \
+  || fail "cleanup after exited Japanese host"
+[[ ! -e "$session" && ! -e "$locale_root" ]] || fail "Japanese cleanup retained state"
+
+echo "TEST: ordinary sessions record default and pre-locale sessions remain compatible"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9554 >/dev/null \
+  || fail "ordinary compatibility prepare"
+ordinary_root="$(sed -n 's/^root=//p' "$session")"
+ordinary_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+grep -Fqx 'locale=default' "$session" || fail "ordinary session did not record locale=default"
+grep -Fq "executable=$fake_app/Contents/Resources/app/bin/code" "$ordinary_root/launch-args" \
+  || fail "ordinary prepare did not preserve the CLI launch path"
+if grep -Fq "Contents/MacOS/Fake VS Code" "$ordinary_root/launch-args"; then
+  fail "ordinary prepare used the direct application executable"
+fi
+prelocale_session_before="$(sed '/^locale=/d' "$session")"
+print -r -- "$prelocale_session_before" > "$session"
+prelocale_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "pre-locale status"
+print -r -- "$prelocale_status_out" | grep -Fq 'session=active' || fail "pre-locale session was not recognized"
+print -r -- "$prelocale_status_out" | grep -Fq 'locale=pre-locale/default' \
+  || fail "pre-locale status did not report default evidence"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja >/dev/null 2>&1; then
+  fail "pre-locale session was accepted as Japanese"
+fi
+[[ "$(cat "$session")" == "$prelocale_session_before" ]] || fail "Japanese pre-locale duplicate changed session"
+prelocale_duplicate_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554)" || fail "pre-locale ordinary duplicate"
+print -r -- "$prelocale_duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' \
+  || fail "pre-locale ordinary duplicate was not a no-op"
+kill -0 "$ordinary_pid" >/dev/null 2>&1 || fail "pre-locale duplicate lost the owned host"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$ordinary_root" >/dev/null \
+  || fail "pre-locale cleanup"
+[[ ! -e "$session" && ! -e "$ordinary_root" ]] || fail "pre-locale cleanup retained state"
 
 echo "TEST: prepare failure cleans temporary root"
 if env "${common_env[@]}" NUINUI_FAKE_NPM_FAIL=1 zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null 2>&1; then
@@ -416,6 +584,50 @@ print -r -- "$duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' || fail "dupli
 print -r -- "$duplicate_out" | grep -Fq "source_fixture=$source_fixture" || fail "duplicate prepare missing source fixture"
 after_snapshot="$(find "$temp_parent" -maxdepth 2 -print | sort; ps -ww -p "$launch_pid" -o pid=,command= 2>/dev/null || true)"
 [[ "$before_snapshot" == "$after_snapshot" ]] || fail "duplicate prepare mutated host state"
+
+echo "TEST: process ownership requires the isolated root and configured VS Code app"
+"$fake_app/Contents/MacOS/Fake VS Code" --child-only \
+  --user-data-dir="$root/user-data" --extensions-dir="$root/extensions" >/dev/null 2>&1 &
+race_child_pid=$!
+race_duplicate_out="$(env "${common_env[@]}" NUINUI_TEST_EMPTY_PS_PID="$race_child_pid" \
+  zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555)" \
+  || { print -r -- "$race_duplicate_out"; fail "disappearing enumerated child blocked duplicate prepare"; }
+print -r -- "$race_duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' \
+  || fail "disappearing enumerated child did not preserve duplicate no-op"
+kill -TERM "$race_child_pid" >/dev/null 2>&1 || true
+wait "$race_child_pid" >/dev/null 2>&1 || true
+
+zsh -c 'sleep 30; true' "wrong-app --user-data-dir=$root/user-data" >/dev/null 2>&1 &
+wrong_app_pid=$!
+sleep 0.1
+if wrong_app_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9555 2>&1)"; then
+  print -r -- "$wrong_app_out"
+  fail "live process with the wrong VS Code application identity was accepted"
+fi
+print -r -- "$wrong_app_out" | grep -Fq 'BLOCKED: E2E process ownership is ambiguous' \
+  || { print -r -- "$wrong_app_out"; fail "wrong application identity was not reported as ambiguous"; }
+kill -TERM "$wrong_app_pid" >/dev/null 2>&1 || true
+wait "$wrong_app_pid" >/dev/null 2>&1 || true
+
+"$fake_app/Contents/MacOS/Fake VS Code" --child-only \
+  --user-data-dir="$temp_parent/wrong-root/user-data" --extensions-dir="$temp_parent/wrong-root/extensions" \
+  >/dev/null 2>&1 &
+wrong_root_pid=$!
+sleep 0.1
+session_before_wrong_root="$(cat "$session")"
+sed "s/^launch_pid=.*/launch_pid=$wrong_root_pid/" "$session" > "$session.tmp"
+mv -- "$session.tmp" "$session"
+if wrong_root_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9555 2>&1)"; then
+  print -r -- "$wrong_root_out"
+  fail "live process with the wrong isolated root was accepted"
+fi
+print -r -- "$wrong_root_out" | grep -Fq 'BLOCKED: launch PID ownership mismatch' \
+  || { print -r -- "$wrong_root_out"; fail "wrong isolated root was not rejected"; }
+print -r -- "$session_before_wrong_root" > "$session"
+kill -TERM "$wrong_root_pid" >/dev/null 2>&1 || true
+wait "$wrong_root_pid" >/dev/null 2>&1 || true
 
 other_fixture="$TEST_ROOT/other fixture.nui"
 print -r -- other > "$other_fixture"

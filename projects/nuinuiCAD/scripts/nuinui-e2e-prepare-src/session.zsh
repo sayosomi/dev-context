@@ -34,6 +34,7 @@ write_session() {
   local handoff="$6"
   local cdp_port="$7"
   local launch_pid="$8"
+  local locale="$9"
   local session=""
   local temporary=""
 
@@ -48,6 +49,7 @@ write_session() {
   [[ -n "$source_fixture" ]] || return 1
   assert_port "$cdp_port" || return 1
   [[ "$launch_pid" =~ '^[1-9][0-9]*$' ]] || return 1
+  assert_locale "$locale" || return 1
 
   temporary="$(mktemp "${session}.XXXXXX")" || {
     echo "ERROR: could not create E2E session metadata"
@@ -62,6 +64,7 @@ write_session() {
     printf 'handoff=%s\n' "$handoff"
     printf 'cdp_port=%s\n' "$cdp_port"
     printf 'launch_pid=%s\n' "$launch_pid"
+    printf 'locale=%s\n' "$locale"
   } > "$temporary"; then
     rm -f -- "$temporary"
     echo "ERROR: could not write E2E session metadata"
@@ -108,10 +111,16 @@ status() {
     if [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
       assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
       session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
+      echo "  locale=$SESSION_LOCALE"
       echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"; echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
       if kill -0 "$launch_pid" >/dev/null 2>&1; then
         command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
-        [[ "$command_line" == *"$root"* ]] && echo "  launch_pid=$launch_pid (owned-process-running)" || { echo "  launch_pid=$launch_pid (process-ownership-mismatch)"; result=1; }
+        if [[ -n "$command_line" ]] && assert_process_ownership "$root" "$launch_pid" 1 >/dev/null 2>&1; then
+          echo "  launch_pid=$launch_pid (owned-process-running)"
+        else
+          echo "  launch_pid=$launch_pid (process-ownership-mismatch)"
+          result=1
+        fi
       else echo "  launch_pid=$launch_pid (not-running)"; fi
       [[ "$MARKER_ISSUE" == "$issue" && "$MARKER_REF" == "$tested_ref" ]] && echo "  session_marker=consistent" || { echo "  session_marker=INCONSISTENT"; result=1; }
     else echo "  session=INVALID"; result=1
@@ -196,12 +205,15 @@ assert_cleanup_args() {
 
 assert_no_owned_processes() {
   local root="$1"
-  local pid
+  local pid command_line
   local -a pids
   assert_process_ownership "$root" "" 0 || return 1
   pids=("${(@f)$(process_ids_for_root "$root")}")
   for pid in "${pids[@]}"; do
     [[ -z "$pid" ]] && continue
+    command_line="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+    [[ -n "$command_line" ]] || continue
+    process_command_line_owned "$root" "$command_line" || return 1
     echo "BLOCKED: E2E process still belongs to the cleaned root (PID $pid)"
     return 1
   done
@@ -236,6 +248,7 @@ cleanup() {
   local session_snapshot_lane="" session_snapshot_issue="" session_snapshot_ref=""
   local session_snapshot_source_fixture="" session_snapshot_root=""
   local session_snapshot_handoff="" session_snapshot_cdp_port="" session_snapshot_launch_pid=""
+  local session_snapshot_locale="" session_snapshot_kind=""
   local handoff=""
 
   assert_cleanup_args "$issue" "$tested_ref" "$requested_root" || return $?
@@ -249,7 +262,7 @@ cleanup() {
     return 1
   }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
-  [[ "$SESSION_KIND" == current ]] || {
+  [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || {
     echo "BLOCKED: legacy E2E session cannot be cleaned by the current lifecycle"
     return 1
   }
@@ -265,6 +278,8 @@ cleanup() {
   session_snapshot_handoff="$SESSION_HANDOFF"
   session_snapshot_cdp_port="$SESSION_CDP_PORT"
   session_snapshot_launch_pid="$SESSION_LAUNCH_PID"
+  session_snapshot_locale="$SESSION_LOCALE"
+  session_snapshot_kind="$SESSION_KIND"
   [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
@@ -301,7 +316,7 @@ cleanup() {
     return 1
   }
   load_session "$session" || { echo "BLOCKED: E2E session changed before metadata removal; receipt retained"; return 1; }
-  [[ "$SESSION_KIND" == current &&
+  [[ "$SESSION_KIND" == "$session_snapshot_kind" &&
     "$SESSION_LANE" == "$session_snapshot_lane" &&
     "$SESSION_ISSUE" == "$session_snapshot_issue" &&
     "$SESSION_REF" == "$session_snapshot_ref" &&
@@ -310,6 +325,7 @@ cleanup() {
     "$SESSION_HANDOFF" == "$session_snapshot_handoff" &&
     "$SESSION_CDP_PORT" == "$session_snapshot_cdp_port" &&
     "$SESSION_LAUNCH_PID" == "$session_snapshot_launch_pid" &&
+    "$SESSION_LOCALE" == "$session_snapshot_locale" &&
     "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" &&
     "$SESSION_REF" == "$tested_ref" && "$SESSION_ROOT" == "$requested_root" ]] || {
     echo "BLOCKED: E2E session changed before metadata removal; receipt retained"

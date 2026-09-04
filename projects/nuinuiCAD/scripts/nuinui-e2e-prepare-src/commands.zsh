@@ -37,12 +37,17 @@ resolve_code_bin() {
 }
 
 prepare_duplicate() {
-  local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5"
+  local issue="$1" tested_ref="$2" source_fixture="$3" cdp_port="$4" session="$5" locale="$6"
   [[ -f "$session" && ! -L "$session" ]] || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
   load_session "$session" || { echo "BLOCKED: invalid E2E session metadata"; return 1; }
-  [[ "$SESSION_KIND" == current ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
+  [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]] || { echo "BLOCKED: legacy E2E session cannot qualify for duplicate prepare"; return 1; }
+  if [[ "$SESSION_KIND" == pre-locale && "$locale" == ja ]]; then
+    echo "BLOCKED: pre-locale E2E session cannot qualify for Japanese duplicate prepare"
+    return 1
+  fi
   [[ "$SESSION_LANE" == "$E2E_LANE" && "$SESSION_ISSUE" == "$issue" && "$SESSION_REF" == "$tested_ref" &&
-    "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" ]] || {
+    "$SESSION_SOURCE_FIXTURE" == "$source_fixture" && "$SESSION_CDP_PORT" == "$cdp_port" &&
+    ( "$SESSION_KIND" == pre-locale || "$SESSION_LOCALE" == "$locale" ) ]] || {
     echo "BLOCKED: active session identity mismatch"
     return 1
   }
@@ -62,7 +67,8 @@ prepare() {
   local issue="$1"
   local tested_ref="$2"
   local fixture="$3"
-  local cdp_port="${4:-$DEFAULT_CDP_PORT}"
+  local locale="$4"
+  local cdp_port="${5:-$DEFAULT_CDP_PORT}"
   local source_fixture=""
   local repo="$E2E_WT"
   local code_bin=""
@@ -74,6 +80,8 @@ prepare() {
   local session=""
   local ready=0
   local vscode_pid=""
+  local launch_bin=""
+  local -a launch_args
 
   cleanup_failed_prepare() {
     local result="$1"
@@ -85,6 +93,7 @@ prepare() {
     return "$result"
   }
 
+  assert_locale "$locale" || return $?
   assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
   assert_port "$cdp_port" || { echo "ERROR: CDP port must be between 1 and 65535"; return 2; }
   source_fixture="$(resolve_existing_path "$fixture")" || {
@@ -94,7 +103,7 @@ prepare() {
 
   session="$(session_path)" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
   if path_exists "$session"; then
-    prepare_duplicate "$issue" "$tested_ref" "$source_fixture" "$cdp_port" "$session"
+    prepare_duplicate "$issue" "$tested_ref" "$source_fixture" "$cdp_port" "$session" "$locale"
     return $?
   fi
 
@@ -102,6 +111,12 @@ prepare() {
     echo "BLOCKED: VS Code CLI executable not found"
     return 1
   }
+  if [[ "$locale" == ja ]]; then
+    resolve_vscode_application_executable || {
+      echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
+      return 1
+    }
+  fi
 
   if lsof -nP -iTCP:"$cdp_port" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "BLOCKED: CDP port already in use"
@@ -120,6 +135,18 @@ prepare() {
 
   ensure_dependencies "$e2e_root" || { cleanup_failed_prepare 1; return 1; }
   build_artifacts || { cleanup_failed_prepare 1; return 1; }
+
+  if [[ "$locale" == ja ]]; then
+    "$code_bin" \
+      --user-data-dir="$e2e_root/user-data" \
+      --extensions-dir="$e2e_root/extensions" \
+      --install-extension "$JAPANESE_LANGUAGE_PACK" \
+      --force >/dev/null 2>&1 || {
+        echo "ERROR: Japanese language pack installation failed"
+        cleanup_failed_prepare 1
+        return 1
+      }
+  fi
 
   cat > "$e2e_root/user-data/User/settings.json" <<'EOF'
 {
@@ -142,19 +169,28 @@ EOF
 
   rust_bin="$repo/rust-evaluator/target/debug/evaluation_stdio"
 
+  launch_args=(
+    --new-window
+    --user-data-dir="$e2e_root/user-data"
+    --extensions-dir="$e2e_root/extensions"
+    --extensionDevelopmentPath="$repo/vscode-extension"
+    --remote-debugging-port="$cdp_port"
+    '--remote-allow-origins=*'
+    --skip-welcome
+    --skip-sessions-welcome
+    --skip-release-notes
+    --disable-workspace-trust
+  )
+  if [[ "$locale" == ja ]]; then
+    launch_bin="$VS_CODE_APPLICATION_EXECUTABLE"
+    launch_args=(--locale=ja "${launch_args[@]}")
+  else
+    launch_bin="$code_bin"
+  fi
+
   NUINUICAD_RUST_EVALUATION_BINARY="$rust_bin" \
   NUINUICAD_MCP_OBSERVATION=1 \
-  "$code_bin" --new-window \
-    --user-data-dir="$e2e_root/user-data" \
-    --extensions-dir="$e2e_root/extensions" \
-    --extensionDevelopmentPath="$repo/vscode-extension" \
-    --remote-debugging-port="$cdp_port" \
-    '--remote-allow-origins=*' \
-    --skip-welcome \
-    --skip-sessions-welcome \
-    --skip-release-notes \
-    --disable-workspace-trust \
-    "$prepared_fixture" >/dev/null 2>&1 &
+  "$launch_bin" "${launch_args[@]}" "$prepared_fixture" >/dev/null 2>&1 &
   vscode_pid=$!
 
   for _ in $(seq 1 120); do
@@ -186,7 +222,7 @@ CDP_PORT='$cdp_port'
 RUST_BIN='$rust_bin'
 EOF
 
-  write_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" || {
+  write_session "$E2E_LANE" "$issue" "$tested_ref" "$source_fixture" "$e2e_root" "$handoff" "$cdp_port" "$vscode_pid" "$locale" || {
     cleanup_failed_prepare 1
     return 1
   }
@@ -200,6 +236,7 @@ EOF
   echo "  fixture=$prepared_fixture"
   echo "  source_fixture=$source_fixture"
   echo "  cdp_port=$cdp_port"
+  echo "  locale=$locale"
   echo "  handoff=$handoff"
   echo "  session=$session"
   echo "READY FOR HUMAN E2E"
@@ -210,6 +247,9 @@ case "${1:-}" in
     echo "$VERSION"
     ;;
   check)
+    parse_locale_options "${@:2}" || exit $?
+    assert_locale "$LOCALE" || exit $?
+    set -- "$1" "${LOCALE_ARGS[@]}"
     if [[ "$#" -eq 4 ]]; then
       select_human_lane || exit $?
       check_issue=$2; check_ref=$3; check_fixture=$4
@@ -221,8 +261,24 @@ case "${1:-}" in
     fi
     assert_inputs "$check_issue" "$check_ref" "$check_fixture" || exit $?
     assert_checkout "$check_issue" "$check_ref"
+    if [[ "$LOCALE" == ja ]]; then
+      check_code_bin="$(resolve_code_bin)" || {
+        echo "BLOCKED: VS Code CLI executable not found"
+        exit 1
+      }
+      resolve_vscode_application_executable || {
+        echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
+        exit 1
+      }
+      echo "  locale=ja"
+      echo "  vscode_cli=$check_code_bin"
+      echo "  vscode_application_executable=$VS_CODE_APPLICATION_EXECUTABLE"
+    fi
     ;;
   prepare)
+    parse_locale_options "${@:2}" || exit $?
+    assert_locale "$LOCALE" || exit $?
+    set -- "$1" "${LOCALE_ARGS[@]}"
     if [[ "$#" -eq 4 ]]; then
       select_human_lane || exit $?
       prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port="${5:-$DEFAULT_CDP_PORT}"
@@ -243,7 +299,7 @@ case "${1:-}" in
       usage; exit 2
     fi
     assert_inputs "$prepare_issue" "$prepare_ref" "$prepare_fixture" || exit $?
-    prepare "$prepare_issue" "$prepare_ref" "$prepare_fixture" "$prepare_port"
+    prepare "$prepare_issue" "$prepare_ref" "$prepare_fixture" "$LOCALE" "$prepare_port"
     ;;
   status)
     [[ "$#" -eq 1 || "$#" -eq 2 ]] || { usage; exit 2; }
