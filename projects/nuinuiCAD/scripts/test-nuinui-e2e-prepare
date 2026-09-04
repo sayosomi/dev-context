@@ -122,12 +122,61 @@ done
 if [[ -n "$install_extension" ]]; then
   mkdir -p "$extensions_dir/$install_extension"
   print -r -- "$*" > "$extensions_dir/install-args"
+  translation_file="$extensions_dir/$install_extension/translations/main.i18n.json"
+  case "${NUINUI_FAKE_LANGUAGE_PACK_STATE:-valid}" in
+    missing) exit 0 ;;
+    malformed) print -r -- '{' > "$user_data/languagepacks.json" ;;
+    missing-ja) print -r -- '{}' > "$user_data/languagepacks.json" ;;
+    missing-hash) print -r -- "{\"ja\":{\"translations\":{\"vscode\":\"$translation_file\"}}}" > "$user_data/languagepacks.json" ;;
+    relative) print -r -- '{"ja":{"hash":"fake-hash","translations":{"vscode":"relative.json"}}}' > "$user_data/languagepacks.json" ;;
+    outside) print -r -- '{"ja":{"hash":"fake-hash","translations":{"vscode":"/tmp/not-isolated-vscode-translation.json"}}}' > "$user_data/languagepacks.json" ;;
+    *)
+      mkdir -p "$translation_file:h"
+      print -r -- '{"messages":{"fake":"Japanese"}}' > "$translation_file"
+      print -r -- "{\"ja\":{\"hash\":\"fake-hash\",\"translations\":{\"vscode\":\"$translation_file\"}}}" > "$user_data/languagepacks.json"
+      ;;
+  esac
   exit 0
 fi
 [[ -n "$user_data" ]] && {
   print -r -- "executable=$0" > "${user_data:h}/launch-args"
   print -r -- "args=$*" >> "${user_data:h}/launch-args"
 }
+root="${user_data:h}"
+if [[ -n "${NUINUI_FAKE_LAUNCH_MARKER:-}" ]]; then
+  print -r -- launch >> "$NUINUI_FAKE_LAUNCH_MARKER"
+fi
+launch_count_file="$root/evidence/fake-vscode-launch-count"
+launch_count=0
+if [[ -f "$launch_count_file" ]]; then
+  launch_count="$(<"$launch_count_file")"
+fi
+(( launch_count++ ))
+print -r -- "$launch_count" > "$launch_count_file"
+  print -r -- "$$" >> "$root/evidence/fake-vscode-launch-pids"
+case "${NUINUI_FAKE_LOCALE_MODE:-ja}" in
+  en)
+    print -u2 -- 'fake VS Code NLS resolved en'
+    nls_config='{"userLocale":"ja","resolvedLanguage":"en"}'
+    ;;
+  flip)
+    if [[ "$launch_count" == 1 ]]; then
+      nls_config='{"userLocale":"ja","resolvedLanguage":"en"}'
+    else
+      nls_config='{"userLocale":"ja","resolvedLanguage":"ja","_languagePackId":"fake-hash.ja","_languagePackSupport":true,"_translationsConfigFile":"'"$root"'/user-data/clp/fake-hash.ja/tcf.json","languagePack":{"messagesFile":"'"$root"'/user-data/clp/fake-hash.ja/messages.json"}}'
+    fi
+    ;;
+  *)
+    nls_config='{"userLocale":"ja","resolvedLanguage":"ja","_languagePackId":"fake-hash.ja","_languagePackSupport":true,"_translationsConfigFile":"'"$root"'/user-data/clp/fake-hash.ja/tcf.json","languagePack":{"messagesFile":"'"$root"'/user-data/clp/fake-hash.ja/messages.json"}}'
+    ;;
+esac
+if [[ "${NUINUI_FAKE_LOCALE_MODE:-ja}" != missing-nls ]]; then
+  mkdir -p "$root/user-data/clp/fake-hash.ja"
+  print -r -- '{"messages":{"fake":"Japanese"}}' > "$root/user-data/clp/fake-hash.ja/messages.json"
+  print -r -- '{}' > "$root/user-data/clp/fake-hash.ja/tcf.json"
+  print -r -- "$nls_config" > "$root/evidence/fake-vscode-nls-config"
+  export VSCODE_NLS_CONFIG="$nls_config"
+fi
 [[ "$*" == *"--child-only"* ]] && { sleep 30; exit 0; }
 sleep 30
 EOF
@@ -168,6 +217,29 @@ if [[ -n "${NUINUI_TEST_EMPTY_PS_PID:-}" ]]; then
   for arg in "$@"; do
     [[ "$arg" == "$NUINUI_TEST_EMPTY_PS_PID" ]] && exit 0
   done
+fi
+show_environment=0
+pid=""
+expect_pid=0
+for arg in "$@"; do
+  [[ "$arg" == -*E* ]] && show_environment=1
+  if [[ "$expect_pid" == 1 ]]; then
+    pid="$arg"
+    expect_pid=0
+  elif [[ "$arg" == -p ]]; then
+    expect_pid=1
+  fi
+done
+if [[ "$show_environment" == 1 && -n "$pid" ]]; then
+  command_line="$("$NUINUI_TEST_REAL_PS" -ww -p "$pid" -o command= 2>/dev/null || true)"
+  root_user_data="$(print -r -- "$command_line" | sed -n 's/.*--user-data-dir=\([^ ]*\).*/\1/p')"
+  nls_file="${root_user_data:h}/evidence/fake-vscode-nls-config"
+  if [[ -n "$command_line" && -f "$nls_file" ]]; then
+    print -r -- "$command_line VSCODE_NLS_CONFIG=$(<"$nls_file")"
+  else
+    print -r -- "$command_line"
+  fi
+  exit 0
 fi
 "$NUINUI_TEST_REAL_PS" "$@"
 EOF
@@ -277,7 +349,7 @@ print -r -- "$self_path_invalid_out" | grep -Fq \
   || { print -r -- "$self_path_invalid_out"; fail "invalid standalone helper placement did not fail closed"; }
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.5.0" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.5.1" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 cleanup_line="$(print -r -- "$help_out" | grep -nF "nuinui-e2e-prepare cleanup" | head -n 1 | cut -d: -f1)"
@@ -363,9 +435,32 @@ locale_check_explicit_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
 print -r -- "$locale_check_explicit_out" | grep -Fq 'E2E CHECKOUT VERIFIED' \
   || fail "explicit-lane Japanese check did not complete"
 
+echo "TEST: Japanese language-pack state is validated before launch"
+locale_launch_marker="$TEST_ROOT/locale-launch-marker"
+rm -f -- "$locale_launch_marker"
+for locale_state in missing malformed missing-ja missing-hash relative outside; do
+  if locale_state_out="$(env "${common_env[@]}" \
+    NUINUI_E2E_JAPANESE_LANGUAGE_PACK_TIMEOUT=1 \
+    NUINUI_FAKE_LANGUAGE_PACK_STATE="$locale_state" \
+    NUINUI_FAKE_LAUNCH_MARKER="$locale_launch_marker" \
+    zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9550 --locale ja 2>&1)"; then
+    print -r -- "$locale_state_out"
+    fail "invalid Japanese language-pack state was accepted: $locale_state"
+  fi
+  print -r -- "$locale_state_out" | grep -Fq 'Japanese language-pack state' \
+    || { print -r -- "$locale_state_out"; fail "invalid language-pack state was not actionable: $locale_state"; }
+done
+[[ ! -e "$locale_launch_marker" ]] || fail "invalid language-pack state launched VS Code"
+[[ -z "$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print -quit)" ]] \
+  || fail "invalid language-pack state left an E2E root"
+[[ ! -e "$session" ]] || fail "invalid language-pack state wrote session metadata"
+
 echo "TEST: Japanese prepare isolates the language pack and launches the plist executable"
-locale_prepare_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
-  prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja)" || fail "Japanese prepare"
+if ! locale_prepare_out="$(env "${common_env[@]}" NUINUI_FAKE_LOCALE_MODE=ja zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja)"; then
+  print -r -- "$locale_prepare_out"
+  fail "Japanese prepare"
+fi
 [[ -f "$session" ]] || fail "Japanese prepare did not write session metadata"
 locale_root="$(sed -n 's/^root=//p' "$session")"
 locale_pid="$(sed -n 's/^launch_pid=//p' "$session")"
@@ -393,6 +488,10 @@ grep -Fq -- "$locale_root/$(basename "$fixture")" "$locale_root/launch-args" \
 if find "$fake_app" -type d -name "$language_pack" -print | grep -q .; then
   fail "language pack was installed in the application tree"
 fi
+[[ -f "$locale_root/evidence/vscode-launch.log" ]] || fail "Japanese launch did not retain an evidence log"
+if print -r -- "$locale_prepare_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
+  fail "Japanese prepare emitted the full process environment"
+fi
 locale_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "Japanese status"
 print -r -- "$locale_status_out" | grep -Fq 'session=active' || fail "Japanese status omitted active session"
 print -r -- "$locale_status_out" | grep -Fq 'locale=ja' || fail "Japanese status omitted locale"
@@ -403,6 +502,21 @@ print -r -- "$locale_duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' \
   || fail "same-locale duplicate prepare was not a no-op"
 [[ "$(cat "$session")" == "$locale_session_before" && -d "$locale_root" ]] \
   || fail "same-locale duplicate prepare mutated state"
+locale_nls_before="$(cat "$locale_root/evidence/fake-vscode-nls-config")"
+print -r -- '{"userLocale":"ja","resolvedLanguage":"en"}' > "$locale_root/evidence/fake-vscode-nls-config"
+if locale_duplicate_wrong_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 --locale ja 2>&1)"; then
+  print -r -- "$locale_duplicate_wrong_out"
+  fail "Japanese duplicate accepted an English effective locale"
+fi
+print -r -- "$locale_duplicate_wrong_out" | grep -Fq 'requested_locale=ja' \
+  || fail "Japanese duplicate failure omitted requested locale"
+print -r -- "$locale_duplicate_wrong_out" | grep -Fq 'effective_locale=en' \
+  || fail "Japanese duplicate failure omitted effective locale"
+if print -r -- "$locale_duplicate_wrong_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
+  fail "Japanese duplicate emitted the full process environment"
+fi
+print -r -- "$locale_nls_before" > "$locale_root/evidence/fake-vscode-nls-config"
 if locale_conflict_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
   prepare SAY-999 "$tested_ref" "$fixture" 9554 2>&1)"; then
   print -r -- "$locale_conflict_out"
@@ -417,6 +531,63 @@ wait "$locale_pid" >/dev/null 2>&1 || true
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$locale_root" >/dev/null \
   || fail "cleanup after exited Japanese host"
 [[ ! -e "$session" && ! -e "$locale_root" ]] || fail "Japanese cleanup retained state"
+
+echo "TEST: Japanese wrong-locale first launch gets exactly one owned relaunch"
+relaunch_out="$(env "${common_env[@]}" NUINUI_FAKE_LOCALE_MODE=flip zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9556 --locale ja)" || fail "Japanese relaunch prepare"
+[[ -f "$session" ]] || fail "Japanese relaunch did not write session metadata"
+relaunch_root="$(sed -n 's/^root=//p' "$session")"
+relaunch_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+[[ "$(cat "$relaunch_root/evidence/fake-vscode-launch-count")" == 2 ]] \
+  || fail "Japanese relaunch did not perform exactly one relaunch"
+[[ "$(tail -n 1 "$relaunch_root/evidence/fake-vscode-launch-pids")" == "$relaunch_pid" ]] \
+  || fail "session launch_pid did not refer to the successful second host"
+print -r -- "$relaunch_out" | grep -Fq 'READY FOR HUMAN E2E' || fail "Japanese relaunch did not become READY"
+if print -r -- "$relaunch_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
+  fail "Japanese relaunch emitted the full process environment"
+fi
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$relaunch_root" >/dev/null \
+  || fail "cleanup after successful Japanese relaunch"
+[[ ! -e "$session" && ! -e "$relaunch_root" ]] || fail "successful Japanese relaunch cleanup retained state"
+
+echo "TEST: Japanese wrong-locale second launch fails closed with bounded diagnostics"
+unrelated_root="$temp_parent/unrelated-vscode"
+mkdir -p "$unrelated_root/user-data" "$unrelated_root/extensions" "$unrelated_root/evidence"
+"$fake_app/Contents/MacOS/Fake VS Code" --child-only \
+  --user-data-dir="$unrelated_root/user-data" --extensions-dir="$unrelated_root/extensions" \
+  >/dev/null 2>&1 &
+unrelated_pid=$!
+sleep 0.1
+fail_root_snapshot="$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print | sort)"
+wrong_locale_launch_marker="$TEST_ROOT/wrong-locale-launches"
+rm -f -- "$wrong_locale_launch_marker"
+if wrong_locale_out="$(env "${common_env[@]}" NUINUI_FAKE_LOCALE_MODE=en \
+  NUINUI_FAKE_LAUNCH_MARKER="$wrong_locale_launch_marker" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9557 --locale ja 2>&1)"; then
+  print -r -- "$wrong_locale_out"
+  fail "Japanese wrong-locale preparation was accepted"
+fi
+print -r -- "$wrong_locale_out" | grep -Fq 'locale host/environment preparation failed' \
+  || fail "wrong-locale preparation was not reported as an environment failure"
+print -r -- "$wrong_locale_out" | grep -Fq 'requested_locale=ja' \
+  || fail "wrong-locale preparation omitted requested locale"
+print -r -- "$wrong_locale_out" | grep -Fq 'effective_locale=en' \
+  || fail "wrong-locale preparation omitted effective locale"
+print -r -- "$wrong_locale_out" | grep -Fq 'fake VS Code NLS resolved en' \
+  || fail "wrong-locale preparation omitted bounded launch diagnostics"
+[[ "$(wc -l < "$wrong_locale_launch_marker" | tr -d '[:space:]')" == 2 ]] \
+  || fail "wrong-locale preparation did not perform exactly one relaunch"
+if print -r -- "$wrong_locale_out" | grep -Fq 'VSCODE_NLS_CONFIG'; then
+  fail "wrong-locale preparation emitted the full process environment"
+fi
+[[ -z "$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print -quit)" ]] \
+  || fail "wrong-locale preparation left an E2E root"
+[[ ! -e "$session" ]] || fail "wrong-locale preparation left session metadata"
+[[ "$fail_root_snapshot" == "$(find "$temp_parent" -maxdepth 1 -type d -name 'nuinui-vscode-e2e.*' -print | sort)" ]] \
+  || fail "wrong-locale cleanup changed unrelated E2E roots"
+kill -TERM "$unrelated_pid" >/dev/null 2>&1 || true
+wait "$unrelated_pid" >/dev/null 2>&1 || true
+rm -rf -- "$unrelated_root"
 
 echo "TEST: ordinary sessions record default and pre-locale sessions remain compatible"
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9554 >/dev/null \

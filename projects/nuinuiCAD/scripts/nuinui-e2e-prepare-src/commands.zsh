@@ -58,6 +58,15 @@ prepare_duplicate() {
     "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
   assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 1 || return 1
   assert_cdp_reachable "$SESSION_CDP_PORT" || { echo "BLOCKED: recorded CDP host is unreachable"; return 1; }
+  if [[ "$locale" == ja ]]; then
+    inspect_japanese_effective_locale "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || {
+      echo "BLOCKED: Japanese locale host/environment readiness could not be proven"
+      echo "  requested_locale=ja"
+      echo "  effective_locale=${EFFECTIVE_LOCALE:-unknown}"
+      echo "  locale_readiness=${JAPANESE_LOCALE_READINESS_REASON:-unknown}"
+      return 1
+    }
+  fi
   printf 'E2E SETUP ALREADY READY\nissue=%s\ntested_ref=%s\ne2e_root=%s\nfixture=%s\nsource_fixture=%s\ncdp_port=%s\nhandoff=%s\nsession=%s\nmutation=no-op\nREADY FOR HUMAN E2E\n' \
     "$issue" "$tested_ref" "$SESSION_ROOT" "$PREPARED_FIXTURE" "$source_fixture" \
     "$cdp_port" "$SESSION_HANDOFF" "$session"
@@ -80,6 +89,8 @@ prepare() {
   local session=""
   local ready=0
   local vscode_pid=""
+  local launch_output="/dev/null"
+  local relaunch_count=0
   local launch_bin=""
   local -a launch_args
 
@@ -91,6 +102,19 @@ prepare() {
     [[ -z "$handoff" || ! -e "$handoff" ]] || rm -f -- "$handoff"
     [[ -z "$e2e_root" || ! -e "$e2e_root" ]] || rm -rf -- "$e2e_root"
     return "$result"
+  }
+
+  report_locale_failure() {
+    local summary="$1" reason="$2"
+    echo "ERROR: $summary"
+    echo "  requested_locale=ja"
+    echo "  effective_locale=${EFFECTIVE_LOCALE:-unknown}"
+    echo "  locale_readiness=${reason:-unknown}"
+    if [[ "$launch_output" != /dev/null && -s "$launch_output" ]]; then
+      echo "  launch_diagnostic_tail_begin"
+      tail -c 8192 "$launch_output"
+      echo "  launch_diagnostic_tail_end"
+    fi
   }
 
   assert_locale "$locale" || return $?
@@ -146,6 +170,13 @@ prepare() {
         cleanup_failed_prepare 1
         return 1
       }
+    wait_for_japanese_language_pack_state "$e2e_root" || {
+      report_locale_failure \
+        'locale host/environment preparation failed before launch (Japanese language-pack state was not ready)' \
+        "${JAPANESE_LANGUAGE_PACK_STATE_ERROR:-unknown}"
+      cleanup_failed_prepare 1
+      return 1
+    }
   fi
 
   cat > "$e2e_root/user-data/User/settings.json" <<'EOF'
@@ -184,30 +215,68 @@ EOF
   if [[ "$locale" == ja ]]; then
     launch_bin="$VS_CODE_APPLICATION_EXECUTABLE"
     launch_args=(--locale=ja "${launch_args[@]}")
+    launch_output="$e2e_root/evidence/vscode-launch.log"
+    : > "$launch_output" || { cleanup_failed_prepare 1; return 1; }
   else
     launch_bin="$code_bin"
   fi
 
-  NUINUICAD_RUST_EVALUATION_BINARY="$rust_bin" \
-  NUINUICAD_MCP_OBSERVATION=1 \
-  "$launch_bin" "${launch_args[@]}" "$prepared_fixture" >/dev/null 2>&1 &
-  vscode_pid=$!
+  launch_host() {
+    NUINUICAD_RUST_EVALUATION_BINARY="$rust_bin" \
+    NUINUICAD_MCP_OBSERVATION=1 \
+    "$launch_bin" "${launch_args[@]}" "$prepared_fixture" >> "$launch_output" 2>&1 &
+    vscode_pid=$!
+  }
 
-  for _ in $(seq 1 120); do
-    if curl --max-time 1 -fsS \
-      "http://127.0.0.1:${cdp_port}/json/version" \
-      > "$e2e_root/evidence/cdp-version.json"; then
-      ready=1
-      break
-    fi
-    sleep 0.5
-  done
+  wait_for_host() {
+    ready=0
+    wait_for_cdp "$cdp_port" "$e2e_root/evidence/cdp-version.json" && ready=1
+  }
+
+  launch_host
+  wait_for_host
 
   if [[ "$ready" != 1 ]]; then
-    echo "ERROR: CDP readiness timeout"
-    echo "E2E_ROOT: $e2e_root"
+    if [[ "$locale" == ja ]]; then
+      report_locale_failure 'locale host/environment preparation failed before CDP readiness' 'CDP readiness timeout'
+    else
+      echo "ERROR: CDP readiness timeout"
+      echo "E2E_ROOT: $e2e_root"
+    fi
     cleanup_failed_prepare 1
     return 1
+  fi
+
+  if [[ "$locale" == ja ]] && ! inspect_japanese_effective_locale "$e2e_root" "$vscode_pid"; then
+    if (( relaunch_count == 0 )); then
+      stop_owned_processes "$e2e_root" "$vscode_pid" || {
+        report_locale_failure \
+          'locale host/environment preparation failed while stopping the first owned host' \
+          'owned host termination proof failed'
+        cleanup_failed_prepare 1
+        return 1
+      }
+      relaunch_count=1
+      launch_host
+      wait_for_host
+      if [[ "$ready" == 1 ]] && inspect_japanese_effective_locale "$e2e_root" "$vscode_pid"; then
+        :
+      else
+        if [[ "$ready" == 1 ]]; then
+          report_locale_failure 'locale host/environment preparation failed' \
+            "${JAPANESE_LOCALE_READINESS_REASON:-Japanese NLS proof failed}"
+        else
+          report_locale_failure 'locale host/environment preparation failed' 'CDP readiness timeout'
+        fi
+        cleanup_failed_prepare 1
+        return 1
+      fi
+    else
+      report_locale_failure 'locale host/environment preparation failed' \
+        "${JAPANESE_LOCALE_READINESS_REASON:-unknown}"
+      cleanup_failed_prepare 1
+      return 1
+    fi
   fi
 
   handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
