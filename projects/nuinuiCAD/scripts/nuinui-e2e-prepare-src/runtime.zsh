@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.6.0"
+VERSION="1.7.0"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -75,6 +75,7 @@ Usage:
   nuinui-e2e-prepare status [<human-test-lane>]
   nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
   nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
+  nuinui-e2e-prepare closure-command --issue <SAY-123> [--lane <human-test-lane>]
   nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>
   nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e-root>
 

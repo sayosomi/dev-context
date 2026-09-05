@@ -34,6 +34,7 @@ e2e_prepare_generator=$script_dir/generate-nuinui-e2e-prepare
 e2e_prepare_artifact=$script_dir/nuinui-e2e-prepare
 e2e_prepare_runtime_source=$script_dir/nuinui-e2e-prepare-src/runtime.zsh
 e2e_prepare_session_source=$script_dir/nuinui-e2e-prepare-src/session.zsh
+e2e_prepare_closure_source=$script_dir/nuinui-e2e-prepare-src/closure-command.zsh
 e2e_prepare_commands_source=$script_dir/nuinui-e2e-prepare-src/commands.zsh
 
 fail() {
@@ -71,7 +72,7 @@ done
 [ -f "$nuinui_self_test_source" ] || fail 'nuinui self-test source is missing'
 [ -f "$nuinui_dispatch_source" ] || fail 'nuinui CLI dispatch source is missing'
 [ -f "$handoff_body_source" ] || fail 'handoff body source is missing'
-for e2e_source in "$e2e_prepare_runtime_source" "$e2e_prepare_session_source" "$e2e_prepare_commands_source"; do
+for e2e_source in "$e2e_prepare_runtime_source" "$e2e_prepare_session_source" "$e2e_prepare_closure_source" "$e2e_prepare_commands_source"; do
   [ -f "$e2e_source" ] || fail "E2E preparation source is missing: $e2e_source"
 done
 
@@ -123,7 +124,7 @@ test_generator() {
   elif [ "$name" = nuinui-handoff-check ]; then
     protected_paths="$protected_paths $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_project_policy_source $handoff_body_source"
   else
-    protected_paths="$protected_paths $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $e2e_prepare_runtime_source $e2e_prepare_session_source $e2e_prepare_commands_source"
+    protected_paths="$protected_paths $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $e2e_prepare_runtime_source $e2e_prepare_session_source $e2e_prepare_closure_source $e2e_prepare_commands_source"
   fi
   for protected_path in $protected_paths; do
     protected_before=$(shasum -a 256 "$protected_path" | awk 'NR == 1 {print $1}')
@@ -148,5 +149,5 @@ test_generator() {
 
 test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.8.4
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.1.1
-test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.6.0
+test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.7.0
 echo 'GENERATION PASS'

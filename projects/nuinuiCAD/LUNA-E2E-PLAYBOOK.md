@@ -40,6 +40,14 @@ Lunaはtest operatorでありtest designerではない。
 
 通常のstartup handoffでは、Sol HighがIssue、tested ref、fixture、locale、port、`Executor: Luna`をsemanticに固定し、Humanが同じterminalで`nuinui e2e-start-command`を1回実行する。generatorはread-onlyで既存Human-test classifierを検証し、既存`e2e-start && nuinui-e2e-prepare prepare`の短いshell-safe continuationだけを出力する。Humanは成功した生成行をverbatimに実行し、terminal outputへ大きなLuna promptを追加・コピーしない。既存prepareの`handoff=` path、session、CDP、checkout、fixture、locale readinessがLunaへのbounded transport identityであり、Luna prompt自体はSol Highがcurrent contractから別に構成する。generatorはexecutor分類、tested-ref選択、lane scheduling、test oracleを行わない。
 
+Successful closure is authorized by Sol High / ChatGPT and started by Human with one short named command in the same terminal:
+
+```bash
+nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
+```
+
+The closure helper fresh-resolves lane, tested ref, and E2E root, then invokes the existing cleanup, `e2e-release`, and `closure-check` authorities in canonical order. Terminal output is the canonical orchestration record; Human does not reconstruct or substitute lane/ref/root. Exact duplicate stages continue immediately. A `BLOCKED` / `ERROR` short-circuits later stages and returns to ChatGPT for bounded diagnosis. PASS / FAIL judgment and Human stop / pause semantics remain unchanged.
+
 Lunaへ次をさせない。
 
 - checkout切替、build、VS Code process cleanup、fresh host launch

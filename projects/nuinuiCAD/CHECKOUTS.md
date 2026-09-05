@@ -424,15 +424,15 @@ E2E中にremote `main`が進んでもtested stateを途中更新しない。
 
 ### e2e release
 
-Canonicalなsuccessful Human E2E closure handoffは、必ず次の順序で行う。
+Canonicalなsuccessful Human E2E closure handoffは、Sol High / ChatGPTが成功後のclosureを承認したうえで、Humanが同じterminalから次の短いnamed handoffを1回実行する。
 
-```text
-nuinui-e2e-prepare cleanup <human-test-lane> <Issue> <tested-ref> <e2e-root>
-nuinui e2e-release <human-test-lane> <Issue> <tested-ref>
-nuinui-e2e-prepare closure-check <human-test-lane> <Issue>
+```bash
+nuinui-e2e-prepare closure-command --issue <Issue> [--lane <human-test-lane>]
 ```
 
-Short forms for cleanup and `nuinui e2e-release` remain compatible only when exactly one Human-test lane is declared; explicit lane forms are required otherwise.
+`closure-command`はfreshなlocal authorityからtested ref、E2E root、current Human-test lane、active / cleanup-complete / released generationをread-onlyで解決し、terminal outputをcanonicalな実行記録として`cleanup -> e2e-release -> closure-check`の順に既存public commandへ渡す。Humanはlane、ref、rootを手で置換・再構成しない。`--lane`はcaller constraintであり、複数laneでは省略可能なのはrequested Issueのmatching generationが1つだけfreshに証明できる場合だけである。
+
+Exact duplicate cleanup / releaseは既存authorityのsuccess envelopeのまま直ちに次stageへ進む。release後はcleanupのexact duplicateがcheckout/marker lifecycle上有効でないため、strict cleanup receiptで過去のcleanupを証明できる場合に限り、既存release duplicateからclosure-checkへ進む。このprojectionは新しいclosure stateやreceipt解釈を作らない。
 
 `cleanup <Issue> <tested-ref> <e2e-root>`はIssue/refに加えてexact rootをsession-generation identityとして照合し、prepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。完了時はGit dirへstrictな`version=1 / issue / ref / root`の`nuinui-e2e-cleanup-receipt`を先に保存する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
 
@@ -441,6 +441,8 @@ Short forms for cleanup and `nuinui e2e-release` remain compatible only when exa
 markerがない場合、同じcaller Issue/ref、strict receipt、session metadata不在、clean detached checkout、current authoritative `origin/main` HEADをread-onlyで完全一致証明できる場合だけ、`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先され、staleなreceiptから別Issueのreleaseを推測しない。
 
 `nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
+
+各stageの実行時再検証、cleanup receipt、release receipt、marker、session/root/process cleanup、release mutation、final closure proofはそれぞれ従来のownerが保持する。どのstageでも`BLOCKED` / `ERROR`なら後続stageを実行せず、HumanはChatGPTへbounded diagnosisを返す。Manual E2EのPASS / FAIL judgmentとHumanのstop / pause semanticsは変更しない。
 
 `nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup [<human-test-lane>] <Issue> <tested-ref> <e2e-root>`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
 

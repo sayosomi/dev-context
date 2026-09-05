@@ -17,11 +17,12 @@ standalone_context_source=$repo_root/shared/local-tools/lane-execution/standalon
 generic_runtime_source=$repo_root/shared/local-tools/lane-execution/runtime.sh
 e2e_runtime_source=$script_dir/nuinui-e2e-prepare-src/runtime.zsh
 session_source=$script_dir/nuinui-e2e-prepare-src/session.zsh
+closure_command_source=$script_dir/nuinui-e2e-prepare-src/closure-command.zsh
 commands_source=$script_dir/nuinui-e2e-prepare-src/commands.zsh
 artifact_path=$script_dir/nuinui-e2e-prepare
 
 for source in "$manifest_source" "$standalone_context_source" "$generic_runtime_source" "$e2e_runtime_source" \
-  "$session_source" "$commands_source"; do
+  "$session_source" "$closure_command_source" "$commands_source"; do
   [ -f "$source" ] || {
     echo "generate-nuinui-e2e-prepare: source is missing: $source" >&2
     exit 1
@@ -34,7 +35,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 }
 output_path=$output_dir/$(basename "$output")
 case "$output_path" in
-  "$manifest_source"|"$standalone_context_source"|"$generic_runtime_source"|"$e2e_runtime_source"|"$session_source"|"$commands_source"|"$artifact_path")
+  "$manifest_source"|"$standalone_context_source"|"$generic_runtime_source"|"$e2e_runtime_source"|"$session_source"|"$closure_command_source"|"$commands_source"|"$artifact_path")
     echo 'generate-nuinui-e2e-prepare: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -60,6 +61,7 @@ umask 077
   cat "$generic_runtime_source"
   cat "$e2e_runtime_source"
   cat "$session_source"
+  cat "$closure_command_source"
   cat "$commands_source"
 } > "$temporary_path"
 chmod 755 "$temporary_path"
