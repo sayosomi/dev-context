@@ -23,6 +23,10 @@ cleanup_test_root() {
   if [[ -n "${preparing_recovery_pid:-}" ]]; then
     kill -TERM "$preparing_recovery_pid" >/dev/null 2>&1 || true
   fi
+  if [[ -n "${closure_failure_pid:-}" ]]; then
+    kill -TERM "$closure_failure_pid" >/dev/null 2>&1 || true
+    wait "$closure_failure_pid" >/dev/null 2>&1 || true
+  fi
   [[ -d "$TEST_ROOT" ]] && rm -rf -- "$TEST_ROOT"
 }
 trap cleanup_test_root EXIT
@@ -53,6 +57,7 @@ drift_prepare_pid=""
 recovery_unrelated_pid=""
 recovery_wrong_pid=""
 preparing_recovery_pid=""
+closure_failure_pid=""
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" "$fake_app/Contents/MacOS" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -1969,6 +1974,147 @@ if env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-998
   fail "malformed release receipt was accepted"
 fi
 print -r -- "$closure_release_before" > "$closure_release_receipt"
+
+echo "TEST: closure-command exposes final closure-check failure and nonzero status"
+closure_failure_root="$temp_parent/nuinui-vscode-e2e.closure-final-failure"
+closure_failure_process="$temp_parent/nuinui-SAY-995-e2e.final-failure"
+rm -f -- "$closure_release_receipt"
+printf 'issue=SAY-995\nref=%s\n' "$tested_ref" > "$marker"
+printf 'version=1\nissue=SAY-995\nref=%s\nroot=%s\n' "$tested_ref" "$closure_failure_root" > "$closure_cleanup_receipt"
+print -r -- '#!/bin/zsh
+sleep 30' > "$closure_failure_process"
+chmod +x "$closure_failure_process"
+"$closure_failure_process" >/dev/null 2>&1 &
+closure_failure_pid=$!
+sleep 0.1
+if closure_failure_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-995 2>&1)"; then
+  print -r -- "$closure_failure_output"
+  fail "final closure-check failure was converted to success"
+fi
+print -r -- "$closure_failure_output" | grep -Fq 'CLOSURE STAGE: cleanup' || fail "final closure failure omitted cleanup stage"
+print -r -- "$closure_failure_output" | grep -Fq 'E2E CLEANUP ALREADY COMPLETE' || fail "final closure failure did not prove cleanup"
+print -r -- "$closure_failure_output" | grep -Fq 'CLOSURE STAGE: e2e-release' || fail "final closure failure omitted release stage"
+print -r -- "$closure_failure_output" | grep -Fq 'E2E RELEASED' || fail "final closure failure did not prove release"
+print -r -- "$closure_failure_output" | grep -Fq 'CLOSURE STAGE: closure-check' || fail "final closure failure omitted closure-check stage"
+print -r -- "$closure_failure_output" | grep -Fq 'E2E CLOSURE CHECK' || fail "final closure failure hid closure-check evidence"
+print -r -- "$closure_failure_output" | grep -Fq 'process=BLOCKING' || fail "final closure failure hid the blocking process evidence"
+print -r -- "$closure_failure_output" | grep -Fq 'E2E CLOSURE BLOCKED' || fail "final closure failure hid the closure-check result"
+print -r -- "$closure_failure_output" | grep -Fq 'BLOCKED: closure-command stopped after stage=closure-check' || \
+  fail "final closure failure omitted closure-command stop evidence"
+[[ ! -e "$marker" && ! -e "$session" ]] || fail "final closure failure retained active state after cleanup/release"
+kill -TERM "$closure_failure_pid" >/dev/null 2>&1 || true
+wait "$closure_failure_pid" >/dev/null 2>&1 || true
+closure_failure_pid=""
+
+echo "TEST: closure-command blocks preparing, malformed, and conflicting sessions before mutation"
+closure_receipt_cleanup_before="$(cat "$closure_cleanup_receipt")"
+closure_receipt_release_before="$(cat "$closure_release_receipt")"
+closure_preparing_root="$temp_parent/nuinui-vscode-e2e.closure-preparing"
+rm -rf -- "$closure_preparing_root"
+printf 'issue=SAY-994\nref=%s\n' "$tested_ref" > "$marker"
+printf 'kind=preparing\nlane=test-human\nissue=SAY-994\nref=%s\nroot=%s\nprepare_owner=nuinui-e2e-prepare\nprepare_pid=%s\n' \
+  "$tested_ref" "$closure_preparing_root" "$$" > "$session"
+preparing_closure_marker_before="$(cat "$marker")"
+preparing_closure_session_before="$(cat "$session")"
+if preparing_closure_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-994 2>&1)"; then
+  print -r -- "$preparing_closure_output"
+  fail "preparing session was accepted by closure-command"
+fi
+print -r -- "$preparing_closure_output" | grep -Fq 'BLOCKED: E2E preparation is already in flight' || \
+  fail "preparing session was not reported through closure-command"
+if print -r -- "$preparing_closure_output" | grep -Fq 'CLOSURE STAGE:'; then
+  fail "preparing session reached a closure stage"
+fi
+[[ "$(cat "$marker")" == "$preparing_closure_marker_before" && "$(cat "$session")" == "$preparing_closure_session_before" ]] || \
+  fail "preparing-session closure mutated identity state"
+[[ "$(cat "$closure_cleanup_receipt")" == "$closure_receipt_cleanup_before" &&
+  "$(cat "$closure_release_receipt")" == "$closure_receipt_release_before" ]] || fail "preparing-session closure mutated receipts"
+rm -f -- "$marker" "$session"
+
+printf 'issue=SAY-993\nref=%s\n' "$tested_ref" > "$marker"
+printf 'issue=SAY-993\nref=%s\n' "$tested_ref" > "$session"
+malformed_closure_marker_before="$(cat "$marker")"
+malformed_closure_session_before="$(cat "$session")"
+if malformed_closure_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-993 2>&1)"; then
+  print -r -- "$malformed_closure_output"
+  fail "malformed session was accepted by closure-command"
+fi
+print -r -- "$malformed_closure_output" | grep -Fq 'BLOCKED: invalid E2E session metadata' || \
+  fail "malformed session was not reported through closure-command"
+if print -r -- "$malformed_closure_output" | grep -Fq 'CLOSURE STAGE:'; then
+  fail "malformed session reached a closure stage"
+fi
+[[ "$(cat "$marker")" == "$malformed_closure_marker_before" && "$(cat "$session")" == "$malformed_closure_session_before" ]] || \
+  fail "malformed-session closure mutated identity state"
+[[ "$(cat "$closure_cleanup_receipt")" == "$closure_receipt_cleanup_before" &&
+  "$(cat "$closure_release_receipt")" == "$closure_receipt_release_before" ]] || fail "malformed-session closure mutated receipts"
+rm -f -- "$marker" "$session"
+
+closure_mismatch_root="$temp_parent/nuinui-vscode-e2e.closure-mismatch"
+rm -rf -- "$closure_mismatch_root"
+printf 'issue=SAY-992\nref=%s\n' "$tested_ref" > "$marker"
+printf 'lane=test-human\nissue=SAY-991\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9560\nlaunch_pid=1\nlocale=ja\n' \
+  "$tested_ref" "$fixture" "$closure_mismatch_root" "$temp_parent/nuinui-SAY-991-human-e2e.env" > "$session"
+mismatch_closure_marker_before="$(cat "$marker")"
+mismatch_closure_session_before="$(cat "$session")"
+if mismatch_closure_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-992 2>&1)"; then
+  print -r -- "$mismatch_closure_output"
+  fail "marker/session mismatch was accepted by closure-command"
+fi
+print -r -- "$mismatch_closure_output" | grep -Fq 'BLOCKED: active session identity does not match the marker' || \
+  fail "marker/session mismatch was not reported through closure-command"
+if print -r -- "$mismatch_closure_output" | grep -Fq 'CLOSURE STAGE:'; then
+  fail "marker/session mismatch reached a closure stage"
+fi
+[[ "$(cat "$marker")" == "$mismatch_closure_marker_before" && "$(cat "$session")" == "$mismatch_closure_session_before" ]] || \
+  fail "marker/session mismatch closure mutated identity state"
+[[ "$(cat "$closure_cleanup_receipt")" == "$closure_receipt_cleanup_before" &&
+  "$(cat "$closure_release_receipt")" == "$closure_receipt_release_before" ]] || fail "marker/session mismatch closure mutated receipts"
+rm -f -- "$marker" "$session"
+
+echo "TEST: closure-command rejects zero-lane, implementation-lane, and wrong-generation requests"
+zero_closure_before="$(two_snapshot)"
+if zero_closure_output="$(env "${zero_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-990 2>&1)"; then
+  print -r -- "$zero_closure_output"
+  fail "zero Human-test topology was accepted by closure-command"
+fi
+print -r -- "$zero_closure_output" | grep -Fq 'BLOCKED:' || \
+  fail "zero Human-test topology was not reported through closure-command"
+if print -r -- "$zero_closure_output" | grep -Fq 'CLOSURE STAGE:'; then
+  fail "zero Human-test topology reached a closure stage"
+fi
+[[ "$(two_snapshot)" == "$zero_closure_before" ]] || fail "zero-lane closure mutated topology state"
+
+if implementation_lane_output="$(env "${zero_env[@]}" zsh "$PREPARE_SCRIPT" closure-command \
+  --issue SAY-990 --lane implementation-a 2>&1)"; then
+  print -r -- "$implementation_lane_output"
+  fail "implementation-role lane was accepted by closure-command"
+fi
+print -r -- "$implementation_lane_output" | grep -Fq \
+  'BLOCKED: selected lane is not a valid Human-test lane: implementation-a' || \
+  fail "implementation-role lane was not reported through closure-command"
+if print -r -- "$implementation_lane_output" | grep -Fq 'CLOSURE STAGE:'; then
+  fail "implementation-role lane reached a closure stage"
+fi
+[[ "$(two_snapshot)" == "$zero_closure_before" ]] || fail "implementation-lane closure mutated topology state"
+
+printf 'issue=SAY-989\nref=%s\n' "$tested_ref" > "$marker"
+wrong_generation_marker_before="$(cat "$marker")"
+if wrong_generation_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-988 2>&1)"; then
+  print -r -- "$wrong_generation_output"
+  fail "wrong requested generation was accepted by closure-command"
+fi
+print -r -- "$wrong_generation_output" | grep -Fq \
+  'BLOCKED: no unique Human-test generation is proved for Issue SAY-988' || \
+  fail "wrong requested generation was not reported through closure-command"
+if print -r -- "$wrong_generation_output" | grep -Fq 'CLOSURE STAGE:'; then
+  fail "wrong requested generation reached a closure stage"
+fi
+[[ "$(cat "$marker")" == "$wrong_generation_marker_before" && ! -e "$session" ]] || \
+  fail "wrong-generation closure mutated identity state"
+[[ "$(cat "$closure_cleanup_receipt")" == "$closure_receipt_cleanup_before" &&
+  "$(cat "$closure_release_receipt")" == "$closure_receipt_release_before" ]] || fail "wrong-generation closure mutated receipts"
+rm -f -- "$marker"
 
 echo "TEST: closure-command resolves explicit, ambiguous, and unique multi-lane generations"
 git --git-dir="$closure_remote" update-ref refs/heads/main "$tested_ref_two" || fail "multi-lane remote main ref"
