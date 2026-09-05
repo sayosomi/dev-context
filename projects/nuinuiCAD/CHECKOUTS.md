@@ -59,7 +59,7 @@ versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent
 
 ### Preflight diagnostic / routing rule
 
-`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument handoffを実行する。
+`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
 
 ```bash
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
@@ -73,6 +73,36 @@ BEGIN COMMAND READY
 ```
 
 Humanはその出力行をChatGPTへ戻さず、同じterminalでverbatimに実行する。既存`begin`が通常のmutation-time revalidationを行い、成功後に`IMPLEMENTATION STARTED`、normal checkpoint / continuationへ進む。generated lineはargumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ変換しない。
+
+### Canonical Manual E2E startup handoff
+
+通常のManual E2E startupは、ChatGPTがsemanticなIssue、tested ref、executor、fixture、locale、portを確定し、Humanが次の短いnamed generator commandを同じterminalで1回実行する。
+
+```bash
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui e2e-start-command \
+  --issue SAY-123 \
+  --tested-ref <full-tested-sha> \
+  --executor <human|luna> \
+  --fixture <absolute-fixture-path> \
+  [--lane <human-test-lane>] \
+  [--locale <default|ja>] \
+  [--port <port>]
+```
+
+このgeneratorはread-onlyで、runtime manifest、全laneの既存preflight、選択Human-test laneの`lane_execution_nuinui_human_test_classify`をfreshに読む。selected laneが`FREE`なら生成を許可し、exact same Issue/refの`BUSY`だけは既存duplicate/no-op ownerへ委譲する候補として許可する。別Issue/refの`BUSY`、malformed marker/session、dirty/named/wrong-ref/ambiguous/blocked stateはfail closedする。複数のHuman-test laneで`--lane`を省略した場合もlaneを推測しない。
+
+成功時はterminalが次のbounded continuationのformatting authorityになる。
+
+```text
+E2E START COMMAND READY
+'<absolute-nuinui>' 'e2e-start' '<lane>' '<Issue>' '<tested-ref>' && '<absolute-prepare>' 'prepare' '<lane>' '<Issue>' '<tested-ref>' '<fixture>' [<port>] [--locale ja]
+```
+
+Humanはこの1行をChatGPTへ戻さず、同じterminalでverbatimに実行する。`&&`により`e2e-start`失敗時はprepareを実行しない。生成された値はshell-quoted済みであり、ChatGPTがlane/ref/prepareの順序を再構成しない。generatorはcheckout、marker、session、host、GUI、test oracleを変更せず、既存`nuinui e2e-start`と`nuinui-e2e-prepare prepare`がexecution-time revalidation、race protection、duplicate/no-op、host readiness、cleanup safetyを引き続きownerする。
+
+`--executor`はChatGPTが決めるsemantic metadataであり、generatorはHumanとLunaを分類しない。`human`ではprepare後のsetupをHuman E2E unitへ渡し、`luna`では既存prepare outputのshort `handoff=` path / session identityをcurrent Luna playbookへ渡す。大きなLuna promptはterminal outputから生成しない。現行の`e2e-start-local-main`はinactive interim workflowの互換commandとして残るが、通常のこのgeneratorは標準`e2e-start`だけを出力する。
+
+generatorが`BLOCKED`、ambiguous、stale、または利用不能な場合だけ、下記のread-only preflightと既存diagnosis / recovery pathへ戻る。preflight outputをpasteしてChatGPTに通常commandを再構成させる流れは標準startupではない。
 
 これはChatGPT/Humanのunconditionalなround-tripではない。以下の別diagnostic preflight / recovery条件はそのまま維持する。
 

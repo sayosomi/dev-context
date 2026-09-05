@@ -112,9 +112,13 @@ VS Code Human Manual E2Eの標準host-preparation handoffは、[`LOCAL-TOOLS.md`
 
 current local dev-context cloneでそのhelperが利用可能でcurrent operationをsupportしている場合:
 
-- ChatGPTは`prepare`のIssue key / tested ref / fixture path / required portを埋めたcopy/paste-ready invocationをHumanへ渡す;
+- ChatGPTはsemantic intentを固定し、`nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]`をHumanへ渡す;
+- Humanはgeneratorを同じterminalで実行し、fresh read-only validation後に出るshell-quoted `e2e-start && prepare` continuationをverbatimに実行する。成功したgenerator outputをChatGPTへ戻してargument orderingを再構成しない;
+- generatorの`--executor`はcaller-controlled metadataであり、helperはexecutorを選ばず、GUI action、test oracle、Luna promptを実行・生成しない;
 - 同じbuild / fresh profile / VS Code launch / readiness / session metadata lifecycleを長いinline shellとして再実装しない;
-- helper実行後のsession rootやlaunch PIDはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
+- helper実行後のsession rootやlaunch PID、Lunaへ渡すshort `handoff=` pathはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
+
+generatorはprepare helperのreadiness envelopeを置換しない。現行helperが返す`handoff=...` pathとsession identityをLuna pathのbounded transportとして使い、Human pathでは既存の`READY FOR HUMAN E2E` semanticsを使う。`READY FOR LUNA`を出すfallback/reference blockがあっても、generatorが大きなpromptや別のreadiness authorityを生成・推測することはない。
 
 helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
 

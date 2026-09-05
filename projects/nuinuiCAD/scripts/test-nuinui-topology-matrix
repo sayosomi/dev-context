@@ -33,10 +33,19 @@ run_topology() {
   matrix_manifest=$matrix_project/LANES.conf
   matrix_helper=$matrix_project/scripts/nuinui
   matrix_handoff=$matrix_project/scripts/nuinui-handoff-check
+  matrix_prepare=$matrix_project/scripts/nuinui-e2e-prepare
+  matrix_prepare_args="$matrix_root/prepare-args"
+  matrix_fixture="$matrix_root/fixture file's.nui"
   mkdir -p "$matrix_project/scripts" "$matrix_root/unrelated" "$(dirname "$matrix_remote")"
   cp "$SOURCE_HELPER" "$matrix_helper"
   cp "$SOURCE_HANDOFF" "$matrix_handoff"
   chmod 755 "$matrix_helper" "$matrix_handoff"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf "%s\n" "$@" > "$NUINUI_TEST_PREPARE_ARGS"' \
+    'printf "%s\n" "E2E SETUP READY"' > "$matrix_prepare"
+  chmod 755 "$matrix_prepare"
+  printf '%s\n' fixture > "$matrix_fixture"
   [ "$(shasum -a 256 "$matrix_helper" | awk 'NR == 1 {print $1}')" = "$SOURCE_HELPER_SHA256" ] || fail "$matrix_name changed helper bytes"
   [ "$(git hash-object "$matrix_helper")" = "$SOURCE_HELPER_BLOB" ] || fail "$matrix_name changed helper blob"
   git init -q --bare "$matrix_remote"
@@ -91,6 +100,8 @@ run_topology() {
     fi
   } > "$matrix_manifest"
   export NUINUI_SELFTEST=1 NUINUI_SELFTEST_RESULT_REPO="$matrix_result"
+  export NUINUI_E2E_STATUS_HELPER="$matrix_prepare"
+  export NUINUI_TEST_PREPARE_ARGS="$matrix_prepare_args"
   cd "$matrix_root/unrelated"
 
   expect_blocked "$matrix_name preflight rejects uninitialized lanes" "$matrix_helper" preflight
@@ -185,6 +196,98 @@ run_topology() {
     [ "$human_free_count" = 1 ] || fail "$matrix_name expected exactly one FREE Human-test lane"
     echo "PASS: $matrix_name Human-test occupancy has one FREE lane"
     "$matrix_helper" e2e-release manual-b "$issue" "$matrix_base" >/dev/null || fail "$matrix_name explicit Human-test release"
+  fi
+
+  if [ "$matrix_human_count" -gt 0 ]; then
+    expect_blocked "$matrix_name rejects implementation lane for E2E handoff" \
+      "$matrix_helper" e2e-start-command --lane "$selected" --issue "$issue" \
+      --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture"
+  fi
+
+  if [ "$matrix_human_count" = 0 ]; then
+    expect_blocked "$matrix_name rejects E2E handoff without a Human-test lane" \
+      "$matrix_helper" e2e-start-command --issue "$issue" --tested-ref "$matrix_base" \
+      --executor human --fixture "$matrix_fixture"
+  elif [ "$matrix_human_count" = 1 ]; then
+    if [ "$matrix_name" = two-plus-one ]; then
+      e2e_command_output=$("$matrix_helper" e2e-start-command --issue "$issue" \
+        --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture" \
+        --locale ja --port 9555) || fail "$matrix_name E2E handoff generation"
+      expected_prepare_args=$(printf '%s\n' prepare manual "$issue" "$matrix_base" \
+        "$matrix_fixture" 9555 --locale ja)
+    else
+      e2e_command_output=$("$matrix_helper" e2e-start-command --issue "$issue" \
+        --tested-ref "$matrix_base" --executor luna --fixture "$matrix_fixture") ||
+        fail "$matrix_name E2E handoff generation"
+      expected_prepare_args=$(printf '%s\n' prepare manual "$issue" "$matrix_base" \
+        "$matrix_fixture")
+    fi
+    contains "$e2e_command_output" 'E2E START COMMAND READY' \
+      "$matrix_name E2E handoff envelope"
+    contains "$e2e_command_output" 'lane_state=FREE' \
+      "$matrix_name E2E handoff FREE evidence"
+    contains "$e2e_command_output" 'executor=' \
+      "$matrix_name E2E handoff executor metadata"
+    e2e_command=$(printf '%s\n' "$e2e_command_output" |
+      sed -n '/^E2E START COMMAND READY$/{n;p;}')
+    [ -n "$e2e_command" ] || fail "$matrix_name E2E handoff executable line"
+    e2e_execution_output=$(sh -c "$e2e_command") || {
+      printf '%s\n' "$e2e_execution_output"
+      fail "$matrix_name generated E2E continuation execution"
+    }
+    contains "$e2e_execution_output" 'E2E STARTED' \
+      "$matrix_name generated e2e-start stage"
+    contains "$e2e_execution_output" 'E2E SETUP READY' \
+      "$matrix_name generated prepare stage"
+    [ "$(cat "$matrix_prepare_args")" = "$expected_prepare_args" ] ||
+      fail "$matrix_name generated prepare arguments were not exact"
+
+    e2e_duplicate_output=$("$matrix_helper" e2e-start-command --issue "$issue" \
+      --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture") ||
+      fail "$matrix_name exact BUSY E2E handoff candidate"
+    contains "$e2e_duplicate_output" 'lane_state=BUSY' \
+      "$matrix_name exact BUSY E2E handoff candidate evidence"
+    expect_blocked "$matrix_name rejects BUSY E2E handoff for another Issue" \
+      "$matrix_helper" e2e-start-command --issue SAY-999 --tested-ref "$matrix_base" \
+      --executor human --fixture "$matrix_fixture"
+    "$matrix_helper" e2e-release "$issue" "$matrix_base" >/dev/null ||
+      fail "$matrix_name generated E2E continuation cleanup"
+    echo "PASS: $matrix_name generated E2E handoff, parser parity, quoting, and duplicate guard"
+  else
+    "$matrix_helper" e2e-start manual-a SAY-900 "$matrix_base" >/dev/null ||
+      fail "$matrix_name mixed Human-test BUSY setup"
+    e2e_command_output=$("$matrix_helper" e2e-start-command --lane manual-b \
+      --issue "$issue" --tested-ref "$matrix_base" --executor human \
+      --fixture "$matrix_fixture") || fail "$matrix_name explicit E2E handoff generation"
+    contains "$e2e_command_output" 'E2E START COMMAND READY' \
+      "$matrix_name explicit E2E handoff envelope"
+    contains "$e2e_command_output" 'lane=manual-b' \
+      "$matrix_name explicit E2E handoff lane"
+    contains "$e2e_command_output" 'lane_state=FREE' \
+      "$matrix_name mixed FREE/BUSY evidence"
+    e2e_command=$(printf '%s\n' "$e2e_command_output" |
+      sed -n '/^E2E START COMMAND READY$/{n;p;}')
+    e2e_execution_output=$(sh -c "$e2e_command") || {
+      printf '%s\n' "$e2e_execution_output"
+      fail "$matrix_name explicit generated E2E continuation execution"
+    }
+    contains "$e2e_execution_output" 'E2E STARTED' \
+      "$matrix_name explicit generated e2e-start stage"
+    contains "$e2e_execution_output" 'E2E SETUP READY' \
+      "$matrix_name explicit generated prepare stage"
+    e2e_duplicate_output=$("$matrix_helper" e2e-start-command --lane manual-b \
+      --issue "$issue" --tested-ref "$matrix_base" --executor luna \
+      --fixture "$matrix_fixture") || fail "$matrix_name exact BUSY E2E handoff candidate"
+    contains "$e2e_duplicate_output" 'lane_state=BUSY' \
+      "$matrix_name exact BUSY E2E handoff candidate evidence"
+    expect_blocked "$matrix_name rejects BUSY E2E handoff for another Issue" \
+      "$matrix_helper" e2e-start-command --lane manual-b --issue SAY-999 \
+      --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture"
+    "$matrix_helper" e2e-release manual-b "$issue" "$matrix_base" >/dev/null ||
+      fail "$matrix_name explicit generated E2E cleanup"
+    "$matrix_helper" e2e-release manual-a SAY-900 "$matrix_base" >/dev/null ||
+      fail "$matrix_name mixed Human-test cleanup"
+    echo "PASS: $matrix_name generated explicit E2E handoff and mixed occupancy guards"
   fi
   echo "PASS: topology $matrix_name (${matrix_impl_count} implementation + ${matrix_human_count} Human-test) helper_sha256=$SOURCE_HELPER_SHA256 helper_blob=$SOURCE_HELPER_BLOB"
 }

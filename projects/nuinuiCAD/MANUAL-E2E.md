@@ -292,17 +292,16 @@ Before that handoff:
 
 1. re-audit the current Issue / Manual E2E plan;
 2. perform the execution-time freshness check;
-3. when local execution is required, determine the execution checkout using [`CHECKOUTS.md`](./CHECKOUTS.md) and its reuse-first rule before generating a launch/setup command;
+3. when local execution is required, fix the semantic Issue / tested ref / executor / fixture / locale / port inputs and use the canonical same-terminal startup generator in [`CHECKOUTS.md`](./CHECKOUTS.md);
 4. move Manual E2E to `Running` only when execution is actually beginning;
 5. provide the first executable handoff immediately.
 
 For `Executor: Human`:
 
-- if local environment preparation is required and the safe checkout is already known, provide the complete copy/paste-ready terminal setup block required by the environment owner document;
-- do not make the Human manually substitute commit SHAs, checkout paths, fixture source, ports, or other values that Sol High can fix in advance;
-- do not choose the primary checkout merely because it is the canonical repository path, and do not create an additional/disposable worktree merely to avoid selecting among existing standard / reusable checkouts;
-- if the current local usage / cleanliness of candidate checkouts is not known to Sol High, the first handoff must instead be one copy/paste-ready **read-only checkout-selection preflight command** that inspects the standard / reusable candidates without switching branches, resetting, stashing, cleaning, or otherwise mutating user work;
-- after the Human returns that preflight output, select the safe checkout and provide the next complete copy/paste-ready setup block.
+- for normal startup, provide one named `nuinui e2e-start-command` invocation with the semantic values fixed; the helper performs fresh local mechanical validation and emits the exact same-terminal continuation;
+- the Human executes the emitted continuation verbatim; do not ask the Human to substitute commit SHAs, checkout paths, fixture source, ports, or positional argument order;
+- the generator must not choose an executor, tested ref, test oracle, or ambiguous Human-test lane, and it must not create a checkout or run GUI actions;
+- if generation is `BLOCKED` because state is ambiguous, stale, dirty, malformed, or the helper is unavailable, use the exceptional read-only checkout/preflight and diagnosis paths in [`CHECKOUTS.md`](./CHECKOUTS.md), without turning their output into a normal paste/reconstruction round-trip.
 
 Do not report an `In Review` Manual E2E Issue as newly started while the user still has to ask separately for the first command.
 

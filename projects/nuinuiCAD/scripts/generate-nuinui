@@ -32,6 +32,7 @@ required_checks_source=$script_dir/nuinui-src/required-checks.sh
 pr_auto_merge_source=$script_dir/nuinui-src/pr-auto-merge.sh
 integration_clean_source=$script_dir/nuinui-src/integration-clean.sh
 e2e_source=$script_dir/nuinui-src/e2e.sh
+e2e_start_command_source=$script_dir/nuinui-src/e2e-start-command.sh
 context_sync_source=$script_dir/nuinui-src/context-sync.sh
 diagnostics_source=$script_dir/nuinui-src/diagnostics.sh
 command_result_source=$script_dir/nuinui-src/command-result.sh
@@ -70,6 +71,10 @@ done
   echo "generate-nuinui: E2E source is missing: $e2e_source" >&2
   exit 1
 }
+[ -f "$e2e_start_command_source" ] || {
+  echo "generate-nuinui: E2E start-command source is missing: $e2e_start_command_source" >&2
+  exit 1
+}
 [ -f "$context_sync_source" ] || {
   echo "generate-nuinui: context-sync source is missing: $context_sync_source" >&2
   exit 1
@@ -98,7 +103,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$integration_clean_source"|"$e2e_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
+  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$integration_clean_source"|"$e2e_source"|"$e2e_start_command_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
     echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -149,6 +154,7 @@ assemble_source "$cli_source"
 assemble_source "$render_source"
 assemble_source "$project_policy_source"
 assemble_source "$e2e_policy_source"
+assemble_source "$e2e_start_command_source"
 assemble_source "$release_safety_source"
 assemble_source "$implementation_operations_source"
 assemble_source "$body_source"

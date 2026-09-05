@@ -23,6 +23,7 @@ nuinui_required_checks_source=$script_dir/nuinui-src/required-checks.sh
 nuinui_pr_auto_merge_source=$script_dir/nuinui-src/pr-auto-merge.sh
 nuinui_integration_clean_source=$script_dir/nuinui-src/integration-clean.sh
 nuinui_e2e_source=$script_dir/nuinui-src/e2e.sh
+nuinui_e2e_start_command_source=$script_dir/nuinui-src/e2e-start-command.sh
 nuinui_context_sync_source=$script_dir/nuinui-src/context-sync.sh
 nuinui_diagnostics_source=$script_dir/nuinui-src/diagnostics.sh
 nuinui_command_result_source=$script_dir/nuinui-src/command-result.sh
@@ -63,6 +64,7 @@ done
 [ -f "$nuinui_pr_auto_merge_source" ] || fail 'nuinui pr-auto-merge source is missing'
 [ -f "$nuinui_integration_clean_source" ] || fail 'nuinui integration-clean source is missing'
 [ -f "$nuinui_e2e_source" ] || fail 'nuinui E2E source is missing'
+[ -f "$nuinui_e2e_start_command_source" ] || fail 'nuinui E2E start-command source is missing'
 [ -f "$nuinui_context_sync_source" ] || fail 'nuinui context-sync source is missing'
 [ -f "$nuinui_diagnostics_source" ] || fail 'nuinui diagnostics source is missing'
 [ -f "$nuinui_command_result_source" ] || fail 'nuinui command-result source is missing'
@@ -117,7 +119,7 @@ test_generator() {
 
   protected_paths="$artifact_path"
   if [ "$name" = nuinui ]; then
-    protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_self_test_source $nuinui_dispatch_source"
+    protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_e2e_start_command_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_self_test_source $nuinui_dispatch_source"
   elif [ "$name" = nuinui-handoff-check ]; then
     protected_paths="$protected_paths $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_project_policy_source $handoff_body_source"
   else
@@ -144,7 +146,7 @@ test_generator() {
   echo "PASS: $name generation candidate_sha256=$candidate_sha256 candidate_git_blob=$candidate_git_blob"
 }
 
-test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.8.3
+test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.8.4
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.1.1
 test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.6.0
 echo 'GENERATION PASS'
