@@ -72,23 +72,53 @@ ChatGPTがdev-context repository fileのcreate / update / deleteを行う前に�
 
 read-only investigationはapproval不要である。approvalは提示したscopeにだけ適用される。target file、responsibility、またはsemantic scopeをmaterially拡大する場合は、write前に更新planを提示して再承認を得る。
 
+## Self-development execution routing
+
+dev-context self-developmentでは、ChatGPTがrepository mutation前のinitial investigationとcomplexity assessmentをownerする。ChatGPTはproposed change scopeとexecution routeをHumanへrecommendし、Humanにtechnical complexityの判断を単独で委ねない。assessmentには少なくとも次を含める。
+
+- affected filesとsemantic owner
+- semantic scope
+- cross-document consistency requirements
+- executable-behavior impact
+- validation requirements
+- edit sizeとdependency surface
+- omissionまたはincorrect direct editingのrisk
+
+Humanはrecommendationを明示的にoverrideできる。override後も選択したroute固有のsafety gate、Human write-approval gate、freshness、review、merge、fail-closed ruleは維持する。
+
+### Luna route
+
+source code、shell helper、test、generated executable behavior、またはその他のprogram behaviorを変更する場合はLunaをdefaultにする。non-code documentation / policy changeでも、multi-owner / multi-file consistency、broad lifecycle change、またはsubstantial omission riskがあり、direct GitHub editingにmeaningful riskがある場合はLunaをrecommendする。dev-context self-developmentではLunaがdefault implementation Coding Agentである。
+
+Luna implementation runは、implementationに必要なterminal work、validation、Git operationsを自らownerする。terminal commandであることだけを理由に、そのworkをHumanへbounceしない。
+
+### Human terminal route
+
+repository file editが不要で、terminal commandを実行して結果を返すだけで完了するtaskはHumanへrouteする。standaloneなread-only audit、context audit / sync / transition operation、その他のlocal command-only taskが含まれる。このruleはactiveなLuna implementation runに必要なterminal workのownerをHumanへ移さない。
+
+### ChatGPT GitHub direct-edit route
+
+ChatGPTがscope narrow、remote repository stateだけで安全に実行・検証可能、local build / test / runtime validation不要、かつconsistency / omission riskがlowとassessmentしたlightweight non-coding repository changeは、ChatGPTがGitHub toolsで直接実行してよい。typo / wording correction、obvious link / routing correction、broader semanticsを変更しないsmall Markdown clarificationなどが例である。
+
+このrouteはdirect `main` editを許可しない。Human write-approval gateを維持し、approval後も `fresh authoritative remote state -> fresh topic branch -> GitHub-tool edit / commit -> pushed-state review -> PR -> required verification -> merge -> authoritative GitHub read-back` の順序を使う。GitHub-direct routeのedit自体は `/Users/yosomi/Code/dev-context-dev` を使わず、standard cloneでも行わない。
+
 ## Checkout and worktree boundary
 
 ### Standard clone
 
 `/Users/yosomi/Code/dev-context` はproduction / cache / toolbox cloneであり、development edit checkoutではない。Markdown-only changeを含め、dev-context tracked fileの変更にこのstandard cloneのworking treeを使わない。
 
-read-only inspectionと、canonical persistent worktreeをone-time bootstrapするために必要なGit / worktree metadata operationはstandard cloneで許可する。編集、validation、commitはpersistent dev-context development worktreeで行う。
+read-only inspectionと、canonical persistent worktreeをone-time bootstrapするために必要なGit / worktree metadata operationはstandard cloneで許可する。Luna/local implementation routeの編集、validation、commitはpersistent dev-context development worktreeで行う。GitHub-direct routeは明示的なremote-edit exceptionであり、GitHub toolsによるedit / commitをlocal checkoutで代替しない。
 
 ### Canonical persistent dev-context development worktree
 
-通常のdev-context development edit checkoutは、正確に次のpathである。
+Luna/local implementation routeのdev-context development edit checkoutは、正確に次のpathである。
 
 ```text
 /Users/yosomi/Code/dev-context-dev
 ```
 
-これはpersistent development worktreeであり、各Taskごとに作成・削除しない。registered worktreeとして残し、dev-context development Taskをsequentialに再利用する。standard cloneは正確に `/Users/yosomi/Code/dev-context` のままであり、production / cache / toolbox専用で、development edit targetにはしない。
+これはpersistent development worktreeであり、各Taskごとに作成・削除しない。registered worktreeとして残し、Luna/local implementation Taskをsequentialに再利用する。GitHub-direct routeはこのworktreeをeditに使わず、standalone Human terminal routeもrepository file editを行わない。standard cloneは正確に `/Users/yosomi/Code/dev-context` のままであり、production / cache / toolbox専用で、development edit targetにはしない。
 
 dev-context developmentはat most one active development trackを許可するsingle-track executionである。parallelなdev-context implementationはnormal workflowに含めない。このpolicyが有効な間はsecond dev-context development worktreeを作成しない。将来parallel dev-context developmentが必要になった場合は、additional development worktreeを作成する前にこのpolicyを明示的に変更する。これはnuinuiCAD product lane capacityには適用しない。
 
@@ -100,7 +130,7 @@ canonical persistent worktreeが存在しない場合に限り、one-time bootst
 
 #### Sequential Task transition
 
-各新しいdev-context development Taskでは、次を順に満たす。
+Luna/local implementation routeを選択した各新しいdev-context development Taskでは、次を順に満たす。
 
 - fresh remote bootstrap（remote `main`のfresh verificationを含む）を行う。
 - 他のactive dev-context development Taskが存在しないことを確認する。
@@ -109,6 +139,8 @@ canonical persistent worktreeが存在しない場合に限り、one-time bootst
 - 既存のfreshness rulesに従って、意図したcurrent remote stateをfetchしてre-readする。
 - freshly verified remote `main`を基点にfresh topic branchをcreate / switchする。
 - そのsame persistent worktreeでedit、validation、commit、push、pushed-state blocking review、PR、required verification、mergeを行う。
+
+Human terminal routeはpersistent worktreeをedit pathとして使わず、GitHub-direct routeはfresh remote stateからGitHub toolsでtopic branchを作成してremote edit lifecycleを行う。どちらのrouteもstandard cloneをedit targetにせず、GitHub-direct routeのためにsecond local dev-context worktreeを作成しない。
 
 Task間でworktreeをremove / recreateしない。persistent worktreeをmerge後に`main`へ戻すことは必須ではなく、merged prior topic branchがnormal safe branch transitionまでlocalに残ることも許容する。next Taskを開始するためだけのbranch cleanupも要求しない。
 
@@ -122,7 +154,7 @@ persistent development worktreeがdirty、unexpectedなunresolved Task state、a
 
 #### Blocking review / fix continuity
 
-implementation、validation、pushed-state blocking review、narrow blocking fix、PR lifecycleの全期間で、same persistent worktreeとcurrent topic branchを使い続ける。blocking fixのためにworktreeをrotateしない。
+Luna/local implementation routeでは、implementation、validation、pushed-state blocking review、narrow blocking fix、PR lifecycleの全期間で、same persistent worktreeとcurrent topic branchを使い続ける。blocking fixのためにworktreeをrotateしない。
 
 dev-contextのpersistent worktreeはnuinuiCADのproduct laneではない。
 
@@ -152,26 +184,29 @@ sayosomi/dev-context repository:
 
 ## Development lifecycle
 
-dev-context repository file changeのnormal pathは次のとおりである。
+dev-context self-developmentのnormal lifecycleは、まずfresh remote mainとapproved task contractを確認し、ChatGPTがinitial investigation / complexity assessmentを行ってrouteをrecommendする。その後Human write approvalと、必要ならHumanのexplicit overrideを受け、選択したrouteでexecutionする。
 
 ```text
 fresh remote main
-  -> approved task contract
-  -> persistent dev-context development worktree
-  -> fresh topic branch
-  -> edit
-  -> validation
-  -> commit
-  -> push
-  -> pushed-state blocking review
-  -> PR
-  -> required verification
-  -> merge
-  -> authoritative GitHub read-back
-  -> retain persistent worktree for next Task
+  -> ChatGPT scope / complexity assessment
+  -> route recommendation to Human
+  -> approved task contract and optional explicit override
+  -> selected route
+       Luna/local:
+         persistent dev-context development worktree
+           -> fresh topic branch -> edit -> validation -> commit -> push
+           -> pushed-state blocking review -> PR -> required verification
+           -> merge -> authoritative GitHub read-back
+           -> retain persistent worktree for next Task
+       Human terminal:
+         terminal-only operation -> return results
+       ChatGPT GitHub direct-edit:
+         fresh authoritative remote state -> fresh topic branch
+           -> GitHub-tool edit / commit -> pushed-state review -> PR
+           -> required verification -> merge -> authoritative GitHub read-back
 ```
 
-direct `main` file editをnormal pathにしない。Markdown-only changeを理由にこのlifecycleを省略しない。このtaskではemergency bypassを定義しない。
+source-code / executable changesはLuna routeをdefaultとし、complexなdocumentation / policy changeもassessmentに応じてLunaへrouteする。Markdown-onlyであることだけを理由にlocal safety lifecycleを省略しない。GitHub-direct routeはlightweight non-coding changeの明示的例外だが、direct `main` editをnormal pathにしない。このtaskではemergency bypassを定義しない。
 
 ## Validation
 
