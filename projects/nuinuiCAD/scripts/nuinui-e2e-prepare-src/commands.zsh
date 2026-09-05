@@ -823,6 +823,9 @@ case "${1:-}" in
       usage; exit 2
     fi
     ;;
+  closure-command)
+    closure_command "${@:2}"
+    ;;
   cleanup)
     if [[ "$#" -eq 4 ]]; then
       select_human_lane || exit $?

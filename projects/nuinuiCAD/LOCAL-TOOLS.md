@@ -444,7 +444,7 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.6.0`。
+current Human E2E preparation helper version: `1.7.0`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
@@ -454,6 +454,7 @@ nuinui-e2e-prepare prepare [<human-test-lane>] <SAY-123> <tested-ref> <fixture-p
 nuinui-e2e-prepare status [<human-test-lane>]
 nuinui-e2e-prepare cleanup [<human-test-lane>] <SAY-123> <tested-ref> <e2e-root>
 nuinui-e2e-prepare closure-check [<human-test-lane>] <SAY-123>
+nuinui-e2e-prepare closure-command --issue <SAY-123> [--lane <human-test-lane>]
 nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>
 nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e-root>
 ```
@@ -487,13 +488,15 @@ mutation=no-op
 
 active session authorityはcleanup receiptより常に優先される。near-match、stale、ambiguousなsession / handoff / receipt stateは`BLOCKED`であり、cleanup receiptからactive sessionを推測しない。この二つのexact duplicate success envelopeが返った場合、ChatGPTは通常workflowを直接継続し、Humanにstatus実行、session / marker / process stateの貼り付け、最初のinvocation成功確認、またはduplicateだけを理由にしたprepare / cleanup再実行を求めない。
 
-Human E2Eのcanonical successful closureは、次の順序に固定する。
+Human E2Eのcanonical successful closureは、Sol High / ChatGPTの成功承認後に、Humanが同じterminalで次のshort named handoffを実行する。
 
-```text
-nuinui-e2e-prepare cleanup <human-test-lane> <SAY-123> <tested-ref> <e2e-root>
-nuinui e2e-release <human-test-lane> <SAY-123> <tested-ref>
-nuinui-e2e-prepare closure-check <human-test-lane> <SAY-123>
+```bash
+nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
 ```
+
+`closure-command`はfreshなmanifest、marker、session、cleanup receipt、release receipt、checkout/root identityからlane、tested ref、E2E root、generation modeを解決し、Human向けのterminal outputをcanonicalなcontinuationとして既存public boundaryへ渡す。実行順は必ず`cleanup -> e2e-release -> closure-check`。active sessionならsession/rootを使い、cleanup-completeならstrict cleanup receiptを使い、releasedならmatching cleanup/release receiptを使う。released stateではcleanup ownerのexact duplicateがmarker消失後にvalidでないため、cleanup receiptによる既完了proofから既存`e2e-release` duplicateへ続ける。
+
+Humanはlane/ref/rootを手で補わず、`--lane`は任意のcaller constraintとしてだけ使う。zero lane、複数matching generation、wrong lane、wrong Issue/ref、stale/malformed session/receipt、dirty/named/wrong-ref checkout、preparing state、またはrequired identity evidenceの欠落はmutation前に`BLOCKED`となる。exact duplicate cleanup / releaseは既存のsuccess envelopeとno-op semanticsを保持し、stage stdout/stderrはterminalにそのまま表示する。どのstageでも`BLOCKED` / `ERROR`なら後続stageを実行せず、ChatGPTへbounded diagnosisを戻す。cleanup、release、closure-checkの各ownerはmarker/session/root/process、cleanup receipt、release receipt、final read-backの意味を引き続き所有する。PASS / FAIL判定とHumanのstop / pause semanticsは変更しない。
 
 session metadataはcurrent generationではstrictな`issue / ref / source_fixture / root / handoff / cdp_port / launch_pid / locale`を保持し、通常sessionは`locale=default`、Japanese sessionは`locale=ja`とする。1.4.2の8-field metadataは`pre-locale` compatibility generationとして認識し、statusでは`locale=pre-locale/default` evidenceを表示する。pre-locale sessionはcanonical cleanupと既存identity proofが十分な通常のduplicate prepareだけを許可し、Japanese duplicateとしては受理しない。legacyな6-field metadataはrollout/cleanup互換のためだけに認識し、duplicate prepareの成功には使わない。`cleanup <Issue> <tested-ref> <e2e-root>`はcallerのrootまでidentity照合し、owned process / temporary root / handoff / session metadataだけを削除する。process ownershipはrecorded isolated root/user-data identityとconfigured `VS_CODE_APP/Contents/` identityの両方をnon-empty command lineで証明し、enumeration後に`ps`が空になった消滅raceはexited-processとして扱う。完了時はGit dirの`nuinui-e2e-cleanup-receipt`（`version=1 / issue / ref / root`）を先にatomically保存する。tested same-Issue markerは意図的に保持され、cleanup後のmarker存在・session metadata不在がnormalなrelease-ready stateである。`nuinui e2e-release <SAY-123> <tested-ref>`はcaller identity、strict marker、clean detached checkout、session不在をmutation前後に照合し、Git dirの`nuinui-e2e-release-receipt`をatomically durable化してからmarkerを削除する。session metadataが残る間はe2e laneをreleaseしない。
 

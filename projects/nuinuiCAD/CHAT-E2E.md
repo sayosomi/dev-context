@@ -71,17 +71,17 @@ pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後�
 
 ## Human E2E closure handoff
 
-Canonicalなsuccessful closure handoffは、必ず次の順序で行う。
+Sol High / ChatGPTがsuccessful closureを承認した後、Canonicalなclosure handoffはHumanが同じterminalから次のnamed commandを1回実行する。
 
-```text
-nuinui-e2e-prepare cleanup <human-test-lane> <Issue> <tested-ref> <e2e-root>
-nuinui e2e-release <human-test-lane> <Issue> <tested-ref>
-nuinui-e2e-prepare closure-check <human-test-lane> <Issue>
+```bash
+nuinui-e2e-prepare closure-command --issue <Issue> [--lane <human-test-lane>]
 ```
 
-When exactly one Human-test lane is declared, the helper's historical short forms remain compatible. With zero or multiple Human-test lanes, commands that need lane selection must use the explicit lane form and short forms block before mutation.
+The helper fresh-reads the local marker, session, cleanup receipt, release receipt, checkout, and manifest authority, then serializes the existing public stages in `cleanup -> e2e-release -> closure-check` order. Humanはtested ref、E2E root、laneを手でsubstituteしない。Omitted lane is accepted only when exactly one matching generation for the requested Issue is proved; otherwise the helper blocks. An explicit lane is a caller constraint and must match the requested generation.
 
 cleanup成功後はtested same-Issue markerが残るnormalなrelease-ready stateであり、markerを削除するのはidentity-bearing `e2e-release <Issue> <tested-ref>`である。releaseはstrict marker、caller identity、session不在、clean detached checkout、authoritative `origin/main`を照合し、durable receiptを先に保存する。markerがないexact duplicate releaseはmatching receiptとidle authoritative checkoutをread-onlyで証明できる場合だけno-opとして受理する。`closure-check`はrelease後のfinal read-only closure proofとしてだけ実行し、cleanupとe2e-releaseの間には置かない。同一Issue markerがある間はclosure-checkが`BLOCKED`になるsemanticsを変更しない。same commandのexact duplicate成功では、追加のpreflight/status/confirmationやHuman handbackを要求しない。Manual E2EのPASS/FAIL semanticsは[`MANUAL-E2E.md`](./MANUAL-E2E.md)のまま維持する。
+
+Exact duplicate cleanup / releaseの既存success envelopeはそのまま次stageへ継続する。既にrelease済みの場合、cleanup receiptがcleanup成功を証明し、cleanup ownerのpost-release duplicateが要求されないときだけrelease duplicate -> closure-checkへ進む。各stageは自身の実行時authorityをfreshに再検証し、`BLOCKED` / `ERROR`では後続stageを短絡する。Humanはその診断をChatGPTへ返し、PASS / FAIL judgmentおよびHumanのstop / pause semanticsは従来どおり維持する。
 
 ## Chat rotation / recovery
 

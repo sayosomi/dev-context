@@ -118,6 +118,14 @@ current local dev-context cloneでそのhelperが利用可能でcurrent operatio
 - 同じbuild / fresh profile / VS Code launch / readiness / session metadata lifecycleを長いinline shellとして再実装しない;
 - helper実行後のsession rootやlaunch PID、Lunaへ渡すshort `handoff=` pathはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
 
+Successful Manual E2E closure is also a single named terminal handoff after Sol High / ChatGPT authorizes closure:
+
+```bash
+nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
+```
+
+The helper resolves the fresh lane, tested ref, and E2E root from local marker/session/receipt authority and serializes the existing `cleanup -> e2e-release -> closure-check` public boundaries. Humanはlane、ref、rootを手でsubstituteしない。Exact duplicate success continues immediately; `BLOCKED` / `ERROR` stops later stages and returns to ChatGPT for bounded diagnosis. Existing cleanup, release, and closure-check mutation/read-back ownership remains unchanged, as do PASS / FAIL judgment and Human stop / pause semantics.
+
 generatorはprepare helperのreadiness envelopeを置換しない。現行helperが返す`handoff=...` pathとsession identityをLuna pathのbounded transportとして使い、Human pathでは既存の`READY FOR HUMAN E2E` semanticsを使う。`READY FOR LUNA`を出すfallback/reference blockがあっても、generatorが大きなpromptや別のreadiness authorityを生成・推測することはない。
 
 helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
