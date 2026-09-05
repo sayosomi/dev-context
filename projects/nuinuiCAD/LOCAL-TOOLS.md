@@ -227,11 +227,42 @@ current commands:
 | `nuinui context-sync <expected-main> <expected-artifact-blob>` | fresh fetch後にexpected-main treeのartifact blobを検証し、cleanなstandard clone `main`だけをff-only sync |
 | `nuinui context-dev-audit <expected-branch> <expected-head>` | canonical `/Users/yosomi/Code/dev-context-dev`のregistered worktree / repository / clean / branch / HEADをstrict read-only audit |
 | `nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` | concluded prior topicからexact expected mainへordinary detach/switchし、同じregistered worktreeでfresh branchをcreate/switch。exact immediate duplicateはread-only no-opとして認識 |
+| `nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>` | normal sequential Task handoff用のexplicit named façade。既存audit proof成功後に既存transition ownerへ委譲し、exact immediate duplicateも同じstrict proofで認識 |
 | `nuinui doctor` | helper / lane / local dev-context diagnostic |
 | `nuinui doctor --full` | preflight、E2E status、local dev-context stateのread-only snapshot |
 | `nuinui transition-audit` | Active interim transition条件をread-only監査 |
 | `nuinui context-check` | dev-context Markdown local linksと`nuinui` CLI-doc整合をread-only検査 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported safety pathsをexercise |
+
+### Canonical sequential Task transition handoff
+
+通常のSequential Task handoffでは、ChatGPTが concluded prior Taskのold branch / old HEAD、freshに確認した authoritative `main`、および次Taskのnew branchを確定し、Humanが次の1 commandだけを実行する。
+
+```bash
+nuinui context-dev-next \
+  --old-branch <expected-old-branch> \
+  --old-head <expected-old-head> \
+  --main <expected-main> \
+  --new-branch <new-branch>
+```
+
+named optionはorder-independentだが、4つすべてが必須で、duplicate / unknown / empty / missing value、positional argument、不正なbranchまたはSHAはfail-closedする。helperはcaller expectationを変更・推測せず、current stateを採用してold Taskやnew branchを選択しない。
+
+`context-dev-next`は内部で既存の`context_dev_audit_prove`をread-onlyで実行し、exact success後だけ既存の`context_dev_transition_command`へ同じcaller valuesを渡す。transition ownerは従来どおり、canonical registered worktree / repository identity、clean state、old branch / HEAD、authoritative main、ancestry、local / remote new-branch absence、fresh race-sensitive revalidation、ordinary detach / switch、old branch retention、post-mutation read-backを再検証する。standalone `context-dev-audit`はdiagnosis / explicit audit用に残り、standalone `context-dev-transition`はunderlying / explicit public boundaryとして残る。
+
+exact immediate duplicateでは、`context-dev-next`がpreliminary old-state auditでpost-transition branchを拒否しても、既存transition ownerへcandidate stateを渡す。そのownerだけがstrict duplicate proofを行い、次の既存envelopeを返す。
+
+```text
+DEV-CONTEXT ALREADY TRANSITIONED
+worktree=/Users/yosomi/Code/dev-context-dev
+branch=<new-branch>
+base=<expected-main>
+head=<expected-main>
+mutation=no-op
+clean=yes
+```
+
+progressed new branch、remote new branch、wrong expectation、dirty / malformed / duplicate registration、またはその他のnear-matchはduplicateと扱わず`BLOCKED:` / `ERROR:`で停止する。reset、stash、rebase、force、worktree remove / recreate、old branch deletionは行わない。
 
 ### Canonical begin-command handoff
 
@@ -256,7 +287,7 @@ helper-generated canonical begin lineをChatGPTが受け取った場合も、Hum
 
 ### Recoverable Human mutation results
 
-Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。Read-only commands, including `preflight`, `verify`, `begin-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
+Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
 
 The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-parse --absolute-git-dir)/nuinui-command-result-v1/` in the standard dev-context Git directory and contains only `state` and `output`。 It is recovery evidence only; lane ownership, claims, locks, release receipts, E2E markers/sessions, and other authorities remain authoritative. The production helper uses the canonical standard clone represented by `C`; isolated `NUINUI_SELFTEST` runs use an isolated dev-context repository and never the production store.
 
@@ -264,7 +295,7 @@ Each tracked request binds the command, every original argument in order, and an
 
 After successful terminal finalization, tracked mutations display a common `🧾 NUINUI COMMAND RESULT` heading and decorated result state while preserving their existing canonical output. `nuinui last-result` verifies the stored output hash before printing `🧾 NUINUI LAST RESULT`, decorated recovery / result state, and the original output; `output_begin` and `output_end` remain unchanged. Human decoration is display-only: canonical internal stdout/stderr, the durable `output` file, and the version=1 state schema remain undecorated. A valid `STARTED` record returns `🟠 result=INCOMPLETE` / `⛔ recovery=BLOCKED` and never exposes an older output. Missing, malformed, unsafe, partial, or hash-mismatched state fails closed without `🟢 recovery=READY`; a recovered terminal BLOCKED or ERROR is still a successful read-only `last-result` operation.
 
-`context-dev-transition` keeps the normal #78 transition semantics unchanged: exact old branch / head, clean canonical registered worktree, authoritative remote `main` equal to expected main, old-head ancestry, absent local / remote new branch, guarded fetch / revalidation, ordinary detach to expected main, ordinary new-branch create / switch, exact post-transition read-back, and retained old branch. After argument validation, standard repository / origin identity validation, and exact canonical worktree-registration validation, a non-old current branch is eligible for already-transitioned recognition only when every fresh read-only proof matches: current branch is exactly caller `new-branch`; current HEAD is exactly caller `expected-main`; the worktree is clean; registration is exact, unique, valid, and tied to the same repository; authoritative remote `main` is exactly caller `expected-main`; local `expected-old-branch` exists and points exactly to caller `expected-old-head`; `expected-old-head` is contained in `expected-main`; and remote `new-branch` is absent. The remote-new-branch absence intentionally limits recognition to the immediate post-transition state before implementation / push progression.
+`context-dev-transition` keeps the normal #78 transition semantics unchanged, and `context-dev-next` does not add a second state machine: exact old branch / head, clean canonical registered worktree, authoritative remote `main` equal to expected main, old-head ancestry, absent local / remote new branch, guarded fetch / revalidation, ordinary detach to expected main, ordinary new-branch create / switch, exact post-transition read-back, and retained old branch. After argument validation, standard repository / origin identity validation, and exact canonical worktree-registration validation, a non-old current branch is eligible for already-transitioned recognition only when every fresh read-only proof matches: current branch is exactly caller `new-branch`; current HEAD is exactly caller `expected-main`; the worktree is clean; registration is exact, unique, valid, and tied to the same repository; authoritative remote `main` is exactly caller `expected-main`; local `expected-old-branch` exists and points exactly to caller `expected-old-head`; `expected-old-head` is contained in `expected-main`; and remote `new-branch` is absent. The remote-new-branch absence intentionally limits recognition to the immediate post-transition state before implementation / push progression.
 
 The exact duplicate success envelope is deterministic:
 
@@ -346,7 +377,7 @@ clean=yes
 
 ### Standalone non-lane mechanics
 
-`pr-auto-merge`, E2E, context-audit / context-sync / context-dev-audit / context-dev-transition, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
+`pr-auto-merge`, E2E, context-audit / context-sync / context-dev-audit / context-dev-transition / context-dev-next, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。`expected-main`はcallerがfreshに確認したauthoritative remote `main` SHAであり、helperはGitHubから`main` tipを独立取得して一致を確認する。PRの`baseRefOid`はauthoritative current-main freshnessのevidenceとして扱わない。PRがOPEN / non-draft / base=`main` / exact reviewed headで、reviewed headがそのauthoritative current `main`をintegration済みであり、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。current main mismatchは`BLOCKED: expected main mismatch`、behind PRは`BLOCKED: PR is behind current main; integration required`としてfail-closedする。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
 
@@ -379,7 +410,7 @@ main=<expected/current authoritative main>
 merge_method=MERGE
 ```
 
-`nuinui doctor --full`、`transition-audit`、`context-check`、`context-audit`、`context-dev-audit`はread-only。`context-sync`はexpected-main tree artifactを検証したff-only mutation、`context-dev-transition`はexact old-stateを再検証したordinary detach/switch + create/switchだけを行う。これらはcleanup、process stop、Issue selection、GitHub update、merge判断を行わず、one-time worktree migrationやgeneric worktree cleanupもcommand surfaceに含めない。
+`nuinui doctor --full`、`transition-audit`、`context-check`、`context-audit`、`context-dev-audit`はread-only。`context-sync`はexpected-main tree artifactを検証したff-only mutation、`context-dev-transition`と`context-dev-next`はexact old-stateを再検証したordinary detach/switch + create/switchだけを行う。これらはcleanup、process stop、Issue selection、GitHub update、merge判断を行わず、one-time worktree migrationやgeneric worktree cleanupもcommand surfaceに含めない。
 
 ## Human Manual E2E preparation helper
 

@@ -305,6 +305,52 @@ context_dev_audit_command() {
   printf 'DEV-CONTEXT AUDIT COMPLETE\nworktree=%s\nbranch=%s\nhead=%s\nclean=yes\n' "$CD" "$context_dev_audit_branch" "$context_dev_audit_head"
 }
 
+context_dev_next_command() {
+  context_dev_next_old_branch=$1
+  context_dev_next_old_head=$2
+  context_dev_next_expected_main=$3
+  context_dev_next_new_branch=$4
+  context_valid_branch "$context_dev_next_old_branch" || {
+    echo "ERROR: invalid expected old branch: $context_dev_next_old_branch"
+    return 2
+  }
+  context_valid_branch "$context_dev_next_new_branch" || {
+    echo "ERROR: invalid new branch: $context_dev_next_new_branch"
+    return 2
+  }
+  context_valid_sha "$context_dev_next_old_head" || {
+    echo "ERROR: invalid expected old HEAD SHA: $context_dev_next_old_head"
+    return 2
+  }
+  context_valid_sha "$context_dev_next_expected_main" || {
+    echo "ERROR: invalid expected main SHA: $context_dev_next_expected_main"
+    return 2
+  }
+
+  if context_dev_audit_prove "$context_dev_next_old_branch" "$context_dev_next_old_head"; then
+    context_dev_transition_command \
+      "$context_dev_next_old_branch" "$context_dev_next_old_head" \
+      "$context_dev_next_expected_main" "$context_dev_next_new_branch"
+    return $?
+  fi
+
+  # The audit rejects a post-transition branch by design. Only the exact
+  # caller-supplied new-branch candidate may continue to the existing
+  # transition owner for strict duplicate proof; every other audit failure
+  # remains a read-only fail-closed result.
+  case "$context_dev_audit_error" in
+    "BLOCKED: dev branch mismatch expected=$context_dev_next_old_branch actual=$context_dev_next_new_branch")
+      context_dev_transition_command \
+        "$context_dev_next_old_branch" "$context_dev_next_old_head" \
+        "$context_dev_next_expected_main" "$context_dev_next_new_branch"
+      ;;
+    *)
+      printf '%s\n' "$context_dev_audit_error"
+      return 1
+      ;;
+  esac
+}
+
 context_dev_transition_command() {
   context_transition_old_branch=$1
   context_transition_old_head=$2

@@ -448,6 +448,171 @@ expect_failure_unchanged 'remote new branch race before transition' context-dev-
 unset NUINUI_GIT_WRAPPER_MODE
 unset NUINUI_RACE_BRANCH_SHA
 
+make_base_fixture next-success
+output=$(call_helper context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" \
+  --main "$TARGET" --new-branch "$NEW_BRANCH") || fail "valid dev next failed: $output"
+assert_line "$output" '🔀 DEV-CONTEXT TRANSITIONED' 'valid dev next Human heading'
+assert_contains "$output" "worktree=$DEV" 'valid dev next'
+assert_contains "$output" "branch=$NEW_BRANCH" 'valid dev next'
+assert_contains "$output" "base=$TARGET" 'valid dev next'
+assert_contains "$output" 'mutation=yes' 'valid dev next tracked footer'
+assert_eq "$(git -C "$DEV" symbolic-ref --short HEAD)" "$NEW_BRANCH" 'valid dev next branch'
+assert_eq "$(git -C "$DEV" rev-parse HEAD)" "$TARGET" 'valid dev next head'
+last_result=$(call_helper last-result) || fail "dev next last-result failed: $last_result"
+assert_line "$last_result" '⭕ result=SUCCESS' 'dev next last-result'
+assert_line "$last_result" '🔀 DEV-CONTEXT TRANSITIONED' 'dev next last-result output'
+
+make_base_fixture next-order
+output=$(call_helper context-dev-next \
+  --new-branch "$NEW_BRANCH" --main "$TARGET" \
+  --old-head "$BASE" --old-branch "$OLD_BRANCH") || fail "reordered dev next failed: $output"
+assert_line "$output" '🔀 DEV-CONTEXT TRANSITIONED' 'reordered dev next'
+assert_eq "$(git -C "$DEV" symbolic-ref --short HEAD)" "$NEW_BRANCH" 'reordered dev next branch'
+
+make_base_fixture next-parser
+expect_failure_unchanged 'dev next missing old branch' context-dev-next \
+  --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next missing old head' context-dev-next \
+  --old-branch "$OLD_BRANCH" --main "$TARGET" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next missing main' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next missing new branch' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET"
+expect_failure_unchanged 'dev next duplicate named option' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --old-head "$BASE" \
+  --main "$TARGET" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next unknown named option' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" \
+  --new-branch "$NEW_BRANCH" --unknown value
+expect_failure_unchanged 'dev next unexpected positional' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" \
+  --new-branch "$NEW_BRANCH" extra
+expect_failure_unchanged 'dev next missing option value' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch
+expect_failure_unchanged 'dev next empty option value' context-dev-next \
+  --old-branch '' --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next invalid branch' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch 'bad..branch'
+expect_failure_unchanged 'dev next invalid SHA' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head not-a-sha --main "$TARGET" --new-branch "$NEW_BRANCH"
+
+make_base_fixture next-wrong-expectations
+expect_failure_unchanged 'dev next wrong old branch' context-dev-next \
+  --old-branch "$BASE_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next wrong old head' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$TARGET" --main "$TARGET" --new-branch "$NEW_BRANCH"
+expect_failure_unchanged 'dev next wrong main' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$BASE" --new-branch "$NEW_BRANCH"
+
+make_base_fixture next-dirty
+printf '%s\n' dirty >"$DEV/dirty.txt"
+expect_failure_unchanged 'dev next dirty canonical worktree' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+rm -f "$DEV/dirty.txt"
+
+make_base_fixture next-registration
+export NUINUI_DUP_PROD=$PROD NUINUI_DUP_DEV=$DEV NUINUI_DUP_HEAD=$BASE NUINUI_DUP_BRANCH=$OLD_BRANCH
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=duplicate-worktree; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'dev next duplicate worktree registration' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+NUINUI_GIT_WRAPPER_MODE=malformed-worktree; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'dev next malformed worktree registration' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
+make_base_fixture next-local-branch
+git -C "$PROD" branch "$NEW_BRANCH" "$TARGET"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=forbidden; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'dev next local new branch exists' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
+REMOTE_NEW=sayosomi/remote-task
+make_base_fixture next-remote-branch
+git -C "$SEED" push -q origin "HEAD:refs/heads/$REMOTE_NEW"
+expect_failure_unchanged 'dev next remote new branch exists' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$REMOTE_NEW"
+git -C "$REMOTE" update-ref -d "refs/heads/$REMOTE_NEW"
+
+make_base_fixture next-race-main
+RACE_MAIN_COUNT=$ROOT/next-race-main-count
+RACE_MAIN_SHA=$(printf '%s\n' next-transition-race | git hash-object --stdin)
+export NUINUI_RACE_COUNT=$RACE_MAIN_COUNT NUINUI_RACE_MAIN_SHA=$RACE_MAIN_SHA
+rm -f "$RACE_MAIN_COUNT"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=race-main; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'dev next remote main race' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE NUINUI_RACE_MAIN_SHA
+TEST_PATH=$REAL_PATH
+
+make_base_fixture next-race-remote-branch
+RACE_NEXT_REMOTE_BRANCH=sayosomi/next-race-remote-task
+RACE_BRANCH_COUNT=$ROOT/next-race-branch-count
+export NUINUI_RACE_COUNT=$RACE_BRANCH_COUNT NUINUI_RACE_BRANCH=$RACE_NEXT_REMOTE_BRANCH NUINUI_RACE_BRANCH_SHA=$TARGET
+rm -f "$RACE_BRANCH_COUNT"
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=race-remote-branch; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'dev next remote new branch race' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$RACE_NEXT_REMOTE_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE NUINUI_RACE_BRANCH_SHA
+TEST_PATH=$REAL_PATH
+
+make_base_fixture next-duplicate
+output=$(call_helper context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" \
+  --main "$TARGET" --new-branch "$NEW_BRANCH") || fail "dev next duplicate setup failed: $output"
+NUINUI_DUPLICATE_MUTATION_LOG=$ROOT/next-duplicate-mutation.log
+: >"$NUINUI_DUPLICATE_MUTATION_LOG"
+export NUINUI_DUPLICATE_MUTATION_LOG
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=duplicate-no-mutation; export NUINUI_GIT_WRAPPER_MODE
+output=$(call_helper context-dev-next \
+  --new-branch "$NEW_BRANCH" --main "$TARGET" \
+  --old-head "$BASE" --old-branch "$OLD_BRANCH") || fail "dev next exact duplicate failed: $output"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+assert_line "$output" '♻️ DEV-CONTEXT ALREADY TRANSITIONED' 'dev next exact duplicate'
+assert_line "$output" 'mutation=no-op' 'dev next exact duplicate proof'
+assert_line "$output" 'mutation=no' 'dev next exact duplicate tracked footer'
+[ ! -s "$NUINUI_DUPLICATE_MUTATION_LOG" ] || fail "dev next exact duplicate invoked Git mutation: $(cat "$NUINUI_DUPLICATE_MUTATION_LOG")"
+last_result=$(call_helper last-result) || fail "dev next duplicate last-result failed: $last_result"
+assert_line "$last_result" '⭕ result=SUCCESS' 'dev next duplicate last-result'
+assert_line "$last_result" 'mutation=no' 'dev next duplicate last-result mutation'
+assert_line "$last_result" '♻️ DEV-CONTEXT ALREADY TRANSITIONED' 'dev next duplicate last-result output'
+
+make_base_fixture next-progressed
+output=$(call_helper context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" \
+  --main "$TARGET" --new-branch "$NEW_BRANCH") || fail "dev next progressed setup failed: $output"
+printf '%s\n' progressed >"$DEV/progressed.txt"
+git -C "$DEV" add progressed.txt
+git -C "$DEV" commit -qm progressed
+expect_failure_unchanged 'dev next progressed new branch' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+
+make_base_fixture next-remote-after-transition
+output=$(call_helper context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" \
+  --main "$TARGET" --new-branch "$NEW_BRANCH") || fail "dev next remote-after setup failed: $output"
+git -C "$SEED" push -q origin "HEAD:refs/heads/$NEW_BRANCH"
+expect_failure_unchanged 'dev next remote new branch after transition' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$BASE" --main "$TARGET" --new-branch "$NEW_BRANCH"
+git -C "$REMOTE" update-ref -d "refs/heads/$NEW_BRANCH"
+
+make_base_fixture next-forbidden
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=forbidden; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'dev next forbidden repair operations' context-dev-next \
+  --old-branch "$OLD_BRANCH" --old-head "$TARGET" --main "$TARGET" --new-branch "$NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+
 TEST_PATH=$REAL_PATH
 unset NUINUI_GIT_WRAPPER_MODE
 echo 'CONTEXT SYNC TEST PASS'
