@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
 V=1.8.3
-K='preflight verify lane-init begin begin-command start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition doctor transition-audit context-check self-test last-result'
+K='preflight verify lane-init begin begin-command start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -307,10 +307,112 @@ nuinui_begin_command() {
   fi
 }
 
+nuinui_context_dev_next_parse_args() {
+  nuinui_context_dev_next_old_branch=
+  nuinui_context_dev_next_old_head=
+  nuinui_context_dev_next_main=
+  nuinui_context_dev_next_new_branch=
+  nuinui_context_dev_next_old_branch_seen=0
+  nuinui_context_dev_next_old_head_seen=0
+  nuinui_context_dev_next_main_seen=0
+  nuinui_context_dev_next_new_branch_seen=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --old-branch)
+        [ "$nuinui_context_dev_next_old_branch_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --old-branch\n'
+          return 2
+        }
+        nuinui_context_dev_next_old_branch_seen=1
+        nuinui_context_dev_next_option_name=--old-branch
+        ;;
+      --old-head)
+        [ "$nuinui_context_dev_next_old_head_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --old-head\n'
+          return 2
+        }
+        nuinui_context_dev_next_old_head_seen=1
+        nuinui_context_dev_next_option_name=--old-head
+        ;;
+      --main)
+        [ "$nuinui_context_dev_next_main_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --main\n'
+          return 2
+        }
+        nuinui_context_dev_next_main_seen=1
+        nuinui_context_dev_next_option_name=--main
+        ;;
+      --new-branch)
+        [ "$nuinui_context_dev_next_new_branch_seen" = 0 ] || {
+          printf 'ERROR: duplicate named option --new-branch\n'
+          return 2
+        }
+        nuinui_context_dev_next_new_branch_seen=1
+        nuinui_context_dev_next_option_name=--new-branch
+        ;;
+      --*|-*)
+        printf 'ERROR: unknown option %s\n' "$1"
+        printf 'expected named options: --old-branch --old-head --main --new-branch\n'
+        return 2
+        ;;
+      *)
+        printf 'ERROR: unexpected positional argument %s\n' "$1"
+        printf 'use named options: --old-branch --old-head --main --new-branch\n'
+        return 2
+        ;;
+    esac
+
+    [ "$#" -ge 2 ] || {
+      printf 'ERROR: named option %s requires a non-empty value\n' \
+        "$nuinui_context_dev_next_option_name"
+      return 2
+    }
+    shift
+    [ -n "$1" ] || {
+      printf 'ERROR: named option %s requires a non-empty value\n' \
+        "$nuinui_context_dev_next_option_name"
+      return 2
+    }
+    case "$1" in
+      --*)
+        printf 'ERROR: named option %s is missing its value before %s\n' \
+          "$nuinui_context_dev_next_option_name" "$1"
+        return 2
+        ;;
+    esac
+    case "$nuinui_context_dev_next_option_name" in
+      --old-branch) nuinui_context_dev_next_old_branch=$1 ;;
+      --old-head) nuinui_context_dev_next_old_head=$1 ;;
+      --main) nuinui_context_dev_next_main=$1 ;;
+      --new-branch) nuinui_context_dev_next_new_branch=$1 ;;
+    esac
+    shift
+  done
+
+  [ "$nuinui_context_dev_next_old_branch_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --old-branch\n'
+    return 2
+  }
+  [ "$nuinui_context_dev_next_old_head_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --old-head\n'
+    return 2
+  }
+  [ "$nuinui_context_dev_next_main_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --main\n'
+    return 2
+  }
+  [ "$nuinui_context_dev_next_new_branch_seen" = 1 ] || {
+    printf 'ERROR: missing required named option --new-branch\n'
+    return 2
+  }
+}
+
 nuinui_usage() {
   echo "nuinui $V"
   echo "Commands: $K"
   echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
+  echo 'Usage: nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>'
 }
 
 nuinui_render_human_output() {
@@ -658,6 +760,16 @@ case "$1" in
   context-dev-transition)
     [ "$#" = 5 ] || { echo 'Usage: nuinui context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>'; exit 2; }
     nuinui_run_tracked context-dev-transition "$#" "$@" context_dev_transition_command "$2" "$3" "$4" "$5"
+    exit $?
+    ;;
+  context-dev-next)
+    nuinui_context_dev_next_request_count=$#
+    shift
+    nuinui_context_dev_next_parse_args "$@" || exit $?
+    nuinui_run_tracked context-dev-transition "$nuinui_context_dev_next_request_count" \
+      context-dev-transition "$@" context_dev_next_command \
+      "$nuinui_context_dev_next_old_branch" "$nuinui_context_dev_next_old_head" \
+      "$nuinui_context_dev_next_main" "$nuinui_context_dev_next_new_branch"
     exit $?
     ;;
   doctor)
