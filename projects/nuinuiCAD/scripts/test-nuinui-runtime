@@ -94,13 +94,16 @@ unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 
 cd "$ROOT/cwd"
 VERSION_OUTPUT=$($HELPER version)
-[ "$VERSION_OUTPUT" = 1.8.3 ] || fail "version output changed: $VERSION_OUTPUT"
+[ "$VERSION_OUTPUT" = 1.8.4 ] || fail "version output changed: $VERSION_OUTPUT"
 HELP_OUTPUT=$($HELPER --help)
 assert_contains "$HELP_OUTPUT" 'begin-command' \
   'public help did not include begin-command'
 assert_contains "$HELP_OUTPUT" \
   'Usage: nuinui begin-command --lane' \
   'public help did not include begin-command named usage'
+assert_contains "$HELP_OUTPUT" \
+  'Usage: nuinui e2e-start-command --issue' \
+  'public help did not include e2e-start-command named usage'
 $HELPER lane-init primary >/dev/null
 $HELPER lane-init implementation >/dev/null
 NEIGHBORING_MANIFEST=$ROOT/cwd/LANES.conf

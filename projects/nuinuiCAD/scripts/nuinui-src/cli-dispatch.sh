@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.8.3
-K='preflight verify lane-init begin begin-command start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
+V=1.8.4
+K='preflight verify lane-init begin begin-command start resume release recover pr-auto-merge integrate-clean e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -412,6 +412,7 @@ nuinui_usage() {
   echo "nuinui $V"
   echo "Commands: $K"
   echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
+  echo 'Usage: nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]'
   echo 'Usage: nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>'
 }
 
@@ -656,6 +657,11 @@ case "$1" in
   begin-command)
     shift
     nuinui_run_public begin-command nuinui_begin_command "$@"
+    exit $?
+    ;;
+  e2e-start-command)
+    shift
+    nuinui_run_public e2e-start-command nuinui_e2e_start_command "$@"
     exit $?
     ;;
   start)

@@ -15,6 +15,8 @@ assert_no_executable_begin_line() {
 
 PROJECT=$ROOT/project
 HELPER=$PROJECT/scripts/nuinui
+PREPARE=$PROJECT/scripts/nuinui-e2e-prepare
+PREPARE_ARGS=$ROOT/prepare-args
 REMOTE=$ROOT/sayosomi/nuinuiCAD.git
 SEED=$ROOT/seed
 MAIN=$ROOT/main
@@ -28,6 +30,11 @@ ORIGINAL_PATH=$PATH
 mkdir -p "$PROJECT/scripts" "$ROOT/unrelated" "$(dirname "$REMOTE")"
 cp "$SOURCE_HELPER" "$HELPER"
 chmod 755 "$HELPER"
+printf '%s\n' \
+  '#!/bin/sh' \
+  'printf "%s\n" "$@" > "$NUINUI_TEST_PREPARE_ARGS"' \
+  'printf "%s\n" "E2E SETUP READY"' > "$PREPARE"
+chmod 755 "$PREPARE"
 
 git init -q --bare "$REMOTE"
 git init -q -b main "$SEED"
@@ -73,6 +80,8 @@ write_manifest() {
 write_manifest
 export NUINUI_SELFTEST=1
 export NUINUI_SELFTEST_RESULT_REPO=$RESULT
+export NUINUI_E2E_STATUS_HELPER=$PREPARE
+export NUINUI_TEST_PREPARE_ARGS=$PREPARE_ARGS
 unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 cd "$ROOT/unrelated"
 
@@ -278,6 +287,25 @@ expect_blocked_with_path() {
   blocked_after=$(lane_snapshot)
   [ "$blocked_before" = "$blocked_after" ] || fail "$blocked_name changed lifecycle state"
   echo "PASS: $blocked_name"
+}
+
+expect_e2e_command_failure() {
+  e2e_failure_name=$1
+  e2e_failure_expected=$2
+  shift 2
+  e2e_failure_before=$(human_state_snapshot)
+  if e2e_failure_output=$("$HELPER" e2e-start-command "$@" 2>&1); then
+    printf '%s\n' "$e2e_failure_output"
+    fail "$e2e_failure_name unexpectedly succeeded"
+  fi
+  assert_contains "$e2e_failure_output" "$e2e_failure_expected" \
+    "$e2e_failure_name diagnostic"
+  assert_not_contains "$e2e_failure_output" "'$HELPER' 'e2e-start'" \
+    "$e2e_failure_name emitted an executable continuation"
+  e2e_failure_after=$(human_state_snapshot)
+  [ "$e2e_failure_before" = "$e2e_failure_after" ] || \
+    fail "$e2e_failure_name changed Human-test state"
+  echo "PASS: $e2e_failure_name"
 }
 
 expect_duplicate_success() {
@@ -604,6 +632,92 @@ e2e_duplicate_output=$("$HELPER" e2e-start human SAY-416 "$BASE") || fail 'exact
 assert_contains "$e2e_duplicate_output" 'E2E ALREADY STARTED' 'exact duplicate Human-test start no-op'
 "$HELPER" e2e-release human SAY-416 "$BASE" >/dev/null || fail 'exact duplicate cleanup release'
 echo 'PASS: e2e-start exact duplicate remains read-only'
+
+clear_human_state
+expect_e2e_command_failure 'E2E handoff missing fixture' \
+  'ERROR: missing required named option --fixture' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human
+expect_e2e_command_failure 'E2E handoff duplicate option' \
+  'ERROR: duplicate named option --issue' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE" \
+  --issue SAY-501
+expect_e2e_command_failure 'E2E handoff unknown option' \
+  'ERROR: unknown option --unknown' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE" \
+  --unknown value
+expect_e2e_command_failure 'E2E handoff unexpected positional' \
+  'ERROR: unexpected positional argument extra' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE" extra
+expect_e2e_command_failure 'E2E handoff empty option value' \
+  'ERROR: named option --fixture requires a non-empty value' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture ''
+expect_e2e_command_failure 'E2E handoff invalid Issue' \
+  'ERROR: invalid --issue' \
+  --issue ISSUE-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE"
+expect_e2e_command_failure 'E2E handoff invalid tested ref' \
+  'ERROR: invalid --tested-ref' \
+  --issue SAY-500 --tested-ref invalid-ref --executor human --fixture "$HUMAN_FIXTURE"
+expect_e2e_command_failure 'E2E handoff invalid executor' \
+  'ERROR: invalid --executor' \
+  --issue SAY-500 --tested-ref "$BASE" --executor robot --fixture "$HUMAN_FIXTURE"
+expect_e2e_command_failure 'E2E handoff invalid locale' \
+  'ERROR: invalid --locale' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE" \
+  --locale fr
+expect_e2e_command_failure 'E2E handoff invalid fixture form' \
+  'ERROR: invalid --fixture' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture relative-fixture
+expect_e2e_command_failure 'E2E handoff invalid port' \
+  'ERROR: invalid --port' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE" \
+  --port 65536
+expect_e2e_command_failure 'E2E handoff rejects implementation lane' \
+  'selected lane is not a declared Human-test lane' \
+  --lane impl --issue SAY-500 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_FIXTURE"
+echo 'PASS: e2e-start-command parser and semantic input rejection'
+
+touch "$HUMAN/human-dirty-file"
+expect_e2e_command_failure 'E2E handoff dirty Human-test checkout' \
+  'reason=dirty-checkout' \
+  --issue SAY-512 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE"
+clear_human_state
+printf 'issue=SAY-513\n' > "$HUMAN_MARKER"
+expect_e2e_command_failure 'E2E handoff malformed Human-test marker' \
+  'reason=invalid-marker' \
+  --issue SAY-513 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE"
+clear_human_state
+write_human_marker SAY-514 "$BASE"
+printf 'lane=human\nissue=SAY-514\n' > "$HUMAN_SESSION"
+expect_e2e_command_failure 'E2E handoff malformed Human-test session' \
+  'reason=invalid-session' \
+  --issue SAY-514 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE"
+clear_human_state
+echo 'PASS: e2e-start-command reuses blocked Human-test evidence'
+
+rm -f "$PREPARE_ARGS"
+drift_output=$("$HELPER" e2e-start-command --issue SAY-510 --tested-ref "$BASE" \
+  --executor human --fixture "$HUMAN_FIXTURE") || {
+  printf '%s\n' "$drift_output"
+  fail 'could not generate E2E continuation for drift test'
+}
+drift_command=$(printf '%s\n' "$drift_output" |
+  sed -n '/^E2E START COMMAND READY$/{n;p;}')
+[ -n "$drift_command" ] || fail 'drift test did not receive an executable E2E continuation'
+"$HELPER" e2e-start human SAY-511 "$BASE" >/dev/null ||
+  fail 'could not introduce E2E generation drift'
+if drift_execution_output=$(sh -c "$drift_command" 2>&1); then
+  printf '%s\n' "$drift_execution_output"
+  fail 'stale generated E2E continuation unexpectedly succeeded'
+fi
+assert_contains "$drift_execution_output" 'BLOCKED' \
+  'stale generated E2E continuation was not rejected by e2e-start'
+assert_not_contains "$drift_execution_output" 'E2E SETUP READY' \
+  'failed e2e-start stage did not short-circuit prepare'
+[ ! -e "$PREPARE_ARGS" ] || fail 'short-circuited continuation invoked prepare'
+"$HELPER" e2e-release human SAY-511 "$BASE" >/dev/null ||
+  fail 'could not clean up E2E generation drift'
+echo 'PASS: generated E2E continuation revalidates mutation-time state and short-circuits'
 
 prepare_duplicate
 if MISSING_NAMED_OUTPUT=$(

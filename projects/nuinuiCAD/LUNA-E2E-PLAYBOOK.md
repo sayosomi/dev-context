@@ -38,6 +38,8 @@ counted Luna run
 
 Lunaはtest operatorでありtest designerではない。
 
+通常のstartup handoffでは、Sol HighがIssue、tested ref、fixture、locale、port、`Executor: Luna`をsemanticに固定し、Humanが同じterminalで`nuinui e2e-start-command`を1回実行する。generatorはread-onlyで既存Human-test classifierを検証し、既存`e2e-start && nuinui-e2e-prepare prepare`の短いshell-safe continuationだけを出力する。Humanは成功した生成行をverbatimに実行し、terminal outputへ大きなLuna promptを追加・コピーしない。既存prepareの`handoff=` path、session、CDP、checkout、fixture、locale readinessがLunaへのbounded transport identityであり、Luna prompt自体はSol Highがcurrent contractから別に構成する。generatorはexecutor分類、tested-ref選択、lane scheduling、test oracleを行わない。
+
 Lunaへ次をさせない。
 
 - checkout切替、build、VS Code process cleanup、fresh host launch
@@ -142,6 +144,8 @@ Human setupで行わないこと:
 - macOS System Settings操作
 - GUI permission approval
 - screenshotやGUI judgment
+
+canonical generator経由の通常pathでは、versioned prepare helperが返す既存の`E2E SETUP READY`、`handoff=...`、session identityをそのまま使う。`READY FOR LUNA`を含む下記のfallback/reference setupは別のreadiness authorityを追加するものではなく、generatorがそのmarkerや大きなpromptを合成することもない。
 
 GUI-only environment prerequisiteが必要ならHumanへTerminal外操作を要求せずenvironment `BLOCKED`として扱う。
 

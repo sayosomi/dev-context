@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.8.3`。
+current standalone helper version: `1.8.4`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -133,8 +133,11 @@ projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
 projects/nuinuiCAD/scripts/nuinui-src/lane-execution-e2e-policy.sh
   nuinuiCAD's narrow reusable Human-test occupancy interpretation of existing marker/session/checkout authority, plus explicit session guards and local-main source-lane policy
 
+projects/nuinuiCAD/scripts/nuinui-src/e2e-start-command.sh
+  read-only named Manual E2E startup intent validation, fresh Human-test occupancy projection, and canonical shell-safe e2e-start/prepare continuation generation
+
 projects/nuinuiCAD/scripts/nuinui-src/cli-dispatch.sh
-  public command membership / usage / validation / dispatch and the standalone nuinui public version
+  public command membership / usage / validation / dispatch and the standalone nuinui public version, including the e2e-start-command façade boundary
 
 nuinui-body.sh
   narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks; it does not own the standalone public version
@@ -213,6 +216,7 @@ current commands:
 | `nuinui lane-init <implementation-lane>` | manifestで宣言されたexact idle implementation laneへpermanent v1 ownership schema markerをbootstrap |
 | `nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory> [--forensic-worktree <absolute-path>]` | 全declared implementation laneのcomplete inventory、target FREE、mutation-boundary再比較とnew generation startを1 Human handoffで実行。直後の同一requestだけはexact duplicateとしてread-only認識。末尾optionはone-shot inventory exception |
 | `nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]` | named inputをread-only fresh preflight / canonical inventory / existing verifyへ渡し、copy/paste-readyなexact positional `nuinui begin` commandを生成。lane、branch、slot、lock、receipt、command-result、checkout stateを変更しない |
+| `nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human\|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default\|ja>] [--port <port>]` | semantic E2E intentをnamed optionsで受け、既存manifest/classifierをread-onlyでfresh検証し、same-terminalで実行するexact `e2e-start && nuinui-e2e-prepare prepare` continuationを生成。checkout、marker、session、host、GUI、oracle、executor分類は変更しない |
 | `nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始。末尾optionはone-shot inventory exception |
 | `nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
@@ -233,6 +237,32 @@ current commands:
 | `nuinui transition-audit` | Active interim transition条件をread-only監査 |
 | `nuinui context-check` | dev-context Markdown local linksと`nuinui` CLI-doc整合をread-only検査 |
 | `nuinui self-test` | isolated temporary Git repositoriesでsupported safety pathsをexercise |
+
+### Canonical same-terminal Manual E2E startup generator
+
+通常のManual E2E startupは、ChatGPTがsemantic intentを確定し、Humanが次のshort named commandを同じterminalで実行する。
+
+```bash
+nuinui e2e-start-command \
+  --issue SAY-123 \
+  --tested-ref <full-tested-sha> \
+  --executor <human|luna> \
+  --fixture <absolute-fixture-path> \
+  [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]
+```
+
+generatorはread-onlyでfull manifest preflightとselected laneの`lane_execution_nuinui_human_test_classify`をfreshに行う。唯一のHuman-test laneは省略解決できるが、複数laneでは明示laneが必要である。`FREE`は生成候補、exact same Issue/refの`BUSY`は既存duplicate/no-op ownerへ委譲する候補、別Issue/refの`BUSY`やmalformed/dirty/named/stale/ambiguous stateは`BLOCKED`である。
+
+成功時は次の1行をterminal formatting authorityとして出力する。
+
+```text
+E2E START COMMAND READY
+'<absolute-nuinui>' 'e2e-start' '<lane>' '<Issue>' '<tested-ref>' && '<absolute-prepare>' 'prepare' '<lane>' '<Issue>' '<tested-ref>' '<fixture>' [<port>] [--locale ja]
+```
+
+Humanは生成行をChatGPTへ戻さず、同じterminalでverbatimに実行する。`&&`がstage failureを短絡し、既存`e2e-start`と`nuinui-e2e-prepare prepare`がmutation-time identity、race、duplicate/no-op、fixture、session、host、locale、cleanup authorityを維持する。`--executor`はcaller-controlled metadataであり、generatorはHuman/Luna classification、tested-ref choice、lane scheduling、GUI、oracle、large Luna promptをownerしない。Luna pathではexisting prepare outputのshort `handoff=` identity/pathをconsumeし、Human pathではsetupをtest executionと混同しない。
+
+`e2e-start-local-main`は現行inactive interim workflowの互換commandとして残るが、通常のgenerator continuationは標準`e2e-start`だけを使う。generationが`BLOCKED`または利用不能な場合は、既存`preflight` / status / diagnosis / recovery pathを使う。
 
 ### Canonical sequential Task transition handoff
 
@@ -436,7 +466,7 @@ Explicit lane forms are required when zero or multiple Human-test lanes are decl
 
 `recover-preparing` is the explicit recovery for a crashed `kind=preparing` reservation. It requires the selected declared Human-test lane, exact marker/checkout and preparing Issue/ref/root identity, the exact `nuinui-e2e-prepare` owner, and a dead recorded prepare PID. It accepts only a valid canonical handoff when present, proves every recorded root process belongs to that root, revalidates snapshots before mutation and session removal, then removes only the owned process, handoff, root, and unchanged preparing session. A live owner, PID/process ambiguity, malformed or active session, wrong identity, or concurrent change is `BLOCKED`; marker and checkout are never removed or rewritten.
 
-末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.3`のまま変更しない。
+末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.4`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。locale-specific `check`は既存のcheckout / ref / fixture / lane validationに加えて、resolved VS Code CLI、Info.plistの`CFBundleExecutable`、および`Contents/MacOS/<CFBundleExecutable>`のexecutable proofをread-onlyで行う。通常のnon-locale `prepare`は現在のCLI launch pathを維持する。
 

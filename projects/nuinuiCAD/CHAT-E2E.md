@@ -34,6 +34,23 @@ implementation merge / authoritative read-back complete
 
 implementation laneのrelease anomalyが残る間はnormal E2Eをstartしない。`BUSY`、`BLOCKED`、`RELEASE-PENDING`はcapacity unavailableであり、physical `FREE`を推測しない。selected Human-test laneが`BUSY`ならIssueは`In Review`で待ち、implementation capacityを保持しない。
 
+## Canonical same-terminal startup handoff (#168)
+
+normal startupでは、ChatGPTがsemantic intentをfixした後、Humanは次のnamed generator commandだけを同じterminalで実行する。
+
+```bash
+nuinui e2e-start-command \
+  --issue SAY-123 \
+  --tested-ref <full-tested-sha> \
+  --executor <human|luna> \
+  --fixture <absolute-fixture-path> \
+  [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]
+```
+
+`e2e-start-command`はread-onlyでruntime manifestと既存Human-test classifierをfreshに検証し、唯一のHuman-test laneだけを機械的に省略解決する。複数laneでlaneを省略した場合、blocked state、dirty checkout、malformed marker/session、別Issue/refのBUSY stateは推測せず`BLOCKED`にする。成功時は既存`e2e-start`と`nuinui-e2e-prepare prepare`のshell-safeな`&&` continuationを出力するので、Humanはその行をChatGPTへ戻さずverbatimに実行する。
+
+generator outputがterminal formatting authorityであり、ChatGPTはlane/ref/prepare orderingを再構成しない。`--executor`はChatGPT/Sol Highが決めるcaller-controlled intentで、helperはHuman/Lunaを分類せず、Luna promptやtest oracleも生成しない。Human pathはsetup後にHuman E2Eへ、Luna pathは既存prepare outputのshort `handoff=` identity/pathをLuna playbookへ渡す。generationが`BLOCKED`または利用不能なときだけ、explicit preflight / diagnosis / recoveryへ戻る。
+
 ## Confirmed Manual E2E implementation failure
 
 confirmed Manual E2E implementation failureは次のtransitionで処理する。
