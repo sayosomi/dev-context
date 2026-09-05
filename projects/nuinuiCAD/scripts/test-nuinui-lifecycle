@@ -145,6 +145,7 @@ HUMAN_FIXTURE_DIR=$ROOT/human-fixture-dir
 HUMAN_FIXTURE_DIR_SYMLINK=$ROOT/human-fixture-dir.symlink
 HUMAN_FIXTURE_NONCANONICAL=$HUMAN_FIXTURE_DIR_SYMLINK/fixture.nui
 HUMAN_SESSION_ROOT=$ROOT/nuinui-vscode-e2e.human
+HUMAN_NESTED_ROOT=$ROOT/nuinui-vscode-e2e.parent/nested
 HUMAN_HANDOFF=$ROOT/nuinui-SAY-401-human-e2e.env
 HUMAN_BAD_ROOT=$(dirname "$ROOT")/nuinui-vscode-e2e.invalid
 HUMAN_BAD_HANDOFF=$ROOT/wrong-handoff.env
@@ -344,6 +345,39 @@ run_human_preflight
 [ "$HUMAN_PREFLIGHT_RC" = 0 ] || fail 'current session was not valid BUSY'
 assert_human_state human BUSY
 assert_contains "$(human_lane_block human)" 'session_kind=current' 'current session kind evidence'
+
+echo 'TEST: Human-test preflight ignores caller CWD glob matches'
+HUMAN_GLOB_CWD=$ROOT/glob-cwd
+mkdir -p "$HUMAN_GLOB_CWD/a" "$HUMAN_GLOB_CWD/b"
+touch "$HUMAN_GLOB_CWD/a/x" "$HUMAN_GLOB_CWD/b/y"
+HUMAN_GLOB_STATE_BEFORE=$(human_state_snapshot)
+HUMAN_GLOB_CWD_BEFORE=$(find "$HUMAN_GLOB_CWD" -print | LC_ALL=C sort)
+HUMAN_PREFLIGHT_RC=0
+HUMAN_PREFLIGHT_OUTPUT=$(cd "$HUMAN_GLOB_CWD" && "$HELPER" preflight 2>&1) ||
+  HUMAN_PREFLIGHT_RC=$?
+[ "$HUMAN_PREFLIGHT_RC" = 0 ] || {
+  printf '%s\n' "$HUMAN_PREFLIGHT_OUTPUT"
+  fail 'caller CWD glob matches changed a valid Human-test preflight'
+}
+assert_not_contains "$HUMAN_PREFLIGHT_OUTPUT" 'too many arguments' \
+  'caller CWD glob matches produced a shell arity diagnostic'
+assert_not_contains "$HUMAN_PREFLIGHT_OUTPUT" 'unexpected operator' \
+  'caller CWD glob matches produced an operator diagnostic'
+assert_not_contains "$HUMAN_PREFLIGHT_OUTPUT" 'binary operator expected' \
+  'caller CWD glob matches produced a test diagnostic'
+assert_human_state human BUSY
+human_glob_busy_block=$(human_lane_block human)
+assert_contains "$human_glob_busy_block" 'owner_issue=SAY-401' \
+  'caller CWD glob matches changed the owner Issue'
+assert_contains "$human_glob_busy_block" "owner_ref=$BASE" \
+  'caller CWD glob matches changed the owner ref'
+HUMAN_GLOB_STATE_AFTER=$(human_state_snapshot)
+[ "$HUMAN_GLOB_STATE_BEFORE" = "$HUMAN_GLOB_STATE_AFTER" ] || \
+  fail 'caller CWD glob preflight changed Human-test state'
+HUMAN_GLOB_CWD_AFTER=$(find "$HUMAN_GLOB_CWD" -print | LC_ALL=C sort)
+[ "$HUMAN_GLOB_CWD_BEFORE" = "$HUMAN_GLOB_CWD_AFTER" ] || \
+  fail 'caller CWD glob preflight changed its working directory'
+echo 'PASS: caller CWD glob matches do not affect active Human-test classification'
 clear_human_state
 
 write_human_marker SAY-402 "$BASE"
@@ -478,6 +512,18 @@ run_human_preflight
 assert_human_state human BLOCKED
 assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
   'current invalid session root reason'
+clear_human_state
+
+echo 'TEST: nested Human-test session roots remain blocked'
+mkdir -p "$HUMAN_NESTED_ROOT"
+write_human_marker SAY-421 "$BASE"
+write_human_current_session_values human SAY-421 "$BASE" "$HUMAN_FIXTURE" \
+  "$HUMAN_NESTED_ROOT" "$(human_handoff_for_issue SAY-421)"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'nested current session root was accepted'
+assert_human_state human BLOCKED
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'nested current session root reason'
 clear_human_state
 
 write_human_marker SAY-416 "$BASE"
