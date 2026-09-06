@@ -3536,12 +3536,18 @@ lane_execution_release_restore_checkout_proof() {
     *) return 1 ;;
   esac
   [ -z "$(bo "$lane_execution_release_repo" "$lane_execution_release_topic")" ] || return 1
-  lane_execution_release_remote_state=$(lane_execution_remote_topic "$lane_execution_release_repo" \
-    "$lane_execution_release_topic" "$lane_execution_release_head") || return 1
-  fp "$lane_execution_release_repo" || return 1
-  [ "$(om "$lane_execution_release_repo")" = "$lane_execution_release_default_head" ] || return 1
-  [ "$(lane_execution_remote_topic "$lane_execution_release_repo" \
-    "$lane_execution_release_topic" "$lane_execution_release_head")" = "$lane_execution_release_remote_state" ] || return 1
+  case "$lane_execution_release_mode" in
+    direct) ;;
+    switch|rename|canonical)
+      lane_execution_release_remote_state=$(lane_execution_remote_topic "$lane_execution_release_repo" \
+        "$lane_execution_release_topic" "$lane_execution_release_head") || return 1
+      fp "$lane_execution_release_repo" || return 1
+      [ "$(om "$lane_execution_release_repo")" = "$lane_execution_release_default_head" ] || return 1
+      [ "$(lane_execution_remote_topic "$lane_execution_release_repo" \
+        "$lane_execution_release_topic" "$lane_execution_release_head")" = "$lane_execution_release_remote_state" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
   [ "$(bn "$lane_execution_release_repo")" = "$lane_execution_release_before_branch" ] &&
     [ "$(hh "$lane_execution_release_repo")" = "$lane_execution_release_before_head" ] || return 1
   case "$lane_execution_release_mode" in

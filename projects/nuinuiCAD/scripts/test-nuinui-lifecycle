@@ -1226,6 +1226,39 @@ assert_contains "$INCIDENT_RELEASE_OUTPUT" 'IMPLEMENTATION RELEASED' \
   'generated incident release did not use the real release path'
 echo 'PASS: release-command emits T when T differs from contained current main M'
 
+echo 'TEST: release-command preserves the exact direct release path with remote drift'
+setup_active SAY-234 codex/SAY-234-release-command-direct yes
+DIRECT_TOPIC_CHECKPOINT=$ACTIVE_CHECKPOINT
+DIRECT_REMOTE_CHECKPOINT=$(printf 'direct remote drift\n' | git -C "$SEED" commit-tree \
+  "${DIRECT_TOPIC_CHECKPOINT}^{tree}" -p "$DIRECT_TOPIC_CHECKPOINT" -m direct-remote-drift)
+git -C "$SEED" push -q origin \
+  "$DIRECT_REMOTE_CHECKPOINT:refs/heads/$ACTIVE_BRANCH"
+DIRECT_BEFORE=$(lane_snapshot)
+DIRECT_OUTPUT=$(
+  "$HELPER" release-command --lane impl --issue "$ACTIVE_ISSUE" \
+    --claim "$ACTIVE_CLAIM"
+) || {
+  printf '%s\n' "$DIRECT_OUTPUT"
+  fail 'release-command exact direct path with remote drift failed'
+}
+assert_release_command_ready "$DIRECT_OUTPUT" impl \
+  "$DIRECT_TOPIC_CHECKPOINT" "$ACTIVE_CLAIM"
+DIRECT_LINE=$(printf '%s\n' "$DIRECT_OUTPUT" | sed -n '2p')
+assert_not_contains "$DIRECT_LINE" "$DIRECT_REMOTE_CHECKPOINT" \
+  'direct release-command serialized the drifted remote topic'
+assert_not_contains "$DIRECT_LINE" "$INCIDENT_MAIN_CHECKPOINT" \
+  'direct release-command serialized current main'
+DIRECT_AFTER=$(lane_snapshot)
+[ "$DIRECT_BEFORE" = "$DIRECT_AFTER" ] || \
+  fail 'exact direct release-command generation mutated lifecycle state'
+DIRECT_RELEASE_OUTPUT=$(sh -c "$DIRECT_LINE") || {
+  printf '%s\n' "$DIRECT_RELEASE_OUTPUT"
+  fail 'generated exact direct release continuation failed'
+}
+assert_contains "$DIRECT_RELEASE_OUTPUT" 'IMPLEMENTATION RELEASED' \
+  'exact direct release path did not complete through the real release path'
+echo 'PASS: release-command preserves direct T with mismatching remote topic'
+
 setup_active SAY-221 codex/SAY-221-release-command-wrong-identity yes
 expect_release_command_blocked 'release-command wrong Issue' \
   --lane impl --issue SAY-999 --claim "$ACTIVE_CLAIM"
