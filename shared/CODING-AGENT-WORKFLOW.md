@@ -52,6 +52,39 @@ preparation中にauthoritative remote stateがadvanceしていた場合:
 
 Implementation promptはhigh-level task descriptionではなく、executable implementation contractとして扱う。current implementation Taskの実行に必要な情報だけを書く。
 
+### Luna prompt/output timestamp boundary
+
+Current implementation Coding AgentがLunaの場合だけ、ChatGPT ↔ Luna間を移動する次の2つのartifactにtimestampを付ける。
+
+- ChatGPTがLunaへ渡すimplementation promptそのもの
+- LunaがHumanへ返すfinal user-visible output（successful completion、および`BLOCKED` / stopped report）
+
+ChatGPT → Luna implementation promptには、そのpromptを生成した時刻をprompt本文内にabsolute local date/time + timezoneで含める。Humanのconfigured/local timezoneが利用できる場合はそれを使い、current workflowのdefaultはJST / Asia/Tokyoとする。compactなstable formは次と同等にする。
+
+```text
+Prompt time: 2026-09-05 22:45 JST
+```
+
+TimestampをChatGPTのprompt外側の説明だけに置いて、このrequirementを満たしたことにしない。
+
+同じimplementation promptは、Lunaに対してfinal successful reportだけでなく`BLOCKED` / stopped reportにも、そのfinal outputを生成した時刻をabsolute local date/time + timezoneで含めるよう明示的に要求する。Lunaはprompt timestampをoutput timestampとして再利用せず、final report生成時の時刻を使う。compactなstable formは次と同等にする。
+
+```text
+Output time: 2026-09-05 23:10 JST
+```
+
+このtimestampはHumanがChatGPT → Luna promptとLuna outputのchronologyを比較するためのpresentation cueであり、repository execution authority、durable claim、lane ownership、source of truth、handoff validityを決めない。timestampだけを理由にexecution authorityを移さない。
+
+このruleを次へ拡張しない。
+
+- implementation promptをHumanへ提示するChatGPT responseのprompt外側の文章
+- Luna resultをconsume / summarize / reviewするChatGPT response
+- next stepを説明する通常のChatGPT workflow / coordinator response
+- Manual E2E test-operator prompt / resultなど、このimplementation-agent workflow外のsurface
+- durable work-management checkpoint、repository policy record、commit messageなどexecution-state authorityになり得るrecord
+
+Chronologyのためだけに`current ball`、`initiative owner`、または同等のduplicated fieldを追加・要求しない。
+
 ### Prompt-completeness gate
 
 Handoff前に、ChatGPTはcurrent Taskがmissing architecture / product / contract decisionをCoding Agentへ委ねずに実行できる具体性を持つことを確認する。`implement feature X`、`fix Issue X`、`follow the Issue`、または同等のhigh-level wordingだけではgateを通過しない。
@@ -72,6 +105,8 @@ Handoff前に、ChatGPTはcurrent Taskがmissing architecture / product / contra
 - commit / push requirement
 - blocking / stop conditions
 - required completion report
+
+Current implementation Coding AgentがLunaの場合、上記fieldsに加えて、同じpromptが`Luna prompt/output timestamp boundary`を満たすこともcompleteness gateの必須条件とする。
 
 `concrete semantic owner and change boundary`には、適用される場合、exact files、symbols、API boundaries、data contracts、state transitions、persistence boundaries、またはその他のconcrete implementation targetsを含める。意味のあるboundaryが本当に存在しないTaskではその理由を示すが、unspecified boundaryをCoding Agentの調査へ委ねてはならない。
 
@@ -146,6 +181,8 @@ Coding Agentはimplementation runの完了時に、applicableな次の事項を�
 - remaining blockersまたはresidual risks（なければnone、あればexactな内容）
 
 normal successful completionでは、scope deviationがないこととremaining blockerがないことを明示する。
+
+Current implementation Coding AgentがLunaの場合、final successful completion reportとfinal `BLOCKED` / stopped reportは、`Luna prompt/output timestamp boundary`に従う`Output time`を必ず含める。implementation開始前のpreflight等で停止する場合も、Humanへ返すfinal blocked/stopped outputにはこのtimestamp requirementを適用する。
 
 ## Continuity and user-facing handoff
 
