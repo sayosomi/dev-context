@@ -29,6 +29,12 @@ cleanup_test_root() {
   if [[ -n "${legacy_launcher_pid:-}" ]]; then
     kill -TERM "$legacy_launcher_pid" >/dev/null 2>&1 || true
   fi
+  if [[ -n "${legacy_pid_failure_app_pid:-}" ]]; then
+    kill -TERM "$legacy_pid_failure_app_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${legacy_pid_failure_launcher_pid:-}" ]]; then
+    kill -TERM "$legacy_pid_failure_launcher_pid" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${closure_failure_pid:-}" ]]; then
     kill -TERM "$closure_failure_pid" >/dev/null 2>&1 || true
     wait "$closure_failure_pid" >/dev/null 2>&1 || true
@@ -66,6 +72,8 @@ preparing_recovery_pid=""
 closure_failure_pid=""
 legacy_handoff_pid=""
 legacy_launcher_pid=""
+legacy_pid_failure_app_pid=""
+legacy_pid_failure_launcher_pid=""
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" "$fake_app/Contents/MacOS" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -1455,6 +1463,74 @@ fi
 if grep -Fq -- '--locale' "$ordinary_root/launch-args"; then
   fail "ordinary prepare injected an explicit locale"
 fi
+
+echo "TEST: a dead legacy CLI PID is rejected without terminating the live application host"
+pid_failure_session_before="$(cat "$session")"
+env "NUINUI_FAKE_APPLICATION_EXECUTABLE=$fake_app/Contents/MacOS/Fake VS Code" \
+  "ZDOTDIR=$zdotdir" "PATH=$fake_bin:/usr/bin:/bin" \
+  "$fake_app/Contents/Resources/app/bin/code" \
+  --new-window \
+  --user-data-dir="$ordinary_root/user-data" \
+  --extensions-dir="$ordinary_root/extensions" \
+  --remote-debugging-port=9566 \
+  >/dev/null 2>&1 &
+legacy_pid_failure_launcher_pid=$!
+for _ in {1..20}; do
+  [[ -f "$ordinary_root/evidence/fake-vscode-handed-off-pid" ]] && break
+  sleep 0.05
+done
+[[ -f "$ordinary_root/evidence/fake-vscode-handed-off-pid" ]] \
+  || fail "legacy PID regression did not record an application host"
+legacy_pid_failure_launcher_recorded_pid="$legacy_pid_failure_launcher_pid"
+wait "$legacy_pid_failure_launcher_pid" || fail "legacy PID regression launcher handoff"
+legacy_pid_failure_launcher_pid=""
+if kill -0 "$legacy_pid_failure_launcher_recorded_pid" >/dev/null 2>&1; then
+  fail "legacy PID regression launcher remained alive"
+fi
+legacy_pid_failure_app_pid="$(cat "$ordinary_root/evidence/fake-vscode-handed-off-pid")"
+[[ "$legacy_pid_failure_app_pid" != "$legacy_pid_failure_launcher_recorded_pid" ]] \
+  || fail "legacy PID regression reused the CLI launcher PID"
+kill -0 "$ordinary_pid" >/dev/null 2>&1 \
+  || fail "legacy PID regression lost the original application host"
+kill -0 "$legacy_pid_failure_app_pid" >/dev/null 2>&1 \
+  || fail "legacy PID regression application host is not alive"
+legacy_pid_failure_process_command="$(ps -ww -p "$legacy_pid_failure_app_pid" -o command= 2>/dev/null || true)"
+print -r -- "$legacy_pid_failure_process_command" \
+  | grep -Fq -- "$fake_app/Contents/MacOS/Fake VS Code" \
+  || fail "legacy PID regression did not launch the application executable"
+print -r -- "$legacy_pid_failure_process_command" \
+  | grep -Fq -- "--user-data-dir=$ordinary_root/user-data" \
+  || fail "legacy PID regression application host does not own the active root"
+
+expected_dead_pid_session="$(print -r -- "$pid_failure_session_before" \
+  | sed "s/^launch_pid=.*/launch_pid=$legacy_pid_failure_launcher_recorded_pid/")"
+print -r -- "$expected_dead_pid_session" > "$session.tmp"
+"$real_mv" -- "$session.tmp" "$session" || fail "legacy PID regression session mutation"
+[[ "$(cat "$session")" == "$expected_dead_pid_session" ]] \
+  || fail "legacy PID regression changed fields besides launch_pid"
+if pid_failure_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 2>&1)"; then
+  fail "legacy dead launch PID was accepted"
+fi
+print -r -- "$pid_failure_out" \
+  | grep -Fqx 'BLOCKED: recorded launch PID is not running' \
+  || fail "legacy dead launch PID did not report the exact blocking diagnostic"
+kill -0 "$ordinary_pid" >/dev/null 2>&1 \
+  || fail "legacy dead launch PID terminated the original application host"
+kill -0 "$legacy_pid_failure_app_pid" >/dev/null 2>&1 \
+  || fail "legacy dead launch PID terminated the handed-off application host"
+
+print -r -- "$pid_failure_session_before" > "$session.tmp"
+"$real_mv" -- "$session.tmp" "$session" || fail "legacy PID regression session restore"
+[[ "$(cat "$session")" == "$pid_failure_session_before" ]] \
+  || fail "legacy PID regression did not restore the active session"
+kill -TERM "$legacy_pid_failure_app_pid" >/dev/null 2>&1 || true
+wait "$legacy_pid_failure_app_pid" >/dev/null 2>&1 || true
+legacy_pid_failure_app_pid=""
+kill -0 "$ordinary_pid" >/dev/null 2>&1 \
+  || fail "legacy PID regression cleanup terminated the original application host"
+echo "PASS: dead legacy CLI PID is blocked while live application hosts remain untouched"
+
 prelocale_session_before="$(sed '/^locale=/d' "$session")"
 print -r -- "$prelocale_session_before" > "$session"
 prelocale_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "pre-locale status"
