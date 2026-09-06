@@ -87,7 +87,7 @@ prepare() {
   local tested_ref="$2"
   local fixture="$3"
   local locale="$4"
-  local cdp_port="${5:-$DEFAULT_CDP_PORT}"
+  local cdp_port="${5-}"
   local source_fixture=""
   local repo="$E2E_WT"
   local code_bin=""
@@ -153,6 +153,15 @@ prepare() {
   }
 
   assert_locale "$locale" || return $?
+  if [[ -z "$cdp_port" ]]; then
+    local declared_human_test_lane_count
+    declared_human_test_lane_count="$(human_test_lane_count)" || return 1
+    if (( declared_human_test_lane_count >= 2 )); then
+      echo 'BLOCKED: explicit CDP port is required when multiple Human-test lanes are declared'
+      return 1
+    fi
+    cdp_port="$DEFAULT_CDP_PORT"
+  fi
   assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
   assert_port "$cdp_port" || { echo "ERROR: CDP port must be between 1 and 65535"; return 2; }
   source_fixture="$(resolve_existing_path "$fixture")" || {
@@ -785,14 +794,14 @@ case "${1:-}" in
     set -- "$1" "${LOCALE_ARGS[@]}"
     if [[ "$#" -eq 4 ]]; then
       select_human_lane || exit $?
-      prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port="${5:-$DEFAULT_CDP_PORT}"
+      prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port="${5-}"
     elif [[ "$#" -eq 5 ]] && {
       e2e_context || exit $?
       lane_manifest_validate_lane_name "$E2E_MANIFEST" "$2" >/dev/null 2>&1 &&
         [[ "$(lane_manifest_lane_role "$E2E_MANIFEST" "$2")" == human-test ]]
     }; then
       select_human_lane "$2" || exit $?
-      prepare_issue=$3; prepare_ref=$4; prepare_fixture=$5; prepare_port="${6:-$DEFAULT_CDP_PORT}"
+      prepare_issue=$3; prepare_ref=$4; prepare_fixture=$5; prepare_port="${6-}"
     elif [[ "$#" -eq 5 ]]; then
       select_human_lane || exit $?
       prepare_issue=$2; prepare_ref=$3; prepare_fixture=$4; prepare_port=$5

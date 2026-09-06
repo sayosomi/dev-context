@@ -260,6 +260,16 @@ nuinui_e2e_start_command() {
     nuinui_e2e_start_command_lane=$nuinui_e2e_start_command_lane_output
   fi
 
+  nuinui_e2e_start_command_human_lane_count=$(lane_manifest_lanes_by_role \
+    "$NUINUI_RUNTIME_MANIFEST" human-test |
+    awk 'NF { count++ } END { print count + 0 }')
+  if [ "$nuinui_e2e_start_command_lane_seen" = 1 ] &&
+    [ "$nuinui_e2e_start_command_human_lane_count" -ge 2 ] &&
+    [ "$nuinui_e2e_start_command_port_seen" = 0 ]; then
+    printf 'BLOCKED: explicit CDP port is required when multiple Human-test lanes are declared\n'
+    return 1
+  fi
+
   nuinui_e2e_start_command_human_path=$(lane_manifest_lane_path \
     "$NUINUI_RUNTIME_MANIFEST" "$nuinui_e2e_start_command_lane") || {
     printf 'BLOCKED: selected Human-test lane path is unavailable\n'

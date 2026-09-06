@@ -35,6 +35,10 @@ cleanup_test_root() {
   if [[ -n "${legacy_pid_failure_launcher_pid:-}" ]]; then
     kill -TERM "$legacy_pid_failure_launcher_pid" >/dev/null 2>&1 || true
   fi
+  if [[ -n "${occupied_foreign_pid:-}" ]]; then
+    kill -TERM "$occupied_foreign_pid" >/dev/null 2>&1 || true
+    wait "$occupied_foreign_pid" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${closure_failure_pid:-}" ]]; then
     kill -TERM "$closure_failure_pid" >/dev/null 2>&1 || true
     wait "$closure_failure_pid" >/dev/null 2>&1 || true
@@ -74,6 +78,7 @@ legacy_handoff_pid=""
 legacy_launcher_pid=""
 legacy_pid_failure_app_pid=""
 legacy_pid_failure_launcher_pid=""
+occupied_foreign_pid=""
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" "$fake_app/Contents/MacOS" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -108,6 +113,11 @@ MANIFEST
 
 cat > "$fake_bin/lsof" <<'EOF'
 #!/bin/zsh
+if [[ -n "${NUINUI_FAKE_LSOF_PORT:-}" ]]; then
+  for arg in "$@"; do
+    [[ "$arg" == *"TCP:${NUINUI_FAKE_LSOF_PORT}"* ]] && exit 0
+  done
+fi
 exit 1
 EOF
 cat > "$fake_bin/npm" <<'EOF'
@@ -441,13 +451,14 @@ self_path_check_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_
 }
 print -r -- "$self_path_check_out" | grep -Fq 'E2E CHECKOUT VERIFIED' || fail "self-path check did not complete"
 self_path_prepare_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_a" \
-  prepare SAY-999 "$tested_ref" "$fixture" 9558)" || {
+  prepare SAY-999 "$tested_ref" "$fixture")" || {
   print -r -- "$self_path_prepare_out"
   fail "self-path prepare"
 }
 print -r -- "$self_path_prepare_out" | grep -Fq 'lane=self-human' || fail "self-path prepare did not use project manifest lane"
 self_path_root="$(sed -n 's/^root=//p' "$session")"
 [[ -d "$self_path_root" && -f "$session" ]] || fail "self-path prepare did not record session"
+[[ "$(sed -n 's/^cdp_port=//p' "$session")" == 9223 ]] || fail "singleton omitted port did not retain the default CDP port"
 self_path_status_out="$(run_self_path_helper "$self_path_helper" "$self_path_cwd_b" status)" || {
   print -r -- "$self_path_status_out"
   fail "self-path active status"
@@ -568,6 +579,29 @@ env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" \
 cleanup_receipt="$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-cleanup-receipt"
 rm -f -- "$marker" "$cleanup_receipt"
 echo "PASS: preparing reservation closed the release/start race"
+
+echo "TEST: occupied explicit CDP port remains foreign and fail-closed"
+occupied_port=9567
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+( sleep 30 ) &
+occupied_foreign_pid=$!
+occupied_before_snapshot="$(find "$temp_parent" -maxdepth 2 -print | sort)"
+if occupied_out="$(env "${common_env[@]}" NUINUI_FAKE_LSOF_PORT="$occupied_port" \
+  zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" "$occupied_port" 2>&1)"; then
+  print -r -- "$occupied_out"
+  fail "occupied explicit CDP port unexpectedly succeeded"
+fi
+print -r -- "$occupied_out" | grep -Fq 'BLOCKED: CDP port already in use' || {
+  print -r -- "$occupied_out"
+  fail "occupied explicit CDP port did not preserve its blocking diagnostic"
+}
+kill -0 "$occupied_foreign_pid" 2>/dev/null || fail "occupied-port failure touched the foreign host"
+occupied_after_snapshot="$(find "$temp_parent" -maxdepth 2 -print | sort)"
+[[ "$occupied_before_snapshot" == "$occupied_after_snapshot" ]] || fail "occupied-port failure created preparation artifacts"
+kill -TERM "$occupied_foreign_pid" >/dev/null 2>&1 || true
+wait "$occupied_foreign_pid" >/dev/null 2>&1 || true
+occupied_foreign_pid=""
+echo "PASS: occupied explicit CDP port was rejected without adopting the foreign host"
 
 echo "TEST: final generation revalidation rejects stale active publication"
 drift_ref="$(git -C "$repo" commit-tree "$(git -C "$repo" rev-parse "$tested_ref^{tree}")" \
@@ -1039,7 +1073,7 @@ printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
 echo "PASS: recover-split fail-closed regression coverage"
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.8.0" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.8.1" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 print -r -- "$help_out" | grep -Fq "nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>" || fail "help omitted explicit recover-split arguments"
@@ -2000,6 +2034,20 @@ two_status_a="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" status human-a)" || fa
 print -r -- "$two_status_a" | grep -Fq 'E2E STATUS COMPLETE' || fail "explicit Human-test status did not complete"
 print -r -- "$two_status_a" | grep -Fq 'session=none' || fail "explicit Human-test status did not use its own session"
 
+two_omitted_port_before="$(two_snapshot)"
+if two_omitted_port_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 2>&1)"; then
+  print -r -- "$two_omitted_port_output"
+  fail "2+2 explicit lane omitted CDP port unexpectedly succeeded"
+fi
+print -r -- "$two_omitted_port_output" | grep -Fq \
+  'BLOCKED: explicit CDP port is required when multiple Human-test lanes are declared' || {
+  print -r -- "$two_omitted_port_output"
+  fail "2+2 explicit lane omitted CDP port diagnostic was not actionable"
+}
+[[ "$(two_snapshot)" == "$two_omitted_port_before" ]] || \
+  fail "2+2 explicit lane omitted CDP port mutated preparation state"
+
 two_prepare_out="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9556 2>&1)" || {
   print -r -- "$two_prepare_out"
   fail "explicit second Human-test prepare"
@@ -2012,6 +2060,24 @@ two_marker_a_before="$(cat "$marker_two_a")"
 two_marker_b_before="$(cat "$marker_two_b")"
 two_handoff_before="$(cat "$two_handoff")"
 two_active_before="$(two_snapshot)"
+two_duplicate_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9556)" || {
+  print -r -- "$two_duplicate_output"
+  fail "2+2 exact duplicate prepare failed with the same explicit port"
+}
+print -r -- "$two_duplicate_output" | grep -Fq 'E2E SETUP ALREADY READY' || \
+  fail "2+2 exact duplicate prepare did not remain a no-op"
+if two_wrong_port_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9557 2>&1)"; then
+  print -r -- "$two_wrong_port_output"
+  fail "2+2 duplicate prepare accepted a different explicit port"
+fi
+print -r -- "$two_wrong_port_output" | grep -Fq 'BLOCKED: active session identity mismatch' || {
+  print -r -- "$two_wrong_port_output"
+  fail "2+2 duplicate prepare did not remain port-sensitive"
+}
+[[ "$(two_snapshot)" == "$two_active_before" ]] || \
+  fail "2+2 wrong-port duplicate prepare mutated active state"
 expect_short_blocked "2+2 short status with persisted session" two status
 expect_short_blocked "2+2 short cleanup with persisted session" two cleanup SAY-997 "$tested_ref_two" "$two_root"
 expect_short_blocked "2+2 short closure-check with persisted session" two closure-check SAY-997

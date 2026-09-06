@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.9.0`。
+current standalone helper version: `1.9.1`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -252,7 +252,7 @@ nuinui e2e-start-command \
   [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]
 ```
 
-generatorはread-onlyでfull manifest preflightとselected laneの`lane_execution_nuinui_human_test_classify`をfreshに行う。唯一のHuman-test laneは省略解決できるが、複数laneでは明示laneが必要である。`FREE`は生成候補、exact same Issue/refの`BUSY`は既存duplicate/no-op ownerへ委譲する候補、別Issue/refの`BUSY`やmalformed/dirty/named/stale/ambiguous stateは`BLOCKED`である。
+generatorはread-onlyでfull manifest preflightとselected laneの`lane_execution_nuinui_human_test_classify`をfreshに行う。唯一のHuman-test laneは省略解決できるが、複数laneでは明示laneと明示CDP portが必要である。portはcaller-controlledで、lane名・宣言順・空き状況から推測または自動選択しない。singleton topologyではport省略時の既定port互換を維持する。`FREE`は生成候補、exact same Issue/refの`BUSY`は既存duplicate/no-op ownerへ委譲する候補、別Issue/refの`BUSY`やmalformed/dirty/named/stale/ambiguous stateは`BLOCKED`である。
 
 成功時は次の1行をterminal formatting authorityとして出力する。
 
@@ -469,7 +469,7 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.8.0`。
+current Human E2E preparation helper version: `1.8.1`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
@@ -484,7 +484,7 @@ nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <
 nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e-root>
 ```
 
-Explicit lane forms are required when zero or multiple Human-test lanes are declared. Short forms remain compatible only when exactly one Human-test lane exists; persisted sessions carry their exact lane identity for status and cleanup.
+Explicit lane forms are required when zero or multiple Human-test lanes are declared. With multiple Human-test lanes, `prepare` also requires an explicitly supplied caller-controlled CDP port; it never derives one from lane identity or declaration order. Short forms and omitted-port prepare remain compatible only when exactly one Human-test lane exists; persisted sessions carry their exact lane identity for status and cleanup.
 
 `prepare` publishes a strict `kind=preparing` session containing the selected lane, Issue, tested ref, isolated root, `prepare_owner=nuinui-e2e-prepare`, and the owning prepare PID immediately after root creation. That same session path remains present through dependency installation, builds, locale work, host launch, and CDP readiness, so `e2e-start`, `e2e-release`, `status`, `closure-check`, and Human-test preflight fail closed while preparation is in flight. Status reports `session=preparing` / `preparation=in-flight`; it is never an active ready session or a clean lane. Before active publication, the helper revalidates marker and checkout identity and atomically replaces only the unchanged preparing session with the normal active schema. Generation drift removes only owned preparation artifacts and the unchanged reservation; it never publishes a stale active session.
 
@@ -492,7 +492,7 @@ Explicit lane forms are required when zero or multiple Human-test lanes are decl
 
 `recover-preparing` is the explicit recovery for a crashed `kind=preparing` reservation. It requires the selected declared Human-test lane, exact marker/checkout and preparing Issue/ref/root identity, the exact `nuinui-e2e-prepare` owner, and a dead recorded prepare PID. It accepts only a valid canonical handoff when present, proves every recorded root process belongs to that root, revalidates snapshots before mutation and session removal, then removes only the owned process, handoff, root, and unchanged preparing session. A live owner, PID/process ambiguity, malformed or active session, wrong identity, or concurrent change is `BLOCKED`; marker and checkout are never removed or rewritten.
 
-末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.4`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
+末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.9.1`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。`check`と`prepare`は選択されたpathのapplication prerequisiteとして、Info.plistの`CFBundleExecutable`から解決した`Contents/MacOS/<CFBundleExecutable>`のexecutable proofを行う。通常のnon-locale `prepare`はこのapplication executableを直接起動し、active sessionの`launch_pid`へそのPIDを保存する。VS Code CLIはhost identityには使わず、Japanese language-packのisolated install / `--list-extensions --show-versions`などCLI専用操作に限定する。locale-specific pathはこれに加えてresolved VS Code CLIもread-onlyで証明する。
 
