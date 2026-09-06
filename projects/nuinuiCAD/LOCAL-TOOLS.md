@@ -345,11 +345,11 @@ The duplicate implementation path performs no Git, worktree, ref, or fetch mutat
 
 ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのままconsumeする。helper versionとmetadata versionは独立している。
 
-`preflight`はread-only diagnostic / routing command。各implementation laneのFREE判定はmanifestのdefault branchに対するauthoritative `ls-remote`を使い、cleanでもbehindならFREEにしない。mutation lock、active slot、releasing tombstoneを優先して分類し、strict schema violationはBLOCKする。validなactive slotのbranch / Base ancestry / claim identityが一致していれば、working treeがdirtyでも`clean=no`と`state=BUSY`を返す。branch / Base / metadata identity mismatchは引き続きBLOCKする。通常startでは、`begin`が全implementation laneのcomplete inventoryを同じauditで確認するため、別preflightを先に実行しない。
+`preflight`はread-only diagnostic / routing command。各implementation laneのFREE判定は、initializedでclean、validなcheckout / HEAD evidenceがあり、manifestの`idle`（branchならdeclared default branch、detachedならdetached）を満たし、mutation lock / active slot / releasing tombstoneがないことを使う。manifestのdefault branchに対するauthoritative `ls-remote`は別のfreshness evidenceとして表示し、cleanでもbehindなstale idle laneは`freshness=STALE`のままFREEである。strict schema violationはBLOCKする。validなactive slotのbranch / Base ancestry / claim identityが一致していれば、working treeがdirtyでも`clean=no`と`state=BUSY`を返す。branch / Base / metadata identity mismatchは引き続きBLOCKする。通常startでは、`begin`が全implementation laneのcomplete inventoryを同じauditで確認するため、別preflightを先に実行しない。
 
 `lane-init`はmanifestで宣言されたimplementation laneを正当に新規 / 再作成した場合のschema bootstrap。slot / lock / release stateがなくexact safe idleを証明できる場合だけmarkerを書く。既存active-looking checkoutからclaimを生成するrepair用途には使わない。
 
-`begin`の形式は`nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>`。inventoryはmanifest順の全implementation laneを一度ずつ`lane=FREE`または`lane=SAY-123`で指定する。targetは必ずphysically FREEで、全laneの期待値とfull preflightが一致しなければ開始しない。mutation-boundaryでも全inventoryを再比較してから`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返し、target generationを検証できれば`mutation_state=COMPLETED`とtargetのissue / branch / base / checkpoint / claim / clean / `state=BUSY`を返す。検証不能なら`mutation_state=UNKNOWN`と既知のrequested/new identityを返す。
+`begin`の形式は`nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>`。inventoryはmanifest順の全implementation laneを一度ずつ`lane=FREE`または`lane=SAY-123`で指定する。targetは必ずphysically FREEで、全laneの期待値とfull preflightが一致しなければ開始しない。mutation-boundaryではauthoritative defaultがcallerのexact Baseと一致し、exact Base objectがlocalにmaterializedされ、targetのcleanなdeclared idle formが再証明できる場合だけ`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返し、target generationを検証できれば`mutation_state=COMPLETED`とtargetのissue / branch / base / checkpoint / claim / clean / `state=BUSY`を返す。検証不能なら`mutation_state=UNKNOWN`と既知のrequested/new identityを返す。
 
 同じ`begin` commandを直後に誤って再実行した場合、最初のfull preflightがPASSでtargetがBUSYなら、targetのdurable Issue / branch / Base、validな既存claim、slot / checkout identity、cleanなcheckout、checkout `HEAD == Base`、no lock / tombstone、callerのcomplete inventory、およびfull preflight PASSをすべてread-onlyで再証明できたときだけduplicateとして扱う。進行後のgenerationでcheckout `HEAD != Base`ならduplicate successにしない。再証明中にstateが変化した場合、または証明できない場合は既存のBLOCKEDへfail-closedする。
 
@@ -559,7 +559,7 @@ promotion candidateはseparate legacy/backend fileなしでisolated temporary Gi
 - E2E marker lifecycle;
 - standalone Auto-merge reservation path;
 - Auto-merge already-complete, TOCTOU pending-to-complete, mutation-race, required-check failure/API, reviewed-head/main mismatch, successful reservation, and post-mutation read-back failure diagnostics;
-- stale clean mainのFREE拒否。
+- cleanなstale implementation idle laneのFREE occupancy、分離された`freshness=STALE`、およびexact Base start。
 
 result:
 

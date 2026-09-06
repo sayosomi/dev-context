@@ -176,14 +176,21 @@ lane_execution__start_mutation() {
   nuinui_ownership_validate_initialization "$lane_execution_mutation_initialization" || return 1
   [ ! -e "$lane_execution_mutation_slot" ] && [ ! -e "$lane_execution_mutation_lock" ] || return 1
   [ -z "$(lane_execution__release_dirs "$lane_execution_mutation_git_dir")" ] || return 1
+  git -C "$lane_execution_mutation_repo" fetch origin \
+    "$lane_execution_target_default" >/dev/null 2>&1 || return 1
   lane_execution_mutation_origin=$(lane_execution__origin_default "$lane_execution_mutation_repo" \
     "$lane_execution_target_default")
   nuinui_ownership_valid_sha "$lane_execution_mutation_origin" || return 1
-  lane_execution__idle_for_start "$lane_execution_mutation_repo" \
-    "$lane_execution_mutation_lane" "$lane_execution_target_idle" \
-    "$lane_execution_target_default" "$lane_execution_mutation_origin" || return 1
-  [ "$(git -C "$lane_execution_mutation_repo" rev-parse HEAD)" = \
-    "$lane_execution_mutation_base" ] || return 1
+  [ "$lane_execution_mutation_origin" = "$lane_execution_mutation_base" ] || return 1
+  git -C "$lane_execution_mutation_repo" cat-file -e \
+    "$lane_execution_mutation_base^{commit}" >/dev/null 2>&1 || return 1
+  lane_execution_mutation_original_branch=$(git -C "$lane_execution_mutation_repo" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  lane_execution_mutation_original_head=$(git -C "$lane_execution_mutation_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  lane_execution__occupancy_idle_proof "$lane_execution_mutation_lane" \
+    "$lane_execution_mutation_repo" "$lane_execution_target_idle" \
+    "$lane_execution_target_default" "$lane_execution_mutation_original_head" || return 1
   git -C "$lane_execution_mutation_repo" show-ref --verify --quiet \
     "refs/heads/$lane_execution_mutation_branch" && return 1
   lane_execution_mutation_remote_branch=$(lane_execution__remote_branch \
@@ -202,9 +209,15 @@ lane_execution__start_mutation() {
   [ "${NUINUI_SELFTEST_CRASH_AT:-}" = start-after-slot ] && return 97
   git -C "$lane_execution_mutation_repo" switch -c "$lane_execution_mutation_branch" \
     "$lane_execution_mutation_base" >/dev/null 2>&1 || {
-    if lane_execution__idle_for_start "$lane_execution_mutation_repo" \
-      "$lane_execution_mutation_lane" "$lane_execution_target_idle" \
-      "$lane_execution_target_default" "$lane_execution_mutation_origin" &&
+    if [ "$(git -C "$lane_execution_mutation_repo" \
+      symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = \
+      "$lane_execution_mutation_original_branch" ] &&
+      [ "$(git -C "$lane_execution_mutation_repo" rev-parse HEAD 2>/dev/null)" = \
+        "$lane_execution_mutation_original_head" ] &&
+      lane_execution__occupancy_idle_proof "$lane_execution_mutation_lane" \
+      "$lane_execution_mutation_repo" "$lane_execution_target_idle" \
+      "$lane_execution_target_default" "$lane_execution_mutation_original_head" &&
+      [ -z "$(git -C "$lane_execution_mutation_repo" status --porcelain 2>/dev/null)" ] &&
       ! git -C "$lane_execution_mutation_repo" show-ref --verify --quiet \
         "refs/heads/$lane_execution_mutation_branch"; then
       rm -rf "$lane_execution_mutation_slot"

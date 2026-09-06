@@ -36,14 +36,18 @@ lane_execution_verify() {
   [ ! -e "$lane_execution_verify_git_dir/nuinui-implementation-slot" ] &&
     [ ! -e "$lane_execution_verify_git_dir/nuinui-implementation-lock" ] && nr "$lane_execution_verify_repo" || return 1
   fm "$lane_execution_verify_repo" || return 1
-  [ "$(om "$lane_execution_verify_repo")" = "$lane_execution_verify_base" ] || return 1
-  id "$lane_execution_verify_lane" "$lane_execution_verify_repo" "$lane_execution_verify_base" || return 1
+  lane_execution_verify_origin=$(am "$lane_execution_verify_repo") || return 1
+  [ "$lane_execution_verify_origin" = "$lane_execution_verify_base" ] || return 1
+  git -C "$lane_execution_verify_repo" cat-file -e \
+    "$lane_execution_verify_base^{commit}" >/dev/null 2>&1 || return 1
+  lane_execution_verify_idle=$(lane_manifest_lane_idle_policy \
+    "$NUINUI_RUNTIME_MANIFEST" "$lane_execution_verify_lane") || return 1
+  lane_execution__occupancy_idle_proof "$lane_execution_verify_lane" \
+    "$lane_execution_verify_repo" "$lane_execution_verify_idle" \
+    "$(lane_execution_runtime_default_branch)" || return 1
   git -C "$lane_execution_verify_repo" show-ref --verify --quiet \
     "refs/heads/$lane_execution_verify_branch" && return 1
   [ -z "$(ab "$lane_execution_verify_repo" "$lane_execution_verify_branch")" ] || return 1
-  lane_execution_verify_head=$(hh "$lane_execution_verify_repo") || return 1
-  [ "$lane_execution_verify_head" = "$lane_execution_verify_base" ] ||
-    an "$lane_execution_verify_repo" "$lane_execution_verify_head" "$lane_execution_verify_base" || return 1
   echo VERIFIED
 }
 lane_execution_lane_init() {

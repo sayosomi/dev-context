@@ -230,13 +230,13 @@ v1 stateはstrict schema。required key missing / duplicate、unknown key、unsu
 1. mutation lockあり → `BLOCKED`。validならoperation / claimを表示し、invalidならinvalid lockとしてBLOCK。
 2. active slotあり → releasing stateがなく、slot valid、checkout branch=slot.branch、slot.baseがcurrent HEAD ancestorなら`BUSY`。working treeのdirtyだけでは`BUSY`を`BLOCKED`にしない。branch / Base / metadata identityの不一致は`BLOCKED`。
 3. releasing tombstoneあり → single valid stateなら`RELEASE-PENDING`。multiple / malformed / suffix-claim mismatchは`BLOCKED`。
-4. ownership stateなし → valid initialization marker + exact idle stateなら`FREE`。それ以外は`BLOCKED`。
+4. ownership stateなし → valid initialization marker + declared clean/form idle stateなら`FREE`。それ以外は`BLOCKED`。
 
 `clean main`、`slotなし`、branch名だけをFREE根拠にしない。topic branchなのにslotがない状態もFREEではない。
 
 active implementation laneがvalidなdurable ownershipを保持している場合、working treeのdirtyは診断上`clean=no`として表示するが、ownership identityが有効なら`state=BUSY`である。`FREE`のexact idle stateと`start` / `resume` / `release`のmutation preconditionでは、既存どおりworking tree cleanが必須である。
 
-exact idle state is derived from each lane's declared `idle` policy: the checkout must be clean, at a fresh authoritative default-branch commit, and must satisfy the declared branch or detached form. A clean checkout that is behind the authoritative default is not FREE. Preflight is read-only and does not normalize checkout state.
+implementation occupancy is derived from each lane's declared `idle` policy: the checkout must be initialized and clean, have valid checkout/HEAD evidence, have no ownership/lock/release-pending state, and satisfy the declared branch or detached form. A clean correctly formed unowned checkout that is behind the authoritative default is still `FREE`; preflight may report that separate freshness evidence as `freshness=STALE` and never normalizes the checkout. `begin` / `start` retain the stronger mutation-boundary proof that the authoritative default equals the caller-supplied exact Base and then create the topic at that exact Base. Release and other canonical-idle contracts retain their existing exact-current-default proof.
 
 ### Mutation lock and crash safety
 

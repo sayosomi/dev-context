@@ -719,6 +719,72 @@ assert_not_contains "$drift_execution_output" 'E2E SETUP READY' \
   fail 'could not clean up E2E generation drift'
 echo 'PASS: generated E2E continuation revalidates mutation-time state and short-circuits'
 
+echo 'TEST: stale implementation idle occupancy is FREE and begin uses the exact current Base'
+prepare_duplicate
+STALE_IDLE_OLD_HEAD=$(git -C "$IMPL" rev-parse HEAD)
+printf '%s\n' stale-idle > "$SEED/stale-idle.txt"
+git -C "$SEED" add stale-idle.txt
+git -C "$SEED" commit -qm 'advance main for stale idle test'
+git -C "$SEED" push -q origin main
+STALE_IDLE_BASE=$(git -C "$SEED" ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')
+[ -n "$STALE_IDLE_BASE" ] && [ "$STALE_IDLE_BASE" != "$STALE_IDLE_OLD_HEAD" ] ||
+  fail 'stale idle test did not advance authoritative main'
+STALE_IDLE_PREFLIGHT=$("$HELPER" preflight 2>&1) || {
+  printf '%s\n' "$STALE_IDLE_PREFLIGHT"
+  fail 'stale idle implementation topology was not available'
+}
+assert_contains "$STALE_IDLE_PREFLIGHT" 'lane name=source role=implementation' \
+  'stale branch-idle lane was not audited'
+assert_contains "$STALE_IDLE_PREFLIGHT" 'lane name=impl role=implementation' \
+  'stale detached-idle lane was not audited'
+assert_contains "$STALE_IDLE_PREFLIGHT" 'state=FREE' \
+  'stale implementation idle lane was not FREE'
+assert_contains "$STALE_IDLE_PREFLIGHT" 'freshness=STALE' \
+  'stale implementation freshness was not separated from occupancy'
+assert_not_contains "$STALE_IDLE_PREFLIGHT" 'reason=invalid-idle-state' \
+  'stale implementation idle was rejected as an invalid idle state'
+STALE_DETACHED_BEGIN=$(
+  "$HELPER" begin impl SAY-304 "$STALE_IDLE_BASE" codex/SAY-304-stale-detached \
+    'source=FREE,impl=FREE'
+) || {
+  printf '%s\n' "$STALE_DETACHED_BEGIN"
+  fail 'stale detached implementation begin failed'
+}
+assert_contains "$STALE_DETACHED_BEGIN" 'IMPLEMENTATION STARTED' \
+  'stale detached implementation did not begin'
+assert_contains "$STALE_DETACHED_BEGIN" "base=$STALE_IDLE_BASE" \
+  'stale detached implementation changed the authorized Base'
+assert_contains "$STALE_DETACHED_BEGIN" \
+  'implementation_inventory=source=FREE,impl=SAY-304' \
+  'stale detached implementation inventory was not complete'
+[ "$(git -C "$IMPL" rev-parse HEAD)" = "$STALE_IDLE_BASE" ] ||
+  fail 'stale detached implementation did not switch to the exact Base'
+STALE_DETACHED_CLAIM=$(printf '%s\n' "$STALE_DETACHED_BEGIN" | sed -n 's/^claim=//p')
+[ -n "$STALE_DETACHED_CLAIM" ] || fail 'stale detached begin did not return a claim'
+"$HELPER" release impl "$STALE_IDLE_BASE" "$STALE_DETACHED_CLAIM" >/dev/null ||
+  fail 'stale detached implementation could not be released'
+STALE_BRANCH_BEGIN=$(
+  "$HELPER" begin source SAY-305 "$STALE_IDLE_BASE" codex/SAY-305-stale-branch \
+    'source=FREE,impl=FREE'
+) || {
+  printf '%s\n' "$STALE_BRANCH_BEGIN"
+  fail 'stale branch-idle implementation begin failed'
+}
+assert_contains "$STALE_BRANCH_BEGIN" 'IMPLEMENTATION STARTED' \
+  'stale branch-idle implementation did not begin'
+assert_contains "$STALE_BRANCH_BEGIN" "base=$STALE_IDLE_BASE" \
+  'stale branch-idle implementation changed the authorized Base'
+assert_contains "$STALE_BRANCH_BEGIN" \
+  'implementation_inventory=source=SAY-305,impl=FREE' \
+  'stale branch-idle implementation inventory was not complete'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$STALE_IDLE_BASE" ] ||
+  fail 'stale branch-idle implementation did not switch to the exact Base'
+STALE_BRANCH_CLAIM=$(printf '%s\n' "$STALE_BRANCH_BEGIN" | sed -n 's/^claim=//p')
+[ -n "$STALE_BRANCH_CLAIM" ] || fail 'stale branch-idle begin did not return a claim'
+"$HELPER" release source "$STALE_IDLE_BASE" "$STALE_BRANCH_CLAIM" >/dev/null ||
+  fail 'stale branch-idle implementation could not be released'
+echo 'PASS: generated preflight and begin preserve stale FREE occupancy and exact Base start'
+
 prepare_duplicate
 if MISSING_NAMED_OUTPUT=$(
   "$HELPER" begin-command --lane impl --issue SAY-300 --base "$BASE" 2>&1
