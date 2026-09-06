@@ -469,7 +469,7 @@ merge_method=MERGE
 
 ## Human Manual E2E preparation helper
 
-current Human E2E preparation helper version: `1.7.0`。
+current Human E2E preparation helper version: `1.8.0`。
 
 `projects/nuinuiCAD/scripts/nuinui-e2e-prepare`はmanifestで選択された`role=human-test` laneでHuman Manual E2E hostを準備するgenerated versioned helper。開発sourceは`nuinui-e2e-prepare-src/`に責任分離され、`generate-nuinui-e2e-prepare`がgeneric manifest/context sourceとともに決定論的にassembleする。
 
@@ -494,7 +494,9 @@ Explicit lane forms are required when zero or multiple Human-test lanes are decl
 
 末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.8.4`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
 
-`prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。locale-specific `check`は既存のcheckout / ref / fixture / lane validationに加えて、resolved VS Code CLI、Info.plistの`CFBundleExecutable`、および`Contents/MacOS/<CFBundleExecutable>`のexecutable proofをread-onlyで行う。通常のnon-locale `prepare`は現在のCLI launch pathを維持する。
+`prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。`check`と`prepare`は選択されたpathのapplication prerequisiteとして、Info.plistの`CFBundleExecutable`から解決した`Contents/MacOS/<CFBundleExecutable>`のexecutable proofを行う。通常のnon-locale `prepare`はこのapplication executableを直接起動し、active sessionの`launch_pid`へそのPIDを保存する。VS Code CLIはhost identityには使わず、Japanese language-packのisolated install / `--list-extensions --show-versions`などCLI専用操作に限定する。locale-specific pathはこれに加えてresolved VS Code CLIもread-onlyで証明する。
+
+option省略時の通常prepareは、`VS_CODE_APP/Contents/Info.plist`の`CFBundleExecutable`から解決した`Contents/MacOS/<CFBundleExecutable>`を直接起動する。active sessionの`launch_pid`はこの直接起動したisolated root所有のapplication hostを表し、短命なCLI launcherではない。CLIはhost identityには使わず、Japanese language-packのisolated install / `--list-extensions --show-versions`などCLI専用操作に限定する。
 
 healthyなexact duplicate `prepare`は、active session、handoff、prepared fixture、owned process、CDPをread-onlyで完全一致検証し、Japanese sessionならeffective Japanese NLS stateも再証明した場合だけ次の成功 envelopeを返す。
 
