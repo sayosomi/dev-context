@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.7.0"
+VERSION="1.8.0"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""

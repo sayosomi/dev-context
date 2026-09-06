@@ -280,12 +280,10 @@ cat > "$FIXTURE" <<'EOF'
 <task-specific fixture source>
 EOF
 
-CODE_BIN="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-if [ ! -x "$CODE_BIN" ]; then
-  CODE_BIN="$(command -v code || true)"
-fi
-test -n "$CODE_BIN"
-test -x "$CODE_BIN"
+APP="/Applications/Visual Studio Code.app"
+EXEC_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+APP_BIN="$APP/Contents/MacOS/$EXEC_NAME"
+test -x "$APP_BIN"
 
 if lsof -nP -iTCP:"$CDP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "BLOCKED — CDP port already in use"
@@ -294,7 +292,7 @@ fi
 
 NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
 NUINUICAD_MCP_OBSERVATION=1 \
-"$CODE_BIN" --new-window \
+"$APP_BIN" --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$CHECKOUT/vscode-extension" \

@@ -487,7 +487,7 @@ lifecycle_prove_busy_retry() {
     [ "$lane_execution_proof_checkpoint" = "$6" ]
 }
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.7.0"
+VERSION="1.8.0"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -2446,21 +2446,21 @@ prepare() {
     return 1
   }
 
+  resolve_vscode_application_executable || {
+    echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
+    return 1
+  }
+  if [[ "$locale" == ja ]]; then
+    code_bin="$(resolve_code_bin)" || {
+      echo "BLOCKED: VS Code CLI executable not found"
+      return 1
+    }
+  fi
+
   session="$(session_path)" || { echo "ERROR: cannot resolve E2E session path"; return 1; }
   if path_exists "$session"; then
     prepare_duplicate "$issue" "$tested_ref" "$source_fixture" "$cdp_port" "$session" "$locale"
     return $?
-  fi
-
-  code_bin="$(resolve_code_bin)" || {
-    echo "BLOCKED: VS Code CLI executable not found"
-    return 1
-  }
-  if [[ "$locale" == ja ]]; then
-    resolve_vscode_application_executable || {
-      echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
-      return 1
-    }
   fi
 
   if lsof -nP -iTCP:"$cdp_port" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -2552,13 +2552,11 @@ EOF
     --skip-release-notes
     --disable-workspace-trust
   )
+  launch_bin="$VS_CODE_APPLICATION_EXECUTABLE"
   if [[ "$locale" == ja ]]; then
-    launch_bin="$VS_CODE_APPLICATION_EXECUTABLE"
     launch_args=(--locale=ja "${launch_args[@]}")
     launch_output="$e2e_root/evidence/vscode-launch.log"
     : > "$launch_output" || { cleanup_failed_prepare 1; return 1; }
-  else
-    launch_bin="$code_bin"
   fi
 
   launch_host() {
@@ -3053,18 +3051,18 @@ case "${1:-}" in
     fi
     assert_inputs "$check_issue" "$check_ref" "$check_fixture" || exit $?
     assert_checkout "$check_issue" "$check_ref"
+    resolve_vscode_application_executable || {
+      echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
+      exit 1
+    }
+    echo "  vscode_application_executable=$VS_CODE_APPLICATION_EXECUTABLE"
     if [[ "$LOCALE" == ja ]]; then
       check_code_bin="$(resolve_code_bin)" || {
         echo "BLOCKED: VS Code CLI executable not found"
         exit 1
       }
-      resolve_vscode_application_executable || {
-        echo "BLOCKED: VS Code application executable could not be resolved from CFBundleExecutable"
-        exit 1
-      }
       echo "  locale=ja"
       echo "  vscode_cli=$check_code_bin"
-      echo "  vscode_application_executable=$VS_CODE_APPLICATION_EXECUTABLE"
     fi
     ;;
   prepare)

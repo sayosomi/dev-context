@@ -23,6 +23,18 @@ cleanup_test_root() {
   if [[ -n "${preparing_recovery_pid:-}" ]]; then
     kill -TERM "$preparing_recovery_pid" >/dev/null 2>&1 || true
   fi
+  if [[ -n "${legacy_handoff_pid:-}" ]]; then
+    kill -TERM "$legacy_handoff_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${legacy_launcher_pid:-}" ]]; then
+    kill -TERM "$legacy_launcher_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${legacy_pid_failure_app_pid:-}" ]]; then
+    kill -TERM "$legacy_pid_failure_app_pid" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${legacy_pid_failure_launcher_pid:-}" ]]; then
+    kill -TERM "$legacy_pid_failure_launcher_pid" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${closure_failure_pid:-}" ]]; then
     kill -TERM "$closure_failure_pid" >/dev/null 2>&1 || true
     wait "$closure_failure_pid" >/dev/null 2>&1 || true
@@ -58,6 +70,10 @@ recovery_unrelated_pid=""
 recovery_wrong_pid=""
 preparing_recovery_pid=""
 closure_failure_pid=""
+legacy_handoff_pid=""
+legacy_launcher_pid=""
+legacy_pid_failure_app_pid=""
+legacy_pid_failure_launcher_pid=""
 
 mkdir -p "$temp_parent" "$closure_parent" "$fake_bin" "$fake_app/Contents/Resources/app/bin" "$fake_app/Contents/MacOS" || fail "setup directories"
 git init -q -b main "$repo" || fail "git init"
@@ -133,7 +149,7 @@ cat > "$fake_bin/curl" <<'EOF'
 #!/bin/zsh
 print -r -- '{}'
 EOF
-cat > "$fake_bin/fake-vscode" <<'EOF'
+cat > "$fake_bin/fake-vscode-cli" <<'EOF'
 #!/bin/zsh
 user_data=""
 extensions_dir=""
@@ -174,10 +190,28 @@ if [[ -n "$install_extension" ]]; then
     print -r -- missing > "$root/evidence/fake-install-languagepacks-state"
   exit 0
 fi
-[[ -n "$user_data" ]] && {
-  print -r -- "executable=$0" > "${user_data:h}/launch-args"
-  print -r -- "args=$*" >> "${user_data:h}/launch-args"
-}
+[[ -n "$user_data" ]] || exit 1
+mkdir -p "$root/evidence"
+nohup "$NUINUI_FAKE_APPLICATION_EXECUTABLE" "$@" >/dev/null 2>&1 &
+handoff_pid=$!
+print -r -- "$handoff_pid" > "$root/evidence/fake-vscode-handed-off-pid"
+exit 0
+EOF
+cat > "$fake_bin/fake-vscode-app" <<'EOF'
+#!/bin/zsh
+user_data=""
+extensions_dir=""
+for arg in "$@"; do
+  case "$arg" in
+    --user-data-dir=*) user_data="${arg#--user-data-dir=}" ;;
+    --extensions-dir=*) extensions_dir="${arg#--extensions-dir=}" ;;
+    --install-extension|--list-extensions) exit 2 ;;
+  esac
+done
+[[ -n "$user_data" ]] || exit 1
+root="${user_data:h}"
+print -r -- "executable=$0" > "${user_data:h}/launch-args"
+print -r -- "args=$*" >> "${user_data:h}/launch-args"
 root="${user_data:h}"
 if [[ -n "${NUINUI_FAKE_LAUNCH_MARKER:-}" ]]; then
   print -r -- launch >> "$NUINUI_FAKE_LAUNCH_MARKER"
@@ -246,8 +280,8 @@ fi
 [[ "$*" == *"--child-only"* ]] && { sleep 30; exit 0; }
 sleep 30
 EOF
-cp "$fake_bin/fake-vscode" "$fake_app/Contents/Resources/app/bin/code" || fail "fake CLI setup"
-cp "$fake_bin/fake-vscode" "$fake_app/Contents/MacOS/Fake VS Code" || fail "fake application setup"
+cp "$fake_bin/fake-vscode-cli" "$fake_app/Contents/Resources/app/bin/code" || fail "fake CLI setup"
+cp "$fake_bin/fake-vscode-app" "$fake_app/Contents/MacOS/Fake VS Code" || fail "fake application setup"
 cat > "$fake_app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -259,10 +293,13 @@ cat > "$fake_app/Contents/Info.plist" <<'EOF'
 </plist>
 EOF
 chmod +x "$fake_bin/lsof" "$fake_bin/npm" "$fake_bin/cargo" "$fake_bin/curl" \
-  "$fake_bin/fake-vscode" "$fake_app/Contents/Resources/app/bin/code" "$fake_app/Contents/MacOS/Fake VS Code"
+  "$fake_bin/fake-vscode-cli" "$fake_bin/fake-vscode-app" \
+  "$fake_app/Contents/Resources/app/bin/code" "$fake_app/Contents/MacOS/Fake VS Code"
 real_mv="$(command -v mv)"
 real_rm="$(command -v rm)"
 real_ps="$(command -v ps)"
+zdotdir="$TEST_ROOT/zdotdir"
+mkdir -p "$zdotdir" || fail "test zsh configuration setup"
 cat > "$fake_bin/mv" <<'EOF'
 #!/bin/zsh
 if [[ "${1:-}" == -- ]]; then
@@ -334,12 +371,14 @@ common_env=(
   "NUINUI_E2E_MANIFEST=$manifest"
   "NUINUI_E2E_TEMP_PARENT=$temp_parent"
   "TMPDIR=$closure_parent/"
+  "ZDOTDIR=$zdotdir"
   "NUINUI_E2E_VSCODE_APP=$fake_app"
+  "NUINUI_FAKE_APPLICATION_EXECUTABLE=$fake_app/Contents/MacOS/Fake VS Code"
   "NUINUI_FAKE_REPO=$repo"
   "NUINUI_TEST_REAL_MV=$real_mv"
   "NUINUI_TEST_REAL_RM=$real_rm"
   "NUINUI_TEST_REAL_PS=$real_ps"
-  "PATH=$fake_bin:$PATH"
+  "PATH=$fake_bin:/usr/bin:/bin"
 )
 
 self_path_project="$TEST_ROOT/self-path-project"
@@ -351,12 +390,14 @@ self_path_root=""
 self_path_env=(
   "NUINUI_E2E_TEMP_PARENT=$temp_parent"
   "TMPDIR=$closure_parent/"
+  "ZDOTDIR=$zdotdir"
   "NUINUI_E2E_VSCODE_APP=$fake_app"
+  "NUINUI_FAKE_APPLICATION_EXECUTABLE=$fake_app/Contents/MacOS/Fake VS Code"
   "NUINUI_FAKE_REPO=$repo"
   "NUINUI_TEST_REAL_MV=$real_mv"
   "NUINUI_TEST_REAL_RM=$real_rm"
   "NUINUI_TEST_REAL_PS=$real_ps"
-  "PATH=$fake_bin:$PATH"
+  "PATH=$fake_bin:/usr/bin:/bin"
 )
 
 mkdir -p "$self_path_project/scripts" "$self_path_invalid_helper:h" \
@@ -444,7 +485,7 @@ nuinui_env=(
   "NUINUI_E2E_STATUS_HELPER=$PREPARE_SCRIPT"
   "NUINUI_TEST_REAL_MV=$real_mv"
   "NUINUI_TEST_REAL_PS=$real_ps"
-  "PATH=$fake_bin:$PATH"
+  "PATH=$fake_bin:/usr/bin:/bin"
 )
 race_gate="$TEST_ROOT/race-gate"
 race_ready="$TEST_ROOT/race-ready"
@@ -998,7 +1039,7 @@ printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
 echo "PASS: recover-split fail-closed regression coverage"
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.7.0" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.8.0" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 print -r -- "$help_out" | grep -Fq "nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>" || fail "help omitted explicit recover-split arguments"
@@ -1085,6 +1126,49 @@ locale_check_explicit_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
   || fail "explicit-lane Japanese check"
 print -r -- "$locale_check_explicit_out" | grep -Fq 'E2E CHECKOUT VERIFIED' \
   || fail "explicit-lane Japanese check did not complete"
+
+echo "TEST: default check and prepare do not require the VS Code CLI"
+code_cli_path="$fake_app/Contents/Resources/app/bin/code"
+code_cli_hidden="$fake_app/Contents/Resources/app/bin/code.hidden"
+rm -f -- "$code_cli_hidden"
+"$real_mv" -- "$code_cli_path" "$code_cli_hidden" || fail "hide fake VS Code CLI"
+default_no_cli_check_out=""
+if ! default_no_cli_check_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  check SAY-999 "$tested_ref" "$fixture" 2>&1)"; then
+  "$real_mv" -- "$code_cli_hidden" "$code_cli_path"
+  print -r -- "$default_no_cli_check_out"
+  fail "default check required the unused VS Code CLI"
+fi
+print -r -- "$default_no_cli_check_out" | grep -Fq 'vscode_application_executable=' \
+  || { "$real_mv" -- "$code_cli_hidden" "$code_cli_path"; fail "default check omitted the application executable proof"; }
+if default_no_cli_prepare_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9553 2>&1)"; then
+  :
+else
+  "$real_mv" -- "$code_cli_hidden" "$code_cli_path"
+  print -r -- "$default_no_cli_prepare_out"
+  fail "default prepare required the unused VS Code CLI"
+fi
+"$real_mv" -- "$code_cli_hidden" "$code_cli_path" || fail "restore fake VS Code CLI"
+default_no_cli_root="$(sed -n 's/^root=//p' "$session")"
+default_no_cli_pid="$(sed -n 's/^launch_pid=//p' "$session")"
+kill -0 "$default_no_cli_pid" >/dev/null 2>&1 || fail "default prepare did not retain a live application host PID"
+default_no_cli_process_command="$(ps -ww -p "$default_no_cli_pid" -o command= 2>/dev/null || true)"
+print -r -- "$default_no_cli_process_command" | grep -Fq -- "$fake_app/Contents/MacOS/Fake VS Code" \
+  || fail "default launch_pid did not belong to the fake application executable"
+print -r -- "$default_no_cli_process_command" | grep -Fq -- "--user-data-dir=$default_no_cli_root/user-data" \
+  || fail "default launch_pid did not own the exact isolated root"
+grep -Fq -- "executable=$fake_app/Contents/MacOS/Fake VS Code" "$default_no_cli_root/launch-args" \
+  || fail "default prepare did not launch the plist-derived application executable"
+if grep -Fq -- 'Contents/Resources/app/bin/code' "$default_no_cli_root/launch-args"; then
+  fail "default prepare launched the CLI instead of the application executable"
+fi
+if grep -Fq -- '--locale' "$default_no_cli_root/launch-args"; then
+  fail "default prepare injected an explicit locale"
+fi
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$default_no_cli_root" >/dev/null \
+  || fail "default no-CLI cleanup"
+[[ ! -e "$session" && ! -e "$default_no_cli_root" ]] || fail "default no-CLI cleanup retained state"
 
 echo "TEST: Japanese extension installation is proven independently of languagepacks.json"
 extension_missing_marker="$TEST_ROOT/extension-missing-launch-marker"
@@ -1327,17 +1411,126 @@ kill -TERM "$unrelated_pid" >/dev/null 2>&1 || true
 wait "$unrelated_pid" >/dev/null 2>&1 || true
 rm -rf -- "$unrelated_root"
 
+echo "TEST: a short-lived CLI launcher is distinct from its handed-off application host"
+legacy_root="$temp_parent/nuinui-vscode-e2e.legacy-handoff"
+mkdir -p "$legacy_root/user-data" "$legacy_root/extensions" "$legacy_root/evidence" \
+  || fail "legacy handoff root setup"
+env "NUINUI_FAKE_APPLICATION_EXECUTABLE=$fake_app/Contents/MacOS/Fake VS Code" \
+  "ZDOTDIR=$zdotdir" "PATH=$fake_bin:/usr/bin:/bin" \
+  "$fake_app/Contents/Resources/app/bin/code" \
+  --new-window \
+  --user-data-dir="$legacy_root/user-data" \
+  --extensions-dir="$legacy_root/extensions" \
+  --remote-debugging-port=9566 \
+  >/dev/null 2>&1 &
+legacy_launcher_pid=$!
+for _ in {1..20}; do
+  [[ -f "$legacy_root/evidence/fake-vscode-handed-off-pid" ]] && break
+  sleep 0.05
+done
+legacy_launcher_recorded_pid="$legacy_launcher_pid"
+wait "$legacy_launcher_pid" || fail "fake CLI launcher handoff"
+legacy_launcher_pid=""
+if kill -0 "$legacy_launcher_recorded_pid" >/dev/null 2>&1; then
+  fail "fake CLI launcher remained alive after handoff"
+fi
+legacy_handoff_pid="$(cat "$legacy_root/evidence/fake-vscode-handed-off-pid")"
+[[ "$legacy_handoff_pid" != "$legacy_launcher_recorded_pid" ]] || fail "fake handoff reused the CLI launcher PID"
+kill -0 "$legacy_handoff_pid" >/dev/null 2>&1 || fail "handed-off fake application host is not alive"
+legacy_process_command="$(ps -ww -p "$legacy_handoff_pid" -o command= 2>/dev/null || true)"
+print -r -- "$legacy_process_command" | grep -Fq -- "$fake_app/Contents/MacOS/Fake VS Code" \
+  || fail "handed-off PID is not the fake application executable"
+print -r -- "$legacy_process_command" | grep -Fq -- "--user-data-dir=$legacy_root/user-data" \
+  || fail "handed-off PID does not own the isolated root"
+kill -TERM "$legacy_handoff_pid" >/dev/null 2>&1 || true
+wait "$legacy_handoff_pid" >/dev/null 2>&1 || true
+legacy_handoff_pid=""
+rm -rf -- "$legacy_root"
+echo "PASS: fake CLI launcher exit and application-host lifetime are distinct"
+
 echo "TEST: ordinary sessions record default and pre-locale sessions remain compatible"
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9554 >/dev/null \
   || fail "ordinary compatibility prepare"
 ordinary_root="$(sed -n 's/^root=//p' "$session")"
 ordinary_pid="$(sed -n 's/^launch_pid=//p' "$session")"
 grep -Fqx 'locale=default' "$session" || fail "ordinary session did not record locale=default"
-grep -Fq "executable=$fake_app/Contents/Resources/app/bin/code" "$ordinary_root/launch-args" \
-  || fail "ordinary prepare did not preserve the CLI launch path"
-if grep -Fq "Contents/MacOS/Fake VS Code" "$ordinary_root/launch-args"; then
-  fail "ordinary prepare used the direct application executable"
+kill -0 "$ordinary_pid" >/dev/null 2>&1 || fail "ordinary session launch_pid is not live"
+grep -Fq "executable=$fake_app/Contents/MacOS/Fake VS Code" "$ordinary_root/launch-args" \
+  || fail "ordinary prepare did not launch the plist-derived application executable"
+if grep -Fq "Contents/Resources/app/bin/code" "$ordinary_root/launch-args"; then
+  fail "ordinary prepare used the CLI launcher"
 fi
+if grep -Fq -- '--locale' "$ordinary_root/launch-args"; then
+  fail "ordinary prepare injected an explicit locale"
+fi
+
+echo "TEST: a dead legacy CLI PID is rejected without terminating the live application host"
+pid_failure_session_before="$(cat "$session")"
+env "NUINUI_FAKE_APPLICATION_EXECUTABLE=$fake_app/Contents/MacOS/Fake VS Code" \
+  "ZDOTDIR=$zdotdir" "PATH=$fake_bin:/usr/bin:/bin" \
+  "$fake_app/Contents/Resources/app/bin/code" \
+  --new-window \
+  --user-data-dir="$ordinary_root/user-data" \
+  --extensions-dir="$ordinary_root/extensions" \
+  --remote-debugging-port=9566 \
+  >/dev/null 2>&1 &
+legacy_pid_failure_launcher_pid=$!
+for _ in {1..20}; do
+  [[ -f "$ordinary_root/evidence/fake-vscode-handed-off-pid" ]] && break
+  sleep 0.05
+done
+[[ -f "$ordinary_root/evidence/fake-vscode-handed-off-pid" ]] \
+  || fail "legacy PID regression did not record an application host"
+legacy_pid_failure_launcher_recorded_pid="$legacy_pid_failure_launcher_pid"
+wait "$legacy_pid_failure_launcher_pid" || fail "legacy PID regression launcher handoff"
+legacy_pid_failure_launcher_pid=""
+if kill -0 "$legacy_pid_failure_launcher_recorded_pid" >/dev/null 2>&1; then
+  fail "legacy PID regression launcher remained alive"
+fi
+legacy_pid_failure_app_pid="$(cat "$ordinary_root/evidence/fake-vscode-handed-off-pid")"
+[[ "$legacy_pid_failure_app_pid" != "$legacy_pid_failure_launcher_recorded_pid" ]] \
+  || fail "legacy PID regression reused the CLI launcher PID"
+kill -0 "$ordinary_pid" >/dev/null 2>&1 \
+  || fail "legacy PID regression lost the original application host"
+kill -0 "$legacy_pid_failure_app_pid" >/dev/null 2>&1 \
+  || fail "legacy PID regression application host is not alive"
+legacy_pid_failure_process_command="$(ps -ww -p "$legacy_pid_failure_app_pid" -o command= 2>/dev/null || true)"
+print -r -- "$legacy_pid_failure_process_command" \
+  | grep -Fq -- "$fake_app/Contents/MacOS/Fake VS Code" \
+  || fail "legacy PID regression did not launch the application executable"
+print -r -- "$legacy_pid_failure_process_command" \
+  | grep -Fq -- "--user-data-dir=$ordinary_root/user-data" \
+  || fail "legacy PID regression application host does not own the active root"
+
+expected_dead_pid_session="$(print -r -- "$pid_failure_session_before" \
+  | sed "s/^launch_pid=.*/launch_pid=$legacy_pid_failure_launcher_recorded_pid/")"
+print -r -- "$expected_dead_pid_session" > "$session.tmp"
+"$real_mv" -- "$session.tmp" "$session" || fail "legacy PID regression session mutation"
+[[ "$(cat "$session")" == "$expected_dead_pid_session" ]] \
+  || fail "legacy PID regression changed fields besides launch_pid"
+if pid_failure_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare SAY-999 "$tested_ref" "$fixture" 9554 2>&1)"; then
+  fail "legacy dead launch PID was accepted"
+fi
+print -r -- "$pid_failure_out" \
+  | grep -Fqx 'BLOCKED: recorded launch PID is not running' \
+  || fail "legacy dead launch PID did not report the exact blocking diagnostic"
+kill -0 "$ordinary_pid" >/dev/null 2>&1 \
+  || fail "legacy dead launch PID terminated the original application host"
+kill -0 "$legacy_pid_failure_app_pid" >/dev/null 2>&1 \
+  || fail "legacy dead launch PID terminated the handed-off application host"
+
+print -r -- "$pid_failure_session_before" > "$session.tmp"
+"$real_mv" -- "$session.tmp" "$session" || fail "legacy PID regression session restore"
+[[ "$(cat "$session")" == "$pid_failure_session_before" ]] \
+  || fail "legacy PID regression did not restore the active session"
+kill -TERM "$legacy_pid_failure_app_pid" >/dev/null 2>&1 || true
+wait "$legacy_pid_failure_app_pid" >/dev/null 2>&1 || true
+legacy_pid_failure_app_pid=""
+kill -0 "$ordinary_pid" >/dev/null 2>&1 \
+  || fail "legacy PID regression cleanup terminated the original application host"
+echo "PASS: dead legacy CLI PID is blocked while live application hosts remain untouched"
+
 prelocale_session_before="$(sed '/^locale=/d' "$session")"
 print -r -- "$prelocale_session_before" > "$session"
 prelocale_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "pre-locale status"
