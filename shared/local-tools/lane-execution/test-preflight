@@ -4,6 +4,7 @@ set -eu
 source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
 LANE_EXECUTION_SOURCE_DIR=$source_dir
 . "$source_dir/preflight.sh"
+. "$source_dir/inventory.sh"
 . "$source_dir/render.sh"
 
 test_root=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/lane-preflight-test.XXXXXX")" && pwd -P)
@@ -120,10 +121,70 @@ idle=detached"
 current_output=$(lane_execution_preflight "$current_manifest") || fail 'current 2+1 preflight failed'
 assert_contains "$current_output" 'PREFLIGHT PASS' 'current 2+1 preflight'
 assert_contains "$current_output" 'lane name=main role=implementation' 'current implementation role evidence'
+assert_contains "$current_output" 'lane name=sub role=implementation' 'current detached implementation evidence'
+assert_contains "$current_output" 'state=FREE origin_main=' 'current implementation occupancy evidence'
 assert_contains "$current_output" 'lane name=e2e role=human-test' 'current Human-test role evidence'
 assert_contains "$current_output" 'inventory_state=PASS' 'current inventory evidence'
 assert_line_order "$current_output" 'lane name=main' 'lane name=sub' 'lane name=e2e'
 echo 'PASS: current 2+1 topology audits all lanes in declaration order'
+
+current_old_sub_head=$(git -C "$fixture_root/lanes/sub" rev-parse HEAD)
+printf 'remote advance\n' >> "$fixture_root/root/file"
+git -C "$fixture_root/root" add file
+git -C "$fixture_root/root" -c user.name=fixture -c user.email=fixture@example.invalid \
+  commit -qm 'remote advance'
+git -C "$fixture_root/root" push -q origin main
+stale_output=$(lane_execution_preflight "$current_manifest") || fail 'stale 2+1 preflight failed'
+assert_contains "$stale_output" 'PREFLIGHT PASS' 'stale 2+1 preflight'
+assert_contains "$stale_output" 'freshness=STALE' 'stale implementation freshness evidence'
+assert_not_contains "$stale_output" 'reason=invalid-idle-state' \
+  'stale implementation occupancy was blocked as invalid idle state'
+stale_inventory=$(lane_execution_inventory_from_audit "$current_manifest" "$stale_output") ||
+  fail 'stale implementation inventory could not be derived'
+[ "$stale_inventory" = 'main=FREE,sub=FREE' ] ||
+  fail "stale implementation inventory was not FREE: $stale_inventory"
+echo 'PASS: clean stale detached idle implementation remains FREE and inventory-visible'
+
+printf 'dirty stale\n' > "$fixture_root/lanes/sub/stale-dirty"
+if lane_execution_preflight "$current_manifest" >/dev/null 2>&1; then
+  fail 'dirty stale implementation lane passed'
+fi
+rm -f "$fixture_root/lanes/sub/stale-dirty"
+echo 'PASS: dirty stale implementation lane remains blocked'
+
+git -C "$fixture_root/lanes/sub" switch -q -c wrong-idle
+if lane_execution_preflight "$current_manifest" >/dev/null 2>&1; then
+  fail 'wrong-form stale implementation lane passed'
+fi
+git -C "$fixture_root/lanes/sub" switch -q --detach "$current_old_sub_head"
+echo 'PASS: wrong idle form remains blocked for stale implementation lane'
+
+branch_stale_root=$test_root/branch-stale
+lane_preflight_repository_root=$branch_stale_root
+new_repository "$branch_stale_root" example/project
+initialize_lane "$branch_stale_root/root"
+branch_stale_manifest=$branch_stale_root/branch-stale.conf
+write_manifest "$branch_stale_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane branch]
+role=implementation
+path=$branch_stale_root/root
+idle=branch"
+branch_stale_advancer=$test_root/branch-stale-advancer
+git clone -q "$branch_stale_root/remote/example/project.git" "$branch_stale_advancer"
+printf 'branch remote advance\n' >> "$branch_stale_advancer/file"
+git -C "$branch_stale_advancer" add file
+git -C "$branch_stale_advancer" -c user.name=fixture -c user.email=fixture@example.invalid \
+  commit -qm 'branch remote advance'
+git -C "$branch_stale_advancer" push -q origin main
+branch_stale_output=$(lane_execution_preflight "$branch_stale_manifest") ||
+  fail 'stale branch-idle preflight failed'
+assert_contains "$branch_stale_output" 'PREFLIGHT PASS' 'stale branch-idle preflight'
+assert_contains "$branch_stale_output" 'state=FREE' 'stale branch-idle occupancy evidence'
+assert_contains "$branch_stale_output" 'freshness=STALE' 'stale branch-idle freshness evidence'
+echo 'PASS: clean stale declared-default branch idle remains FREE'
 
 one_root=$test_root/one
 lane_preflight_repository_root=$one_root
@@ -328,6 +389,8 @@ echo 'PASS: manifest values are parsed as data, never executed'
 
 project_hook=$source_dir/../../../projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
 . "$project_hook"
+e2e_policy=$source_dir/../../../projects/nuinuiCAD/scripts/nuinui-src/lane-execution-e2e-policy.sh
+. "$e2e_policy"
 project_hook_output=$(lane_execution_human_test_preflight e2e "$fixture_root/lanes/e2e" "$current_manifest") ||
   fail 'nuinuiCAD explicit Human-test hook rejected a valid checkout'
 assert_contains "$project_hook_output" 'marker=none' 'nuinuiCAD Human-test marker evidence'

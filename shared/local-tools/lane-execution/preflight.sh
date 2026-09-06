@@ -166,15 +166,18 @@ lane_execution__release_dirs() {
     -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | LC_ALL=C sort
 }
 
-lane_execution__idle_proof() {
+lane_execution__occupancy_idle_proof() {
   lane_execution_idle_lane=$1
   lane_execution_idle_repo=$2
   lane_execution_idle_policy=$3
   lane_execution_idle_default_branch=$4
-  lane_execution_idle_origin=$5
+  lane_execution_idle_expected_head=${5-}
   lane_execution_idle_dirty=$(git -C "$lane_execution_idle_repo" status --porcelain 2>/dev/null)
   [ -z "$lane_execution_idle_dirty" ] || return 1
-  [ "$(git -C "$lane_execution_idle_repo" rev-parse HEAD 2>/dev/null)" = "$lane_execution_idle_origin" ] || return 1
+  lane_execution_idle_head=$(git -C "$lane_execution_idle_repo" rev-parse HEAD 2>/dev/null) || return 1
+  lane_execution__valid_sha "$lane_execution_idle_head" || return 1
+  [ -z "$lane_execution_idle_expected_head" ] ||
+    [ "$lane_execution_idle_head" = "$lane_execution_idle_expected_head" ] || return 1
   case "$lane_execution_idle_policy" in
     branch)
       [ "$(git -C "$lane_execution_idle_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = "$lane_execution_idle_default_branch" ]
@@ -184,6 +187,18 @@ lane_execution__idle_proof() {
       ;;
     *) return 1 ;;
   esac
+}
+
+lane_execution__idle_proof() {
+  lane_execution_idle_lane=$1
+  lane_execution_idle_repo=$2
+  lane_execution_idle_policy=$3
+  lane_execution_idle_default_branch=$4
+  lane_execution_idle_origin=$5
+  lane_execution__occupancy_idle_proof "$lane_execution_idle_lane" \
+    "$lane_execution_idle_repo" "$lane_execution_idle_policy" \
+    "$lane_execution_idle_default_branch" "$lane_execution_idle_origin" || return 1
+  [ "$(git -C "$lane_execution_idle_repo" rev-parse HEAD 2>/dev/null)" = "$lane_execution_idle_origin" ]
 }
 
 lane_execution__classify_implementation() {
@@ -260,12 +275,18 @@ lane_execution__classify_implementation() {
     lane_execution__origin_default "$lane_execution_repo" "$lane_execution_default_branch"
   )
   lane_execution__valid_sha "$lane_execution_origin" &&
-    lane_execution__idle_proof "$lane_execution_lane" "$lane_execution_repo" \
-      "$lane_execution_idle_policy" "$lane_execution_default_branch" "$lane_execution_origin" || {
+    lane_execution__occupancy_idle_proof "$lane_execution_lane" "$lane_execution_repo" \
+      "$lane_execution_idle_policy" "$lane_execution_default_branch" || {
       printf '  state=BLOCKED reason=invalid-idle-state origin_main=%s\n' "$lane_execution_origin"
       return 1
     }
-  printf '  state=FREE origin_main=%s\n' "$lane_execution_origin"
+  if [ "$lane_execution_head" = "$lane_execution_origin" ]; then
+    lane_execution_freshness=FRESH
+  else
+    lane_execution_freshness=STALE
+  fi
+  printf '  state=FREE origin_main=%s freshness=%s\n' \
+    "$lane_execution_origin" "$lane_execution_freshness"
 }
 
 lane_execution__inventory_check() {

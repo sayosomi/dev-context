@@ -27,13 +27,18 @@ exception, is not a declared lane, and never adds execution capacity.
 
 ## Runtime states
 
-`FREE` means the declared checkout is clean and satisfies its idle policy,
-with no active ownership, lock, or release-pending state. `BUSY` means a
-valid implementation slot owns an Issue generation. `RELEASE-PENDING` means
-release mutation has moved the slot into its durable tombstone. `BLOCKED`
-means the required state cannot be proven or an ambiguity was found. A
-missing or malformed manifest, unknown lane, wrong role, unreadable checkout,
-or inconsistent worktree is never interpreted optimistically as `FREE`.
+`FREE` means the declared checkout is clean, has valid checkout/HEAD evidence,
+satisfies its declared idle branch/detached form, and has no active ownership,
+lock, or release-pending state. For implementation occupancy, equality with
+the authoritative default-branch HEAD is freshness evidence, not an idle
+requirement: a clean, unowned, correctly formed stale idle checkout remains
+`FREE`. Operations whose contract requires canonical freshness retain their
+stronger proof. `BUSY` means a valid implementation slot owns an Issue
+generation. `RELEASE-PENDING` means release mutation has moved the slot into
+its durable tombstone. `BLOCKED` means the required state cannot be proven or
+an ambiguity was found. A missing or malformed manifest, unknown lane, wrong
+role, unreadable checkout, or inconsistent worktree is never interpreted
+optimistically as `FREE`.
 
 ## Durable v1 ownership
 
@@ -53,8 +58,10 @@ not inferred from branch names or checkout paths.
 collision absence, and clean/idle checkout. `lane-init` admits only a
 declared implementation lane and proves its canonical idle checkout before
 writing an idempotent v1 marker. `begin` and `start` validate complete
-declaration-order inventory, acquire the lock before mutation, and retain
-ambiguous durable state when a checkout mutation might have occurred.
+declaration-order inventory, verify the authoritative default equals the
+caller-supplied Base, materialize that exact Base, re-prove the target's clean
+declared idle form, acquire the lock before mutation, and retain ambiguous
+durable state when a checkout mutation might have occurred.
 
 `resume` requires exact lane, Issue, Base, checkpoint, branch, and claim
 identity. A failure before checkout mutation may remove only its own lock when

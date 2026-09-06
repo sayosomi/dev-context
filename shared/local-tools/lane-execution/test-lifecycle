@@ -6,6 +6,7 @@ LANE_EXECUTION_SOURCE_DIR=$source_dir
 . "$source_dir/preflight.sh"
 . "$source_dir/inventory.sh"
 . "$source_dir/lifecycle.sh"
+original_path=$PATH
 
 # The fixture adapter is deliberately project-shaped: generic topology code
 # receives Work-ID validation through a callback rather than embedding SAY-N.
@@ -134,6 +135,22 @@ make_busy() {
     "$lifecycle_test_busy_base" >"$lifecycle_test_busy_git_dir/nuinui-implementation-slot/state"
 }
 
+advance_remote() {
+  lifecycle_test_advance_repo=$1
+  lifecycle_test_stale_base=$(git -C "$lifecycle_test_advance_repo" rev-parse HEAD)
+  git -C "$lifecycle_test_advance_repo" switch -q -c remote-advance
+  printf 'remote advance\n' >>"$lifecycle_test_advance_repo/file"
+  git -C "$lifecycle_test_advance_repo" add file
+  git -C "$lifecycle_test_advance_repo" -c user.name=fixture \
+    -c user.email=fixture@example.invalid commit -qm 'remote advance'
+  git -C "$lifecycle_test_advance_repo" push -q origin remote-advance:main
+  git -C "$lifecycle_test_advance_repo" switch -q main
+  git -C "$lifecycle_test_advance_repo" branch -D remote-advance >/dev/null
+  lifecycle_test_fresh_base=$(git -C "$lifecycle_test_advance_repo" ls-remote origin \
+    refs/heads/main | awk 'NR == 1 {print $1}')
+  [ -n "$lifecycle_test_fresh_base" ] || fail 'remote advance did not expose a fresh Base'
+}
+
 one_root=$test_root/one
 fixture_setup "$one_root" 1 0
 one_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
@@ -159,6 +176,101 @@ capture_start "$lifecycle_test_manifest" alpha SAY-102 "$start_base" topic/say-1
 assert_contains "$lifecycle_test_output" 'IMPLEMENTATION STARTED' 'direct start'
 assert_contains "$lifecycle_test_output" 'implementation_inventory=alpha=SAY-102' 'direct start inventory'
 echo 'PASS: lower-level direct start does not require caller inventory and reports complete occupancy'
+
+stale_start_root=$test_root/stale-start
+fixture_setup "$stale_start_root" 1 0
+stale_start_old_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+advance_remote "$lifecycle_test_alpha"
+stale_start_fresh_base=$lifecycle_test_fresh_base
+capture_start "$lifecycle_test_manifest" alpha SAY-103 "$stale_start_fresh_base" topic/say-103
+[ "$lifecycle_test_rc" = 0 ] || fail "stale detached direct start failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION STARTED' 'stale detached direct start'
+[ "$(git -C "$lifecycle_test_alpha" rev-parse HEAD)" = "$stale_start_fresh_base" ] ||
+  fail 'stale detached direct start did not use the exact authorized Base'
+echo 'PASS: stale detached FREE lane starts directly at the exact authorized Base'
+
+stale_root=$test_root/stale
+fixture_setup "$stale_root" 2 0
+stale_old_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+advance_remote "$lifecycle_test_alpha"
+stale_fresh_base=$lifecycle_test_fresh_base
+stale_output=$(lane_execution_preflight "$lifecycle_test_manifest") ||
+  fail 'stale implementation topology preflight failed'
+assert_contains "$stale_output" 'PREFLIGHT PASS' 'stale implementation topology preflight'
+assert_contains "$stale_output" 'freshness=STALE' 'stale implementation topology freshness'
+stale_inventory=$(lane_execution_inventory_from_audit "$lifecycle_test_manifest" "$stale_output") ||
+  fail 'stale implementation topology inventory failed'
+[ "$stale_inventory" = 'alpha=FREE,beta=FREE' ] ||
+  fail "stale implementation topology inventory was not FREE: $stale_inventory"
+capture_begin "$lifecycle_test_manifest" beta SAY-104 "$stale_fresh_base" topic/say-104 \
+  alpha=FREE,beta=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "stale detached begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" \
+  'implementation_inventory=alpha=FREE,beta=SAY-104' 'stale detached begin inventory'
+[ "$(git -C "$lifecycle_test_beta" rev-parse HEAD)" = "$stale_fresh_base" ] ||
+  fail 'stale detached begin did not use the exact authorized Base'
+capture_begin "$lifecycle_test_manifest" alpha SAY-105 "$stale_fresh_base" topic/say-105 \
+  alpha=FREE,beta=SAY-104
+[ "$lifecycle_test_rc" = 0 ] || fail "stale branch-idle begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" \
+  'implementation_inventory=alpha=SAY-105,beta=SAY-104' 'stale branch-idle begin inventory'
+[ "$(git -C "$lifecycle_test_alpha" rev-parse HEAD)" = "$stale_fresh_base" ] ||
+  fail 'stale branch-idle begin did not use the exact authorized Base'
+echo 'PASS: stale detached and branch-idle FREE lanes begin at the exact current Base'
+
+mismatch_root=$test_root/mismatch
+fixture_setup "$mismatch_root" 1 0
+mismatch_old_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+advance_remote "$lifecycle_test_alpha"
+mismatch_fresh_base=$lifecycle_test_fresh_base
+mismatch_git_dir=$(git -C "$lifecycle_test_alpha" rev-parse --absolute-git-dir)
+capture_begin "$lifecycle_test_manifest" alpha SAY-106 "$mismatch_old_base" topic/say-106 \
+  alpha=FREE
+[ "$lifecycle_test_rc" != 0 ] || fail 'unauthorized stale caller Base unexpectedly succeeded'
+[ "$(git -C "$lifecycle_test_alpha" symbolic-ref --short HEAD)" = main ] ||
+  fail 'unauthorized stale caller Base changed the checkout branch'
+[ "$(git -C "$lifecycle_test_alpha" rev-parse HEAD)" = "$mismatch_old_base" ] ||
+  fail 'unauthorized stale caller Base changed the checkout HEAD'
+[ ! -e "$mismatch_git_dir/nuinui-implementation-slot" ] &&
+  [ ! -e "$mismatch_git_dir/nuinui-implementation-lock" ] ||
+  fail 'unauthorized stale caller Base created durable generation state'
+echo 'PASS: unauthorized stale caller Base blocks before generation mutation'
+
+failed_root=$test_root/failed-stale-switch
+fixture_setup "$failed_root" 1 0
+failed_old_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+advance_remote "$lifecycle_test_alpha"
+failed_fresh_base=$lifecycle_test_fresh_base
+failed_git_dir=$(git -C "$lifecycle_test_alpha" rev-parse --absolute-git-dir)
+failed_fake_git_bin=$test_root/fake-failed-switch
+mkdir -p "$failed_fake_git_bin"
+failed_real_git=$(command -v git)
+{
+  printf '%s\n' '#!/bin/sh'
+  printf '%s\n' 'if [ "$1" = "-C" ] && [ "$3" = "switch" ] && [ "$4" = "-c" ]; then'
+  printf '  %s -C "$2" branch "$5" "$6"\n' "$failed_real_git"
+  printf '%s\n' '  exit 91' 'fi'
+  printf 'exec %s "$@"\n' "$failed_real_git"
+} >"$failed_fake_git_bin/git"
+chmod 755 "$failed_fake_git_bin/git"
+PATH="$failed_fake_git_bin:$original_path"
+export PATH
+capture_begin "$lifecycle_test_manifest" alpha SAY-107 "$failed_fresh_base" topic/say-107 \
+  alpha=FREE
+PATH=$original_path
+export PATH
+[ "$lifecycle_test_rc" != 0 ] || fail 'ambiguous stale topic creation unexpectedly succeeded'
+assert_contains "$lifecycle_test_output" 'mutation_state=UNKNOWN' \
+  'ambiguous stale topic creation did not retain unknown state'
+[ -e "$failed_git_dir/nuinui-implementation-slot" ] &&
+  [ -e "$failed_git_dir/nuinui-implementation-lock" ] ||
+  fail 'ambiguous stale topic creation deleted durable state'
+[ "$(git -C "$lifecycle_test_alpha" symbolic-ref --short HEAD)" = main ] &&
+  [ "$(git -C "$lifecycle_test_alpha" rev-parse HEAD)" = "$failed_old_base" ] ||
+  fail 'ambiguous stale topic creation changed the original checkout'
+git -C "$lifecycle_test_alpha" show-ref --verify --quiet refs/heads/topic/say-107 ||
+  fail 'ambiguous stale topic creation did not retain the created ref evidence'
+echo 'PASS: ambiguous stale topic creation retains durable recovery evidence'
 
 two_root=$test_root/two
 fixture_setup "$two_root" 2 1
