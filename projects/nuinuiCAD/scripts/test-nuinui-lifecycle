@@ -9,6 +9,72 @@ export NUINUI_E2E_TEMP_PARENT=$ROOT
 fail() { echo "LIFECYCLE TEST FAIL: $*" >&2; exit 1; }
 assert_contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
 assert_not_contains() { if printf '%s\n' "$1" | grep -Fq -- "$2"; then fail "$3"; fi; }
+
+assert_release_command_ready() {
+  release_command_ready_output=$1
+  release_command_ready_lane=$2
+  release_command_ready_checkpoint=$3
+  release_command_ready_claim=$4
+  assert_contains "$release_command_ready_output" 'RELEASE COMMAND READY' \
+    'release-command did not emit its ready marker'
+  release_command_ready_line=$(printf '%s\n' "$release_command_ready_output" | sed -n '2p')
+  release_command_ready_expected="'$HELPER' 'release' '$release_command_ready_lane' '$release_command_ready_checkpoint' '$release_command_ready_claim'"
+  [ "$release_command_ready_line" = "$release_command_ready_expected" ] || {
+    printf '%s\n' "$release_command_ready_output"
+    fail "release-command emitted an unexpected continuation: $release_command_ready_line"
+  }
+}
+
+expect_release_command_blocked() {
+  release_command_blocked_name=$1
+  shift
+  release_command_blocked_before=$(lane_snapshot)
+  if release_command_blocked_output=$(
+    "$HELPER" release-command "$@" 2>&1
+  ); then
+    printf '%s\n' "$release_command_blocked_output"
+    fail "$release_command_blocked_name unexpectedly succeeded"
+  fi
+  assert_not_contains "$release_command_blocked_output" 'RELEASE COMMAND READY' \
+    "$release_command_blocked_name emitted an executable release continuation"
+  release_command_blocked_after=$(lane_snapshot)
+  [ "$release_command_blocked_before" = "$release_command_blocked_after" ] ||
+    fail "$release_command_blocked_name changed lifecycle state"
+  echo "PASS: $release_command_blocked_name"
+}
+
+expect_release_command_blocked_with_path() {
+  release_command_blocked_name=$1
+  release_command_blocked_path=$2
+  shift 2
+  release_command_blocked_before=$(lane_snapshot)
+  if release_command_blocked_output=$(
+    PATH="$release_command_blocked_path" "$HELPER" release-command "$@" 2>&1
+  ); then
+    printf '%s\n' "$release_command_blocked_output"
+    fail "$release_command_blocked_name unexpectedly succeeded"
+  fi
+  assert_not_contains "$release_command_blocked_output" 'RELEASE COMMAND READY' \
+    "$release_command_blocked_name emitted an executable release continuation"
+  release_command_blocked_after=$(lane_snapshot)
+  [ "$release_command_blocked_before" = "$release_command_blocked_after" ] ||
+    fail "$release_command_blocked_name changed lifecycle state"
+  echo "PASS: $release_command_blocked_name"
+}
+
+expect_release_command_parser_failure() {
+  release_command_parser_name=$1
+  shift
+  if release_command_parser_output=$(
+    "$HELPER" release-command "$@" 2>&1
+  ); then
+    printf '%s\n' "$release_command_parser_output"
+    fail "$release_command_parser_name unexpectedly succeeded"
+  fi
+  assert_not_contains "$release_command_parser_output" 'RELEASE COMMAND READY' \
+    "$release_command_parser_name emitted an executable release continuation"
+  echo "PASS: $release_command_parser_name"
+}
 assert_no_executable_begin_line() {
   assert_not_contains "$1" "'$HELPER' 'begin'" "$2"
 }
@@ -141,7 +207,8 @@ sync_idle() {
   git -C "$SEED" fetch -q origin main
   git -C "$SEED" switch -q main
   git -C "$SEED" merge -q --ff-only origin/main
-  rm -f "$IMPL/lifecycle-duplicate-dirty" "$IMPL/lifecycle-named-dirty"
+  rm -f "$IMPL/lifecycle-duplicate-dirty" "$IMPL/lifecycle-named-dirty" \
+    "$IMPL/lifecycle-release-command-dirty"
   git -C "$IMPL" switch -q --detach "$BASE"
 }
 
@@ -324,6 +391,28 @@ expect_duplicate_success() {
 prepare_duplicate
 DUPLICATE_CHECKPOINT=$BASE
 expect_duplicate_success
+
+duplicate_command_before=$(lane_snapshot)
+duplicate_command_output=$(
+  "$HELPER" release-command --lane impl --issue "$DUPLICATE_ISSUE" \
+    --claim "$DUPLICATE_CLAIM"
+) || {
+  printf '%s\n' "$duplicate_command_output"
+  fail 'exact duplicate release-command generation failed'
+}
+assert_release_command_ready "$duplicate_command_output" impl \
+  "$DUPLICATE_CHECKPOINT" "$DUPLICATE_CLAIM"
+duplicate_command_line=$(printf '%s\n' "$duplicate_command_output" | sed -n '2p')
+duplicate_command_release_output=$(sh -c "$duplicate_command_line") || {
+  printf '%s\n' "$duplicate_command_release_output"
+  fail 'generated duplicate release continuation failed'
+}
+assert_contains "$duplicate_command_release_output" 'IMPLEMENTATION ALREADY RELEASED' \
+  'generated duplicate release did not use the existing no-op authority'
+duplicate_command_after=$(lane_snapshot)
+[ "$duplicate_command_before" = "$duplicate_command_after" ] || \
+  fail 'duplicate release-command changed lifecycle state'
+echo 'PASS: release-command composes exact completed-release duplicate through release'
 
 echo 'TEST: preparing Human-test session is blocked in lane preflight'
 HUMAN_GIT_DIR=$(git -C "$HUMAN" rev-parse --absolute-git-dir) || fail 'Human-test git directory lookup'
@@ -1099,6 +1188,216 @@ expect_active_blocked() {
   expect_blocked "$1" "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM"
 }
 
+echo 'TEST: release-command proves the topic checkpoint instead of current main'
+setup_active SAY-220 codex/SAY-220-release-command yes
+INCIDENT_TOPIC_CHECKPOINT=$ACTIVE_CHECKPOINT
+git -C "$SEED" switch -q main
+printf '%s\n' main-advance > "$SEED/lifecycle-release-command-main"
+git -C "$SEED" add lifecycle-release-command-main
+git -C "$SEED" commit -qm 'advance authoritative main after topic merge'
+INCIDENT_MAIN_CHECKPOINT=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" push -q origin main
+[ "$INCIDENT_TOPIC_CHECKPOINT" != "$INCIDENT_MAIN_CHECKPOINT" ] ||
+  fail 'release-command incident fixture did not advance main past topic'
+git -C "$SEED" merge-base --is-ancestor \
+  "$INCIDENT_TOPIC_CHECKPOINT" "$INCIDENT_MAIN_CHECKPOINT" ||
+  fail 'release-command incident fixture topic is not contained in main'
+INCIDENT_BEFORE=$(lane_snapshot)
+INCIDENT_OUTPUT=$(
+  "$HELPER" release-command --lane impl --issue "$ACTIVE_ISSUE" \
+    --claim "$ACTIVE_CLAIM"
+) || {
+  printf '%s\n' "$INCIDENT_OUTPUT"
+  fail 'release-command incident generation failed'
+}
+assert_release_command_ready "$INCIDENT_OUTPUT" impl \
+  "$INCIDENT_TOPIC_CHECKPOINT" "$ACTIVE_CLAIM"
+INCIDENT_LINE=$(printf '%s\n' "$INCIDENT_OUTPUT" | sed -n '2p')
+assert_not_contains "$INCIDENT_LINE" "$INCIDENT_MAIN_CHECKPOINT" \
+  'release-command serialized current main instead of topic checkpoint'
+INCIDENT_AFTER=$(lane_snapshot)
+[ "$INCIDENT_BEFORE" = "$INCIDENT_AFTER" ] ||
+  fail 'successful release-command incident generation mutated lifecycle state'
+INCIDENT_RELEASE_OUTPUT=$(sh -c "$INCIDENT_LINE") || {
+  printf '%s\n' "$INCIDENT_RELEASE_OUTPUT"
+  fail 'generated incident release continuation failed'
+}
+assert_contains "$INCIDENT_RELEASE_OUTPUT" 'IMPLEMENTATION RELEASED' \
+  'generated incident release did not use the real release path'
+echo 'PASS: release-command emits T when T differs from contained current main M'
+
+echo 'TEST: release-command preserves the exact direct release path with remote drift'
+setup_active SAY-234 codex/SAY-234-release-command-direct yes
+DIRECT_TOPIC_CHECKPOINT=$ACTIVE_CHECKPOINT
+DIRECT_REMOTE_CHECKPOINT=$(printf 'direct remote drift\n' | git -C "$SEED" commit-tree \
+  "${DIRECT_TOPIC_CHECKPOINT}^{tree}" -p "$DIRECT_TOPIC_CHECKPOINT" -m direct-remote-drift)
+git -C "$SEED" push -q origin \
+  "$DIRECT_REMOTE_CHECKPOINT:refs/heads/$ACTIVE_BRANCH"
+DIRECT_BEFORE=$(lane_snapshot)
+DIRECT_OUTPUT=$(
+  "$HELPER" release-command --lane impl --issue "$ACTIVE_ISSUE" \
+    --claim "$ACTIVE_CLAIM"
+) || {
+  printf '%s\n' "$DIRECT_OUTPUT"
+  fail 'release-command exact direct path with remote drift failed'
+}
+assert_release_command_ready "$DIRECT_OUTPUT" impl \
+  "$DIRECT_TOPIC_CHECKPOINT" "$ACTIVE_CLAIM"
+DIRECT_LINE=$(printf '%s\n' "$DIRECT_OUTPUT" | sed -n '2p')
+assert_not_contains "$DIRECT_LINE" "$DIRECT_REMOTE_CHECKPOINT" \
+  'direct release-command serialized the drifted remote topic'
+assert_not_contains "$DIRECT_LINE" "$INCIDENT_MAIN_CHECKPOINT" \
+  'direct release-command serialized current main'
+DIRECT_AFTER=$(lane_snapshot)
+[ "$DIRECT_BEFORE" = "$DIRECT_AFTER" ] || \
+  fail 'exact direct release-command generation mutated lifecycle state'
+DIRECT_RELEASE_OUTPUT=$(sh -c "$DIRECT_LINE") || {
+  printf '%s\n' "$DIRECT_RELEASE_OUTPUT"
+  fail 'generated exact direct release continuation failed'
+}
+assert_contains "$DIRECT_RELEASE_OUTPUT" 'IMPLEMENTATION RELEASED' \
+  'exact direct release path did not complete through the real release path'
+echo 'PASS: release-command preserves direct T with mismatching remote topic'
+
+setup_active SAY-221 codex/SAY-221-release-command-wrong-identity yes
+expect_release_command_blocked 'release-command wrong Issue' \
+  --lane impl --issue SAY-999 --claim "$ACTIVE_CLAIM"
+expect_release_command_blocked 'release-command wrong claim' \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim wrong-claim-221
+
+sync_idle
+rm -rf "$(slot_dir)" "$(lock_dir)" "$(receipt_path)"
+clear_tombstones
+printf 'version=1\n' > "$(marker_path)"
+expect_release_command_blocked 'release-command missing active generation' \
+  --lane impl --issue SAY-222 --claim missing-active-claim-222
+
+setup_started SAY-223 codex/SAY-223-release-command-invalid-state
+printf 'version=1\nissue=SAY-223\nbase=%s\nclaim=%s\n' \
+  "$BASE" "$ACTIVE_CLAIM" > "$(slot_dir)/state"
+expect_release_command_blocked 'release-command invalid active generation' \
+  --lane impl --issue SAY-223 --claim "$ACTIVE_CLAIM"
+
+setup_active SAY-224 codex/SAY-224-release-command-dirty yes
+printf '%s\n' dirty > "$IMPL/lifecycle-release-command-dirty"
+expect_release_command_blocked 'release-command dirty generation state' \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim "$ACTIVE_CLAIM"
+
+setup_active SAY-225 codex/SAY-225-release-command-lock yes
+mkdir "$(lock_dir)"
+printf 'version=1\noperation=release\nissue=%s\nbranch=%s\nbase=%s\ncheckpoint=%s\nclaim=%s\n' \
+  "$ACTIVE_ISSUE" "$ACTIVE_BRANCH" "$BASE" "$ACTIVE_CHECKPOINT" \
+  "$ACTIVE_CLAIM" > "$(lock_dir)/state"
+expect_release_command_blocked 'release-command mutation lock' \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim "$ACTIVE_CLAIM"
+
+setup_active SAY-226 codex/SAY-226-release-command-pending yes
+RELEASE_COMMAND_TOMBSTONE=$(gitdir)/nuinui-implementation-slot.releasing.$ACTIVE_CLAIM
+mv "$(slot_dir)" "$RELEASE_COMMAND_TOMBSTONE"
+printf '%s\n' "$ACTIVE_CHECKPOINT" > "$RELEASE_COMMAND_TOMBSTONE/checkpoint"
+expect_release_command_blocked 'release-command release-pending state' \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim "$ACTIVE_CLAIM"
+
+setup_active SAY-227 codex/SAY-227-release-command-unmerged no
+expect_release_command_blocked 'release-command checkpoint not contained in current main' \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim "$ACTIVE_CLAIM"
+
+REAL_GIT=$(command -v git)
+RELEASE_COMMAND_FAKE_GIT_BIN=$ROOT/fake-release-command-git
+mkdir -p "$RELEASE_COMMAND_FAKE_GIT_BIN"
+{
+  printf '%s\n' '#!/bin/sh' 'case "$*" in' \
+    '*fetch origin main*)' '  exit 92;;' \
+    '*ls-remote origin refs/heads/main*)' '  exit 92;;' 'esac'
+  printf 'exec %s "$@"\n' "$REAL_GIT"
+} > "$RELEASE_COMMAND_FAKE_GIT_BIN/git"
+chmod 755 "$RELEASE_COMMAND_FAKE_GIT_BIN/git"
+setup_active SAY-228 codex/SAY-228-release-command-main-unavailable yes
+expect_release_command_blocked_with_path \
+  'release-command authoritative main unavailable' \
+  "$RELEASE_COMMAND_FAKE_GIT_BIN:$ORIGINAL_PATH" \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim "$ACTIVE_CLAIM"
+
+setup_active SAY-229 codex/SAY-229-release-command-unsupported yes
+git -C "$IMPL" switch -q -c release-command-wrong-head "$BASE"
+expect_release_command_blocked 'release-command unsupported checkout mismatch' \
+  --lane impl --issue "$ACTIVE_ISSUE" --claim "$ACTIVE_CLAIM"
+
+setup_active SAY-230 codex/SAY-230-release-command-switch yes
+git -C "$IMPL" switch -q -c release-command-renamed "$ACTIVE_CHECKPOINT"
+RELEASE_COMMAND_SWITCH_BEFORE=$(lane_snapshot)
+RELEASE_COMMAND_SWITCH_OUTPUT=$(
+  "$HELPER" release-command --lane impl --issue "$ACTIVE_ISSUE" \
+    --claim "$ACTIVE_CLAIM"
+) || {
+  printf '%s\n' "$RELEASE_COMMAND_SWITCH_OUTPUT"
+  fail 'release-command supported #116 branch-drift form failed'
+}
+assert_release_command_ready "$RELEASE_COMMAND_SWITCH_OUTPUT" impl \
+  "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM"
+RELEASE_COMMAND_SWITCH_AFTER=$(lane_snapshot)
+[ "$RELEASE_COMMAND_SWITCH_BEFORE" = "$RELEASE_COMMAND_SWITCH_AFTER" ] ||
+  fail 'release-command #116 branch-drift proof mutated lifecycle state'
+RELEASE_COMMAND_SWITCH_LINE=$(printf '%s\n' "$RELEASE_COMMAND_SWITCH_OUTPUT" | sed -n '2p')
+RELEASE_COMMAND_SWITCH_RELEASE=$(
+  sh -c "$RELEASE_COMMAND_SWITCH_LINE"
+) || {
+  printf '%s\n' "$RELEASE_COMMAND_SWITCH_RELEASE"
+  fail 'generated #116 branch-drift release failed'
+}
+assert_contains "$RELEASE_COMMAND_SWITCH_RELEASE" 'IMPLEMENTATION RELEASED' \
+  'generated #116 branch-drift release did not complete'
+
+setup_active SAY-231 codex/SAY-231-release-command-rename yes
+git -C "$IMPL" switch -q --detach "$BASE"
+git -C "$IMPL" branch -D "$ACTIVE_BRANCH" >/dev/null
+git -C "$SEED" push -q origin ":$ACTIVE_BRANCH"
+git -C "$IMPL" switch -q -c release-command-missing-ref "$ACTIVE_CHECKPOINT"
+RELEASE_COMMAND_RENAME_BEFORE=$(lane_snapshot)
+RELEASE_COMMAND_RENAME_OUTPUT=$(
+  "$HELPER" release-command --lane impl --issue "$ACTIVE_ISSUE" \
+    --claim "$ACTIVE_CLAIM"
+) || {
+  printf '%s\n' "$RELEASE_COMMAND_RENAME_OUTPUT"
+  fail 'release-command supported #76 branch-drift form failed'
+}
+assert_release_command_ready "$RELEASE_COMMAND_RENAME_OUTPUT" impl \
+  "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM"
+RELEASE_COMMAND_RENAME_AFTER=$(lane_snapshot)
+[ "$RELEASE_COMMAND_RENAME_BEFORE" = "$RELEASE_COMMAND_RENAME_AFTER" ] ||
+  fail 'release-command #76 branch-drift proof mutated lifecycle state'
+RELEASE_COMMAND_RENAME_LINE=$(printf '%s\n' "$RELEASE_COMMAND_RENAME_OUTPUT" | sed -n '2p')
+RELEASE_COMMAND_RENAME_RELEASE=$(
+  sh -c "$RELEASE_COMMAND_RENAME_LINE"
+) || {
+  printf '%s\n' "$RELEASE_COMMAND_RENAME_RELEASE"
+  fail 'generated #76 branch-drift release failed'
+}
+assert_contains "$RELEASE_COMMAND_RENAME_RELEASE" 'IMPLEMENTATION RELEASED' \
+  'generated #76 branch-drift release did not complete'
+
+setup_active SAY-232 codex/SAY-232-release-command-parser yes
+expect_release_command_parser_failure 'release-command missing lane' \
+  --issue SAY-232 --claim "$ACTIVE_CLAIM"
+expect_release_command_parser_failure 'release-command missing issue' \
+  --lane impl --claim "$ACTIVE_CLAIM"
+expect_release_command_parser_failure 'release-command missing claim' \
+  --lane impl --issue SAY-232
+expect_release_command_parser_failure 'release-command missing option value' \
+  --lane --issue SAY-232 --claim "$ACTIVE_CLAIM"
+expect_release_command_parser_failure 'release-command duplicate option' \
+  --lane impl --lane impl --issue SAY-232 --claim "$ACTIVE_CLAIM"
+expect_release_command_parser_failure 'release-command unknown option' \
+  --lane impl --issue SAY-232 --claim "$ACTIVE_CLAIM" --unknown value
+expect_release_command_parser_failure 'release-command positional argument' \
+  impl --issue SAY-232 --claim "$ACTIVE_CLAIM"
+expect_release_command_blocked 'release-command invalid Issue' \
+  --lane impl --issue BAD-232 --claim "$ACTIVE_CLAIM"
+expect_release_command_blocked 'release-command invalid claim' \
+  --lane impl --issue SAY-232 --claim bad
+expect_release_command_blocked 'release-command rejects Human-test lane' \
+  --lane human --issue SAY-232 --claim "$ACTIVE_CLAIM"
+
 setup_started SAY-219 codex/SAY-219-resume-pre-mutation
 RESUME_BEFORE=$(lane_snapshot)
 RESUME_REAL_GIT=$(command -v git)
@@ -1211,5 +1510,32 @@ assert_contains "$RECOVER_OUTPUT" 'RECOVERED operation=release' \
 [ ! -e "$(lock_dir)" ] || fail 'recover retained release lock'
 [ -z "$(tombstone_snapshot)" ] || fail 'recover retained release tombstone'
 echo 'PASS: release receipt write failure retains recoverable state and recover completes it'
+
+setup_active SAY-233 codex/SAY-233-release-command-renamed-lane yes
+sed 's/^\[lane impl\]$/[lane alpha]/' "$MANIFEST" > "$ROOT/manifest-alpha.tmp"
+mv "$ROOT/manifest-alpha.tmp" "$MANIFEST"
+RELEASE_COMMAND_ALPHA_BEFORE=$(lane_snapshot)
+RELEASE_COMMAND_ALPHA_OUTPUT=$(
+  "$HELPER" release-command --lane alpha --issue "$ACTIVE_ISSUE" \
+    --claim "$ACTIVE_CLAIM"
+) || {
+  printf '%s\n' "$RELEASE_COMMAND_ALPHA_OUTPUT"
+  fail 'release-command renamed declared implementation lane failed'
+}
+assert_release_command_ready "$RELEASE_COMMAND_ALPHA_OUTPUT" alpha \
+  "$ACTIVE_CHECKPOINT" "$ACTIVE_CLAIM"
+RELEASE_COMMAND_ALPHA_AFTER=$(lane_snapshot)
+[ "$RELEASE_COMMAND_ALPHA_BEFORE" = "$RELEASE_COMMAND_ALPHA_AFTER" ] ||
+  fail 'release-command renamed lane generation mutated lifecycle state'
+RELEASE_COMMAND_ALPHA_LINE=$(printf '%s\n' "$RELEASE_COMMAND_ALPHA_OUTPUT" | sed -n '2p')
+RELEASE_COMMAND_ALPHA_RELEASE=$(sh -c "$RELEASE_COMMAND_ALPHA_LINE") || {
+  printf '%s\n' "$RELEASE_COMMAND_ALPHA_RELEASE"
+  fail 'generated release for renamed declared implementation lane failed'
+}
+assert_contains "$RELEASE_COMMAND_ALPHA_RELEASE" 'IMPLEMENTATION RELEASED' \
+  'renamed declared implementation lane did not use the real release path'
+sed 's/^\[lane alpha\]$/[lane impl]/' "$MANIFEST" > "$ROOT/manifest-impl.tmp"
+mv "$ROOT/manifest-impl.tmp" "$MANIFEST"
+echo 'PASS: release-command remains topology-neutral for a renamed implementation lane'
 
 echo 'NUINUI LIFECYCLE TEST PASS'

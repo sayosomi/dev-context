@@ -60,7 +60,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.8.4`。
+current standalone helper version: `1.9.0`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -219,6 +219,7 @@ current commands:
 | `nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human\|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default\|ja>] [--port <port>]` | semantic E2E intentをnamed optionsで受け、既存manifest/classifierをread-onlyでfresh検証し、same-terminalで実行するexact `e2e-start && nuinui-e2e-prepare prepare` continuationを生成。checkout、marker、session、host、GUI、oracle、executor分類は変更しない |
 | `nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始。末尾optionはone-shot inventory exception |
 | `nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
+| `nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>` | current active generationまたはexact completed-release receiptをread-onlyで証明し、既存positional release commandのcanonical Human handoffを生成 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
 | `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | reviewed exact headへrequired CI pending時だけGitHub Auto-mergeを予約 |
@@ -263,6 +264,30 @@ E2E START COMMAND READY
 Humanは生成行をChatGPTへ戻さず、同じterminalでverbatimに実行する。`&&`がstage failureを短絡し、既存`e2e-start`と`nuinui-e2e-prepare prepare`がmutation-time identity、race、duplicate/no-op、fixture、session、host、locale、cleanup authorityを維持する。`--executor`はcaller-controlled metadataであり、generatorはHuman/Luna classification、tested-ref choice、lane scheduling、GUI、oracle、large Luna promptをownerしない。Luna pathではexisting prepare outputのshort `handoff=` identity/pathをconsumeし、Human pathではsetupをtest executionと混同しない。
 
 `e2e-start-local-main`は現行inactive interim workflowの互換commandとして残るが、通常のgenerator continuationは標準`e2e-start`だけを使う。generationが`BLOCKED`または利用不能な場合は、既存`preflight` / status / diagnosis / recovery pathを使う。
+
+### Canonical implementation-release handoff
+
+通常のpost-merge implementation releaseでは、ChatGPTがcheckpoint SHAを手作業で再構成せず、Humanが同じterminalで次のnamed generatorを実行する。
+
+```bash
+nuinui release-command \
+  --lane <implementation-lane> \
+  --issue <SAY-123> \
+  --claim <durable-claim>
+```
+
+generatorはactive laneのexact Issue / durable claim / branch / Base / checkout / topic / current authoritative main containmentをread-onlyで検証する。active slotがない場合もarbitrary `FREE`を根拠にせず、exact completed-release receiptだけを既存duplicate-release proofへ渡す。current mainはcontainment authorityであり、topic checkpoint `T`がcurrent main `M`のancestorでも`T`をrelease checkpointとして保持する。
+
+成功時のterminal formatting authorityは次のとおり。
+
+```text
+RELEASE COMMAND READY
+'<absolute-nuinui>' 'release' '<lane>' '<topic-checkpoint>' '<claim>'
+```
+
+Humanは生成された2行目をChatGPTへ戻さず、同じterminalでverbatimに実行する。generator自体はcheckout、durable slot、receipt、lock、tombstone、working treeを変更しない。実行された既存`release`がmutation-time再検証、release state machine、exact duplicate `IMPLEMENTATION ALREADY RELEASED` no-opのauthorityであり、生成行をrewriteしたり別のmain / merge SHAへ差し替えたりしない。
+
+低レベル`nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>`は、明示的な recovery / diagnosisと既存release state-machineのunderlying lifecycle primitiveとして残る。
 
 ### Canonical sequential Task transition handoff
 
