@@ -338,7 +338,24 @@ state=BUSY
 
 ### Declared implementation lane
 
-post-merge helper:
+通常のHuman handoffは、ChatGPTがcheckpoint SHAを再構成せず、同じterminalで次のread-only generatorを実行する。
+
+```text
+nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <durable-claim>
+```
+
+成功時は次の行がterminal formatting authorityになる。
+
+```text
+RELEASE COMMAND READY
+'<absolute-nuinui>' 'release' '<lane>' '<topic-checkpoint>' '<claim>'
+```
+
+generatorはexact lane / Issue / durable claimを検証し、active generationのtopic checkpoint `T`をcurrent release authorityから導出する。current authoritative main `M`はcontainment authorityだけであり、`T != M`でも`T`が`M`にcontainedなら`T`を生成する。active ownershipがない場合はarbitrary `FREE`をrelease evidenceにせず、exact completed-release receiptだけを既存#108 duplicate-release proofへ渡す。Humanは生成されたrelease行をChatGPTへ戻さず、同じterminalでverbatimに実行する。
+
+generatorはcheckout、durable slot、receipt、lock、tombstone、working treeを変更しない。実行後のmutation-time revalidation、release tombstone / receipt、duplicate no-op、recovery boundary、idle transitionは下記の既存positional `release` state machineがsole authorityする。このgeneratorは下記 mechanicsを再定義せず、checkpointを別のmain / merge SHAへ書き換えない。
+
+underlying post-merge helper / mutation-time primitive:
 
 ```text
 nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>

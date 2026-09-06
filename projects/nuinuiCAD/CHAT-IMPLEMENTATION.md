@@ -89,7 +89,7 @@ Luna result
 -> blocking review
 -> [Auto-merge: exact-head reservation -> task ends without CI wait]
    or
-   [manual merge: fresh CI -> merge -> merged-state verification -> completed-generation release -> Linear synchronization]
+   [manual merge: fresh CI -> merge -> merged-state verification -> release-command handoff -> generated release -> Linear synchronization]
 ```
 
 Auto-mergeのprecondition / CI failure terminal stop / manual merge continuationは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)をauthorityとする。Humanに何もする必要がないremote-only intermediate stateをhandoff boundaryにしない。
@@ -98,12 +98,34 @@ Humanへ戻してよいのはproduct / UX / scope decision、unsafe local state�
 
 local deterministic releaseだけが残る場合はWork completion / Linear statusとphysical lane cleanupを混同しない。
 
+## Canonical implementation-release handoff
+
+通常のmerge後releaseでは、ChatGPTが観測したmain / merge SHAを手作業でrelease checkpointへ転記してHumanへ渡さない。Humanが同じterminalで次のnamed generatorを実行する。
+
+```bash
+nuinui release-command \
+  --lane <implementation-lane> \
+  --issue <SAY-123> \
+  --claim <durable-claim>
+```
+
+generatorはexact lane / Issue / durable claimを要求し、active generationのtopic checkpointをcurrent release authorityからread-onlyで導出する。topic checkpoint `T`とcurrent main / merge commit `M`が異なっても、`T`がauthoritative current mainにcontainedなら生成行には`T`を使う。active ownershipがない場合はarbitrary `FREE`を推測せず、exact completed-release receiptだけを既存#108 duplicate proofへ委譲する。
+
+成功時は次の2行がterminal formatting authorityになる。
+
+```text
+RELEASE COMMAND READY
+'<absolute-nuinui>' 'release' '<lane>' '<topic-checkpoint>' '<claim>'
+```
+
+Humanは生成されたrelease行をChatGPTへ戻さず、同じterminalでverbatimに実行する。generatorはread-onlyで、実際のmutation-time revalidation、release state machine、duplicate no-op、recovery boundaryは既存positional `nuinui release`が引き続きownerする。ChatGPTは別に観測したmain / merge SHAで生成checkpointを書き換えず、生成行のargument順・lane・checkpoint・claimを再構成しない。
+
 ## Post-merge E2E-only handoff barrier (#129)
 
 implementationがmergeされ、authoritative read-backでrequired Manual E2Eだけが残ると確認できた場合は、次のbarrierを完了してからnormal E2E startupへ進む。
 
 - implementation executionは終了している。
-- non-local post-merge bookkeepingより先に、exact current implementation generationを既存の`nuinui release <implementation-lane> <checkpoint> <claim>` contractでreleaseする。
+- non-local post-merge bookkeepingより先に、exact current implementation generationを`nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <durable-claim>`でread-onlyに証明し、生成された既存positional release行を同じterminalで実行する。
 - successful release後、`IMPLEMENTATION RELEASED`を確認し、Lane release checkpointをrecordしてread-backする。
 - release成功後にIssueを`In Review`へ同期する。
 - E2Eを待つ間も実行中も、old implementation claimを保持しない。
@@ -149,7 +171,8 @@ Human boundaryは次の1回だけにする。
 
 ```text
 merge / Work completion evidence
--> exact nuinui release command
+-> release-command generator
+-> generated exact nuinui release command
 -> complete IMPLEMENTATION RELEASED envelope
 -> Lane release checkpointの記録 / read-back
 -> Work status synchronization / post-write verification

@@ -1,35 +1,28 @@
 #!/bin/sh
 
-# Generic duplicate-release proof. This is deliberately read-only and retains
-# the v1 release safety envelope independent of the declared lane topology.
-lane_execution_release_restore_checkout() {
+# Generic duplicate-release proof. These helpers are deliberately read-only
+# until the existing release mutation path calls the restoration wrapper.
+# They retain the v1 release safety envelope independent of lane topology.
+lane_execution_release_restore_checkout_proof() {
   [ "$#" = 5 ] || return 2
   lane_execution_release_lane=$1
   lane_execution_release_repo=$2
   lane_execution_release_topic=$3
   lane_execution_release_base=$4
   lane_execution_release_head=$5
-  lane_execution_release_restore_mutated=no
-  set -- $(nuinui_ownership_parse_slot "$(sp "$lane_execution_release_repo")/state") || return 1
-  lane_execution_release_issue=$1
-  lane_execution_release_claim=$4
-  [ "$1 $2 $3 $4" = "$lane_execution_release_issue $lane_execution_release_topic $lane_execution_release_base $lane_execution_release_claim" ] || return 1
-  set -- $(nuinui_ownership_parse_lock "$(kp "$lane_execution_release_repo")/state") || return 1
-  [ "$1 $2 $3 $4 $5 $6" = "release $lane_execution_release_issue $lane_execution_release_topic $lane_execution_release_base $lane_execution_release_head $lane_execution_release_claim" ] || return 1
-  nr "$lane_execution_release_repo" || return 1
   lane_execution_release_before_branch=$(bn "$lane_execution_release_repo")
   lane_execution_release_before_head=$(hh "$lane_execution_release_repo") || return 1
-  if [ "$lane_execution_release_before_branch" = "$lane_execution_release_topic" ] &&
-    [ "$lane_execution_release_before_head" = "$lane_execution_release_head" ]; then
-    cn "$lane_execution_release_repo" && [ -z "$(bo "$lane_execution_release_repo" "$lane_execution_release_topic")" ] || return 1
-    return 0
-  fi
-  cn "$lane_execution_release_repo" || return 1
   nuinui_ownership_valid_sha "$lane_execution_release_before_head" || return 1
+  cn "$lane_execution_release_repo" || return 1
   lane_execution_release_topic_head=$(git -C "$lane_execution_release_repo" rev-parse --verify --quiet \
     "refs/heads/$lane_execution_release_topic^{commit}" 2>/dev/null || true)
   lane_execution_release_mode=
-  if [ -n "$lane_execution_release_before_branch" ] &&
+  if [ "$lane_execution_release_before_branch" = "$lane_execution_release_topic" ] &&
+    [ "$lane_execution_release_before_head" = "$lane_execution_release_head" ]; then
+    [ "$lane_execution_release_topic_head" = "$lane_execution_release_head" ] || return 1
+    [ -z "$(bo "$lane_execution_release_repo" "$lane_execution_release_topic")" ] || return 1
+    lane_execution_release_mode=direct
+  elif [ -n "$lane_execution_release_before_branch" ] &&
     [ "$lane_execution_release_before_branch" != "$lane_execution_release_topic" ] &&
     [ "$lane_execution_release_before_head" = "$lane_execution_release_head" ]; then
     lane_execution_release_before_branch_head=$(git -C "$lane_execution_release_repo" rev-parse \
@@ -59,7 +52,9 @@ lane_execution_release_restore_checkout() {
     an "$lane_execution_release_repo" "$lane_execution_release_base" \
       "$lane_execution_release_head" || return 1
   case "$lane_execution_release_mode" in
-    switch|canonical) [ "$lane_execution_release_topic_head" = "$lane_execution_release_head" ] || return 1 ;;
+    direct|switch|canonical)
+      [ "$lane_execution_release_topic_head" = "$lane_execution_release_head" ] || return 1
+      ;;
     rename) [ -z "$lane_execution_release_topic_head" ] || return 1 ;;
     *) return 1 ;;
   esac
@@ -78,10 +73,36 @@ lane_execution_release_restore_checkout() {
         [ "$lane_execution_release_before_branch" != "$lane_execution_release_topic" ] &&
         [ "$lane_execution_release_before_head" = "$lane_execution_release_head" ] || return 1
       ;;
+    direct) [ "$(git -C "$lane_execution_release_repo" rev-parse \
+      "refs/heads/$lane_execution_release_topic^{commit}" 2>/dev/null)" = \
+      "$lane_execution_release_head" ] || return 1 ;;
     canonical) id "$lane_execution_release_lane" "$lane_execution_release_repo" \
       "$lane_execution_release_before_head" || return 1 ;;
   esac
-  case "$lane_execution_release_mode" in
+  lane_execution_release_restore_mode=$lane_execution_release_mode
+}
+
+lane_execution_release_restore_checkout() {
+  [ "$#" = 5 ] || return 2
+  lane_execution_release_lane=$1
+  lane_execution_release_repo=$2
+  lane_execution_release_topic=$3
+  lane_execution_release_base=$4
+  lane_execution_release_head=$5
+  lane_execution_release_restore_mutated=no
+  set -- $(nuinui_ownership_parse_slot "$(sp "$lane_execution_release_repo")/state") || return 1
+  lane_execution_release_issue=$1
+  lane_execution_release_claim=$4
+  [ "$1 $2 $3 $4" = "$lane_execution_release_issue $lane_execution_release_topic $lane_execution_release_base $lane_execution_release_claim" ] || return 1
+  set -- $(nuinui_ownership_parse_lock "$(kp "$lane_execution_release_repo")/state") || return 1
+  [ "$1 $2 $3 $4 $5 $6" = "release $lane_execution_release_issue $lane_execution_release_topic $lane_execution_release_base $lane_execution_release_head $lane_execution_release_claim" ] || return 1
+  nr "$lane_execution_release_repo" || return 1
+  lane_execution_release_restore_checkout_proof \
+    "$lane_execution_release_lane" "$lane_execution_release_repo" \
+    "$lane_execution_release_topic" "$lane_execution_release_base" \
+    "$lane_execution_release_head" || return 1
+  case "$lane_execution_release_restore_mode" in
+    direct|canonical) return 0 ;;
     switch)
       lane_execution_release_restore_mutated=potential
       git -C "$lane_execution_release_repo" switch "$lane_execution_release_topic" >/dev/null || return 1
@@ -92,7 +113,6 @@ lane_execution_release_restore_checkout() {
       git -C "$lane_execution_release_repo" branch -m "$lane_execution_release_topic" >/dev/null || return 1
       lane_execution_release_restore_mutated=yes
       ;;
-    canonical) return 0 ;;
     *) return 1 ;;
   esac
   [ "$(bn "$lane_execution_release_repo")" = "$lane_execution_release_topic" ] &&
@@ -103,6 +123,87 @@ lane_execution_release_restore_checkout() {
   set -- $(nuinui_ownership_parse_lock "$(kp "$lane_execution_release_repo")/state") || return 1
   [ "$1 $2 $3 $4 $5 $6" = "release $lane_execution_release_issue $lane_execution_release_topic $lane_execution_release_base $lane_execution_release_head $lane_execution_release_claim" ] || return 1
   nr "$lane_execution_release_repo"
+}
+
+lane_execution_release_candidate_proof() {
+  [ "$#" = 4 ] || return 2
+  lane_execution_candidate_manifest=$1
+  lane_execution_candidate_lane=$2
+  lane_execution_candidate_issue=$3
+  lane_execution_candidate_claim=$4
+  lane_execution_ops_context "$lane_execution_candidate_manifest" || return 1
+  il "$lane_execution_candidate_lane" || return 1
+  lane_execution_validate_work_id "$lane_execution_candidate_issue" || return 1
+  nuinui_ownership_valid_claim "$lane_execution_candidate_claim" || return 1
+  lane_execution_candidate_repo=$(lr "$lane_execution_candidate_lane") || return 1
+  lane_execution_candidate_git_dir=$(gd "$lane_execution_candidate_repo") || return 1
+  lane_execution_candidate_slot=$lane_execution_candidate_git_dir/nuinui-implementation-slot
+  lane_execution_candidate_lock=$lane_execution_candidate_git_dir/nuinui-implementation-lock
+  [ ! -e "$lane_execution_candidate_lock" ] &&
+    [ ! -L "$lane_execution_candidate_lock" ] || return 1
+  lane_execution_candidate_tombstones=$(rds "$lane_execution_candidate_repo") || return 1
+  [ -z "$lane_execution_candidate_tombstones" ] || return 1
+
+  if [ -e "$lane_execution_candidate_slot" ] || [ -L "$lane_execution_candidate_slot" ]; then
+    set -- $(nuinui_ownership_parse_slot "$lane_execution_candidate_slot/state") || return 1
+    lane_execution_candidate_slot_issue=$1
+    lane_execution_candidate_topic=$2
+    lane_execution_candidate_base=$3
+    lane_execution_candidate_slot_claim=$4
+    [ "$lane_execution_candidate_slot_issue" = "$lane_execution_candidate_issue" ] || return 1
+    [ "$lane_execution_candidate_slot_claim" = "$lane_execution_candidate_claim" ] || return 1
+    lane_execution_candidate_topic_head=$(git -C "$lane_execution_candidate_repo" \
+      rev-parse --verify --quiet "refs/heads/$lane_execution_candidate_topic^{commit}" \
+      2>/dev/null || true)
+    if [ -n "$lane_execution_candidate_topic_head" ]; then
+      lane_execution_candidate_checkpoint=$lane_execution_candidate_topic_head
+    else
+      lane_execution_candidate_before_branch=$(bn "$lane_execution_candidate_repo")
+      lane_execution_candidate_before_head=$(hh "$lane_execution_candidate_repo") || return 1
+      [ -n "$lane_execution_candidate_before_branch" ] || return 1
+      [ "$lane_execution_candidate_before_branch" != "$(lane_execution_runtime_default_branch)" ] || return 1
+      [ "$(git -C "$lane_execution_candidate_repo" rev-parse \
+        "refs/heads/$lane_execution_candidate_before_branch^{commit}" 2>/dev/null)" = \
+        "$lane_execution_candidate_before_head" ] || return 1
+      lane_execution_candidate_checkpoint=$lane_execution_candidate_before_head
+    fi
+    nuinui_ownership_valid_sha "$lane_execution_candidate_checkpoint" || return 1
+    lane_execution_release_restore_checkout_proof \
+      "$lane_execution_candidate_lane" "$lane_execution_candidate_repo" \
+      "$lane_execution_candidate_topic" "$lane_execution_candidate_base" \
+      "$lane_execution_candidate_checkpoint" || return 1
+    lane_execution_release_candidate_kind=active
+    lane_execution_release_candidate_checkpoint=$lane_execution_candidate_checkpoint
+    lane_execution_release_candidate_issue=$lane_execution_candidate_slot_issue
+    lane_execution_release_candidate_branch=$lane_execution_candidate_topic
+    lane_execution_release_candidate_base=$lane_execution_candidate_base
+    lane_execution_release_candidate_claim=$lane_execution_candidate_slot_claim
+    return 0
+  fi
+
+  lane_execution_candidate_receipt=$(rr "$lane_execution_candidate_repo") || return 1
+  [ -f "$lane_execution_candidate_receipt" ] &&
+    [ ! -L "$lane_execution_candidate_receipt" ] || return 1
+  set -- $(nuinui_ownership_parse_release_receipt "$lane_execution_candidate_receipt") || return 1
+  [ "$#" = 6 ] || return 1
+  lane_execution_candidate_receipt_lane=$1
+  lane_execution_candidate_receipt_issue=$2
+  lane_execution_candidate_receipt_branch=$3
+  lane_execution_candidate_receipt_base=$4
+  lane_execution_candidate_receipt_checkpoint=$5
+  lane_execution_candidate_receipt_claim=$6
+  [ "$lane_execution_candidate_receipt_lane" = "$lane_execution_candidate_lane" ] || return 1
+  [ "$lane_execution_candidate_receipt_issue" = "$lane_execution_candidate_issue" ] || return 1
+  [ "$lane_execution_candidate_receipt_claim" = "$lane_execution_candidate_claim" ] || return 1
+  lane_execution_release_duplicate_proof "$lane_execution_candidate_manifest" \
+    "$lane_execution_candidate_lane" "$lane_execution_candidate_receipt_checkpoint" \
+    "$lane_execution_candidate_claim" || return 1
+  lane_execution_release_candidate_kind=duplicate
+  lane_execution_release_candidate_checkpoint=$lane_execution_candidate_receipt_checkpoint
+  lane_execution_release_candidate_issue=$lane_execution_candidate_receipt_issue
+  lane_execution_release_candidate_branch=$lane_execution_candidate_receipt_branch
+  lane_execution_release_candidate_base=$lane_execution_candidate_receipt_base
+  lane_execution_release_candidate_claim=$lane_execution_candidate_receipt_claim
 }
 
 lane_execution_release_duplicate_proof() {
