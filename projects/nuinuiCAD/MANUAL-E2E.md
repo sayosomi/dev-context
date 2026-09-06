@@ -375,6 +375,19 @@ A unit-level `FAIL` candidate observed by Luna or Human is evidence for classifi
 
 After the safely executable independent units have finished, or after execution has stopped by an explicit Human instruction, aggregate the available evidence under the existing [common runtime control](#common-runtime-control-after-a-unit-result). If the aggregate contains a `FAIL` candidate and no explicit stop / pause has interrupted before triage completes, a Human must complete the following focused triage before any final Manual E2E product `FAIL` classification. This gate applies whether the candidate was observed by Luna or Human.
 
+Before any cleanup, release, close, revert, or other teardown that would destroy the current failure state, preserve the production host / session / fixture long enough to collect and record the transient evidence needed to classify that specific failure. Sol High determines the focused evidence set from the current production path and observed failure class; do not make the Human mechanically collect every possible artifact.
+
+Relevant transient evidence may include, when it can materially discriminate the failure class:
+
+- completion / warning / error notifications;
+- Output, logs, diagnostics, or other host-owned result surfaces;
+- the final UI state or a screenshot of that state;
+- active surface, focus, selection, or session state;
+- host / process / session identity needed to prove which runtime handled the action; and
+- temporary UI or host state that exists only while the failure is live.
+
+Do not tear down the host/session/fixture until this focused evidence capture is complete, unless the Human explicitly stops or abandons further evidence collection. If environment, safety, host loss, or another concrete blocker makes preservation impossible, record which transient evidence could not be collected and why before performing the necessary teardown. This ordering requirement does not authorize implementation debugging, product repair, or open-ended forensic work in the Human-test checkout.
+
 The Human performs triage on the current tested ref using the actual production host / physical environment and verifies, at minimum:
 
 - the tested ref / build is the intended one;
