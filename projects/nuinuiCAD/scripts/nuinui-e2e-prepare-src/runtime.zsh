@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.8.0"
+VERSION="1.8.1"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -28,9 +28,22 @@ e2e_context() {
   }
 }
 
+human_test_lane_count() {
+  local count=0 candidate
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    (( count++ ))
+  done <<EOF
+$(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test)
+EOF
+  print -r -- "$count"
+}
+
 select_human_lane() {
-  local requested="${1:-}" count=0 candidate
+  local requested="${1:-}" count
   e2e_context || return 1
+  count="$(human_test_lane_count)" || return 1
   if [[ -n "$requested" ]]; then
     lane_manifest_validate_lane_name "$E2E_MANIFEST" "$requested" >/dev/null 2>&1 || {
       echo "BLOCKED: unknown Human-test lane: $requested"
@@ -42,13 +55,6 @@ select_human_lane() {
     }
     E2E_LANE="$requested"
   else
-    while IFS= read -r candidate; do
-      [[ -n "$candidate" ]] || continue
-      E2E_LANE="$candidate"
-      (( count++ ))
-    done <<EOF
-$(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test)
-EOF
     if (( count == 0 )); then
       echo 'BLOCKED: no Human-test lane is declared'
       return 1
@@ -57,6 +63,7 @@ EOF
       echo 'BLOCKED: explicit Human-test lane is required when multiple Human-test lanes are declared'
       return 1
     fi
+    E2E_LANE="$(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test)" || return 1
   fi
   E2E_WT="$(lane_manifest_lane_path "$E2E_MANIFEST" "$E2E_LANE")" || return 1
   [[ "$(lane_manifest_lane_idle_policy "$E2E_MANIFEST" "$E2E_LANE")" == detached ]] || {

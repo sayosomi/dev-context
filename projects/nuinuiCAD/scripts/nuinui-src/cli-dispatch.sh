@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.9.0
+V=1.9.1
 K='preflight verify lane-init begin begin-command start resume release release-command recover pr-auto-merge integrate-clean e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {

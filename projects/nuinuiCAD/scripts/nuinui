@@ -3366,6 +3366,16 @@ nuinui_e2e_start_command() {
     nuinui_e2e_start_command_lane=$nuinui_e2e_start_command_lane_output
   fi
 
+  nuinui_e2e_start_command_human_lane_count=$(lane_manifest_lanes_by_role \
+    "$NUINUI_RUNTIME_MANIFEST" human-test |
+    awk 'NF { count++ } END { print count + 0 }')
+  if [ "$nuinui_e2e_start_command_lane_seen" = 1 ] &&
+    [ "$nuinui_e2e_start_command_human_lane_count" -ge 2 ] &&
+    [ "$nuinui_e2e_start_command_port_seen" = 0 ]; then
+    printf 'BLOCKED: explicit CDP port is required when multiple Human-test lanes are declared\n'
+    return 1
+  fi
+
   nuinui_e2e_start_command_human_path=$(lane_manifest_lane_path \
     "$NUINUI_RUNTIME_MANIFEST" "$nuinui_e2e_start_command_lane") || {
     printf 'BLOCKED: selected Human-test lane path is unavailable\n'
@@ -6712,7 +6722,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.9.0
+V=1.9.1
 K='preflight verify lane-init begin begin-command start resume release release-command recover pr-auto-merge integrate-clean e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {

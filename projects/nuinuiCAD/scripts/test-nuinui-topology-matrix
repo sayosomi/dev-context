@@ -256,9 +256,41 @@ run_topology() {
   else
     "$matrix_helper" e2e-start manual-a SAY-900 "$matrix_base" >/dev/null ||
       fail "$matrix_name mixed Human-test BUSY setup"
+    if e2e_lane_omitted_output=$(
+      "$matrix_helper" e2e-start-command --issue "$issue" \
+        --tested-ref "$matrix_base" --executor human \
+        --fixture "$matrix_fixture" 2>&1
+    ); then
+      printf '%s\n' "$e2e_lane_omitted_output"
+      fail "$matrix_name omitted Human-test lane unexpectedly succeeded"
+    fi
+    contains "$e2e_lane_omitted_output" \
+      'BLOCKED: explicit Human-test lane required (multiple Human-test lanes configured)' \
+      "$matrix_name omitted Human-test lane diagnostic"
+    if printf '%s\n' "$e2e_lane_omitted_output" | grep -Fq \
+      'explicit CDP port is required when multiple Human-test lanes are declared'; then
+      fail "$matrix_name omitted Human-test lane was masked by the CDP port diagnostic"
+    fi
+    if e2e_omitted_port_output=$(
+      "$matrix_helper" e2e-start-command --lane manual-b \
+        --issue "$issue" --tested-ref "$matrix_base" --executor human \
+        --fixture "$matrix_fixture" 2>&1
+    ); then
+      printf '%s\n' "$e2e_omitted_port_output"
+      fail "$matrix_name omitted multi-lane CDP port unexpectedly succeeded"
+    fi
+    contains "$e2e_omitted_port_output" \
+      'BLOCKED: explicit CDP port is required when multiple Human-test lanes are declared' \
+      "$matrix_name omitted multi-lane CDP port diagnostic"
+    if printf '%s\n' "$e2e_omitted_port_output" | grep -Fq 'E2E START COMMAND READY'; then
+      fail "$matrix_name omitted multi-lane CDP port emitted a ready envelope"
+    fi
+    if printf '%s\n' "$e2e_omitted_port_output" | grep -Fq "'$matrix_helper' 'e2e-start'"; then
+      fail "$matrix_name omitted multi-lane CDP port emitted a continuation"
+    fi
     e2e_command_output=$("$matrix_helper" e2e-start-command --lane manual-b \
       --issue "$issue" --tested-ref "$matrix_base" --executor human \
-      --fixture "$matrix_fixture") || fail "$matrix_name explicit E2E handoff generation"
+      --fixture "$matrix_fixture" --port 9555) || fail "$matrix_name explicit E2E handoff generation"
     contains "$e2e_command_output" 'E2E START COMMAND READY' \
       "$matrix_name explicit E2E handoff envelope"
     contains "$e2e_command_output" 'lane=manual-b' \
@@ -275,14 +307,22 @@ run_topology() {
       "$matrix_name explicit generated e2e-start stage"
     contains "$e2e_execution_output" 'E2E SETUP READY' \
       "$matrix_name explicit generated prepare stage"
+    contains "$e2e_command_output" 'port=9555' \
+      "$matrix_name explicit generated exact port metadata"
+    contains "$e2e_command" "'9555'" \
+      "$matrix_name explicit generated exact port continuation"
+    expected_prepare_args=$(printf '%s\n' prepare manual-b "$issue" "$matrix_base" \
+      "$matrix_fixture" 9555)
+    [ "$(cat "$matrix_prepare_args")" = "$expected_prepare_args" ] ||
+      fail "$matrix_name explicit generated prepare port was not exact"
     e2e_duplicate_output=$("$matrix_helper" e2e-start-command --lane manual-b \
       --issue "$issue" --tested-ref "$matrix_base" --executor luna \
-      --fixture "$matrix_fixture") || fail "$matrix_name exact BUSY E2E handoff candidate"
+      --fixture "$matrix_fixture" --port 9555) || fail "$matrix_name exact BUSY E2E handoff candidate"
     contains "$e2e_duplicate_output" 'lane_state=BUSY' \
       "$matrix_name exact BUSY E2E handoff candidate evidence"
     expect_blocked "$matrix_name rejects BUSY E2E handoff for another Issue" \
       "$matrix_helper" e2e-start-command --lane manual-b --issue SAY-999 \
-      --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture"
+      --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture" --port 9555
     "$matrix_helper" e2e-release manual-b "$issue" "$matrix_base" >/dev/null ||
       fail "$matrix_name explicit generated E2E cleanup"
     "$matrix_helper" e2e-release manual-a SAY-900 "$matrix_base" >/dev/null ||

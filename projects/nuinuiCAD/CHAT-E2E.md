@@ -49,6 +49,8 @@ nuinui e2e-start-command \
 
 `e2e-start-command`はread-onlyでruntime manifestと既存Human-test classifierをfreshに検証し、唯一のHuman-test laneだけを機械的に省略解決する。複数laneでlaneを省略した場合、blocked state、dirty checkout、malformed marker/session、別Issue/refのBUSY stateは推測せず`BLOCKED`にする。成功時は既存`e2e-start`と`nuinui-e2e-prepare prepare`のshell-safeな`&&` continuationを出力するので、Humanはその行をChatGPTへ戻さずverbatimに実行する。
 
+`--port`はcaller-controlledのCDP portである。Human-test laneが2つ以上宣言されている場合は、明示的な`--lane`と`--port`が必要で、lane名・宣言順・空き状況からportを推測または自動選択しない。Human-test laneが1つだけのsingleton topologyでは、`--port`省略時の既定port互換を維持する。
+
 generator outputがterminal formatting authorityであり、ChatGPTはlane/ref/prepare orderingを再構成しない。`--executor`はChatGPT/Sol Highが決めるcaller-controlled intentで、helperはHuman/Lunaを分類せず、Luna promptやtest oracleも生成しない。Human pathはsetup後にHuman E2Eへ、Luna pathは既存prepare outputのshort `handoff=` identity/pathをLuna playbookへ渡す。generationが`BLOCKED`または利用不能なときだけ、explicit preflight / diagnosis / recoveryへ戻る。
 
 ## Confirmed Manual E2E implementation failure

@@ -114,6 +114,7 @@ current local dev-context cloneでそのhelperが利用可能でcurrent operatio
 
 - ChatGPTはsemantic intentを固定し、`nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]`をHumanへ渡す;
 - Humanはgeneratorを同じterminalで実行し、fresh read-only validation後に出るshell-quoted `e2e-start && prepare` continuationをverbatimに実行する。成功したgenerator outputをChatGPTへ戻してargument orderingを再構成しない;
+- `--port`はcaller-controlledであり、Human-test laneが2つ以上のときだけ明示が必須である。singleton topologyでは省略時の既定port互換を維持する;
 - generatorの`--executor`はcaller-controlled metadataであり、helperはexecutorを選ばず、GUI action、test oracle、Luna promptを実行・生成しない;
 - 同じbuild / fresh profile / VS Code launch / readiness / session metadata lifecycleを長いinline shellとして再実装しない;
 - helper実行後のsession rootやlaunch PID、Lunaへ渡すshort `handoff=` pathはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
