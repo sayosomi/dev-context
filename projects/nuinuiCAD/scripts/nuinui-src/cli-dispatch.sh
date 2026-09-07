@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.10.0
-K='preflight verify lane-init begin begin-command start resume handoff release release-command recover pr-auto-merge integrate-clean e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
+V=1.10.1
+K='preflight verify lane-init begin begin-command start resume handoff release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -415,6 +415,7 @@ nuinui_usage() {
   echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
   echo 'Usage: nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>'
   echo 'Usage: nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]'
+  echo 'Usage: nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]'
   echo 'Usage: nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>'
 }
 
@@ -723,6 +724,11 @@ case "$1" in
     [ "$#" = 8 ] || { echo 'Usage: nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->'; exit 2; }
     nuinui_require_runtime_manifest || exit 1
     nuinui_run_tracked integrate-clean "$#" "$@" nuinui_lane_dispatch integrate-clean "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    exit $?
+    ;;
+  integrate-clean-command)
+    shift
+    nuinui_run_public integrate-clean-command nuinui_integrate_clean_command "$@"
     exit $?
     ;;
   e2e-start)

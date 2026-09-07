@@ -170,6 +170,95 @@ assert_restored() {
   [ "$remote_topic" = "$TOPIC" ] || fail "$name remote topic changed"
 }
 
+test_shell_quote() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+setup_case command-generation
+VERIFY_SHELL_SENSITIVE=$CASE_ROOT/"verify script; [x] 'quoted'.sh"
+printf '\043!/bin/sh\nexit 0\n' > "$VERIFY_SHELL_SENSITIVE"
+chmod 755 "$VERIFY_SHELL_SENSITIVE"
+MANIFEST_SHELL_SENSITIVE=$CASE_ROOT/"manifest file; [x] 'quoted'.list"
+printf 'topic.txt\0' > "$MANIFEST_SHELL_SENSITIVE"
+COMMAND_HEAD_BEFORE=$(git -C "$S" rev-parse HEAD)
+COMMAND_STATUS_BEFORE=$(git -C "$S" status --porcelain)
+COMMAND_OUT=$(helper integrate-clean-command \
+  --main "$MAIN_HEAD" \
+  --verification-script "$VERIFY_SHELL_SENSITIVE" \
+  --lane sub \
+  --manifest "$MANIFEST_SHELL_SENSITIVE" \
+  --claim "$CLAIM" \
+  --issue SAY-89 \
+  --topic-head "$TOPIC") || fail 'canonical command generation failed'
+[ "$(printf '%s\n' "$COMMAND_OUT" | sed -n '1p')" = \
+  'INTEGRATE CLEAN COMMAND READY' ] || fail 'canonical command heading mismatch'
+COMMAND_LINE=$(printf '%s\n' "$COMMAND_OUT" | sed -n '2p')
+[ -n "$COMMAND_LINE" ] || fail 'canonical command line missing'
+assert_contains "$COMMAND_LINE" "$(test_shell_quote "$VERIFY_SHELL_SENSITIVE")" \
+  'verification script was not shell-quoted canonically'
+assert_contains "$COMMAND_LINE" "$(test_shell_quote "$MANIFEST_SHELL_SENSITIVE")" \
+  'manifest was not shell-quoted canonically'
+assert_contains "$COMMAND_OUT" "verification_script=$VERIFY_SHELL_SENSITIVE" \
+  'verification script metadata was not exact'
+assert_contains "$COMMAND_OUT" "manifest=$MANIFEST_SHELL_SENSITIVE" \
+  'manifest metadata was not exact'
+[ "$(git -C "$S" rev-parse HEAD)" = "$COMMAND_HEAD_BEFORE" ] ||
+  fail 'command generation mutated the topic checkout'
+[ "$(git -C "$S" status --porcelain)" = "$COMMAND_STATUS_BEFORE" ] ||
+  fail 'command generation changed topic checkout status'
+COMMAND_EXECUTION_OUT=$(NUINUI_SELFTEST=1 \
+  NUINUI_MAIN_WT="$M" \
+  NUINUI_SUB_WT="$S" \
+  NUINUI_E2E_WT="$E" \
+  NUINUI_DEV_CONTEXT_WT="$CASE_ROOT/context" \
+  NUINUI_SELFTEST_MANIFEST="$CASE_ROOT/LANES.conf" \
+  sh -c "$COMMAND_LINE") || {
+  printf '%s\n' "$COMMAND_EXECUTION_OUT"
+  fail 'generated integrate-clean command did not execute successfully'
+}
+assert_contains "$COMMAND_EXECUTION_OUT" 'INTEGRATION PUSHED' \
+  'generated integrate-clean command did not reach the existing mutation owner'
+echo 'PASS: named integrate-clean handoff orders, quotes, and executes exact positional input'
+
+setup_case command-generation-no-manifest
+NO_MANIFEST_OUT=$(helper integrate-clean-command \
+  --lane sub --issue SAY-89 --claim "$CLAIM" \
+  --topic-head "$TOPIC" --main "$MAIN_HEAD" --verification-script "$VERIFY_OK") ||
+  fail 'no-manifest canonical command generation failed'
+NO_MANIFEST_LINE=$(printf '%s\n' "$NO_MANIFEST_OUT" | sed -n '2p')
+case "$NO_MANIFEST_LINE" in
+  *" '-'") ;;
+  *) fail 'omitted manifest did not emit the - sentinel' ;;
+esac
+assert_contains "$NO_MANIFEST_OUT" 'manifest=-' \
+  'omitted manifest metadata was not the - sentinel'
+[ "$(git -C "$S" rev-parse HEAD)" = "$TOPIC" ] ||
+  fail 'no-manifest command generation mutated the topic checkout'
+echo 'PASS: omitted manifest emits the existing - sentinel'
+
+setup_case command-parser
+run_failure command-unknown 'unknown option --unknown' \
+  helper integrate-clean-command --lane sub --issue SAY-89 --claim "$CLAIM" \
+  --topic-head "$TOPIC" --main "$MAIN_HEAD" --verification-script "$VERIFY_OK" \
+  --unknown value
+run_failure command-duplicate 'duplicate named option --lane' \
+  helper integrate-clean-command --lane sub --lane sub --issue SAY-89 \
+  --claim "$CLAIM" --topic-head "$TOPIC" --main "$MAIN_HEAD" \
+  --verification-script "$VERIFY_OK"
+run_failure command-missing-value 'missing its value before --verification-script' \
+  helper integrate-clean-command --lane sub --issue SAY-89 --claim "$CLAIM" \
+  --topic-head "$TOPIC" --main --verification-script "$VERIFY_OK"
+run_failure command-missing-required 'missing required named option --claim' \
+  helper integrate-clean-command --lane sub --issue SAY-89 --topic-head "$TOPIC" \
+  --main "$MAIN_HEAD" --verification-script "$VERIFY_OK"
+run_failure command-positional 'unexpected positional argument extra' \
+  helper integrate-clean-command --lane sub --issue SAY-89 --claim "$CLAIM" \
+  --topic-head "$TOPIC" --main "$MAIN_HEAD" --verification-script "$VERIFY_OK" extra
+run_failure command-invalid-sha 'invalid --main' \
+  helper integrate-clean-command --lane sub --issue SAY-89 --claim "$CLAIM" \
+  --topic-head "$TOPIC" --main invalid --verification-script "$VERIFY_OK"
+echo 'PASS: named integrate-clean handoff rejects malformed, duplicate, missing, and positional inputs'
+
 setup_case success
 SUCCESS_OUT=$(helper integrate-clean sub SAY-89 "$CLAIM" "$TOPIC" "$MAIN_HEAD" "$VERIFY_OK" "$MANIFEST_OK") ||
   fail 'success case failed'

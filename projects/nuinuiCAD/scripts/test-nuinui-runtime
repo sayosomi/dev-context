@@ -94,7 +94,7 @@ unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 
 cd "$ROOT/cwd"
 VERSION_OUTPUT=$($HELPER version)
-[ "$VERSION_OUTPUT" = 1.10.0 ] || fail "version output changed: $VERSION_OUTPUT"
+[ "$VERSION_OUTPUT" = 1.10.1 ] || fail "version output changed: $VERSION_OUTPUT"
 HELP_OUTPUT=$($HELPER --help)
 assert_contains "$HELP_OUTPUT" 'handoff' \
   'public help did not include handoff'
@@ -109,6 +109,11 @@ assert_contains "$HELP_OUTPUT" \
 assert_contains "$HELP_OUTPUT" \
   'Usage: nuinui e2e-start-command --issue' \
   'public help did not include e2e-start-command named usage'
+assert_contains "$HELP_OUTPUT" 'integrate-clean-command' \
+  'public help did not include integrate-clean-command'
+assert_contains "$HELP_OUTPUT" \
+  'Usage: nuinui integrate-clean-command --lane' \
+  'public help did not include integrate-clean-command named usage'
 $HELPER lane-init primary >/dev/null
 $HELPER lane-init implementation >/dev/null
 NEIGHBORING_MANIFEST=$ROOT/cwd/LANES.conf
