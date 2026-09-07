@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.10.1`。
+current standalone helper version: `1.11.0`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -169,6 +169,9 @@ diagnostics.sh
 command-result.sh
   durable Human mutation outcome storage and read-only last-result recovery
 
+handoff-ticket.sh
+  canonical dev-context Git-object handoff-ticket resolution, strict payload validation, and one-shot reservation
+
 self-test.sh
   built-in self-test + external regression aggregation
 
@@ -221,7 +224,7 @@ current commands:
 | `nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor human --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default\|ja>] [--port <port>]` | current Human-only Manual E2E intentをnamed optionsで受け、既存manifest/classifierをread-onlyでfresh検証し、same-terminalで実行するexact `e2e-start && nuinui-e2e-prepare prepare` continuationを生成。checkout、marker、session、host、GUI、oracleを変更しない |
 | `nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始。末尾optionはone-shot inventory exception |
 | `nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
-| `nuinui handoff --lane <implementation-lane> --issue <SAY-123> --claim <claim> --checkpoint <full-sha> --main <full-sha> --topic <absent\|exact>` | standalone handoff proofを実行し、exact modeの厳密なclaimed-branch mismatchだけ既存resumeを1回実行して同じproofを再検証 |
+| `nuinui handoff <ticket>` | `h1-` + 24 lowercase hex tokenでcanonical dev-context remoteからimmutable handoff ticketを解決・検証し、one-shot reservation後にstandalone handoff proofを実行。exact topicの厳密なclaimed-branch mismatchだけ既存resumeを1回実行して同じproofを再検証 |
 | `nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>` | current active generationまたはexact completed-release receiptをread-onlyで証明し、既存positional release commandのcanonical Human handoffを生成 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
@@ -504,7 +507,7 @@ Explicit lane forms are required when zero or multiple Human-test lanes are decl
 
 `recover-preparing` is the explicit recovery for a crashed `kind=preparing` reservation. It requires the selected declared Human-test lane, exact marker/checkout and preparing Issue/ref/root identity, the exact `nuinui-e2e-prepare` owner, and a dead recorded prepare PID. It accepts only a valid canonical handoff when present, proves every recorded root process belongs to that root, revalidates snapshots before mutation and session removal, then removes only the owned process, handoff, root, and unchanged preparing session. A live owner, PID/process ambiguity, malformed or active session, wrong identity, or concurrent change is `BLOCKED`; marker and checkout are never removed or rewritten。
 
-末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.10.1`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
+末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.11.0`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。`check`と`prepare`は選択されたpathのapplication prerequisiteとして、Info.plistの`CFBundleExecutable`から解決した`Contents/MacOS/<CFBundleExecutable>`のexecutable proofを行う。通常のnon-locale `prepare`はこのapplication executableを直接起動し、active sessionの`launch_pid`へそのPIDを保存する。VS Code CLIはhost identityには使わず、Japanese language-packのisolated install / `--list-extensions --show-versions`などCLI専用操作に限定する。locale-specific pathはこれに加えてresolved VS Code CLIもread-onlyで証明する。
 

@@ -212,7 +212,7 @@ Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repositor
 - selected lane;
 - Base checkpoint SHA;
 - branch;
-- complete current-run handoff identity: Lane, Issue, Claim, Checkpoint, Current remote main, Topic remote mode, and one exact canonical handoff command;
+- fresh-audited current-run identity sealed by ChatGPT in one immutable Git-object handoff ticket, plus its short token and one exact canonical handoff command;
 - concrete change owner / files / symbols / API boundary;
 - settled acceptance;
 - required verification;
@@ -229,8 +229,8 @@ Promptにはcurrent executable source-code sliceだけを書く。
 
 - repository
 - lane checkout path
-- current-run Execution Envelope with Lane / Issue / Claim / Checkpoint / Current remote main / Topic remote mode
-- one exact prefilled `nuinui handoff` command; the façade derives Branch / Base from the matched durable slot
+- current-run Execution Envelope with the immutable handoff ticket token
+- one exact prefilled `nuinui handoff <ticket>` command; the resolver derives the full identity, and the façade derives Branch / Base from the matched durable slot
 - current slice / change target
 - concrete required changes
 - required tests / verification
@@ -267,7 +267,7 @@ anything else
 -> stop
 ```
 
-Branch and Base are derived only from the exact matched durable slot; Luna must not infer or regenerate Issue, lane, Branch, Base, Claim, Checkpoint, Current remote main, or the handoff command from retained session context or repository history. `CALLER_EXPECTED` / `ACTUAL` output never authorizes identity substitution. A failed or ambiguous resume, or a failed second proof, is a hard-stop with no retry. The existing stale-context, dirty-state, ownership, and remote-mismatch hard-stop rules remain unchanged; `absent` mode is not eligible for this exception.
+The ticket resolver obtains Issue, lane, Claim, Checkpoint, Current remote main, and Topic remote mode only from the validated immutable ticket; Branch and Base are then derived only from the exact matched durable slot. Luna must not infer or regenerate any of those values or the handoff command from retained session context or repository history. `CALLER_EXPECTED` / `ACTUAL` output never authorizes identity substitution. A failed or ambiguous resume, or a failed second proof, is a hard-stop with no retry. The existing stale-context, dirty-state, ownership, and remote-mismatch hard-stop rules remain unchanged; `absent` mode is not eligible for this exception.
 
 ## Scope control
 
