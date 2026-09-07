@@ -12,9 +12,11 @@ Repositoryのdurable engineering ruleはcurrent [`AGENTS.md`](https://github.com
 
 ### Name / title
 
-- user-facing command name / titleは英語に統一する。
-- VS Code `contributes.commands[].title`、Command Palette、context menu、Ribbon等で表示されるcommand名を日本語にしない。
-- internal command IDも英語を維持する。
+- internal command IDとcanonical/original command titleは英語を維持する。
+- VS Code `contributes.commands[].title`はnative manifest NLSでlocalized displayしてよい。`package.nls.json`の英語値をcanonical/original title、locale-specific package NLSをtranslated presentationとする。
+- 非英語のCommand Paletteでは、VS Code native localized-string / alias behaviorによりlocalized titleと英語originalの両方を利用できる形を維持する。独自Command Palette / Quick Pickによる二言語表示を作らない。
+- 英語/default localeではcanonical/original英語titleを通常表示し、localizationのためだけに同じ英語を重複表示しない。
+- context menu、Ribbon等のsurface-local presentationは各surface contractに従う。command title localizationだけを理由にcommand ID、Palette scope、target semantics、execution semanticsを変えない。
 
 ### Palette scope
 
