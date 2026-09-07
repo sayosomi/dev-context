@@ -4,16 +4,16 @@
 
 Manual E2E in nuinuiCAD means verification that requires an actual nuinuiCAD execution environment that web ChatGPT cannot operate directly.
 
-It does **not** mean every check is performed by a human.
+Current Manual E2E execution policy is **Human only**. Every Manual E2E unit is operated by the Human in the production host. ChatGPT / Sol High owns plan construction, oracle definition, freshness review, result classification, and routing.
 
-Each Manual E2E unit is classified by:
+Each Manual E2E unit is classified by judgment only:
 
 - `Judgment: Objective` — PASS / FAIL follows a predeclared observable oracle without tester discretion.
-- `Judgment: Human` — PASS / FAIL intentionally depends on human visual / UX / design / experiential judgment.
-- `Executor: Luna` — an Objective unit whose required production-host operation / observation / evidence path is currently reliable for Codex Luna xhigh.
-- `Executor: Human` — Human judgment is required, or the necessary Luna capability / evidence path is not reliable enough.
+- `Judgment: Human` — PASS / FAIL intentionally depends on Human visual / UX / design / experiential judgment.
 
-The Linear `Manual E2E` label is aggregate state for the Issue. Do not create separate Luna / Human labels.
+`Judgment` does not select a different executor. Both kinds are executed by Human under current policy.
+
+The Linear `Manual E2E` label is aggregate state for the Issue. Do not create separate executor labels.
 
 ## When Manual E2E is required
 
@@ -21,29 +21,24 @@ Manual E2E is `Required` only when at least one acceptance condition cannot be s
 
 Decision order:
 
-1. acceptance intentionally requires human visual / UX / design / experiential judgment → Manual E2E Required;
+1. acceptance intentionally requires Human visual / UX / design / experiential judgment → Manual E2E Required;
 2. acceptance depends on production-host / session behavior that automated tests cannot sufficiently prove, such as host wiring, lifecycle, focus, selection, window/session state, or another host-only boundary → Manual E2E Required;
 3. otherwise, if automated verification sufficiently proves acceptance → `Manual E2E: Not Required`.
 
 A Task is not Manual-E2E-required merely because it is UI-related, visual, user-facing, or implemented in a production host.
 
-Executor capability does not decide requirement. First decide whether production-host Manual E2E is necessary; then classify executor.
+## Deterministic MCP / script verification is not Manual E2E
 
-## Deterministic MCP / script verification is not Luna Manual E2E
-
-Do not spend Luna on a check that can be fully executed and judged by deterministic repository-owned MCP calls or equivalent local scripts without operating a production host / UI / session.
+Do not spend Human production-host time on a check that can be fully executed and judged by deterministic repository-owned MCP calls or equivalent local scripts without operating a production host / UI / session.
 
 Examples include frozen-fixture calls to `document_inspect`, `document_evaluate`, `document_definition`, or `document_references` with structured-result comparison.
 
 For these checks:
 
 - prefer automated CI tests when the same boundary is reliable there;
-- otherwise use a deterministic terminal / script verification as supporting evidence;
-- do not use Luna merely as a wrapper around shell / MCP / JSON comparison;
+- otherwise use deterministic terminal / script verification as supporting evidence;
 - split MCP-only semantics from genuine host-only actions when acceptance meaning is preserved;
 - avoid duplicate semantic oracles unless cross-boundary agreement is itself acceptance.
-
-MCP evidence may support a real Luna host run after Luna performs the required production-host action.
 
 Client/MCP path itself remains part of acceptance only when the Task explicitly tests that boundary, such as MCP registration / startup / interoperability or attached production-host observation.
 
@@ -82,7 +77,7 @@ Manual E2E plan
     proves the contract through that current production path
 ```
 
-The current implementation is not the product-contract owner. If the implementation and the normative contract disagree, do not weaken or rewrite the E2E oracle to match the implementation. Treat the discrepancy as an implementation defect or contract mismatch and resolve it through the normal contract / implementation path.
+The current implementation is not the product-contract owner. If implementation and normative contract disagree, do not weaken or rewrite the E2E oracle to match the implementation. Treat the discrepancy as an implementation defect or contract mismatch and resolve it through the normal contract / implementation path.
 
 For each required post-merge Manual E2E unit, complete and retain a focused mapping equivalent to:
 
@@ -97,12 +92,11 @@ The re-audit follows only relevant implementation owners and paths; it does not 
 
 - the actual production entrypoint, command, menu, context, and host wiring;
 - the relevant state guard, lifecycle path, and error branch;
-- the exact user-facing label, message, or result when objectively derivable;
-- the exact source transformation or output shape when objectively derivable;
+- exact user-facing label, message, result, transformation, or output shape when objectively derivable;
 - native-host boundaries such as Undo / Redo transactions, QuickPick, focus, and session behavior;
 - whether deterministic semantics are already sufficiently proven by automated tests and should therefore not be duplicated as Manual E2E units.
 
-The current Manual E2E plan must connect each unit's fixture, action, oracle, and evidence to this actual production owner / path. Reading an implementation path does not by itself make a deterministic MCP / script check Manual E2E; preserve the deterministic-verification exclusion above.
+The current Manual E2E plan must connect each unit's fixture, action, oracle, and evidence to this actual production owner / path.
 
 ### Concrete drift examples
 
@@ -113,11 +107,11 @@ The following SAY-224 examples describe the reverse-map failure mode; they are m
 
 ### Tested-ref drift after mapping
 
-After an implementation-backed mapping has been established, a tested-ref change caused by a fix merge or other relevant implementation update makes the affected owner / path mappings stale until they are re-audited. Sol High must fresh-read the affected production owner / path and revalidate the affected units' fixture, action, oracle, and evidence mapping. Do not mechanically redesign unaffected units.
+After an implementation-backed mapping has been established, a tested-ref change caused by a fix merge or other relevant implementation update makes affected owner / path mappings stale until they are re-audited. Sol High must fresh-read the affected production owner / path and revalidate affected units' fixture, action, oracle, and evidence mapping. Do not mechanically redesign unaffected units.
 
-If the tested ref changes but the relevant owners and paths do not drift, revalidate that the existing mapping remains valid; a full plan redesign is not required solely because the commit identity changed.
+If the tested ref changes but the relevant owners and paths do not drift, revalidate that the existing mapping remains valid; a full plan redesign is not required solely because commit identity changed.
 
-This re-audit does not change Judgment / Executor selection or Human / Luna semantics. Issue #92 separately owns FAIL-time runtime control and Human stop / pause precedence; those semantics are outside this change and must not be reorganized here.
+Issue #92 remains the owner of FAIL-time runtime control and Human stop / pause precedence.
 
 ## Plan-time classification
 
@@ -128,13 +122,11 @@ Before `Manual E2E: Ready to Run`, each unit states:
 - expected observation;
 - evidence;
 - for required post-merge Manual E2E, the current tested implementation owner / production-path mapping, including the relevant state transition or failure branch;
-- `Judgment: Objective | Human`;
-- `Executor: Luna | Human`;
-- for Human when useful: `Reason: human judgment | Luna capability`.
+- `Judgment: Objective | Human`.
 
 Do not classify only at whole-Issue granularity when units differ.
 
-Before assigning Objective work to Luna, remove deterministic MCP / script-only checks from Manual E2E.
+Before retaining Objective work as Manual E2E, remove deterministic MCP / script-only checks that do not require the production host.
 
 ## Test-unit boundaries
 
@@ -144,7 +136,7 @@ Split materially distinct lifecycle paths when starting state changes the produc
 
 When one scenario contains independently judgeable Objective observations and Human visual / UX judgment, split them by default. Keep together only when separation changes acceptance meaning.
 
-Units may share setup without sharing judgment / executor classification.
+Units may share setup without sharing judgment classification.
 
 ## Objective judgment
 
@@ -160,11 +152,11 @@ Examples:
 
 - specified command / menu / completion / diagnostic / element / state present or absent;
 - keyboard action produces specified source / selection / caret / Canvas state;
-- Undo / redo produces specified state;
+- Undo / Redo produces specified state;
 - exact label / message / value / source text appears;
 - explicit geometric condition such as viewport containment holds.
 
-Visual observation alone does not make a unit Human.
+Visual observation alone does not make a unit Human judgment.
 
 ## Human judgment
 
@@ -182,260 +174,138 @@ Do not use Human judgment as a fallback for an incomplete oracle. If product sem
 
 ## Human execution and screenshot evidence
 
-For `Executor: Human`, the Human may operate the production GUI directly with mouse / keyboard, make the required live visual or interaction judgment, and submit screenshots as evidence or diagnostic context.
+The Human operates the production GUI directly with mouse / keyboard, performs the required live objective observation or visual / interaction judgment, and may submit screenshots as evidence or diagnostic context.
 
 Use screenshot evidence efficiently:
 
 - when multiple cases are simultaneously observable in one frame, compose the fixture / viewport so one screenshot covers them together rather than requesting one screenshot per case;
-- do not split otherwise equivalent cases into separate test units or separate screenshots only to increase evidence count;
+- do not split otherwise equivalent cases into separate units or screenshots only to increase evidence count;
 - split when a different initial state, lifecycle path, dynamic interaction, mutation / revert boundary, or other materially different execution path makes one-frame judgment unreliable;
-- a static screenshot does not replace a live interaction oracle. For dynamic behavior such as stepping, focus, drag, stale-state cleanup, or transition quality, Human live observation plus a concise result report is sufficient when the declared acceptance does not require persistent visual evidence;
-- request additional screenshots when a failure, ambiguity, or diagnosis benefits from them rather than requiring them mechanically on every normal path.
+- a static screenshot does not replace a live interaction oracle. For stepping, focus, drag, stale-state cleanup, or transition quality, Human live observation plus a concise result report is sufficient when persistent visual evidence is not required;
+- request additional screenshots when failure, ambiguity, or diagnosis benefits from them rather than mechanically on every normal path.
 
-For `Judgment: Human`, Human PASS / FAIL remains the final quality judgment. ChatGPT may inspect submitted screenshots to confirm objective visible facts, summarize evidence, and help diagnose anomalies, but must not silently replace the required Human aesthetic / experiential judgment with its own screenshot interpretation.
+For `Judgment: Human`, Human PASS / FAIL remains the final quality judgment. ChatGPT may inspect submitted screenshots to confirm objective visible facts, summarize evidence, and help diagnose anomalies, but must not silently replace required Human aesthetic / experiential judgment.
 
 ## Common runtime control after a unit result
 
-This runtime rule applies to the whole Manual E2E execution regardless of whether the executor is Human or Luna. Human explicit stop / pause / abort / discontinue instructions have the highest priority:
+Human explicit stop / pause / abort / discontinue instructions have the highest priority:
 
 - stop requesting or initiating further E2E operations, even when independent units remain executable;
 - retain and summarize evidence already collected;
 - record remaining units as unexecuted where relevant, without inferring PASS or FAIL;
 - treat the instruction as execution control, not as product `FAIL` or `BLOCKED`.
 
-When no Human stop / pause instruction exists, a product `FAIL` is not a whole-run abort. For each remaining unit, inspect whether the failed unit invalidates its declared initial state, required fixture, production lifecycle path, action feasibility, expected observation / oracle, or evidence meaning. Stop only invalidated dependent units. Continue independent remaining units against the same tested ref and collect their available `PASS` / `FAIL` / `BLOCKED` evidence.
+When no Human stop / pause instruction exists, a product `FAIL` candidate is not a whole-run abort. For each remaining unit, inspect whether the failed unit invalidates its declared initial state, required fixture, production lifecycle path, action feasibility, expected observation / oracle, or evidence meaning. Stop only invalidated dependent units. Continue independent remaining units against the same tested ref and collect available `PASS` / `FAIL` / `BLOCKED` evidence.
 
-Do not begin implementation-failure decomposition immediately when safely executable independent units remain. After the runnable independent units are complete, or execution has stopped by explicit Human instruction, aggregate the collected evidence and apply the existing result-handling rules below; enter implementation-failure decomposition only when that handling confirms it is required.
-
-## Executor selection
-
-Apply after judgment classification and removal of MCP/script-only checks.
-
-```text
-Judgment: Human
-=> Executor: Human
-
-Judgment: Objective
-+ production-host / session operation required
-+ required operation / observation / evidence family is covered by the current proven Luna baseline
-+ no known blocker / material drift
-=> Executor: Luna
-
-Judgment: Objective
-+ production-host / session operation required
-+ required Luna capability is unknown, missing, unreliable, or materially drifted
-=> Executor: Human
-   Reason: Luna capability
-```
-
-For Objective work, prefer Luna **within the proven capability baseline**. Do not use a live product Issue as an open-ended Luna capability experiment merely because the oracle is objective.
-
-Do not weaken a Human oracle to make it Luna-executable.
-
-## First-use capability calibration
-
-When a new Objective operation / evidence primitive is strategically worth adding to the reusable Luna baseline, use one bounded paired calibration when practical:
-
-```text
-same behavior / same oracle
-Human ground-truth once
--> Luna executes independently
--> Sol High compares evidence
--> record reusable capability
-```
-
-This is capability calibration, not permanent Human assignment or a new quality gate.
-
-Use it for materially new operation/evidence families such as new VS Code surface interaction, webview interaction type, popup/hover/Quick Fix path, drag/selection mechanism, or observation path.
-
-Do not force calibration inside a product Issue when doing so would create more operational overhead than simply assigning the current Objective unit to Human. Capability improvement can be tracked separately.
-
-Do not repeat Human calibration for already-proven primitives unless material drift in VS Code / Playwright/CDP / host wiring / observation API / surface structure invalidates the baseline.
-
-Human judgment units remain Human regardless of Luna capability.
-
-If Human ground truth and Luna disagree, classify the mismatch as fixture/oracle, environment, operation, evidence, Luna capability, or product behavior before retrying. Do not repeatedly ask the Human to rerun by default.
+Do not begin implementation-failure decomposition immediately when safely executable independent units remain. After runnable independent units are complete, or execution has stopped by explicit Human instruction, aggregate evidence and apply the result-handling rules below.
 
 ## Execution-time freshness check
 
-Immediately before Luna prompt generation or Human instructions, Sol High re-checks:
+Immediately before Human instructions, Sol High re-checks:
 
 1. latest Project Context;
 2. current Issue contract / Manual E2E plan;
-3. intended remote repository state / tested commit and whether the tested ref or relevant implementation owners / paths have drifted;
+3. intended remote repository state / tested commit and whether tested ref or relevant implementation owners / paths have drifted;
 4. initial state / fixture / actions / expected observations and each unit's implementation-backed mapping;
 5. whether each planned unit still exercises the current tested implementation's actual production path and can observe the contract-defined oracle;
-6. whether proposed Luna units still require production-host action rather than deterministic MCP/script verification;
-7. whether the required Luna operation / observation / evidence family remains in the proven baseline without material drift;
-8. whether Human judgment has accidentally moved into agent execution.
+6. whether any planned unit has become deterministic MCP/script-only work that should leave Manual E2E;
+7. whether a `Judgment: Human` quality gate has accidentally been reduced to an incomplete objective oracle.
 
-When the implementation-backed mapping was completed at `Ready to Run` time and the tested ref and relevant owners / paths have not drifted, this check only needs to prove that the mapping remains valid; it does not require a full plan redesign.
+When implementation-backed mapping was completed at `Ready to Run` time and tested ref and relevant owners / paths have not drifted, this check only needs to prove the mapping remains valid; it does not require a full plan redesign.
 
-Safe reclassification:
+Safe changes:
 
-- Luna unit becomes MCP/script-only → remove from Manual E2E and automate / script;
-- `Luna -> Human` when capability / evidence reliability is not sufficient;
-- bounded environment / prompt issue with a proven primitive → correct and retry when reasonable;
-- `Human -> Luna` only when `Judgment: Objective` and Human assignment existed solely because of Luna capability;
-- `Judgment: Human` never becomes Luna solely for efficiency;
-- ambiguous product oracle returns contract / plan to non-Ready.
-
-Repeated capability boundaries belong in [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md).
+- host-independent deterministic unit → remove from Manual E2E and automate / script;
+- bounded environment / instruction issue → correct when reasonable without changing product oracle;
+- ambiguous product oracle → return contract / plan to non-Ready.
 
 ## Meaning of start for In Review Manual E2E
 
 When the user asks to start, restart, or resume an `In Review` Issue whose current execution track is Manual E2E, do not stop after re-audit, classification, or Linear state transition.
 
-`Start` is complete only when the next executor has an immediately actionable first handoff in the same response, unless a concrete blocker prevents execution.
+`Start` is complete only when Human has an immediately actionable first handoff in the same response, unless a concrete blocker prevents execution.
 
 Before that handoff:
 
-1. re-audit the current Issue / Manual E2E plan;
+1. re-audit current Issue / Manual E2E plan;
 2. perform the execution-time freshness check;
-3. when local execution is required, fix the semantic Issue / tested ref / executor / fixture / locale / port inputs and use the canonical same-terminal startup generator in [`CHECKOUTS.md`](./CHECKOUTS.md);
+3. when local execution is required, fix semantic Issue / tested ref / fixture / locale / port inputs and use the canonical same-terminal startup generator in [`CHECKOUTS.md`](./CHECKOUTS.md);
 4. move Manual E2E to `Running` only when execution is actually beginning;
 5. provide the first executable handoff immediately.
 
-For `Executor: Human`:
+For normal startup:
 
-- for normal startup, provide one named `nuinui e2e-start-command` invocation with the semantic values fixed; the helper performs fresh local mechanical validation and emits the exact same-terminal continuation;
-- the Human executes the emitted continuation verbatim; do not ask the Human to substitute commit SHAs, checkout paths, fixture source, ports, or positional argument order;
-- the generator must not choose an executor, tested ref, test oracle, or ambiguous Human-test lane, and it must not create a checkout or run GUI actions;
-- if generation is `BLOCKED` because state is ambiguous, stale, dirty, malformed, or the helper is unavailable, use the exceptional read-only checkout/preflight and diagnosis paths in [`CHECKOUTS.md`](./CHECKOUTS.md), without turning their output into a normal paste/reconstruction round-trip.
+- provide one named `nuinui e2e-start-command` invocation with semantic values fixed and `--executor human` as the current compatibility metadata;
+- Human executes the emitted continuation verbatim; do not ask Human to substitute commit SHAs, checkout paths, fixture source, ports, or positional argument order;
+- the generator must not choose tested ref, test oracle, or ambiguous Human-test lane, and it must not create a checkout or run GUI actions;
+- if generation is `BLOCKED` because state is ambiguous, stale, dirty, malformed, or helper is unavailable, use exceptional read-only checkout/preflight and diagnosis paths in [`CHECKOUTS.md`](./CHECKOUTS.md), without turning output into a normal paste/reconstruction round-trip.
 
-Do not report an `In Review` Manual E2E Issue as newly started while the user still has to ask separately for the first command.
-
-## Sol High -> Luna prompt
-
-Sol High owns classification and prompt construction. Luna is test operator, not designer or fixer.
-
-Prompt includes only what is needed:
-
-- repository / checkout identity and expected branch / commit;
-- remote-state verification;
-- exact isolated launch / environment setup;
-- fixture / initial state;
-- exact Luna-assigned units;
-- per unit action / expected observation / evidence / failure dependency;
-- blocking conditions;
-- required result format.
-
-Luna must not:
-
-- change implementation code;
-- fix failures;
-- redesign / expand test plan;
-- invent expected behavior;
-- make product / UX / aesthetic judgments;
-- perform Human-assigned units;
-- do unrelated cleanup / investigation.
-
-Do not include deterministic MCP/script-only work in Luna prompt merely because Luna can call it.
-
-## Luna execution contract
-
-Luna only:
-
-```text
-operate
--> observe
--> compare with predeclared oracle
--> record evidence
-```
-
-Per unit:
-
-- `PASS` — expected observable condition verified with sufficient evidence;
-- `FAIL` candidate — observed behavior objectively differs from the predeclared oracle; this is not yet a confirmed product failure;
-- `BLOCKED` — environment / remote state / initial state / operation / observation / evidence / oracle prevents reliable execution.
-
-For a `FAIL` candidate, record the expected result, observed result, concise reproduction steps, and evidence.
-
-For `BLOCKED`, record the exact blocking condition and do not guess through it.
-
-A Luna `BLOCKED` is not product failure.
-
-- bounded environment / instruction issue on a proven primitive → correct and retry when reasonable;
-- actual capability / evidence limitation → reclassify Objective unit to Human;
-- ambiguous oracle → resolve contract, not Human-judgment fallback.
-
-Screenshots may be evidence for Objective state but do not authorize aesthetic judgment.
-
-Luna never modifies repository files during Manual E2E.
+Do not report an `In Review` Manual E2E Issue as newly started while the Human still has to ask separately for the first command.
 
 ## Result handling by Sol High
 
-Sol High validates evidence before accepting Luna result.
-
-A Luna `PASS` requires evidence supporting the predeclared oracle; commentary such as “looks correct” is insufficient.
-
-A unit-level `FAIL` candidate observed by Luna or Human is evidence for classification, not a confirmed product failure. Do not set the Manual E2E result to product `FAIL` or begin implementation-failure decomposition from that observation alone.
+A unit-level observed mismatch is a `FAIL` candidate for classification, not yet a confirmed product failure. Do not set Manual E2E to product `FAIL` or begin implementation-failure decomposition from an observation alone.
 
 ### Mandatory Human actual-host triage gate for FAIL candidates
 
-After the safely executable independent units have finished, or after execution has stopped by an explicit Human instruction, aggregate the available evidence under the existing [common runtime control](#common-runtime-control-after-a-unit-result). If the aggregate contains a `FAIL` candidate and no explicit stop / pause has interrupted before triage completes, a Human must complete the following focused triage before any final Manual E2E product `FAIL` classification. This gate applies whether the candidate was observed by Luna or Human.
+After safely executable independent units have finished, or after execution has stopped by explicit Human instruction, aggregate available evidence under [common runtime control](#common-runtime-control-after-a-unit-result). If the aggregate contains a `FAIL` candidate and no explicit stop / pause interrupted before triage completes, Human must complete focused triage before any final Manual E2E product `FAIL` classification.
 
-Before any cleanup, release, close, revert, or other teardown that would destroy the current failure state, preserve the production host / session / fixture long enough to collect and record the transient evidence needed to classify that specific failure. Sol High determines the focused evidence set from the current production path and observed failure class; do not make the Human mechanically collect every possible artifact.
+Before cleanup, release, close, revert, or teardown would destroy the current failure state, preserve production host / session / fixture long enough to collect and record transient evidence needed to classify that failure. Sol High determines the focused evidence set from current production path and observed failure class; do not make Human mechanically collect every possible artifact.
 
-Relevant transient evidence may include, when it can materially discriminate the failure class:
+Relevant transient evidence may include, when materially discriminating:
 
 - completion / warning / error notifications;
 - Output, logs, diagnostics, or other host-owned result surfaces;
-- the final UI state or a screenshot of that state;
+- final UI state or screenshot;
 - active surface, focus, selection, or session state;
-- host / process / session identity needed to prove which runtime handled the action; and
-- temporary UI or host state that exists only while the failure is live.
+- host / process / session identity needed to prove which runtime handled the action;
+- temporary UI or host state that exists only while failure is live.
 
-Do not tear down the host/session/fixture until this focused evidence capture is complete, unless the Human explicitly stops or abandons further evidence collection. If environment, safety, host loss, or another concrete blocker makes preservation impossible, record which transient evidence could not be collected and why before performing the necessary teardown. This ordering requirement does not authorize implementation debugging, product repair, or open-ended forensic work in the Human-test checkout.
+Do not tear down host/session/fixture until focused evidence capture is complete unless Human explicitly stops or abandons further evidence collection. If environment, safety, host loss, or another concrete blocker makes preservation impossible, record which transient evidence could not be collected and why before necessary teardown.
 
-The Human performs triage on the current tested ref using the actual production host / physical environment and verifies, at minimum:
+Human performs triage on current tested ref using actual production host / physical environment and verifies at minimum:
 
-- the tested ref / build is the intended one;
-- the declared fixture and initial state are actually established;
-- execution uses the current production path;
-- the reproduction steps are reproducible;
-- the observed behavior reproduces under the same conditions; and
-- setup, environment, host state, instruction, or oracle problems do not explain the observation.
+- tested ref / build is intended one;
+- declared fixture and initial state are actually established;
+- execution uses current production path;
+- reproduction steps are reproducible;
+- observed behavior reproduces under same conditions;
+- setup, environment, host state, instruction, or oracle problems do not explain observation.
 
-Classify the candidate only after these checks:
+Classify only after these checks:
 
-- fixture / setup / environment / instruction / host-state problem → do not confirm product `FAIL`; correct the setup / plan as appropriate and rerun the necessary unit(s);
-- Luna capability problem → reclassify the affected Objective unit to `Executor: Human` under the existing executor rule, with `Reason: Luna capability`; do not classify it as product failure;
-- ambiguous oracle / newly exposed product decision → return the Contract / Manual E2E plan to non-Ready; do not confirm product `FAIL`;
-- actual behavior on the current tested ref and current production path, reproducibly disagreeing with the contract-defined oracle after test-side explanations have been excluded → confirm Manual E2E product `FAIL` and enter the existing implementation failure decomposition flow below.
+- fixture / setup / environment / instruction / host-state problem → do not confirm product `FAIL`; correct setup / plan and rerun necessary units;
+- ambiguous oracle / newly exposed product decision → return Contract / Manual E2E plan to non-Ready; do not confirm product `FAIL`;
+- actual behavior on current tested ref and production path, reproducibly disagreeing with contract-defined oracle after test-side explanations are excluded → confirm Manual E2E product `FAIL` and enter implementation failure decomposition.
 
-If Human explicitly stops or pauses before triage completes, the [Human stop / pause rule](#common-runtime-control-after-a-unit-result) remains highest priority: request no further E2E operation, record triage as incomplete / not performed as applicable, and do not infer or confirm product `FAIL` from incomplete triage.
+If Human explicitly stops or pauses before triage completes, stop/pause remains highest priority: request no further E2E operation, record triage as incomplete / not performed, and do not infer product `FAIL`.
 
-Triage is limited to failure classification and minimal reproduction evidence collection: tested ref / build, actual host and production path, fixture / initial state, concise reproducible steps and observation, excluded test-side explanations, triage class, and whether rerun or implementation decomposition is required. It is not implementation debugging. Do not modify product code in the Human-test checkout, perform ad-hoc implementation repair or fix experiments there, or turn triage into open-ended repository / source investigation. Once implementation failure is confirmed, fixes continue through the existing decomposition flow and return to a `FREE` declared implementation lane.
-
-After this gate, continue with the existing result-handling flow below; a confirmed implementation failure is the only triage outcome that enters implementation-failure decomposition.
+Triage is limited to failure classification and minimal reproduction evidence collection. It is not implementation debugging. Do not modify product code in Human-test checkout, perform ad-hoc repair, or turn triage into open-ended source investigation.
 
 ### Implementation failure decomposition
 
 For confirmed implementation failure:
 
-1. before returning the Work to the implementation queue, perform a focused contract re-audit against the latest Project Context, current Issue record, and latest remote `main`; use the individual re-audit criteria in [`CONTRACT-REAUDIT.md`](./CONTRACT-REAUDIT.md) and do not treat the prior `Contract: Ready` or failed tested commit as current implementation authority;
-2. identify the concrete failure class and semantic owner;
+1. before returning Work to implementation queue, perform focused contract re-audit against latest Project Context, current Issue record, and latest remote `main`; use [`CONTRACT-REAUDIT.md`](./CONTRACT-REAUDIT.md) and do not treat prior `Contract: Ready` or failed tested commit as current implementation authority;
+2. identify concrete failure class and semantic owner;
 3. determine Same Issue vs independent new leaf using [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md);
 4. determine smallest natural fix slice / safe checkpoint using [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md);
-5. synchronize the re-audit result before implementation resumes:
-   - current authority uniquely determines the fix contract / acceptance → `Contract: Ready`;
+5. synchronize re-audit result before implementation resumes:
+   - current authority uniquely determines fix contract / acceptance → `Contract: Ready`;
    - a real product / UX / scope / compatibility decision remains → `Contract: Pending`;
-   - a prerequisite prevents an executable contract → `Contract: Blocked`;
-   - keep `Manual E2E: Failed` as failure evidence until a later rerun passes;
+   - a prerequisite prevents executable contract → `Contract: Blocked`;
+   - keep `Manual E2E: Failed` as failure evidence until later rerun passes;
 6. only `Contract: Ready` + unblocked Work returns to normal implementation execution under [`CHECKOUTS.md`](./CHECKOUTS.md) and [`CODING-AGENT.md`](./CODING-AGENT.md):
    - select a `FREE` manifest-declared implementation lane;
-   - freeze the fix Base checkpoint SHA and record the implementation checkpoint;
-   - Codex Luna xhigh performs implementation / blocking fix / verification / git work;
-   - never implement or repair the product from a Human-test checkout;
+   - freeze fix Base checkpoint SHA and record implementation checkpoint;
+   - implementation / blocking-fix Coding Agent performs repository implementation, verification, and Git work;
+   - never implement or repair product from a Human-test checkout;
 7. implement / verify / review / merge;
 8. when only required Manual E2E remains again, return to `manual_e2e_only + In Review`.
 
-Do not create a direct web-ChatGPT implementation route for an E2E failure. ChatGPT owns failure classification, focused re-audit, fix contract, slicing, lane assignment, blocking review, and management; Luna owns the repository implementation/fix execution.
+Do not create a direct web-ChatGPT implementation route for an E2E failure. ChatGPT owns failure classification, focused re-audit, fix contract, slicing, lane assignment, blocking review, and management; the implementation Coding Agent owns repository implementation/fix execution.
 
 Multiple independent failure classes may become separate leaf Issues or sequential slices when natural. Do not create a new Issue mechanically for every Human comment or micro-fix.
-
-For mixed Manual E2E, run Luna Objective units before Human judgment when dependencies allow and the Luna units are within proven capability. This avoids spending Human quality-review effort on a product that already fails objective behavior.
 
 `Manual E2E: Passed` is set only after all required units pass.
 
@@ -443,9 +313,9 @@ For mixed Manual E2E, run Luna Objective units before Human judgment when depend
 
 Rerun each affected unit from its **declared initial state**.
 
-Reconstruct lifecycle-sensitive cold / fresh state rather than continuing from incidental mutated state. A diagnosis spot-check is not formal PASS unless it exactly matches the declared initial state and full oracle.
+Reconstruct lifecycle-sensitive cold / fresh state rather than continuing from incidental mutated state. A diagnosis spot-check is not formal PASS unless it exactly matches declared initial state and full oracle.
 
-Previously passed unaffected units need not repeat mechanically. Repeat only when the fix changed a shared owner / contract / lifecycle path / premise that makes previous evidence stale.
+Previously passed unaffected units need not repeat mechanically. Repeat only when fix changed a shared owner / contract / lifecycle path / premise that makes previous evidence stale.
 
 ## Aggregate Linear state
 
@@ -472,10 +342,7 @@ Manual E2E plan
   ↓
 Judgment: Objective / Human
   ↓
-Human judgment -> Human
-Objective -> proven Luna capability?
-              YES -> Luna
-              NO  -> Human / Luna capability
+Human executes production-host unit
   ↓
 implementation / automated verification / review / merge
   ↓
@@ -483,7 +350,7 @@ manual_e2e_only + Ready to Run
   ↓
 execute units
   ↓
-unit FAIL?
+unit FAIL candidate?
   YES -> common runtime control:
          stop dependent units; continue independent units
          unless Human explicitly stops / pauses
@@ -497,11 +364,10 @@ FAIL candidate present?
   YES -> mandatory Human actual-host focused triage
          -> fixture / setup / environment / instruction / host-state problem:
             correct setup / plan -> rerun necessary units
-         -> Luna capability problem: reclassify executor; no product FAIL
          -> ambiguous oracle / new product decision: Contract / plan non-Ready
          -> confirmed implementation failure:
-            confirm product FAIL -> existing result handling / focused latest-main re-audit
-            -> Ready + unblocked -> FREE declared implementation lane -> Luna fix -> merge -> rerun
+            confirm product FAIL -> focused latest-main re-audit
+            -> Ready + unblocked -> FREE declared implementation lane -> Coding Agent fix -> merge -> rerun
             -> Pending / Blocked -> Backlog until resolved
          -> Human stops / pauses before triage completes:
             record incomplete / not performed -> no product FAIL
@@ -520,4 +386,4 @@ Done
 
 Read this document whenever planning, classifying, executing, retrying, or handling results for Manual E2E.
 
-For VS Code production-host environment setup also read `VS-CODE-E2E.md`. For Luna prompt / capability / evidence work read shared prompt style + `LUNA-E2E-PLAYBOOK.md`. For implementation fixes, return to normal implementation authorities rather than using the E2E operator role.
+For VS Code production-host environment setup also read `VS-CODE-E2E.md`. `LUNA-E2E-PLAYBOOK.md` is inactive historical reactivation reference and is not loaded or used during normal Manual E2E. For implementation fixes, return to normal implementation authorities rather than using the E2E operator role.
