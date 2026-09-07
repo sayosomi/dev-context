@@ -4,16 +4,17 @@
 
 E2E chatはrequired Manual E2Eを実行・再開し、tested commit / evidence / PASS-FAIL-BLOCKEDをcurrent external stateへ同期するためのchat。
 
-実行capacityは [`LANES.conf`](./LANES.conf) に宣言された`role=human-test` laneの数から導出する。各Human-test laneは同時に1つのgenerationだけを保持する。Judgment / Executor / PASS-FAIL-BLOCKEDは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。
+実行capacityは [`LANES.conf`](./LANES.conf) に宣言された`role=human-test` laneの数から導出する。各Human-test laneは同時に1つのgenerationだけを保持する。Judgment / PASS-FAIL-BLOCKEDは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。Manual E2E executorはcurrent policyでHuman固定であり、E2E chatはexecutor selectionを行わない。
 
 E2E chatを新しく作っただけではHuman-test laneをclaimしない。tested commit / marker / Issue checkpointと選択laneを固定した時点でexecutionが開始する。
 
 ## Execution boundary
 
 - Manual E2Eはmanifestで`role=human-test`と宣言されたlaneだけで行う。
+- Manual E2E production-host unitはHumanが実行する。`Judgment: Objective | Human`はoracleの性質でありexecutor selectionではない。
 - implementation failureが確認された場合、Human-test checkoutでproduct codeを修正しない。fixはFREEなdeclared implementation laneへ戻す。
 - tested commit、stable ref、marker、Issue checkpointの扱いは`CHECKOUTS.md` / `MANUAL-E2E.md` / relevant host-specific ownerをauthorityとする。
-- VS Code hostなら[`VS-CODE-E2E.md`](./VS-CODE-E2E.md)、ExecutorがLunaなら[`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md)も読む。
+- VS Code hostなら[`VS-CODE-E2E.md`](./VS-CODE-E2E.md)を読む。`LUNA-E2E-PLAYBOOK.md`はinactive historical reactivation referenceであり、normal E2E chatではload / useしない。
 - Human向けVS Code host preparationでは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned Human E2E preparation helperがcurrent local cloneで利用可能なら、そのhelperをhandoffに使う。ChatGPTが同じlaunch / session lifecycleをinline shellとして再実装しない。
 - versioned preparation helperの実行がunexpected error / hang / state mismatchになった場合、まずhelperの`status`とowner documentのrepair / fallback ruleで状態を分類する。session rootやtemporary artifactをad-hoc shellで探索・推測して別launcherへ迂回しない。
 - `nuinui-e2e-prepare prepare`の`E2E SETUP ALREADY READY` / `mutation=no-op` / `READY FOR HUMAN E2E`、および`cleanup`の`E2E CLEANUP ALREADY COMPLETE` / `mutation=no-op`は、read-onlyでexact duplicateを証明したterminal no-opである。これらが返った場合は通常workflowを直接継続し、Humanへstatus、session / marker / process state、初回invocationの成功確認、またはduplicateだけを理由にしたprepare / cleanup再実行を求めない。near-match、stale、ambiguous stateは`BLOCKED`として扱う。
@@ -42,7 +43,7 @@ normal startupでは、ChatGPTがsemantic intentをfixした後、Humanは次の
 nuinui e2e-start-command \
   --issue SAY-123 \
   --tested-ref <full-tested-sha> \
-  --executor <human|luna> \
+  --executor human \
   --fixture <absolute-fixture-path> \
   [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]
 ```
@@ -51,7 +52,7 @@ nuinui e2e-start-command \
 
 `--port`はcaller-controlledのCDP portである。Human-test laneが2つ以上宣言されている場合は、明示的な`--lane`と`--port`が必要で、lane名・宣言順・空き状況からportを推測または自動選択しない。Human-test laneが1つだけのsingleton topologyでは、`--port`省略時の既定port互換を維持する。
 
-generator outputがterminal formatting authorityであり、ChatGPTはlane/ref/prepare orderingを再構成しない。`--executor`はChatGPT/Sol Highが決めるcaller-controlled intentで、helperはHuman/Lunaを分類せず、Luna promptやtest oracleも生成しない。Human pathはsetup後にHuman E2Eへ、Luna pathは既存prepare outputのshort `handoff=` identity/pathをLuna playbookへ渡す。generationが`BLOCKED`または利用不能なときだけ、explicit preflight / diagnosis / recoveryへ戻る。
+generator outputがterminal formatting authorityであり、ChatGPTはlane/ref/prepare orderingを再構成しない。Current active policyでは`--executor human`だけを渡す。helperがlegacy compatibilityとして別executor metadataを受理できても、E2E chatはそれをadvertise / selectしない。helperはtested ref、test oracle、lane schedulingを決めず、GUI actionも実行しない。generationが`BLOCKED`または利用不能なときだけ、explicit preflight / diagnosis / recoveryへ戻る。
 
 ## Confirmed Manual E2E implementation failure
 
@@ -109,8 +110,8 @@ nuinui-e2e-prepare recover-preparing <human-test-lane> <Issue> <tested-ref> <e2e
 
 ## Loading rule
 
-E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読み、READMEのManual E2E loading ruleに従う。
+E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読み、READMEのManual E2E loading ruleに従う。`LUNA-E2E-PLAYBOOK.md`はnormal E2E chatではloadしない。
 
 ## Maintenance rule
 
-このdocumentはE2E chat固有のlifecycle boundaryだけをownerする。Manual E2E semantics、host setup、Luna execution playbook、checkout detailはそれぞれのowner documentへ置く。
+このdocumentはE2E chat固有のlifecycle boundaryだけをownerする。Manual E2E semantics、Human production-host setup、checkout detailはそれぞれのowner documentへ置く。Inactive Luna E2E materialは`LUNA-E2E-PLAYBOOK.md`だけに隔離する。

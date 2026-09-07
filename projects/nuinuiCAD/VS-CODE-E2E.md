@@ -4,72 +4,53 @@
 
 VS Code extensionのuser-facing behaviorをManual E2Eで確認するときの**isolated Extension Development Host baseline**を定義する。
 
-- test unitの`Judgment` / `Executor`分類、PASS / FAIL / BLOCKED、Sol Highの結果判定は [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
+- test unitの`Judgment`、PASS / FAIL / BLOCKED、result handlingは [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
+- current Manual E2E executorはHuman only。
 - local versioned helperのavailability / sync / repair / fallbackは [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) がauthority。
-- Lunaを安定して操作させるprompt構成、stable test ref、evidence、known pitfallsは [`LUNA-E2E-PLAYBOOK.md`](./LUNA-E2E-PLAYBOOK.md) を使う。
-- この文書はVS Code production-hostのisolation / local preparation / launch baselineをownerとする。
+- locale-specific / translated-UI verificationは必要な場合だけ [`VS-CODE-E2E-LOCALE.md`](./VS-CODE-E2E-LOCALE.md) を追加で読む。
+- この文書はHumanが操作するVS Code production-hostのisolation / local preparation / launch baselineをownerとする。
 
-この文書のhost preparation ruleと`LUNA-E2E-PLAYBOOK.md`の古い記述が衝突する場合、この文書を優先する。
+`LUNA-E2E-PLAYBOOK.md`はinactive historical reactivation referenceであり、normal Human Manual E2Eのhost authorityではない。
 
 ## Responsibility split
 
-VS Codeの`Executor: Luna` Manual E2Eでは、標準責務を次のように分ける。
+Current Human Manual E2Eでは標準責務を次のように分ける。
 
 ```text
-Sol High
-  tested state / stable ref / fixture / launch contractを固定
+ChatGPT / Sol High
+  exact tested state / fixture / action / oracle / evidence planを固定
       ↓
-Human (terminal only)
-  exact checkoutを準備
+Human terminal handoff
+  versioned helperでexact checkoutを準備
   build
   fresh profile / fixtureを生成
-  stale VS Codeをcleanup
   isolated Extension Development Hostを起動
-  CDP readinessを確認
-  handoff fileを書き出す
       ↓
-counted Luna run
-  prepared hostへattach
-  environment identityを客観preflight
-  product operation -> observe -> compare -> evidence
+Human production-host execution
+  declared initial stateを確認
+  product action
+  observe / judge
+  evidenceを返す
+      ↓
+ChatGPT / Sol High
+  PASS / FAIL candidate / BLOCKEDを分類してroute
 ```
 
-Human preparationはManual E2Eのproduct test unitではない。Humanがshell scriptを起動しただけで`Executor: Human`へ分類しない。
+Host preparation itself is not a product test result. `READY FOR HUMAN E2E`は「declared product actionを開始できるisolated hostが準備済み」というreadiness evidenceであり、PASSを意味しない。
 
-### Luna host-preparation Human access constraint
+## Human GUI execution
 
-この制約は**`Executor: Luna` runの前段でHumanがhostを準備するフェーズだけ**に適用する。`Executor: Human`としてproduct test unit自体を実行するHumanには適用しない。
-
-Luna向けhost preparationのHumanは**遠隔Terminalだけを操作できる**前提とする。
-
-Luna向けhost preparation中のHumanへ次を要求しない。
-
-- VS Code windowを見る
-- mouse / keyboardでVS Codeを操作する
-- dialog / modalを閉じる
-- macOS System Settingsを開く
-- permission promptをGUIで許可する
-- screenshotを撮る、またはGUI状態を判定する
-- Terminal外のアプリへ移動する
-
-Luna向けHuman preparationはshellだけで完結しなければならない。
-
-GUI-only permission / modal / OS interactionが必要になった場合、その場でHumanへTerminal外操作を依頼しない。host preparationをenvironment `BLOCKED`として止め、別途environment prerequisiteとして解決してからfresh preparationをやり直す。
-
-### Executor: Human GUI execution
-
-`Executor: Human` のManual E2Eでは、terminal preparationが完了した後、HumanはVS Code Extension Development Hostへ移動してproduct test unitを直接実行してよい。
+terminal preparationが完了した後、HumanはVS Code Extension Development Hostへ移動してproduct test unitを直接実行する。
 
 HumanはTaskのdeclared action / oracleに必要な範囲で:
 
 - VS Code GUIを見る;
 - mouse / keyboardを操作する;
+- Objective observationを確認する;
 - visual / interaction qualityを判断する;
 - screenshotを撮ってChatGPTへ提出する。
 
 Screenshotのcase grouping、Human judgmentとの境界、追加evidenceの要求条件は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のHuman execution / screenshot evidence ruleをauthorityとする。1枚で複数caseを明確に判定できる場合は、fixture / viewportを構成してその1枚へまとめる。
-
-`Executor: Human` の環境準備自体は引き続きcopy/paste-ready terminal blockで行う。Luna専用のCDP port、`NUINUICAD_MCP_OBSERVATION=1`、handoff file等はHuman unitのcontractに必要な場合だけ使い、Human testのために機械的に要求しない。
 
 ## Baseline
 
@@ -85,49 +66,49 @@ Manual E2Eでは普段使いのVS Code profileをそのまま使わない。
 - current tested checkoutで`npm run build:vscode`
 - 必要なhost-neutral Rust `evaluation_stdio` binaryをtested checkoutの`rust-evaluator` crateからbuild
 - `NUINUICAD_RUST_EVALUATION_BINARY`でexact binaryを明示
-- live VS Code observationが必要なrunでは`NUINUICAD_MCP_OBSERVATION=1`
 - `--extensionDevelopmentPath="$CHECKOUT/vscode-extension"`
 - `--disable-workspace-trust`
 - welcome / sessions welcome / release notesを抑止
 - repository workspace folderへ依存せずfixture fileを直接open
-- Luna objective UI runではdedicated CDP portを明示
+- live observation / CDP / `NUINUICAD_MCP_OBSERVATION=1`はcurrent Manual E2E contractやversioned helper lifecycleが必要とする場合だけ使用し、Human testだからという理由だけでoracleへ追加しない
 
 通常user settings、word-based suggestions、inline suggestions、keybindings、installed extensions等が結果へ混入すると、nuinuiCAD extension自体のPASS / FAILを判定できない。
 
 ## Tested-state preparation ownership
 
-Sol HighがHuman向けsetup commandを生成する前に:
+ChatGPT / Sol HighがHuman向けsetup commandを生成する前に:
 
 1. latest remote stateを確認する。
 2. testするexact commitを決める。
 3. moving default branchからtest evidenceを隔離する必要があればstable remote E2E refを固定する。
-4. fixture sourceとrequired binaries / extension bundle / CDP portを決める。
-5. Humanへ渡す準備scriptにexpected commit/refを埋め込む。
+4. fixture sourceとrequired binaries / extension bundleを決める。
+5. locale-specific verificationが必要ならlocaleを固定する。
+6. selected Human-test topologyにexplicit portが必要ならcaller-controlled portを固定する。
+7. Humanへ渡すcanonical startup handoffへexact semantic valuesを埋める。
 
-Humanはtested stateを設計しない。Human setup scriptはSol Highが固定したstateを機械的に準備するだけにする。
+Humanはtested stateやoracleを設計しない。Human terminal stepはChatGPTが固定したstateを機械的に準備するだけにする。
 
 ## Human terminal setup contract
 
 VS Code Human Manual E2Eの標準host-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。
 
-current local dev-context cloneでそのhelperが利用可能でcurrent operationをsupportしている場合:
+current local dev-context cloneでhelperが利用可能でcurrent operationをsupportしている場合:
 
-- ChatGPTはsemantic intentを固定し、`nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]`をHumanへ渡す;
+- ChatGPTはsemantic intentを固定し、`nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor human --fixture <absolute-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]`をHumanへ渡す;
 - Humanはgeneratorを同じterminalで実行し、fresh read-only validation後に出るshell-quoted `e2e-start && prepare` continuationをverbatimに実行する。成功したgenerator outputをChatGPTへ戻してargument orderingを再構成しない;
-- `--port`はcaller-controlledであり、Human-test laneが2つ以上のときだけ明示が必須である。singleton topologyでは省略時の既定port互換を維持する;
-- generatorの`--executor`はcaller-controlled metadataであり、helperはexecutorを選ばず、GUI action、test oracle、Luna promptを実行・生成しない;
+- `--port`はcaller-controlledであり、Human-test laneが2つ以上のときは明示する。singleton topologyでは省略時の既定port互換を維持する;
+- active policyは`--executor human`だけを使う。helperのlegacy parser/runtime compatibilityが別metadataを受け付けても、この文書はそれをcurrent execution pathとしてadvertiseしない;
+- helperはexecutor selection、GUI action、test oracleを実行・生成しない;
 - 同じbuild / fresh profile / VS Code launch / readiness / session metadata lifecycleを長いinline shellとして再実装しない;
-- helper実行後のsession rootやlaunch PID、Lunaへ渡すshort `handoff=` pathはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
+- helper実行後のsession rootやlaunch PIDはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
 
-Successful Manual E2E closure is also a single named terminal handoff after Sol High / ChatGPT authorizes closure:
+Successful Manual E2E closure is also a single named terminal handoff after ChatGPT / Sol High authorizes closure:
 
 ```bash
 nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
 ```
 
-The helper resolves the fresh lane, tested ref, and E2E root from local marker/session/receipt authority and serializes the existing `cleanup -> e2e-release -> closure-check` public boundaries. Humanはlane、ref、rootを手でsubstituteしない。Exact duplicate success continues immediately; `BLOCKED` / `ERROR` stops later stages and returns to ChatGPT for bounded diagnosis. Existing cleanup, release, and closure-check mutation/read-back ownership remains unchanged, as do PASS / FAIL judgment and Human stop / pause semantics.
-
-generatorはprepare helperのreadiness envelopeを置換しない。現行helperが返す`handoff=...` pathとsession identityをLuna pathのbounded transportとして使い、Human pathでは既存の`READY FOR HUMAN E2E` semanticsを使う。`READY FOR LUNA`を出すfallback/reference blockがあっても、generatorが大きなpromptや別のreadiness authorityを生成・推測することはない。
+The helper resolves fresh lane, tested ref, and E2E root from local marker/session/receipt authority and serializes existing `cleanup -> e2e-release -> closure-check` public boundaries. Humanはlane、ref、rootを手でsubstituteしない。Exact duplicate success continues immediately; `BLOCKED` / `ERROR` stops later stages and returns to ChatGPT for bounded diagnosis. Existing cleanup, release, closure-check mutation/read-back ownership, PASS / FAIL judgment, and Human stop / pause semantics remain unchanged.
 
 helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
 
@@ -144,13 +125,7 @@ trap 's=$?; echo; echo "FAILED at line $LINENO: $BASH_COMMAND"; echo "exit=$s"; 
 BASH
 ```
 
-Human scriptは成功時に、次のexecutorを区別できる機械判定可能なfinal markerを出す。
-
-```text
-READY FOR LUNA
-```
-
-または:
+Human setupは成功時に次のfinal markerを出す。
 
 ```text
 READY FOR HUMAN E2E
@@ -178,10 +153,9 @@ Human setupはproduct oracleを実行しない。例えばCompletionを開く、
 ## Fixture rule
 
 - Task-specific fixtureは`/tmp`等checkout/worktreeを汚さない場所へ生成する。
-- setup command block内でfixtureを作り、そのfileを起動時に明示的にopenする。
+- setup lifecycle内でfixtureをmaterializeし、そのfileを起動時に明示的にopenする。
 - current runのfixtureはunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
-- Luna runではsetup終了時にfixture absolute pathをhandoff fileへ保存する。
 - Human visual runで複数caseを一画面へ安全に配置できる場合は、`MANUAL-E2E.md`のscreenshot evidence grouping ruleに従ってfixture側でまとめてよい。
 
 ## Surface lifecycle coverage
@@ -213,41 +187,25 @@ Human visual acceptanceがVS Code theme由来のcolor tokenやcontrastに依存�
 
 非visualなObjective unitまでthemeごとに重複実行しない。themeがbehaviorそのものを変える契約でない限り、theme pairはtheme-sensitiveなvisual acceptanceだけに適用する。
 
-## Dedicated-machine process isolation
+## Host isolation
 
-Luna Manual E2Eを実行するmacOS machineでは、実行中に他用途でVS Codeを使用しないことを前提とする。
+Human Manual E2E hostはproduction user profileと分離する。versioned preparation helperがselected generationのroot、profile、fixture、process、session metadataをownerし、fresh isolated hostを作る。
 
-**Luna向けHuman terminal setup中に**既存のVisual Studio Code processをすべて終了し、0 processであることを確認してからfresh isolated hostを起動する。通常終了後も残るstale Extension Development Host / helper processはTerminalからforce terminationしてよい。
-
-標準形:
-
-```bash
-VSCODE_PATTERN='/Applications/Visual Studio Code.app/Contents/'
-
-pkill -TERM -f "$VSCODE_PATTERN" 2>/dev/null || true
-sleep 1
-pkill -KILL -f "$VSCODE_PATTERN" 2>/dev/null || true
-sleep 1
-
-if pgrep -f "$VSCODE_PATTERN" >/dev/null; then
-  echo "BLOCKED — Visual Studio Code processes remain after cleanup"
-  pgrep -fal "$VSCODE_PATTERN" || true
-  exit 1
-fi
-```
-
-counted Luna run開始後はHumanがprocess cleanup / relaunchを行わない。
+- stale or foreign host/processをcurrent generationとして推測しない;
+- current runのowned processだけをhelper identityから管理する;
+- helperが`BLOCKED`したprocess/session ambiguityをad-hoc kill / deleteでrepairしない;
+- normal user VS Code processを「Manual E2Eだから」という理由だけで無条件に全終了するruleは置かない;
+- current Taskがhost isolationのためにdedicated process policyを必要とする場合は、そのrequirementをplan / helper authorityで明示する。
 
 ## Reference / fallback Human launch shape
 
 以下はhost-preparation contractのreference implementationであり、versioned `nuinui-e2e-prepare` が利用可能な通常のHuman handoffでChatGPTが再生成するtemplateではない。
 
-`LOCAL-TOOLS.md`のfallback条件が成立した場合、またはhelper自体のrepair / developmentでbaselineを確認する場合にだけ、Task-specific valueを差し替えて使う。以下はLuna向けhost preparationを含む完全形であり、`Executor: Human`ではLuna専用CDP / observation / handoff要件をtask contractに応じて省略してよい。
+`LOCAL-TOOLS.md`のfallback条件が成立した場合、またはhelper自体のrepair / developmentでbaselineを確認する場合にだけ、Task-specific valueを差し替えて使う。CDP / observation flagsはcurrent Task contractまたはhelper compatibility上必要な場合だけ追加する。
 
 ```bash
 EXPECTED="<tested commit>"
 CHECKOUT="<tested checkout>"
-CDP_PORT=9223
 
 cd "$CHECKOUT"
 
@@ -286,19 +244,11 @@ EXEC_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Conten
 APP_BIN="$APP/Contents/MacOS/$EXEC_NAME"
 test -x "$APP_BIN"
 
-if lsof -nP -iTCP:"$CDP_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "BLOCKED — CDP port already in use"
-  exit 1
-fi
-
 NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
-NUINUICAD_MCP_OBSERVATION=1 \
 "$APP_BIN" --new-window \
   --user-data-dir="$E2E_ROOT/user-data" \
   --extensions-dir="$E2E_ROOT/extensions" \
   --extensionDevelopmentPath="$CHECKOUT/vscode-extension" \
-  --remote-debugging-port="$CDP_PORT" \
-  '--remote-allow-origins=*' \
   --skip-welcome \
   --skip-sessions-welcome \
   --skip-release-notes \
@@ -317,7 +267,7 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 `nuinui-e2e-prepare prepare`がunexpected error、hang、session/state mismatchで完了しない場合は、次の順序を固定する。
 
 1. product FAILとして扱わない。
-2. `nuinui-e2e-prepare status <human-test-lane>`でselected Human-test checkout / marker / session metadata / recorded root / handoff / launch PIDをread-only確認する。
+2. `nuinui-e2e-prepare status <human-test-lane>`でselected Human-test checkout / marker / session metadata / recorded root / launch PIDをread-only確認する。
 3. valid sessionが残りcleanupが必要なら、`LOCAL-TOOLS.md`とhelper contractに従って`cleanup`する。
 4. helper defect / stale local clone / unsupported operation / environment blockerを分類し、`LOCAL-TOOLS.md`のrepair / fallback ruleへ進む。
 
@@ -330,143 +280,42 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 
 helper自体が未install、stale / broken、またはcurrent operationをsupportしないと確認された場合だけ、`LOCAL-TOOLS.md`のformal fallback条件へ移る。
 
-## CDP readiness is Human preparation
+## Environment blockers
 
-Luna objective run用hostでは、Human setup scriptがLunaを呼ぶ前にCDP endpoint readyまで確認する。
-
-標準目安:
-
-```bash
-READY=0
-for _ in $(seq 1 120); do
-  if curl --max-time 1 -fsS \
-    "http://127.0.0.1:${CDP_PORT}/json/version" \
-    > "$E2E_ROOT/evidence/cdp-version.json"; then
-    READY=1
-    break
-  fi
-  sleep 0.5
-done
-
-test "$READY" = 1
-```
-
-CDPを確立できない状態でcounted Luna runを開始しない。Human setup内でhost launchが失敗した場合はLuna tokenを使わずsetupを修正する。
-
-setup scriptでbounded retryを許す場合も、product actionはまだ一切実行していないことを条件にする。retryはfresh profile / fresh fixtureで行い、古いhost stateをreuseしない。
-
-## GUI-only environment blockers during Luna host preparation
-
-Luna向けHuman preparationではHumanはTerminal外へ出ないため、次はsetup scriptでは解消不能なenvironment blockerとして扱う。
-
-- macOS privacy / App Data permission prompt
-- GUI confirmation dialog
-- System Settings操作
-- VS Code window内でのmanual trust / modal dismissal
-- shellから客観確認できないGUI prerequisite
-
-これらが発生した場合:
-
-```text
-BLOCKED — GUI-only environment prerequisite requires separate resolution
-```
-
-としてsetupを止める。
-
-Luna向けpreparation中のHumanへ「画面を見て許可」「VS Codeで閉じて」等を依頼しない。prerequisiteが別経路で解決された後、新しいfresh setupを最初から実行する。
-
-Full Disk Access等を全runのbaseline requirementとして先回りで要求しない。
-
-## Luna handoff file
-
-`Executor: Luna` のHuman setup成功時は、Lunaが再解釈せず使えるhandoff fileを`/tmp`へ書く。
-
-最低限:
-
-```text
-EXPECTED
-E2E_REF when used
-CHECKOUT
-E2E_ROOT
-FIXTURE
-CDP_PORT
-RUST_BIN
-```
+Host preparationまたはHuman executionにGUI-only permission / modal / OS prerequisiteが現れ、declared actionを信頼できるinitial stateで実行できない場合はenvironment `BLOCKED`として扱う。product FAILへ変換しない。
 
 例:
 
-```bash
-cat > /tmp/nuinui-<issue>-luna.env <<EOF
-EXPECTED='$EXPECTED'
-E2E_REF='$E2E_REF'
-CHECKOUT='$CHECKOUT'
-E2E_ROOT='$E2E_ROOT'
-FIXTURE='$FIXTURE'
-CDP_PORT='$CDP_PORT'
-RUST_BIN='$RUST_BIN'
-EOF
+- macOS privacy / App Data permission prompt
+- unexpected GUI confirmation dialog
+- System Settings prerequisite
+- VS Code trust / modal that invalidates declared initial state
+- required host prerequisiteを客観確認できない状態
 
-printf '\nREADY FOR LUNA\n'
-cat /tmp/nuinui-<issue>-luna.env
-```
+Prerequisiteを解決した後は、current planが要求するfresh stateからsetupをやり直す。Full Disk Access等を全runのbaseline requirementとして先回りで要求しない。
 
-Luna向けHuman preparationではこのmarkerを確認したらsetupを終了する。VS Code GUIへ移動しない。
+## Extension-registration / initial-state check
 
-## Counted Luna run boundary
-
-`READY FOR LUNA`後にcounted Luna runを開始する。
-
-Lunaはprepared hostへattachし、product action前にread-only environment preflightを行う。
-
-最低限:
-
-1. handoff fileを読む。
-2. selected Human-test checkoutのHEAD / stable E2E ref / clean status / execution-time authoritative default relationshipを確認する。
-3. CDP endpointが引き続きreachableであることを確認する。
-4. 接続先workbenchがcurrent unique fixtureを含むことを確認する。
-5. active document / language mode / required extension registrationを確認する。
-6. `vscode_observe`が必要なrunではexact fixtureをresolveできることを確認する。
-
-このpreflightは**prepared environmentのidentity確認**であり、Lunaにbuild / checkout切替 / process cleanup / host launchをやり直させるものではない。
-
-preflightでprepared hostが不正・stale・unreachableと判明した場合はenvironment `BLOCKED`。counted run中にHuman rescueを入れない。
-
-## Failure after counted run begins
-
-counted Luna run開始後にhostが壊れた、CDPが消えた、unexpected dialogで操作不能になった等の場合:
-
-1. Lunaは`BLOCKED`を返す。
-2. Humanはrun中に介入しない。
-3. run終了後、必要ならHuman terminal setupをfresh root / fresh fixture / fresh hostでやり直す。
-4. Sol Highがaffected unitだけのretry可否を判断する。
-
-Human terminal preparationとcounted Luna product executionを1つのunattended runへ混ぜない。
-
-## Extension-registration preflight
-
-Lunaはproduct unitへ入る前にenvironment preflightを行う。
-
-最低限:
+Product unitへ入る前にHumanはcurrent planで必要なinitial stateを確認する。必要に応じて:
 
 1. current runのunique `.nui` fixtureをactiveにする。
 2. language modeが`nui` / nuinuiCADでありPlain Textでないことを確認する。
-3. current testに必要なcontributed nuinuiCAD commandを、**そのcommandのdeclared Palette scopeに含まれるsurfaceをactiveにして**Command Paletteで確認する。
-4. Playwright/CDP runでは、接続先workbenchがcurrent runのunique fixtureを含むことを客観的に確認する。
-5. 必要ならRunning Extensions / fresh profile logsも確認する。
+3. required contributed commandを、そのcommandのdeclared Palette scopeに含まれるsurfaceをactiveにして確認する。
+4. fresh profile / extension registrationがcurrent tested buildに対応することを確認する。
 
 command registration確認はsurface-awareに行う。Source commandをCanvas-only surfaceで要求したり、その逆を行わない。
 
-preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
+Initial-state/setup failureはproduct FAILではなくenvironment / setup `BLOCKED`またはplan correctionへrouteする。
 
 ## Relaunch rule
 
-次の場合は**counted Luna runを開始する前にHuman terminal setupをやり直し**、fresh isolated hostを起動する。
+次の場合はfresh isolated hostを準備し直す。
 
 - `npm run build:vscode`をやり直した後
 - branch / commitを切り替えた後
 - blocking fix後の再試験
 - fresh profile stateが壊れた、またはinitial stateが不明になった場合
-- previous Luna runがenvironment `BLOCKED`となりhostを再構築する場合
+- previous runがenvironment `BLOCKED`となりhostを再構築する場合
 
 古いhostをreuseして新しいbundleやcommitを検証したことにしない。
 
@@ -487,7 +336,7 @@ preflight失敗はproduct FAILではなくenvironment `BLOCKED`。
 
 最後の2点は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のtest-unit boundary ruleを優先する。同じfixtureを使えることだけを理由に、異なるlifecycle pathや独立したObjective/Human oracleを1つへまとめない。
 
-`Executor: Human` のvisual evidenceでは、同じ画面で複数caseを明確に判定できるなら1枚のscreenshotへまとめる。screenshot枚数を増やすためだけにcaseを分割しない。静止画で表現できないinteractionはHuman live observationで確認し、failure / ambiguity時に必要な追加screenshotを取る。
+visual evidenceでは、同じ画面で複数caseを明確に判定できるなら1枚のscreenshotへまとめる。screenshot枚数を増やすためだけにcaseを分割しない。静止画で表現できないinteractionはHuman live observationで確認し、failure / ambiguity時に必要な追加screenshotを取る。
 
 completion testでは、自動popupの有無だけに依存せず、必要に応じて`Trigger Suggest`を明示実行してnuinuiCAD providerの候補を確認する。
 
