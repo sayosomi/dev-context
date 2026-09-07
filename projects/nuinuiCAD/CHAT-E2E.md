@@ -4,7 +4,7 @@
 
 E2E chatはrequired Manual E2Eを実行・再開し、tested commit / evidence / PASS-FAIL-BLOCKEDをcurrent external stateへ同期するためのchat。
 
-実行capacityは [`LANES.conf`](./LANES.conf) に宣言された`role=human-test` laneの数から導出する。各Human-test laneは同時に1つのgenerationだけを保持する。Judgment / PASS-FAIL-BLOCKEDは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。Manual E2E executorはcurrent policyでHuman固定であり、E2E chatはexecutor selectionを行わない。
+実行capacityは [`LANES.conf`](./LANES.conf) に宣言された`role=human-test` laneの数から導出する。各Human-test laneは同時に1つのgenerationだけを保持する。Judgment / PASS-FAIL-BLOCKED / repeated-failure stabilization semanticsは [`MANUAL-E2E.md`](./MANUAL-E2E.md) をauthorityとする。Manual E2E executorはcurrent policyでHuman固定であり、E2E chatはexecutor selectionを行わない。
 
 E2E chatを新しく作っただけではHuman-test laneをclaimしない。tested commit / marker / Issue checkpointと選択laneを固定した時点でexecutionが開始する。
 
@@ -13,6 +13,7 @@ E2E chatを新しく作っただけではHuman-test laneをclaimしない。test
 - Manual E2Eはmanifestで`role=human-test`と宣言されたlaneだけで行う。
 - Manual E2E production-host unitはHumanが実行する。`Judgment: Objective | Human`はoracleの性質でありexecutor selectionではない。
 - implementation failureが確認された場合、Human-test checkoutでproduct codeを修正しない。fixはFREEなdeclared implementation laneへ戻す。
+- `E2E Stabilization Key`、qualifying failure、failure streak、stabilization cycle / re-entryはIssue / Manual E2E plan / result evidenceをauthorityとし、checkout markerやhelper metadataから推測しない。
 - tested commit、stable ref、marker、Issue checkpointの扱いは`CHECKOUTS.md` / `MANUAL-E2E.md` / relevant host-specific ownerをauthorityとする。
 - VS Code hostなら[`VS-CODE-E2E.md`](./VS-CODE-E2E.md)を読む。`LUNA-E2E-PLAYBOOK.md`はinactive historical reactivation referenceであり、normal E2E chatではload / useしない。
 - Human向けVS Code host preparationでは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned Human E2E preparation helperがcurrent local cloneで利用可能なら、そのhelperをhandoffに使う。ChatGPTが同じlaunch / session lifecycleをinline shellとして再実装しない。
@@ -30,10 +31,13 @@ implementation merge / authoritative read-back complete
 -> successful IMPLEMENTATION RELEASED
 -> Lane release checkpoint recorded and read back
 -> physical implementation lane proven FREE
+-> Manual E2E plan / stabilization eligibility revalidated
 -> e2e-start / E2E handoff
 ```
 
 implementation laneのrelease anomalyが残る間はnormal E2Eをstartしない。`BUSY`、`BLOCKED`、`RELEASE-PENDING`はcapacity unavailableであり、physical `FREE`を推測しない。selected Human-test laneが`BUSY`ならIssueは`In Review`で待ち、implementation capacityを保持しない。
+
+Human-test laneが`FREE`でも、対象`E2E Stabilization Key`がgatedでre-entry requirements未完了ならstartしない。新しいtested SHAやmerged fixだけではre-entryを証明しない。gated keyは[`MANUAL-E2E.md`](./MANUAL-E2E.md)のre-entry recordが揃った後にだけnormal startupへ戻る。
 
 ## Canonical same-terminal startup handoff (#168)
 
@@ -52,29 +56,65 @@ nuinui e2e-start-command \
 
 `--port`はcaller-controlledのCDP portである。Human-test laneが2つ以上宣言されている場合は、明示的な`--lane`と`--port`が必要で、lane名・宣言順・空き状況からportを推測または自動選択しない。Human-test laneが1つだけのsingleton topologyでは、`--port`省略時の既定port互換を維持する。
 
-generator outputがterminal formatting authorityであり、ChatGPTはlane/ref/prepare orderingを再構成しない。Current active policyでは`--executor human`だけを渡す。helperがlegacy compatibilityとして別executor metadataを受理できても、E2E chatはそれをadvertise / selectしない。helperはtested ref、test oracle、lane schedulingを決めず、GUI actionも実行しない。generationが`BLOCKED`または利用不能なときだけ、explicit preflight / diagnosis / recoveryへ戻る。
+generator outputがterminal formatting authorityであり、ChatGPTはlane/ref/prepare orderingを再構成しない。Current active policyでは`--executor human`だけを渡す。helperがlegacy compatibilityとして別executor metadataを受理できても、E2E chatはそれをadvertise / selectしない。helperはtested ref、test oracle、stabilization eligibility、lane schedulingを決めず、GUI actionも実行しない。generationが`BLOCKED`または利用不能なときだけ、explicit preflight / diagnosis / recoveryへ戻る。
 
 ## Confirmed Manual E2E implementation failure
 
-confirmed Manual E2E implementation failureは次のtransitionで処理する。
+confirmed Manual E2E implementation failureは、actual-host triage後に[`MANUAL-E2E.md`](./MANUAL-E2E.md)のsame-key historyを分類してからroutingする。
+
+1st pre-stabilization qualifying failureでgateが発火していない場合だけ、従来のnormal focused-fix transitionを使う。
 
 ```text
-E2E FAIL confirmed
--> preserve Manual E2E: Failed evidence
+1st qualifying E2E FAIL confirmed
+-> preserve Manual E2E: Failed evidence + stabilization key / streak=1
 -> remove `manual_e2e_only`
 -> Linear status = Todo
--> remain Todo during fix contract / re-audit / dependency organization / rerun-plan synchronization
--> synchronize focused contract / fix / rerun requirements
+-> remain Todo during focused fix contract / re-audit / dependency organization / rerun-plan synchronization
+-> synchronize focused contract / fix / one-rerun requirements
 -> later select a currently FREE declared implementation lane
 -> start a new durable implementation generation
 -> only after canonical begin/start success change status to In Progress
 ```
 
-pre-E2E implementation claimをreuseまたはrestoreしない。E2E failure後は、fix contract、re-audit、dependency organization、rerun-plan synchronizationを行っている間も`Todo`に保つ。laterにFREEなdeclared implementation laneを選択し、新しいgenerationをcanonical begin/startで開始する。successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
+pre-E2E implementation claimをreuseまたはrestoreしない。normal first-failure routeでも、fix contract、re-audit、dependency organization、rerun-plan synchronizationを行っている間は`Todo`に保つ。laterにFREEなdeclared implementation laneを選択し、新しいgenerationをcanonical begin/startで開始する。successful canonical begin/startが返るまで`In Progress`へ変更しない。Manual E2E PASS/FAIL judgment semanticsと#74 closure orderingは変更しない。
+
+2nd pre-stabilization qualifying failure、completed stabilization cycle後のsame-key qualifying recurrence、またはHuman explicit stabilization overrideでは、このnormal symptom-fix transitionを開始せず、次のstabilization lifecycleへ進む。
+
+## Repeated-failure stabilization lifecycle (#190)
+
+stabilization gateが発火したら、current resultの意味を変更せずManual E2E Failed evidenceを保持する。Human overrideだけでgateが発火した場合も、実際に確認されていない追加product FAILを作らない。
+
+```text
+stabilization gate fires for <E2E Stabilization Key>
+-> stop requesting further operations for that key
+-> preserve completed PASS / FAIL / Human evidence
+-> dependent remaining units = unexecuted where applicable
+-> collect any required transient failure evidence before teardown
+-> canonical current-generation closure
+-> remove `manual_e2e_only`
+-> Linear status = Todo while stabilization re-audit is active
+-> cross-owner contract / state-model / ownership / testability re-audit
+-> no symptom-only implementation start
+-> no next same-key Human E2E generation
+-> re-entry requirements complete
+-> normal implementation / review / merge
+-> fresh reverse-map + exact candidate qualification
+-> normal E2E startup may resume
+```
+
+Current generationを閉じる前に、[`MANUAL-E2E.md`](./MANUAL-E2E.md)のtransient evidence-before-teardown ruleを満たす。必要なfailure stateを保存した後は、下記canonical closure handoffで`cleanup -> e2e-release -> closure-check`を完了する。marker/session/rootを手で削除してgateを表現しない。
+
+Gate中はobserved symptomだけから実装を自動開始しない。mandatory stabilization re-auditがroot causeまたはexact unresolved failure boundary、adjacent owners inspected、各ownerのimplicated/ruled-out reasoning、consolidated repair scope、whole-chain regression coverageを記録するまでimplementation laneをclaimしない。material failure boundaryが未解決ならinvestigationを継続する。
+
+Objective failureをHumanが発見した場合、re-entry前にautomated regressionまたはequivalent deterministic host qualificationへ移せるかを必ず評価する。実用上automateできない場合は理由とHuman host checkを残す必要を明示的に記録する。Human visual / UX / experiential judgmentはautomation gapとして消さない。
+
+Gateはstabilization key単位であり、unrelated key / Issueは独立に実行可能。ただしHumanがqueue全体またはより広い範囲へstop / pauseを指示した場合はその指示を優先し、次のqueued E2E Issueへ機械的に進まない。
+
+一度stabilization cycleを完了してre-entryしたkeyで後日qualifying failureが再発した場合は、1st/2ndのallowanceを再開せず即座にこのgateを再発火する。
 
 ## Human E2E closure handoff
 
-Sol High / ChatGPTがsuccessful closureを承認した後、Canonicalなclosure handoffはHumanが同じterminalから次のnamed commandを1回実行する。
+Sol High / ChatGPTがcurrent generationのclosureを承認した後、product PASS、confirmed failure、stabilization gateのいずれであっても、Canonicalなclosure handoffはHumanが同じterminalから次のnamed commandを1回実行する。
 
 ```bash
 nuinui-e2e-prepare closure-command --issue <Issue> [--lane <human-test-lane>]
@@ -88,9 +128,9 @@ Exact duplicate cleanup / releaseの既存success envelopeはそのまま次stag
 
 ## Chat rotation / recovery
 
-E2E chatのrotation自体はTask pauseではない。tested commit、marker、lane ownership、Manual E2E stateをrotationだけで変更しない。
+E2E chatのrotation自体はTask pauseではない。tested commit、marker、lane ownership、Manual E2E state、stabilization key / streak / completed-cycle / gate / re-entry evidenceをrotationだけで変更しない。
 
-新chatで再開する場合は[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)のexternal-state recovery順に従い、current Issue / tested ref / actual e2e lane stateから再構築する。過去chatのsummaryだけでcurrent tested stateを決めない。
+新chatで再開する場合は[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)のexternal-state recovery順に従い、current Issue / tested ref / actual e2e lane state / preserved Manual E2E stabilization evidenceから再構築する。過去chatのsummaryだけでcurrent tested stateやsame-key rerun eligibilityを決めない。
 
 markerとactive sessionが別世代に分かれた場合だけ、owner documentのexact proofを満たしたうえで、選択したHuman-test laneを明示して次を使う。marker/sessionが一致する、caller identityと実状態が違う、rootやhandoffが不正、process ownershipが証明できない、またはsnapshotが変化した場合は`BLOCKED`であり、marker・session・rootを手で削除しない。
 
@@ -98,7 +138,7 @@ markerとactive sessionが別世代に分かれた場合だけ、owner document�
 nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>
 ```
 
-この例外経路は、stale session rootに属すると証明できるprocess・handoff・rootだけを停止／削除し、marker Bとcheckout Bを保持したままsessionを除去して、canonical statusをread-backする。成功後はgeneration Bの通常prepareを新しいexact identityで開始する。
+この例外経路は、stale session rootに属すると証明できるprocess・handoff・rootだけを停止／削除し、marker Bとcheckout Bを保持したままsessionを除去して、canonical statusをread-backする。成功後はgeneration Bの通常prepareを新しいexact identityで開始する。ただし対象keyがstabilization gateで停止中なら、recovery成功だけを根拠に新generationを開始しない。
 
 prepare ownerが終了して`kind=preparing` reservationだけが残った場合は、markerとcheckoutが同じexact generationであることを確認してから、選択したHuman-test laneを明示し、次を使う。
 
