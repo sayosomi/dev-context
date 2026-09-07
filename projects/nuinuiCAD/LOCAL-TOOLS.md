@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.9.1`。
+current standalone helper version: `1.10.1`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -227,6 +227,7 @@ current commands:
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
 | `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | reviewed exact headへrequired CI pending時だけGitHub Auto-mergeを予約 |
 | `nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | ChatGPT-authorized NON-INTERFERING merge-gate refreshをselected manifest laneでconflict-free merge-only実行し、verify後にnormal push |
+| `nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]` | settledなcaller intentをread-onlyでcanonicalなshell-safe positional `integrate-clean` commandへ変換。semantic NON-INTERFERING authorization、verification-plan selection、mutationは行わない |
 | `nuinui e2e-start [<human-test-lane>] <SAY-123> <tested-ref>` | unique Human-test laneのshort form、またはexplicit manifest laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main [<human-test-lane>] <SAY-123> <tested-ref>` | Active interim workflow時だけselected Human-test laneをproject policyのimplementation sourceへ安全に固定 |
 | `nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>` | unique Human-test laneのshort form、またはexplicit manifest laneでcaller identityを照合し、verified stateをlatest authoritative default branchへ戻してmarkerを削除。exact duplicateはread-only no-op |
@@ -345,7 +346,7 @@ helper-generated canonical begin lineをChatGPTが受け取った場合も、Hum
 
 ### Recoverable Human mutation results
 
-Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
+Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `integrate-clean-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
 
 The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-parse --absolute-git-dir)/nuinui-command-result-v1/` in the standard dev-context Git directory and contains only `state` and `output`。 It is recovery evidence only; lane ownership, claims, locks, release receipts, E2E markers/sessions, and other authorities remain authoritative. The production helper uses the canonical standard clone represented by `C`; isolated `NUINUI_SELFTEST` runs use an isolated dev-context repository and never the production store.
 
@@ -400,6 +401,14 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 ### `integrate-clean` merge-only integration
 
 `nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->` は、already-reviewed topicに対するcurrent-base freshnessだけが必要な場合のnarrow Human integration helper。
+
+通常のHuman handoffでは、ChatGPTはfreshにauthorizeしたIssue / claim / Review Head / current mainとsettledなabsolute verification script（必要ならexact effective-file manifest）をnamed optionsで渡し、Humanは次を同じterminalで実行する。
+
+```bash
+nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <reviewed-topic-head> --main <current-main> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]
+```
+
+成功時の`INTEGRATE CLEAN COMMAND READY`に続く1行が、既存のpositional `integrate-clean` commandをexact order・shell quoting・manifest sentinel `-`付きで出力する。Humanはその行をverbatimで直ちに実行する。helperはsemantic eligibility、test selection、またはintegration mutationを行わず、Issue / claim / topic head / mainのcaller expectationsをcurrent stateへ置き換えない。
 
 eligibilityとpost-integration driftのsemantic `NON-INTERFERING`判断はChatGPTが行い、helper自身は判断しない。active durable lane / Issue / claim / branch / Base / exact local and remote topic / exact current main / clean stateを再検証してから、exact current mainの`--no-commit --no-ff` mergeだけを行う。
 
@@ -495,7 +504,7 @@ Explicit lane forms are required when zero or multiple Human-test lanes are decl
 
 `recover-preparing` is the explicit recovery for a crashed `kind=preparing` reservation. It requires the selected declared Human-test lane, exact marker/checkout and preparing Issue/ref/root identity, the exact `nuinui-e2e-prepare` owner, and a dead recorded prepare PID. It accepts only a valid canonical handoff when present, proves every recorded root process belongs to that root, revalidates snapshots before mutation and session removal, then removes only the owned process, handoff, root, and unchanged preparing session. A live owner, PID/process ambiguity, malformed or active session, wrong identity, or concurrent change is `BLOCKED`; marker and checkout are never removed or rewritten。
 
-末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.9.1`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
+末尾の`--locale ja`だけがlocale optionとして認識され、`MS-CEINTL.vscode-language-pack-ja`をisolated extensions directoryへinstallする。install後は同じisolated user-data/extensions rootを指定したVS Code CLIの`--list-extensions --show-versions`でJapanese extensionの実在をboundedに証明する。`languagepacks.json`はfirst hostのpre-launch存在を要求せず、最初のapplication host自身がcacheをmaterializeする場合を許容する。起動後はowned VS Code hostのeffective Japanese NLS state（`userLocale=ja`、`resolvedLanguage=ja`、active language-pack metadata/supportとisolated path ownership）までboundedに証明して初めてREADYを返す。NLS JSONは`VSCODE_NLS_CONFIG=`以後のcomplete objectとして読み取り、実際の`defaultMessagesFile=/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json`やlanguage-packのtranslation pathにspacesを含む値も保持する。最初のhostがwrong localeへresolveするかNLS proofを得られない場合、helperはその同じowned rootを動かしたままvalidなlanguage-pack cacheをboundedに待ち、cache proof後に同じfixture・CDP・launch argumentsで最大1回だけ内部relaunchする。unsupported、missing、duplicate、non-trailing、malformed optionはroot作成前に拒否する。option省略時は`locale=default`の通常動作を維持する。`nuinui` standalone helperのversionは`1.10.1`であり、e2e-start-commandの生成後もprepare helperのversioned owner / output semanticsは変更しない。
 
 `prepare`はexact tested ref / marker / clean detached checkoutを検証し、dependency materializationとrequired build後にfresh VS Code Extension Development Hostを起動してHuman handoffを作る。tracked-file mutationはBLOCKする。`check`と`prepare`は選択されたpathのapplication prerequisiteとして、Info.plistの`CFBundleExecutable`から解決した`Contents/MacOS/<CFBundleExecutable>`のexecutable proofを行う。通常のnon-locale `prepare`はこのapplication executableを直接起動し、active sessionの`launch_pid`へそのPIDを保存する。VS Code CLIはhost identityには使わず、Japanese language-packのisolated install / `--list-extensions --show-versions`などCLI専用操作に限定する。locale-specific pathはこれに加えてresolved VS Code CLIもread-onlyで証明する。
 

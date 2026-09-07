@@ -190,11 +190,13 @@ ChatGPT-side remote freshness gateは各handoff生成直前に行う。remote ma
 
 ## Conflict-free Human integration handoff
 
-`nuinui integrate-clean`は`nuinui-handoff-check`のreplacementではなく、same durable execution identityをconsumeする別のmutation boundary。
+`nuinui integrate-clean-command`は`nuinui-handoff-check`のreplacementではなく、same durable execution identityをconsumeする既存`nuinui integrate-clean` mutation boundaryへのread-only canonical façadeである。`nuinui integrate-clean`自体は従来どおり別のmutation boundaryとして残る。
 
 ChatGPTは実行前にlatest remote main、saved Review Head / Integration Watermark / claim、post-integration driftをfresh確認し、semantic `NON-INTERFERING`とcurrent-base freshness-only merge gateをauthorizeする。helper自身がmutation直前・verification後・push後にexact durable/local/remote stateを再検証するため、過去の`HANDOFF VERIFIED`だけでmutationをauthorizeしない。
 
 checkout / branch / claim mismatchがある場合、`integrate-clean`はsilent resume / repairをしない。exact pushed-checkpoint continuationが既存Issue 84 recovery条件を満たす場合は先にそのresume + handoff recoveryを完了し、clean exact checkpointを再構成してから別 invocationとして`integrate-clean`へ進む。
+
+通常のeligible freshness-only handoffでは、ChatGPTはsemantic `NON-INTERFERING` authorizationとsettled verification planをfreshに確定した後、named `integrate-clean-command` inputをHumanへ渡す。Humanは同じterminalでそのhelperを実行し、出力された1行のshell-safe positional `integrate-clean` invocationをverbatimで実行する。helperはIssue / claim / reviewed topic head / expected mainをcaller-controlledのまま保持し、verification scriptとoptional manifestのquoting / sentinel placementだけをcanonicalizeする。
 
 success envelopeのnew `head`はmerge-only integration checkpoint、`integration_watermark`はmerged exact main。helper成功だけでblocking review freshnessやrequired PR CIをPASS扱いにしない。
 
