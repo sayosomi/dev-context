@@ -106,7 +106,7 @@ generatorが`BLOCKED`、ambiguous、stale、または利用不能な場合だけ
 
 これはChatGPT/Humanのunconditionalなround-tripではない。以下の別diagnostic preflight / recovery条件はそのまま維持する。
 
-ChatGPTがactual local inventoryを知らず、begin / resume / release / handoff-checkがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。ただし、exact pushed-checkpoint Luna handoffのinitial failureのfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に実行する。
+ChatGPTがactual local inventoryを知らず、begin / resume / release / handoffがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。ただし、exact pushed-checkpoint Luna handoffのinitial proof first lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、`nuinui handoff` façadeのone-shot recoveryを先に実行する。
 
 ```bash
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui preflight
@@ -122,17 +122,17 @@ Separate preflightを使う条件は次に限定する。
 
 - Coordinatorがcurrent lane occupancyを知らず、Workのselect / route前にinventoryが必要;
 - current execution identityを一意に再構成できない;
-- `begin`、`resume`、`release`、またはIssue #84 exception外の`nuinui-handoff-check`が`BLOCKED`を返した;
+- `begin`、`resume`、`release`、またはIssue #84 exception外の`nuinui handoff`が`BLOCKED`を返した;
 - crash / interrupted lifecycle operationが疑われる;
-- unexpected checkout、branch、dirty stateが報告された。ただし、exact pushed-checkpoint Luna handoffのinitial failureがIssue #84のexact `claimed branch mismatch` classifierである場合だけは、下記one-attempt recoveryを先に適用する;
+- unexpected checkout、branch、dirty stateが報告された。ただし、exact pushed-checkpoint Luna handoffのinitial failureがIssue #84のexact `claimed branch mismatch` classifierである場合だけは、façadeのone-attempt recoveryを先に適用する;
 - explicit recovery / diagnosisが必要。
 
-For an exact pushed-checkpoint Luna handoff whose first handoff failure is exactly
-`BLOCKED: handoff claimed branch mismatch`, EXECUTION-HANDOFF.md's one-attempt exact resume recovery runs first.
+For an exact pushed-checkpoint Luna handoff whose first proof failure is exactly
+`BLOCKED: handoff claimed branch mismatch`, the `nuinui handoff` façade runs its one-attempt exact resume recovery first.
 
-Human preflight is not required if resume returns the canonical `IMPLEMENTATION RESUMED` envelope and the exact original handoff-check rerun returns `HANDOFF VERIFIED`. Route to the normal BLOCKED / preflight path if the initial failure has any other classification, the one recovery attempt fails or returns ambiguous evidence, or the second handoff-check fails. This exception does not apply to `absent` topic mode.
+Human preflight is not required if the façade returns canonical `IMPLEMENTATION RESUMED` evidence and its exact original proof rerun returns `HANDOFF VERIFIED`. Route to the normal BLOCKED / preflight path if the initial failure has any other classification, the one recovery attempt fails or returns ambiguous evidence, or the second proof fails. This exception does not apply to `absent` topic mode.
 
-same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側のGitHub checkとLuna handoff-check inputとして別に扱う。
+same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側のGitHub checkと`nuinui handoff` inputとして別に扱う。
 
 Humanへ任せないもの:
 
@@ -318,7 +318,7 @@ slot identityがexact一致し、working tree、local branch checkpoint、author
 
 already target branch / exact checkpointならidempotent successとしてよい。slotがownershipを保持しているのにcheckoutが別branchへ変わっている場合はpreflightのBLOCKEDを維持し、explicit resumeで安全にrestoreできた後だけBUSYへ戻す。
 
-same active durable generationのresume / continuationでは、fresh local preflightを別途要求しない。last verified lifecycle envelopeまたはcurrent Linear checkpointのclaim / checkpointはcaller expectationとして渡してよいが、authorityではない。Lunaの最初の`nuinui-handoff-check`がactual durable slot、checkout、remote topic、remote mainを再検証し、matchなら継続、mismatchなら`BLOCKED / STALE_EXECUTION_CONTEXT`としてdiagnosis / recoveryへ戻す。
+same active durable generationのresume / continuationでは、fresh local preflightを別途要求しない。last verified lifecycle envelopeまたはcurrent Linear checkpointのclaim / checkpointはcaller expectationとして渡してよいが、authorityではない。Lunaの最初の`nuinui handoff`がstandalone proofを通じてactual durable slot、checkout、remote topic、remote mainを再検証し、matchなら継続、mismatchなら`BLOCKED / STALE_EXECUTION_CONTEXT`としてdiagnosis / recoveryへ戻す。
 
 resume success envelope:
 

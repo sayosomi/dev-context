@@ -83,6 +83,10 @@ nuinui_self_test() {
     echo 'SELFTEST BLOCKED: handoff-check test is missing or not executable'
     return 1
   }
+  [ -x "$nuinui_selftest_dir/test-nuinui-handoff" ] || {
+    echo 'SELFTEST BLOCKED: handoff test is missing or not executable'
+    return 1
+  }
   [ -x "$nuinui_selftest_dir/test-nuinui-e2e-prepare" ] || {
     echo 'SELFTEST BLOCKED: e2e-prepare test is missing or not executable'
     return 1
@@ -113,6 +117,7 @@ nuinui_self_test() {
   }
   /bin/sh "$nuinui_selftest_dir/test-nuinui-runtime" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-handoff-check" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-handoff" "$P" || return $?
   /bin/zsh "$nuinui_selftest_dir/test-nuinui-e2e-prepare" "$EH" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-topology-matrix" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-command-result" "$P" || return $?

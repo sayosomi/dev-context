@@ -212,7 +212,7 @@ Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repositor
 - selected lane;
 - Base checkpoint SHA;
 - branch;
-- complete current-run handoff identity: Branch, Base, Claim, Checkpoint, Current remote main, Topic remote mode, exact handoff command, and exact recovery command for exact-mode continuation;
+- complete current-run handoff identity: Lane, Issue, Claim, Checkpoint, Current remote main, Topic remote mode, and one exact canonical handoff command;
 - concrete change owner / files / symbols / API boundary;
 - settled acceptance;
 - required verification;
@@ -229,9 +229,8 @@ Promptにはcurrent executable source-code sliceだけを書く。
 
 - repository
 - lane checkout path
-- expected current lane branch / HEAD / Base checkpoint
-- current-run Execution Envelope with Branch / Base / Claim / Checkpoint / Current remote main / Topic remote mode
-- exact prefilled handoff command and, for `exact` mode, exact prefilled recovery command
+- current-run Execution Envelope with Lane / Issue / Claim / Checkpoint / Current remote main / Topic remote mode
+- one exact prefilled `nuinui handoff` command; the façade derives Branch / Base from the matched durable slot
 - current slice / change target
 - concrete required changes
 - required tests / verification
@@ -245,22 +244,22 @@ Promptのstartup sequenceでは、Luna processのinitial cwdをlane validation�
 
 Expected lane stateが違う、dirty workがある、ownership不明、Base checkpointから勝手に進んでいる等の場合は、下記 `Luna startup handoff gate` が明示する exact pushed-checkpoint `claimed branch mismatch` recoveryだけを例外とし、それ以外は変更せず停止して報告させる。
 
-Project-specific canonical `nuinui-handoff-check` is terminal startup proof for its helper-owned facts when it returns `HANDOFF VERIFIED`. Do not append `git fetch origin --prune` or another lane / topic / main verification after that success merely to re-prove those facts; the shared Coding Agent fetch rule does not create a second post-success handoff gate. A later fetch required for genuinely new implementation work is allowed, but its remote-tracking refs must not override the successful handoff or become authoritative topic evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
+Project-specific canonical `nuinui handoff` is the terminal startup façade for its helper-owned facts when it returns `HANDOFF VERIFIED`. It delegates proof to `nuinui-handoff-check` and owns the exact-mode one-shot resume recovery. Do not append `git fetch origin --prune` or another lane / topic / main verification after that success merely to re-prove those facts; the shared Coding Agent fetch rule does not create a second post-success handoff gate. A later fetch required for genuinely new implementation work is allowed, but its remote-tracking refs must not override the successful handoff or become authoritative topic evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
 
 ### Luna startup handoff gate
 
-Repository operation前に、Lunaはcurrent-run Execution Envelopeからsupplied exact handoff commandをargument変更なしで実行する。
+Repository operation前に、Lunaはcurrent-run Execution Envelopeからsupplied exact `nuinui handoff` commandをargument変更なしで実行する。
 
 ```text
 handoff succeeds
 -> continue
 
-handoff exits nonzero and first output line exactly
+handoff exits nonzero and first proof output line exactly
 BLOCKED: handoff claimed branch mismatch
 and Topic remote mode = exact
--> execute the supplied exact recovery command once
+-> façade re-reads the matched durable slot and executes existing resume once
 -> require the canonical IMPLEMENTATION RESUMED envelope
--> rerun the supplied original handoff command unchanged
+-> façade reruns the same handoff proof once
 -> require HANDOFF VERIFIED
 -> continue
 
@@ -268,7 +267,7 @@ anything else
 -> stop
 ```
 
-The recovery command is the prefilled same-generation `nuinui resume` command. Luna must not infer or regenerate Issue, lane, Branch, Base, Claim, Checkpoint, Current remote main, handoff command, or recovery command from retained session context or repository history. `CALLER_EXPECTED` / `ACTUAL` output never authorizes identity substitution. A failed or ambiguous resume, or a failed second handoff, is a hard-stop with no retry. The existing stale-context, dirty-state, ownership, and remote-mismatch hard-stop rules remain unchanged; `absent` mode is not eligible for this exception.
+Branch and Base are derived only from the exact matched durable slot; Luna must not infer or regenerate Issue, lane, Branch, Base, Claim, Checkpoint, Current remote main, or the handoff command from retained session context or repository history. `CALLER_EXPECTED` / `ACTUAL` output never authorizes identity substitution. A failed or ambiguous resume, or a failed second proof, is a hard-stop with no retry. The existing stale-context, dirty-state, ownership, and remote-mismatch hard-stop rules remain unchanged; `absent` mode is not eligible for this exception.
 
 ## Scope control
 

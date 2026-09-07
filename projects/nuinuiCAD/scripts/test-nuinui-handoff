@@ -1,0 +1,411 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -gt 0 ]; then
+  SOURCE_HELPER=$1
+else
+  SOURCE_HELPER=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/nuinui
+fi
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+SOURCE_HANDOFF_CHECK=$SCRIPT_DIR/nuinui-handoff-check
+ROOT=$(CDPATH= cd -- "$(mktemp -d /tmp/nuinui-handoff.XXXXXX)" && pwd -P)
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() { echo "HANDOFF TEST FAIL: $*" >&2; exit 1; }
+assert_contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
+assert_not_contains() { if printf '%s\n' "$1" | grep -Fq -- "$2"; then fail "$3"; fi; }
+
+PROJECT=$ROOT/project
+HELPER=$PROJECT/scripts/nuinui
+HANDOFF_CHECK=$PROJECT/scripts/nuinui-handoff-check
+REMOTE=$ROOT/sayosomi/nuinuiCAD.git
+SEED=$ROOT/seed
+MAIN=$ROOT/main
+OTHER=$ROOT/other
+CONTEXT=$ROOT/context
+MANIFEST=$PROJECT/LANES.conf
+CHECK_WRAPPER=$ROOT/handoff-check-wrapper
+CHECK_COUNT=$ROOT/handoff-check-count
+SWITCH_COUNTER=$ROOT/resume-switch-count
+FAKE_GIT_DIR=$ROOT/fake-git-bin
+FAKE_GIT=$FAKE_GIT_DIR/git
+CASE_BRANCH=
+CASE_CLAIM=
+CASE_BASE=
+CASE_CHECKPOINT=
+
+mkdir -p "$PROJECT/scripts" "$ROOT/cwd" "$FAKE_GIT_DIR" "$(dirname "$REMOTE")"
+cp "$SOURCE_HELPER" "$HELPER"
+cp "$SOURCE_HANDOFF_CHECK" "$HANDOFF_CHECK"
+chmod 755 "$HELPER" "$HANDOFF_CHECK"
+
+git init -q --bare "$REMOTE"
+git init -q -b main "$SEED"
+git -C "$SEED" config user.name test
+git -C "$SEED" config user.email test@example.invalid
+printf '%s\n' base > "$SEED/base.txt"
+git -C "$SEED" add base.txt
+git -C "$SEED" commit -qm base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -qu origin main
+git clone -q "$REMOTE" "$MAIN"
+git -C "$MAIN" config user.name test
+git -C "$MAIN" config user.email test@example.invalid
+git -C "$MAIN" worktree add -q --detach "$OTHER" origin/main
+git init -q "$CONTEXT"
+
+printf '%s\n' \
+  'version=1' \
+  'repository=sayosomi/nuinuiCAD' \
+  'default_branch=main' \
+  '' \
+  '[lane renamed-implementation]' \
+  'role=implementation' \
+  "path=$MAIN" \
+  'idle=detached' \
+  '' \
+  '[lane additional-implementation]' \
+  'role=implementation' \
+  "path=$OTHER" \
+  'idle=detached' > "$MANIFEST"
+
+cat > "$CHECK_WRAPPER" <<'EOF'
+#!/bin/sh
+count=0
+[ -f "$NUINUI_HANDOFF_COUNTER" ] && count=$(cat "$NUINUI_HANDOFF_COUNTER")
+count=$((count + 1))
+printf '%s\n' "$count" > "$NUINUI_HANDOFF_COUNTER"
+if [ "$NUINUI_HANDOFF_FAKE_MODE" = near-match ] && [ "$count" = 1 ]; then
+  printf '%s\n' 'BLOCKED: handoff claimed branch mismatch (near-match)'
+  exit 1
+fi
+if [ "$count" = 2 ] && [ -n "$NUINUI_HANDOFF_SECOND_DRIFT_SEED" ]; then
+  drift_file=$NUINUI_HANDOFF_SECOND_DRIFT_SEED/second-handoff-drift
+  printf '%s\n' drift > "$drift_file"
+  git -C "$NUINUI_HANDOFF_SECOND_DRIFT_SEED" add second-handoff-drift
+  git -C "$NUINUI_HANDOFF_SECOND_DRIFT_SEED" commit -qm second-handoff-drift
+  git -C "$NUINUI_HANDOFF_SECOND_DRIFT_SEED" push -q origin main
+fi
+exec "$NUINUI_HANDOFF_REAL_HELPER" "$@"
+EOF
+chmod 755 "$CHECK_WRAPPER"
+
+REAL_GIT=$(command -v git)
+cat > "$FAKE_GIT" <<'EOF'
+#!/bin/sh
+if printf ' %s ' "$*" | grep -Eq ' switch '; then
+  count=0
+  [ -f "$NUINUI_RESUME_SWITCH_COUNTER" ] && count=$(cat "$NUINUI_RESUME_SWITCH_COUNTER")
+  printf '%s\n' $((count + 1)) > "$NUINUI_RESUME_SWITCH_COUNTER"
+  [ "$NUINUI_FAIL_RESUME_SWITCH" = 1 ] && exit 1
+fi
+exec "$NUINUI_REAL_GIT" "$@"
+EOF
+chmod 755 "$FAKE_GIT"
+
+export NUINUI_SELFTEST=1
+export NUINUI_DEV_CONTEXT_WT=$CONTEXT
+export NUINUI_DEV_CONTEXT_DEV_WT=$CONTEXT
+export NUINUI_SELFTEST_RESULT_REPO=$CONTEXT
+export NUINUI_HANDOFF_CHECK_HELPER=$CHECK_WRAPPER
+export NUINUI_HANDOFF_REAL_HELPER=$HANDOFF_CHECK
+export NUINUI_HANDOFF_COUNTER=$CHECK_COUNT
+export NUINUI_RESUME_SWITCH_COUNTER=$SWITCH_COUNTER
+export NUINUI_REAL_GIT=$REAL_GIT
+NUINUI_HANDOFF_FAKE_MODE=
+NUINUI_HANDOFF_SECOND_DRIFT_SEED=
+NUINUI_FAIL_RESUME_SWITCH=
+export NUINUI_HANDOFF_FAKE_MODE NUINUI_HANDOFF_SECOND_DRIFT_SEED NUINUI_FAIL_RESUME_SWITCH
+cd "$ROOT/cwd"
+git -C "$MAIN" switch -q --detach origin/main
+
+[ "$("$HELPER" version)" = 1.10.0 ] || fail 'handoff façade did not use standalone 1.10.0'
+HELP_OUTPUT=$("$HELPER" --help)
+assert_contains "$HELP_OUTPUT" 'handoff' 'public help omitted handoff'
+assert_contains "$HELP_OUTPUT" \
+  'Usage: nuinui handoff --lane <implementation-lane> --issue <SAY-123> --claim <claim> --checkpoint <full-sha> --main <full-sha> --topic <absent|exact>' \
+  'public help omitted canonical named handoff usage'
+"$HELPER" lane-init renamed-implementation >/dev/null
+"$HELPER" lane-init additional-implementation >/dev/null
+
+gitdir() { git -C "$MAIN" rev-parse --absolute-git-dir; }
+slot_dir() { printf '%s/nuinui-implementation-slot\n' "$(gitdir)"; }
+lock_dir() { printf '%s/nuinui-implementation-lock\n' "$(gitdir)"; }
+
+reset_generation() {
+  git -C "$MAIN" fetch -q origin main
+  reset_base=$(git -C "$MAIN" rev-parse origin/main)
+  git -C "$MAIN" switch -q --detach "$reset_base" 2>/dev/null || true
+  if [ -n "$CASE_BRANCH" ]; then
+    git -C "$MAIN" branch -D "$CASE_BRANCH" >/dev/null 2>&1 || true
+    git -C "$MAIN" push -q origin --delete "$CASE_BRANCH" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$(slot_dir)" "$(lock_dir)"
+  for reset_tombstone in "$(gitdir)"/nuinui-implementation-slot.releasing.*; do
+    [ -d "$reset_tombstone" ] || continue
+    rm -rf "$reset_tombstone"
+  done
+  git -C "$MAIN" checkout -q -- handoff-case.txt 2>/dev/null || true
+  rm -f "$MAIN/handoff-case.txt" "$CHECK_COUNT" "$SWITCH_COUNTER"
+  CASE_BRANCH=
+  CASE_CLAIM=
+  CASE_BASE=
+  CASE_CHECKPOINT=
+  NUINUI_HANDOFF_FAKE_MODE=
+  NUINUI_HANDOFF_SECOND_DRIFT_SEED=
+  NUINUI_FAIL_RESUME_SWITCH=
+}
+
+start_generation() {
+  CASE_ISSUE=$1
+  CASE_BRANCH=$2
+  git -C "$MAIN" fetch -q origin main
+  CASE_BASE=$(git -C "$MAIN" rev-parse origin/main)
+  git -C "$MAIN" switch -q --detach "$CASE_BASE"
+  start_output=$("$HELPER" start renamed-implementation "$CASE_ISSUE" \
+    "$CASE_BASE" "$CASE_BRANCH") || fail "start failed for $CASE_ISSUE"
+  CASE_CLAIM=$(printf '%s\n' "$start_output" | sed -n 's/^claim=//p')
+  [ -n "$CASE_CLAIM" ] || fail "start did not return a claim for $CASE_ISSUE"
+  CASE_CHECKPOINT=$(git -C "$MAIN" rev-parse HEAD)
+}
+
+push_checkpoint() {
+  printf '%s\n' checkpoint > "$MAIN/handoff-case.txt"
+  git -C "$MAIN" add handoff-case.txt
+  git -C "$MAIN" commit -qm checkpoint
+  CASE_CHECKPOINT=$(git -C "$MAIN" rev-parse HEAD)
+  git -C "$MAIN" push -q -u origin "$CASE_BRANCH"
+}
+
+handoff_args() {
+  "$HELPER" handoff \
+    --lane renamed-implementation \
+    --issue "$CASE_ISSUE" \
+    --claim "$CASE_CLAIM" \
+    --checkpoint "$CASE_CHECKPOINT" \
+    --main "$CASE_MAIN" \
+    --topic "$CASE_TOPIC"
+}
+
+run_handoff() {
+  CASE_MAIN=$1
+  CASE_TOPIC=$2
+  shift 2
+  if [ "$#" = 0 ]; then
+    (export PATH="$FAKE_GIT_DIR:$PATH"; handoff_args)
+  else
+    (export PATH="$FAKE_GIT_DIR:$PATH"; "$HELPER" handoff "$@")
+  fi
+}
+
+expect_no_recovery() {
+  failure_name=$1
+  expected_line=$2
+  shift 2
+  rm -f "$CHECK_COUNT" "$SWITCH_COUNTER"
+  if failure_output=$(run_handoff "$@" 2>&1); then
+    printf '%s\n' "$failure_output"
+    fail "$failure_name unexpectedly succeeded"
+  fi
+  assert_contains "$failure_output" "$expected_line" "$failure_name missing expected diagnostic"
+  assert_not_contains "$failure_output" 'HANDOFF VERIFIED' "$failure_name reached successful handoff"
+  assert_not_contains "$failure_output" 'IMPLEMENTATION RESUMED' "$failure_name attempted recovery"
+  [ ! -f "$CHECK_COUNT" ] || [ "$(cat "$CHECK_COUNT")" = 1 ] ||
+    fail "$failure_name ran more than the first proof"
+  [ ! -f "$SWITCH_COUNTER" ] || [ "$(cat "$SWITCH_COUNTER")" = 0 ] ||
+    fail "$failure_name mutated checkout through resume"
+  echo "PASS: $failure_name"
+}
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-absent
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+ABSENT_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC") || fail 'absent normal success failed'
+assert_contains "$ABSENT_OUTPUT" 'HANDOFF VERIFIED' 'absent normal success did not verify'
+[ "$(cat "$CHECK_COUNT")" = 1 ] || fail 'absent normal success ran a redundant proof'
+echo 'PASS: absent normal success'
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-exact
+push_checkpoint
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+EXACT_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC") || fail 'exact normal success failed'
+assert_contains "$EXACT_OUTPUT" 'HANDOFF VERIFIED' 'exact normal success did not verify'
+[ "$(cat "$CHECK_COUNT")" = 1 ] || fail 'exact normal success ran a redundant proof'
+echo 'PASS: exact normal success'
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-recover
+push_checkpoint
+git -C "$MAIN" switch -q --detach "$CASE_BASE"
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+RECOVERY_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC") ||
+  fail 'exact branch-mismatch recovery failed'
+assert_contains "$RECOVERY_OUTPUT" 'HANDOFF VERIFIED' 'recovery did not complete second proof'
+assert_contains "$RECOVERY_OUTPUT" 'IMPLEMENTATION RESUMED' 'recovery omitted resume evidence'
+[ "$(cat "$CHECK_COUNT")" = 2 ] || fail 'recovery did not perform exactly one proof retry'
+[ "$(cat "$SWITCH_COUNTER")" = 1 ] || fail 'recovery executed resume more than once'
+[ "$(git -C "$MAIN" symbolic-ref --quiet --short HEAD)" = "$CASE_BRANCH" ] ||
+  fail 'recovery did not restore durable branch'
+echo 'PASS: exact claimed-branch-mismatch one-shot recovery'
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-resume-failure
+push_checkpoint
+git -C "$MAIN" switch -q --detach "$CASE_BASE"
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+NUINUI_FAIL_RESUME_SWITCH=1
+rm -f "$CHECK_COUNT" "$SWITCH_COUNTER"
+if RESUME_FAILURE_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" 2>&1); then
+  printf '%s\n' "$RESUME_FAILURE_OUTPUT"
+  fail 'resume/recovery failure unexpectedly succeeded'
+fi
+assert_contains "$RESUME_FAILURE_OUTPUT" 'BLOCKED:' 'resume/recovery failure was not blocked'
+assert_not_contains "$RESUME_FAILURE_OUTPUT" 'HANDOFF VERIFIED' 'resume failure ran second proof'
+assert_not_contains "$RESUME_FAILURE_OUTPUT" 'IMPLEMENTATION RESUMED' 'resume failure emitted success evidence'
+[ "$(cat "$CHECK_COUNT")" = 1 ] || fail 'resume failure retried handoff proof'
+[ "$(cat "$SWITCH_COUNTER")" = 1 ] || fail 'resume failure retried resume'
+echo 'PASS: resume/recovery failure'
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-second-proof-failure
+push_checkpoint
+git -C "$MAIN" switch -q --detach "$CASE_BASE"
+NUINUI_HANDOFF_SECOND_DRIFT_SEED=$SEED
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+rm -f "$CHECK_COUNT" "$SWITCH_COUNTER"
+if SECOND_FAILURE_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" 2>&1); then
+  printf '%s\n' "$SECOND_FAILURE_OUTPUT"
+  fail 'second handoff failure unexpectedly succeeded'
+fi
+assert_contains "$SECOND_FAILURE_OUTPUT" 'IMPLEMENTATION RESUMED' \
+  'second-proof failure omitted resume evidence'
+assert_contains "$SECOND_FAILURE_OUTPUT" 'remote default mismatch' \
+  'second-proof failure omitted remote-main drift'
+assert_not_contains "$SECOND_FAILURE_OUTPUT" 'HANDOFF VERIFIED' \
+  'second-proof failure unexpectedly verified'
+[ "$(cat "$CHECK_COUNT")" = 2 ] || fail 'second-proof failure retried proof'
+[ "$(cat "$SWITCH_COUNTER")" = 1 ] || fail 'second-proof failure retried resume'
+echo 'PASS: second handoff failure is terminal'
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-identity
+push_checkpoint
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+expect_no_recovery 'wrong Claim' 'handoff claim mismatch' \
+  "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue "$CASE_ISSUE" --claim wrong-claim-12345678 \
+  --checkpoint "$CASE_CHECKPOINT" --main "$CASE_MAIN" --topic exact
+expect_no_recovery 'wrong Checkpoint' 'handoff checkpoint mismatch' \
+  "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue "$CASE_ISSUE" --claim "$CASE_CLAIM" \
+  --checkpoint "$CASE_BASE" --main "$CASE_MAIN" --topic exact
+expect_no_recovery 'wrong Issue' 'handoff Issue mismatch' \
+  "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue SAY-999 --claim "$CASE_CLAIM" \
+  --checkpoint "$CASE_CHECKPOINT" --main "$CASE_MAIN" --topic exact
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-main-drift
+push_checkpoint
+printf '%s\n' main-drift > "$SEED/main-drift.txt"
+git -C "$SEED" add main-drift.txt
+git -C "$SEED" commit -qm main-drift
+git -C "$SEED" push -q origin main
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+expect_no_recovery 'remote-main drift' 'handoff remote default mismatch' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-topic-drift
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+expect_no_recovery 'wrong remote-topic state' 'authoritative remote topic is absent' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-dirty
+printf '%s\n' dirty >> "$MAIN/base.txt"
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+expect_no_recovery 'dirty state' 'assigned lane is dirty' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+git -C "$MAIN" checkout -q -- base.txt
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-lock
+mkdir "$(lock_dir)"
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+expect_no_recovery 'mutation lock' 'implementation lane mutation lock exists' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-release-pending
+mkdir "$(gitdir)/nuinui-implementation-slot.releasing.claim-pending-12345678"
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+expect_no_recovery 'release-pending state' 'release-pending state' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-near-match
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=exact
+NUINUI_HANDOFF_FAKE_MODE=near-match
+expect_no_recovery 'near-match branch-mismatch output' \
+  'BLOCKED: handoff claimed branch mismatch (near-match)' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-absent-mismatch
+push_checkpoint
+git -C "$MAIN" switch -q --detach "$CASE_BASE"
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+expect_no_recovery 'absent mode branch mismatch' 'handoff claimed branch mismatch' \
+  "$CASE_MAIN" "$CASE_TOPIC"
+
+reset_generation
+CASE_MAIN=$(git -C "$MAIN" rev-parse origin/main)
+CASE_TOPIC=absent
+rm -f "$CHECK_COUNT" "$SWITCH_COUNTER"
+if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
+  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN" --topic absent --branch ignored 2>&1); then
+  fail 'Branch caller argument unexpectedly accepted'
+fi
+assert_contains "$MALFORMED_OUTPUT" 'ERROR: unknown option --branch' \
+  'Branch caller argument did not fail as malformed input'
+if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
+  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN" --topic absent --base ignored 2>&1); then
+  fail 'Base caller argument unexpectedly accepted'
+fi
+assert_contains "$MALFORMED_OUTPUT" 'ERROR: unknown option --base' \
+  'Base caller argument did not fail as malformed input'
+if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
+  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN"); then
+  fail 'missing topic unexpectedly accepted'
+fi
+assert_contains "$MALFORMED_OUTPUT" 'ERROR: missing required named option --topic' \
+  'missing topic did not fail closed'
+if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
+  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
+  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN" --topic absent \
+  --topic exact 2>&1); then
+  fail 'duplicate topic unexpectedly accepted'
+fi
+assert_contains "$MALFORMED_OUTPUT" 'ERROR: duplicate named option --topic' \
+  'duplicate topic did not fail closed'
+echo 'PASS: malformed named arguments and no Branch/Base caller requirement'
+
+echo 'HANDOFF TEST PASS'
