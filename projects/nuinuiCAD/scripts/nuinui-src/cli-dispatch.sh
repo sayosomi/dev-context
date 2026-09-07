@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.9.1
-K='preflight verify lane-init begin begin-command start resume release release-command recover pr-auto-merge integrate-clean e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
+V=1.10.0
+K='preflight verify lane-init begin begin-command start resume handoff release release-command recover pr-auto-merge integrate-clean e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -411,6 +411,7 @@ nuinui_context_dev_next_parse_args() {
 nuinui_usage() {
   echo "nuinui $V"
   echo "Commands: $K"
+  echo 'Usage: nuinui handoff --lane <implementation-lane> --issue <SAY-123> --claim <claim> --checkpoint <full-sha> --main <full-sha> --topic <absent|exact>'
   echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
   echo 'Usage: nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>'
   echo 'Usage: nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]'
@@ -688,6 +689,12 @@ case "$1" in
     [ "$#" = 7 ] || { echo 'Usage: nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>'; exit 2; }
     nuinui_require_runtime_manifest || exit 1
     nuinui_run_tracked resume "$#" "$@" nuinui_lane_dispatch resume "$2" "$3" "$4" "$5" "$6" "$7"
+    exit $?
+    ;;
+  handoff)
+    shift
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_public handoff nuinui_handoff "$@"
     exit $?
     ;;
   release)
