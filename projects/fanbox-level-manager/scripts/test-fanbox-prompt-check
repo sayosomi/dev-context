@@ -1,0 +1,268 @@
+#!/bin/sh
+
+script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd) || exit 1
+checker=$script_dir/fanbox-prompt-check
+project_readme=$script_dir/../README.md
+test_root=$(mktemp -d "${TMPDIR:-/tmp}/fanbox-prompt-check-test.XXXXXX") || exit 1
+
+cleanup() {
+  rm -rf "$test_root"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  printf '%s\n' "test-fanbox-prompt-check: FAIL: $1" >&2
+  exit 1
+}
+
+pass_case() {
+  output=$("$checker" "$1" "$2" 2>&1) || fail "$3"
+  [ "$output" = "PROMPT PREFLIGHT PASS" ] || fail "$3 returned unexpected output: $output"
+}
+
+blocked_case() {
+  if output=$("$checker" "$1" "$2" 2>&1); then
+    fail "$3 unexpectedly passed"
+  fi
+  case "$output" in
+    "PROMPT PREFLIGHT BLOCKED: "*) ;;
+    *) fail "$3 returned unexpected failure output: $output" ;;
+  esac
+}
+
+write_context() {
+  context_path=$1
+  context_branch=$2
+  context_base=$3
+  context_oracle=$4
+  {
+    printf '%s\n' 'fanbox-prompt-preflight-context-v1'
+    printf '%s\n' 'repository=sayosomi/fanbox-level-manager'
+    printf '%s\n' 'role=implementation'
+    printf '%s\n' "branch=$context_branch"
+    printf '%s\n' "base=$context_base"
+    printf '%s\n' "verification_oracle=$context_oracle"
+  } >"$context_path"
+}
+
+write_prompt() {
+  prompt_path=$1
+  prompt_branch=$2
+  prompt_base=$3
+  prompt_time=$4
+  {
+    printf '%s\n' 'Implement the settled fanbox-level-manager task.'
+    printf '%s\n' 'Repository: sayosomi/fanbox-level-manager'
+    printf '%s\n' 'Role: implementation'
+    printf '%s\n' "Branch: $prompt_branch"
+    printf '%s\n' "Base: $prompt_base"
+    printf '%s\n' "Prompt time: $prompt_time"
+    printf '%s\n' 'Final success and BLOCKED/stopped reports must include a fresh Output time in the form Output time: YYYY-MM-DD HH:MM JST; do not reuse Prompt time.'
+    printf '%s\n' 'Run git fetch origin --prune before changing files.'
+    printf '%s\n' 'Require a clean intended checkout before changing files.'
+    printf '%s\n' 'Stop as BLOCKED if the expected remote state does not match after fetch.'
+    printf '%s\n' 'Do not use reset, rebase, merge, stash, or force-push to recover from a mismatch.'
+    printf '%s\n' 'Commit only the intended changes and push the specified branch normally.'
+    printf '%s\n' 'Completion report must include branch, base SHA, final HEAD, changed files, verification results, acceptance coverage, scope deviation, and blockers or residual risks.'
+    printf '%s\n' 'Verification block: begin'
+    printf '%s\n' '(' '  printf '\''%s\\n'\'' "verify"' ')'
+    printf '%s\n' 'Verification block: end'
+  } >"$prompt_path"
+}
+
+replace_line() {
+  replace_source=$1
+  replace_target=$2
+  replace_old=$3
+  replace_new=$4
+  awk -v old="$replace_old" -v new="$replace_new" '
+    $0 == old && !done { print new; done = 1; next }
+    { print }
+  ' "$replace_source" >"$replace_target"
+}
+
+remove_line() {
+  remove_source=$1
+  remove_target=$2
+  remove_old=$3
+  awk -v old="$remove_old" '$0 != old { print }' "$remove_source" >"$remove_target"
+}
+
+insert_before_line() {
+  insert_source=$1
+  insert_target=$2
+  insert_before=$3
+  insert_text=$4
+  awk -v before="$insert_before" -v text="$insert_text" '
+    $0 == before && !done { print text; done = 1 }
+    { print }
+  ' "$insert_source" >"$insert_target"
+}
+
+test -f "$checker" && test ! -L "$checker" && test -x "$checker" || fail 'fanbox-prompt-check is not an executable regular file'
+test -f "$script_dir/test-fanbox-prompt-check" && test ! -L "$script_dir/test-fanbox-prompt-check" && test -x "$script_dir/test-fanbox-prompt-check" || fail 'test-fanbox-prompt-check is not an executable regular file'
+
+for route in \
+  '../../shared/AGENT-PROMPT-STYLE.md' \
+  '../../shared/AGENT-PROMPT-PREFLIGHT.md' \
+  '../../shared/CODING-AGENT-WORKFLOW.md' \
+  './PROMPT-PREFLIGHT.md' \
+  './scripts/fanbox-prompt-check'; do
+  grep -F "$route" "$project_readme" >/dev/null 2>&1 || fail "README.md does not route to $route"
+done
+
+branch='sayosomi/fanbox-prompt-preflight'
+base='f73dfd88666a46277604e4bd7e15b08523d96909'
+oracle=$test_root/oracle.txt
+context=$test_root/context.txt
+valid_prompt=$test_root/valid-prompt.txt
+write_context "$context" "$branch" "$base" "$oracle"
+{
+  printf '%s\n' '('
+  printf '%s\n' '  printf '\''%s\\n'\'' "verify"'
+  printf '%s\n' ')'
+} >"$oracle"
+write_prompt "$valid_prompt" "$branch" "$base" '2026-09-08 15:47 JST'
+
+pass_case "$valid_prompt" "$context" 'canonical valid prompt'
+
+if grep -Eq '^(Lane|Claim|Checkpoint|Ticket|Handoff|Topic|Linear|active_implementation_lanes):' "$valid_prompt"; then
+  fail 'canonical fixture requires a nuinuiCAD-specific execution field'
+fi
+pass_case "$valid_prompt" "$context" 'valid prompt without lane, claim, checkpoint, ticket, handoff, or topic fields'
+
+japanese_prompt=$test_root/japanese-prompt.txt
+insert_before_line "$valid_prompt" "$japanese_prompt" 'Verification block: begin' '商品名: 支援者レベル管理'
+pass_case "$japanese_prompt" "$context" 'valid prompt with a Japanese product literal'
+
+wrong_repository_context=$test_root/wrong-repository-context.txt
+awk 'NR == 2 { print "repository=other/repository"; next } { print }' "$context" >"$wrong_repository_context"
+blocked_case "$valid_prompt" "$wrong_repository_context" 'wrong repository'
+
+wrong_branch_context=$test_root/wrong-branch-context.txt
+write_context "$wrong_branch_context" 'other/fanbox-branch' "$base" "$oracle"
+blocked_case "$valid_prompt" "$wrong_branch_context" 'wrong branch'
+
+wrong_base_context=$test_root/wrong-base-context.txt
+write_context "$wrong_base_context" "$branch" '0000000000000000000000000000000000000000' "$oracle"
+blocked_case "$valid_prompt" "$wrong_base_context" 'wrong base'
+
+incomplete_context=$test_root/incomplete-context.txt
+sed '$d' "$context" >"$incomplete_context"
+blocked_case "$valid_prompt" "$incomplete_context" 'incomplete expected context'
+
+malformed_context=$test_root/malformed-context.txt
+awk 'NR == 5 { print "base=not-a-sha"; next } { print }' "$context" >"$malformed_context"
+blocked_case "$valid_prompt" "$malformed_context" 'malformed expected context'
+
+extra_context=$test_root/extra-context.txt
+{
+  sed '$d' "$context"
+  printf '%s\n' 'extra=field'
+  printf '%s\n' "verification_oracle=$oracle"
+} >"$extra_context"
+blocked_case "$valid_prompt" "$extra_context" 'extra expected-context field'
+
+reordered_context=$test_root/reordered-context.txt
+{
+  sed -n '1p' "$context"
+  sed -n '3p' "$context"
+  sed -n '2p' "$context"
+  sed -n '4,6p' "$context"
+} >"$reordered_context"
+blocked_case "$valid_prompt" "$reordered_context" 'reordered expected-context field'
+
+missing_prompt_time=$test_root/missing-prompt-time.txt
+remove_line "$valid_prompt" "$missing_prompt_time" 'Prompt time: 2026-09-08 15:47 JST'
+blocked_case "$missing_prompt_time" "$context" 'missing Prompt time'
+
+malformed_prompt_time=$test_root/malformed-prompt-time.txt
+replace_line "$valid_prompt" "$malformed_prompt_time" 'Prompt time: 2026-09-08 15:47 JST' 'Prompt time: 2026/09/08 15:47 JST'
+blocked_case "$malformed_prompt_time" "$context" 'malformed Prompt time'
+
+missing_output_requirement=$test_root/missing-output-requirement.txt
+remove_line "$valid_prompt" "$missing_output_requirement" 'Final success and BLOCKED/stopped reports must include a fresh Output time in the form Output time: YYYY-MM-DD HH:MM JST; do not reuse Prompt time.'
+blocked_case "$missing_output_requirement" "$context" 'missing fresh Output time requirement'
+
+missing_fetch_requirement=$test_root/missing-fetch-requirement.txt
+remove_line "$valid_prompt" "$missing_fetch_requirement" 'Run git fetch origin --prune before changing files.'
+blocked_case "$missing_fetch_requirement" "$context" 'missing git-fetch requirement'
+
+missing_clean_requirement=$test_root/missing-clean-requirement.txt
+remove_line "$valid_prompt" "$missing_clean_requirement" 'Require a clean intended checkout before changing files.'
+blocked_case "$missing_clean_requirement" "$context" 'missing clean-checkout requirement'
+
+missing_remote_requirement=$test_root/missing-remote-requirement.txt
+remove_line "$valid_prompt" "$missing_remote_requirement" 'Stop as BLOCKED if the expected remote state does not match after fetch.'
+blocked_case "$missing_remote_requirement" "$context" 'missing remote-mismatch BLOCKED requirement'
+
+missing_no_recovery_requirement=$test_root/missing-no-recovery-requirement.txt
+remove_line "$valid_prompt" "$missing_no_recovery_requirement" 'Do not use reset, rebase, merge, stash, or force-push to recover from a mismatch.'
+blocked_case "$missing_no_recovery_requirement" "$context" 'missing no-recovery requirement'
+
+missing_commit_requirement=$test_root/missing-commit-requirement.txt
+remove_line "$valid_prompt" "$missing_commit_requirement" 'Commit only the intended changes and push the specified branch normally.'
+blocked_case "$missing_commit_requirement" "$context" 'missing commit/push requirement'
+
+missing_completion_requirement=$test_root/missing-completion-requirement.txt
+remove_line "$valid_prompt" "$missing_completion_requirement" 'Completion report must include branch, base SHA, final HEAD, changed files, verification results, acceptance coverage, scope deviation, and blockers or residual risks.'
+blocked_case "$missing_completion_requirement" "$context" 'missing completion-report requirement'
+
+altered_body=$test_root/altered-body.txt
+awk '
+  index($0, "\"verify\"") > 0 && !done { sub(/"verify"/, "\"changed\""); done = 1 }
+  { print }
+' "$valid_prompt" >"$altered_body"
+blocked_case "$altered_body" "$context" 'altered verification body'
+
+missing_block=$test_root/missing-block.txt
+awk '$0 != "Verification block: begin" && $0 != "Verification block: end" { print }' "$valid_prompt" >"$missing_block"
+blocked_case "$missing_block" "$context" 'missing verification block'
+
+duplicate_marker=$test_root/duplicate-marker.txt
+awk '
+  $0 == "Verification block: begin" { print; print; next }
+  { print }
+' "$valid_prompt" >"$duplicate_marker"
+blocked_case "$duplicate_marker" "$context" 'duplicate verification marker'
+
+malformed_marker=$test_root/malformed-marker.txt
+replace_line "$valid_prompt" "$malformed_marker" 'Verification block: begin' 'Verification block: start'
+blocked_case "$malformed_marker" "$context" 'malformed verification marker'
+
+reordered_markers=$test_root/reordered-markers.txt
+awk '
+  $0 == "Verification block: begin" { begin = 1; next }
+  $0 == "Verification block: end" { print; if (begin) { print "Verification block: begin"; begin = 0 }; next }
+  { print }
+' "$valid_prompt" >"$reordered_markers"
+blocked_case "$reordered_markers" "$context" 'reordered verification markers'
+
+relative_oracle_context=$test_root/relative-oracle-context.txt
+awk 'NR == 6 { print "verification_oracle=oracle.txt"; next } { print }' "$context" >"$relative_oracle_context"
+blocked_case "$valid_prompt" "$relative_oracle_context" 'relative verification oracle'
+
+inaccessible_oracle_context=$test_root/inaccessible-oracle-context.txt
+awk -v missing="$test_root/missing-oracle.txt" 'NR == 6 { print "verification_oracle=" missing; next } { print }' "$context" >"$inaccessible_oracle_context"
+blocked_case "$valid_prompt" "$inaccessible_oracle_context" 'inaccessible verification oracle'
+
+symlink_oracle=$test_root/oracle-link.txt
+ln -s "$oracle" "$symlink_oracle" || fail 'could not create symlink oracle fixture'
+symlink_oracle_context=$test_root/symlink-oracle-context.txt
+awk -v link="$symlink_oracle" 'NR == 6 { print "verification_oracle=" link; next } { print }' "$context" >"$symlink_oracle_context"
+blocked_case "$valid_prompt" "$symlink_oracle_context" 'symbolic-link verification oracle'
+
+fake_bin=$test_root/fake-bin
+git_sentinel=$test_root/git-invoked
+mkdir "$fake_bin" || fail 'could not create fake command directory'
+{
+  printf '%s\n' '#!/bin/sh'
+  printf '%s\n' 'printf '\''invoked\\n'\'' >"$FANBOX_GIT_SENTINEL"'
+  printf '%s\n' 'exit 1'
+} >"$fake_bin/git"
+chmod +x "$fake_bin/git" || fail 'could not make fake git executable'
+output=$(PATH="$fake_bin:$PATH" FANBOX_GIT_SENTINEL="$git_sentinel" "$checker" "$valid_prompt" "$context" 2>&1) || fail 'checker failed during Git-free validation test'
+[ "$output" = 'PROMPT PREFLIGHT PASS' ] || fail 'Git-free validation returned unexpected output'
+[ ! -e "$git_sentinel" ] || fail 'checker invoked Git during validation'
+
+printf '%s\n' 'PROMPT PREFLIGHT TEST PASS'
