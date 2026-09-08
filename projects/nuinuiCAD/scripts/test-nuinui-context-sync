@@ -90,6 +90,42 @@ make_base_fixture() {
   set_fixture "$PROD" "$DEV"
 }
 
+make_squash_fixture() {
+  name=$1
+  SQUASH_REMOTE=$ROOT/$name-squash-remote.git
+  SQUASH_SEED=$ROOT/$name-squash-seed
+  SQUASH_PROD=$ROOT/$name-squash-prod
+  SQUASH_DEV=$ROOT/$name-squash-dev
+  SQUASH_OLD_BRANCH=sayosomi/$name-squash-prior-task
+  SQUASH_NEW_BRANCH=sayosomi/$name-squash-follow-up-task
+  SQUASH_PULL_REF=refs/pull/217/head
+  git clone --bare -q "$REMOTE" "$SQUASH_REMOTE"
+  git clone -q "$SQUASH_REMOTE" "$SQUASH_SEED"
+  git -C "$SQUASH_SEED" switch -q -c "$SQUASH_OLD_BRANCH" "$TARGET"
+  printf '%s\n' "$name-squash-one" >"$SQUASH_SEED/squash-one.txt"
+  git -C "$SQUASH_SEED" add squash-one.txt
+  git -C "$SQUASH_SEED" commit -qm "$name squash one"
+  printf '%s\n' "$name-squash-two" >"$SQUASH_SEED/squash-two.txt"
+  git -C "$SQUASH_SEED" add squash-two.txt
+  git -C "$SQUASH_SEED" commit -qm "$name squash two"
+  SQUASH_OLD_HEAD=$(git -C "$SQUASH_SEED" rev-parse HEAD)
+  git -C "$SQUASH_SEED" push -q origin "HEAD:refs/heads/$SQUASH_OLD_BRANCH"
+  git -C "$SQUASH_SEED" push -q origin "HEAD:$SQUASH_PULL_REF"
+  git -C "$SQUASH_SEED" switch -q main
+  git -C "$SQUASH_SEED" merge --squash "$SQUASH_OLD_BRANCH" >/dev/null
+  git -C "$SQUASH_SEED" commit -qm "$name squash merge"
+  git -C "$SQUASH_SEED" push -q origin main
+  SQUASH_TARGET=$(git -C "$SQUASH_SEED" rev-parse HEAD)
+  git clone -q "$SQUASH_REMOTE" "$SQUASH_PROD"
+  git -C "$SQUASH_PROD" worktree add -q -b "$SQUASH_OLD_BRANCH" "$SQUASH_DEV" "$SQUASH_OLD_HEAD"
+  old_remote=$REMOTE
+  REMOTE=$SQUASH_REMOTE
+  PROD=$SQUASH_PROD
+  DEV=$SQUASH_DEV
+  set_fixture "$PROD" "$DEV"
+  REMOTE=$old_remote
+}
+
 write_wrapper() {
   printf '%s\n' \
     '#!/bin/sh' \
@@ -114,12 +150,21 @@ write_wrapper() {
     '  malformed-worktree)' \
     '    case "$*" in *" worktree list --porcelain"*) printf "worktree %s\\nnot-valid\\n" "$NUINUI_DUP_PROD"; exit 0;; esac' \
     '    ;;' \
-    '  duplicate-no-mutation)' \
+  '  duplicate-no-mutation)' \
     '    case "${3:-}:${4:-}" in' \
     '      fetch:*|switch:*|checkout:*|reset:*|stash:*|rebase:*|merge:*|update-ref:*|branch:*|worktree:add|worktree:move|worktree:remove|worktree:prune|worktree:lock|worktree:unlock)' \
     '        printf "%s\\n" "$*" >>"$NUINUI_DUPLICATE_MUTATION_LOG"' \
     '        echo "forbidden duplicate-path mutation: $*" >&2' \
     '        exit 98' \
+    '        ;;' \
+    '    esac' \
+    '    ;;' \
+    '  invalidate-pull-proof)' \
+    '    case "$*" in' \
+    '      *" ls-remote "*"refs/pull/*/head"*)' \
+    '        n=0; [ -f "$NUINUI_PULL_COUNT" ] && n=$(sed -n "1p" "$NUINUI_PULL_COUNT"); n=$((n + 1)); printf "%s\\n" "$n" >"$NUINUI_PULL_COUNT"' \
+    '        if [ "$n" = 1 ]; then printf "%s\\t%s\\n" "$NUINUI_PULL_HEAD_SHA" "$NUINUI_PULL_HEAD_REF"; else printf "%s\\trefs/pull/999/head\\n" "$NUINUI_PULL_OTHER_SHA"; fi' \
+    '        exit 0' \
     '        ;;' \
     '    esac' \
     '    ;;' \
@@ -347,6 +392,49 @@ assert_line "$last_result" '♻️ DEV-CONTEXT ALREADY TRANSITIONED' 'duplicate 
 case "$last_result" in
   *'===== NUINUI LAST RESULT ====='*|*'===== END NUINUI LAST RESULT ====='*) fail 'duplicate last-result exposed legacy separators' ;;
 esac
+
+make_squash_fixture squash-transition
+output=$(call_helper context-dev-next \
+  --old-branch "$SQUASH_OLD_BRANCH" --old-head "$SQUASH_OLD_HEAD" \
+  --main "$SQUASH_TARGET" --new-branch "$SQUASH_NEW_BRANCH") || fail "squash dev next failed: $output"
+assert_line "$output" '🔀 DEV-CONTEXT TRANSITIONED' 'squash dev next Human heading'
+assert_contains "$output" "branch=$SQUASH_NEW_BRANCH" 'squash dev next'
+assert_contains "$output" "base=$SQUASH_TARGET" 'squash dev next'
+assert_contains "$output" 'mutation=yes' 'squash dev next tracked footer'
+assert_eq "$(git -C "$SQUASH_DEV" symbolic-ref --short HEAD)" "$SQUASH_NEW_BRANCH" 'squash dev next branch'
+assert_eq "$(git -C "$SQUASH_DEV" rev-parse HEAD)" "$SQUASH_TARGET" 'squash dev next head'
+
+SQUASH_DUPLICATE_MUTATION_LOG=$ROOT/squash-duplicate-mutation.log
+: >"$SQUASH_DUPLICATE_MUTATION_LOG"
+export NUINUI_DUPLICATE_MUTATION_LOG=$SQUASH_DUPLICATE_MUTATION_LOG
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=duplicate-no-mutation; export NUINUI_GIT_WRAPPER_MODE
+output=$(call_helper context-dev-next \
+  --old-branch "$SQUASH_OLD_BRANCH" --old-head "$SQUASH_OLD_HEAD" \
+  --main "$SQUASH_TARGET" --new-branch "$SQUASH_NEW_BRANCH") || fail "squash exact duplicate failed: $output"
+unset NUINUI_GIT_WRAPPER_MODE
+TEST_PATH=$REAL_PATH
+assert_line "$output" '♻️ DEV-CONTEXT ALREADY TRANSITIONED' 'squash exact duplicate'
+assert_line "$output" 'mutation=no-op' 'squash exact duplicate proof'
+assert_line "$output" 'mutation=no' 'squash exact duplicate tracked footer'
+[ ! -s "$SQUASH_DUPLICATE_MUTATION_LOG" ] || fail "squash exact duplicate invoked Git mutation: $(cat "$SQUASH_DUPLICATE_MUTATION_LOG")"
+
+make_squash_fixture squash-post-fetch
+NUINUI_PULL_COUNT=$ROOT/squash-pull-count
+export NUINUI_PULL_COUNT NUINUI_PULL_HEAD_SHA=$SQUASH_OLD_HEAD \
+  NUINUI_PULL_HEAD_REF=$SQUASH_PULL_REF NUINUI_PULL_OTHER_SHA=$TARGET
+TEST_PATH=$ROOT:$REAL_PATH
+NUINUI_GIT_WRAPPER_MODE=invalidate-pull-proof; export NUINUI_GIT_WRAPPER_MODE
+expect_failure_unchanged 'squash proof invalidated after fetch' context-dev-transition \
+  "$SQUASH_OLD_BRANCH" "$SQUASH_OLD_HEAD" "$SQUASH_TARGET" "$SQUASH_NEW_BRANCH"
+unset NUINUI_GIT_WRAPPER_MODE NUINUI_PULL_COUNT NUINUI_PULL_HEAD_SHA \
+  NUINUI_PULL_HEAD_REF NUINUI_PULL_OTHER_SHA
+TEST_PATH=$REAL_PATH
+
+make_squash_fixture squash-no-pull
+git -C "$SQUASH_REMOTE" update-ref -d "$SQUASH_PULL_REF"
+expect_failure_unchanged 'squash proof without pull-head evidence' context-dev-transition \
+  "$SQUASH_OLD_BRANCH" "$SQUASH_OLD_HEAD" "$SQUASH_TARGET" "$SQUASH_NEW_BRANCH"
 
 make_base_fixture progressed
 output=$(call_helper context-dev-transition "$OLD_BRANCH" "$BASE" "$TARGET" "$NEW_BRANCH") || fail "progressed fixture setup failed: $output"
