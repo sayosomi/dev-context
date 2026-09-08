@@ -46,6 +46,8 @@ Projectがversioned handoff-check helperを持つ場合、expected stateをagent
 
 Coding Agentはそのcommandをそのまま最初に実行し、同じ値を別のmemory / session stateから再生成しない。
 
+ProjectがGit-object handoff ticketを採用する場合、ChatGPTはprompt生成前にfreshなsemantic execution identityとauthoritative remote stateを確定し、その値をimmutableなticketへ封印する。通常promptへ渡すstartup identityは短いticket tokenと、そのtokenを1回だけconsumeするexact helper invocationだけとし、full claim / checkpoint / current-main literalsを手作業で転記しない。helperがticketをcanonical remoteから解決・検証し、既存のproof authorityへfull valuesを内部的に渡す。
+
 ## Stale execution context
 
 Coding Agent内のretained stateとcurrent execution envelopeが食い違うsignalが出た場合、repository mutation前に`STALE_EXECUTION_CONTEXT`として停止する。

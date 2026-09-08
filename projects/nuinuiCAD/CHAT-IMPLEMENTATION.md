@@ -71,7 +71,7 @@ If a Human reports terminal disappearance or lost output after `begin`, `start`,
 
 start / resume後のidentity invariantは、physical BUSYなdeclared implementation laneから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数だけでは十分ではない。
 
-same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由に全宣言laneのpreflightへ戻さない。current Linear checkpoint / last verified envelopeのlane、Issue、claim、checkpoint、fresh remote main、topic modeをcaller expectationとして短い`nuinui handoff`へ渡し、actual local durable stateとのmatchをその場で検証する。
+same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由に全宣言laneのpreflightへ戻さない。ChatGPTがfreshなsemantic identityとauthoritative remote stateを再監査してimmutable ticketへ封印し、promptには短いticket tokenとexact `nuinui handoff <ticket>`だけを渡す。resolverがticketのfull identityを解決し、actual local durable stateとのmatchをその場で検証する。
 
 Canonical `nuinui handoff`が`HANDOFF VERIFIED`を返した後は、通常そのままLuna implementationへ進む。exact modeのexact claimed-branch mismatchだけはfaçade自身が既存resumeを一度だけ実行し、同じproofの再検証まで完了する。成功済みhandoffのhelper-owned startup factsを再確認するだけのsecondary observationを理由に、Humanをpreflight、diagnosis、state paste、またはhandoff再生成へ戻さない。repository mutationまたはgenuinely new material drift signalがある場合だけ、既存ownerのdrift / recovery routeを使う。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
 
@@ -209,7 +209,7 @@ declared implementation lane ownershipはGit-local durable claimで保持する�
 
 new `nuinui begin`成功outputの`claim=<generation token>`を、`In Progress` transitionと同じcontinuationで`Implementation checkpoint`へ保存する。低レベル`start`を明示的に使った場合も同じく保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
 
-`nuinui handoff`はLane、Issue、Claim、exact checkpoint、current remote main、topic modeだけをcaller expectationとして受ける。Branch / Baseはmatching durable slotからfaçadeが導出し、exact branch-mismatch recoveryでもlocal slotをcaller expectationの代わりに採用しない。
+`nuinui handoff <ticket>`は、ChatGPTがfresh audit後に作成したimmutable Git-object ticketを一度だけconsumeする。ticketがLane、Issue、Claim、exact checkpoint、current remote main、topic modeを封印し、resolverがcanonical dev-context remoteから検証して既存proofへ内部的に渡す。Branch / Baseはmatching durable slotからfaçadeが導出し、exact branch-mismatch recoveryでもlocal slotをticketの代わりに採用しない。
 
 `release` handoffはexact saved / integration checkpointとclaimを使う。claimless legacy signatureへfallbackしない。
 

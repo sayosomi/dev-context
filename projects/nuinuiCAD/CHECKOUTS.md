@@ -59,7 +59,7 @@ versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent
 
 ### Preflight diagnostic / routing rule
 
-`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
+`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument handoffを実行する。same-generation Luna handoffでは、ChatGPTがfresh audit済みのfull identityをimmutable ticketへ封印し、Human/Lunaは短いticket tokenのexact commandだけを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
 
 ```bash
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
@@ -132,7 +132,7 @@ For an exact pushed-checkpoint Luna handoff whose first proof failure is exactly
 
 Human preflight is not required if the façade returns canonical `IMPLEMENTATION RESUMED` evidence and its exact original proof rerun returns `HANDOFF VERIFIED`. Route to the normal BLOCKED / preflight path if the initial failure has any other classification, the one recovery attempt fails or returns ambiguous evidence, or the second proof fails. This exception does not apply to `absent` topic mode.
 
-same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側のGitHub checkと`nuinui handoff` inputとして別に扱う。
+same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側のGitHub checkでfreshに確定し、full identityとともにimmutable ticketへ封印される。`nuinui handoff <ticket>`はそのticketをcanonical dev-context cloneで解決し、full startup literalsをpromptへ手作業転記しない。
 
 Humanへ任せないもの:
 
@@ -318,7 +318,7 @@ slot identityがexact一致し、working tree、local branch checkpoint、author
 
 already target branch / exact checkpointならidempotent successとしてよい。slotがownershipを保持しているのにcheckoutが別branchへ変わっている場合はpreflightのBLOCKEDを維持し、explicit resumeで安全にrestoreできた後だけBUSYへ戻す。
 
-same active durable generationのresume / continuationでは、fresh local preflightを別途要求しない。last verified lifecycle envelopeまたはcurrent Linear checkpointのclaim / checkpointはcaller expectationとして渡してよいが、authorityではない。Lunaの最初の`nuinui handoff`がstandalone proofを通じてactual durable slot、checkout、remote topic、remote mainを再検証し、matchなら継続、mismatchなら`BLOCKED / STALE_EXECUTION_CONTEXT`としてdiagnosis / recoveryへ戻す。
+same active durable generationのresume / continuationでは、fresh local preflightを別途要求しない。ChatGPTがcurrent claim / checkpoint / main / topicをfreshに再監査して新しいimmutable ticketへ封印し、Lunaの最初の`nuinui handoff <ticket>`がticketを一度だけconsumeしてstandalone proofへ渡す。actual durable slot、checkout、remote topic、remote mainを再検証し、matchなら継続、mismatchなら`BLOCKED / STALE_EXECUTION_CONTEXT`としてdiagnosis / recoveryへ戻す。
 
 resume success envelope:
 

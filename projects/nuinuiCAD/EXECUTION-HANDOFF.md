@@ -40,48 +40,98 @@ same Issueのnext sliceではnew startによりnew claimを得る。previous sli
 
 Luna promptにはcurrent-runだけのExecution Envelopeを置く。
 
-最低限:
+最低限、startup identityについては短いimmutable ticketだけを置く。
 
 ```text
-Issue: SAY-123
 Slice: <current slice>
 Phase: implementation | integration | blocking-fix
-Lane: <manifest-declared implementation lane>
-Claim: <exact durable claim from fresh lane evidence>
-Checkpoint: <exact current lane HEAD expected at handoff>
-Current remote main: <fresh exact SHA>
-Topic remote mode: absent | exact
+Handoff ticket: h1-<24 lowercase hexadecimal characters>
 ```
 
+ChatGPT still determines the exact lane, Issue, durable claim, checkpoint,
+authoritative main, and topic mode before creating the ticket. Those values
+are sealed in the ticket rather than transcribed into the Luna prompt.
 Branch and Base remain durable-slot facts. They are derived by the public
-handoff façade only after the caller Lane / Issue / Claim identity matches;
-they are not caller-supplied handoff arguments.
+handoff façade only after the validated ticket payload matches the lane and
+durable state; they are not caller-supplied handoff arguments.
 
 `Topic remote mode`:
 
 - `absent`: `nuinui begin`（または低レベル`nuinui start`）直後のfresh unpushed branch。remote topicが存在したらBLOCKする。
 - `exact`: remote保存済みimplementation / integration / blocking-fix continuation。remote topic HEADがCheckpointとexact一致しなければBLOCKする。
 
-`Topic remote mode: exact`の場合も、current execution envelopeへChatGPTが置くcommandは1つだけである。
+`Topic remote mode` is ticket data, not a prompt argument. The current
+execution envelope contains one exact command for both modes:
 
 ```text
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff --lane <lane> --issue <Issue> --claim <Claim> --checkpoint <Checkpoint> --main <Current remote main> --topic exact
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff <ticket>
 ```
 
-Envelopeへolder slice branch / SHA / claimをhistoryとして併記しない。
+Envelopeへstartup identityとしてolder slice branch / SHA / claim、
+full checkpoint、またはfull current-main SHAをhistoryとして併記しない。
+
+## Coordinator-side ticket issuance
+
+The immutable ticket is a coordinator-side GitHub operation owned by ChatGPT.
+Its authority is the remote `sayosomi/dev-context` Git object database. ChatGPT
+performs a fresh semantic execution-identity and authoritative-remote audit
+before issuance; Human Terminal is not involved in ticket generation.
+
+For each new handoff, ChatGPT reads the fresh authoritative
+`sayosomi/dev-context` `main` commit and tree, then creates an empty metadata
+commit with exactly one parent equal to that observed dev-context `main` commit
+and exactly the same tree as its parent. The nonce is fresh and exactly 16
+lowercase hexadecimal characters. The commit message must be exactly this field
+set, in this order, with no extra fields:
+
+```text
+nuinui-handoff-ticket-v1
+repository=sayosomi/nuinuiCAD
+lane=<declared implementation lane>
+issue=<SAY-N>
+claim=<generation-specific durable claim>
+checkpoint=<full expected checkpoint SHA>
+main=<full authoritative nuinuiCAD main SHA>
+topic=<absent|exact>
+nonce=<16 lowercase hex>
+```
+
+Let the full ticket commit SHA be `T`. The public token is `h1-` followed by
+the first 24 lowercase hexadecimal characters of `T`. ChatGPT creates the
+remote ref `refs/heads/nuinui-handoff-ticket/<token>` pointing exactly to `T`.
+Ticket refs are create-only: never force-update or repoint an existing ref. If
+the ref already exists, create a new ticket commit with a new nonce and token.
+
+The token contains no credential. The ref is an immutable issuance record and
+has no time-based expiry in the normal flow. Semantic staleness is detected
+when the sealed Claim, Checkpoint, main, or topic expectation no longer matches
+fresh authority. Before its first proof, the helper atomically reserves a
+structurally valid token in the canonical standard dev-context Git directory.
+Success and every post-reservation failure consume that ticket permanently for
+that execution environment; failed reservations are never cleared. Every
+later handoff, consumed-ticket retry, chat rotation, blocking-fix continuation,
+or new checkpoint requires a newly issued ticket. Normal flow never updates or
+reuses an old ticket to represent new state. GitHub-side ticket creation is
+coordinator work, and Human does not paste execution identity into Terminal.
 
 ## Mechanical handoff gate
 
-Lunaはrepository operation前に、ChatGPTが値を埋めた次のcommandを**そのまま**最初に実行する。
+Lunaはrepository operation前に、ChatGPTがticketを埋めた次のcommandを**そのまま**最初に実行する。
 
 ```text
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff --lane <implementation-lane> --issue <SAY-123> --claim <claim> --checkpoint <checkpoint-sha> --main <current-default-sha> --topic <absent|exact>
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff <ticket>
 ```
 
-Lunaはこのcommandのargumentをpast session / memoryから再生成・置換しない。Branch / Baseを別途caller expectationとして推論しない。
+Lunaはこのcommandのargumentをpast session / memoryから再生成・置換しない。full
+identity、Branch、Baseを別途caller expectationとして推論しない。
 
-Helperはread-onlyで次を検証する。
+Helperはticketを1回だけconsumeし、次をGitだけで検証する。
 
+- canonical `sayosomi/dev-context` repository identityとexact ticket ref;
+- token prefixとticket commit SHAのbinding、fetch前後のref stability;
+- exactly one parent、parentと同一treeのempty metadata commit;
+- canonical field order / strict field syntax / repository identity;
+- lane、Issue、Claim、Checkpoint、main、topic、nonceの既存validator;
 - assigned declared lane / repository identity;
 - active durable claimが存在しvalid;
 - Issue / claim exact match;
@@ -91,10 +141,13 @@ Helperはread-onlyで次を検証する。
 - clean working tree;
 - mutation lock / release-pending stateがない;
 - remote topicが`absent`またはcheckpointへ`exact`一致;
-- authoritative remote default branchがcaller-supplied current defaultへexact一致;
+- authoritative remote default branchがticketのcurrent-mainへexact一致;
 - verification中にlocal / remote stateが変化していない。
 
-`git fetch`、checkout、switch、reset、stash、merge、rebase、ref update等は行わない。
+ticket解決はstandard dev-context cloneのworking treeをcheckout、merge、switch、
+reset、stash、rebaseせず、ticket ref/objectだけをfetchする。構造・文法検証後、
+standard cloneのGit directoryにuntrackedなtoken reservationをrace-safeに作成する。
+予約済みticketはproof前にBLOCKEDとなり、failed invocation後もreleaseしない。
 
 成功時だけ:
 
@@ -143,13 +196,14 @@ Keep Topic remote mode semantics exact: `absent` means fresh unpushed generation
 
 Generic defaultはhard-stopである。Helperが`BLOCKED:`または`ERROR:`を返した場合、Lunaはrepository mutationへ進まない。
 
-唯一のautomatic recovery exceptionは、`Topic remote mode: exact`のpushed-checkpoint continuationで、initial exact handoff-checkがnonzero終了し、first output lineがexactly次の場合だけである。
+唯一のautomatic recovery exceptionは、validated ticketの`topic=exact`で、initial
+handoff-checkがnonzero終了し、first output lineがexactly次の場合だけである。
 
 ```text
 BLOCKED: handoff claimed branch mismatch
 ```
 
-この場合だけ、canonical `nuinui handoff` façadeがdurable slotを再読し、caller Lane / Issue / Claimを再照合してBranch / Baseを導出し、既存のguarded `nuinui resume` mutation semanticsを1回だけ実行する。resume outputは次のcanonical evidenceを返さなければならない。
+この場合だけ、canonical `nuinui handoff` façadeがdurable slotを再読し、validated ticketのLane / Issue / Claimを再照合してBranch / Baseを導出し、既存のguarded `nuinui resume` mutation semanticsを1回だけ実行する。resume outputは次のcanonical evidenceを返さなければならない。
 
 ```text
 IMPLEMENTATION RESUMED
@@ -163,7 +217,7 @@ clean=yes
 state=BUSY
 ```
 
-canonical evidenceの後、同じcaller expectationでhandoff proofを1回だけ再実行する。second proofが`HANDOFF VERIFIED`で始まる場合だけrepository operationを続行する。resumeが失敗、evidenceがmissing / noncanonical、またはsecond proofが失敗した場合は停止し、recoveryをretryしない。
+canonical evidenceの後、同じticketから解決した内部expectationでhandoff proofを1回だけ再実行する。second proofが`HANDOFF VERIFIED`で始まる場合だけrepository operationを続行する。resumeが失敗、evidenceがmissing / noncanonical、またはsecond proofが失敗した場合は停止し、recoveryをretryしない。
 
 `CALLER_EXPECTED` / `ACTUAL` diagnosticsは、LunaがBranch、Base、Issue、Claim、Checkpoint、Current remote main、またはreplacement commandをsubstituteするauthorizationではない。identity valueとcommandはsession contextやrepository historyから推測・再生成しない。`absent` modeにはこのautomatic recoveryを適用しない。
 
@@ -179,14 +233,14 @@ New sessionでもReuseでも、current-run Execution Envelopeとmechanical hando
 
 ## Human / ChatGPT ordering
 
-- New slice: ChatGPTがfresh remote / current occupancy / parallel-admission decisionからtarget FREE declared implementation lane、Base、branch、complete inventoryを決める -> Humanが`nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>`を1回実行 -> complete `IMPLEMENTATION STARTED` envelopeを確認 -> existing checkpoint ruleを完了 -> `absent` handoffを生成。
-- Same active durable generation continuation: current Linear checkpoint / last verified envelopeからLane / Issue / Claim / Checkpoint / Current remote main / Topic remote modeをcaller expectationとして渡す -> Human preflightなしでLunaが最初に短い`nuinui handoff`を実行 -> `exact` modeのexact branch-mismatch classifierだけはfaçadeがexisting resumeを1回実行し、canonical `IMPLEMENTATION RESUMED`とsecond `HANDOFF VERIFIED`まで完了する -> 続行する。それ以外のfailureは[`CHECKOUTS.md`](./CHECKOUTS.md)へroutingする。
-- Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> 通常はsame-generation claim / checkpointを`exact` Luna handoffへ渡す。already-reviewed headについてChatGPTがsemantic `NON-INTERFERING` + current-base freshness-only merge gateをauthorizeした場合だけ、same durable identityをcaller inputにしてHuman `nuinui integrate-clean`へrouteできる。
-- Blocking fix continuation: pushed reviewed/fix checkpoint + fresh remote main確認 -> same-generation claim / checkpointを`exact` handoffへ渡す。blocking fixだけを理由にHuman preflightへ戻さない。
-- Chat rotation: rotation aloneではpreflightを要求しない。current Issue / lane / generation / checkpointをdurable external stateから復元できる場合は、caller expectationを構成して`nuinui handoff`へ進む。
+- New slice: ChatGPTがfresh remote / current occupancy / parallel-admission decisionからtarget FREE declared implementation lane、Base、branch、complete inventoryを決める -> Humanが`nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>`を1回実行 -> complete `IMPLEMENTATION STARTED` envelopeを確認 -> existing checkpoint ruleを完了 -> ChatGPTがfull identityをfresh監査して`absent` immutable ticketを作成する。
+- Same active durable generation continuation: ChatGPTがfreshにfull identityをauditしてimmutable ticketを作成し、Lunaが最初に短い`nuinui handoff <ticket>`を実行する -> validated `topic=exact`のbranch-mismatch classifierだけはfaçadeがexisting resumeを1回実行し、canonical `IMPLEMENTATION RESUMED`とsecond `HANDOFF VERIFIED`まで完了する -> 続行する。それ以外のfailureは[`CHECKOUTS.md`](./CHECKOUTS.md)へroutingする。
+- Integration checkpoint: pushed implementation checkpoint + fresh remote main確認 -> ChatGPTがsame-generation full identityを新しいticketへ封印して`exact` handoffへ渡す。already-reviewed headについてsemantic `NON-INTERFERING` + current-base freshness-only merge gateをauthorizeした場合だけ、same durable identityをcaller inputにしてHuman `nuinui integrate-clean`へrouteできる。
+- Blocking fix continuation: pushed reviewed/fix checkpoint + fresh remote main確認 -> ChatGPTが新しい`exact` ticketを作成してhandoffへ渡す。blocking fixだけを理由にHuman preflightへ戻さない。
+- Chat rotation: rotation aloneではpreflightを要求しない。current Issue / lane / generation / checkpointをfreshに再監査して新しいticketへ封印し、`nuinui handoff <ticket>`へ進む。
 - Crash、Issue #84 exception外のBLOCKED、unexpected checkout / branch / dirty state、identity不明、explicit diagnosis / recoveryでは[`CHECKOUTS.md`](./CHECKOUTS.md)のpreflight diagnostic / routing ruleを使う。exact pushed-checkpoint continuationのinitial failureがexactly `BLOCKED: handoff claimed branch mismatch`の場合だけは、上記one-attempt façade recoveryを先に適用し、recovery失敗・ambiguous evidence・second proof failure時にCHECKOUTS.mdへroutingする。
 
-ChatGPT-side remote freshness gateは各handoff生成直前に行う。remote main freshnessはこのGitHub-side checkとhandoff-check inputであり、それだけではHuman declared-lane preflightのinvalidationではない。
+ChatGPT-side remote freshness gateは各handoff ticket生成直前に行う。remote main freshnessはこのGitHub-side checkとticket payloadであり、それだけではHuman declared-lane preflightのinvalidationではない。
 
 ## Conflict-free Human integration handoff
 
@@ -204,6 +258,7 @@ success envelopeのnew `head`はmerge-only integration checkpoint、`integration
 
 - implementation: `projects/nuinuiCAD/scripts/nuinui-handoff-check`
 - canonical façade: `projects/nuinuiCAD/scripts/nuinui handoff`
+- ticket resolver: `projects/nuinuiCAD/scripts/nuinui-src/handoff-ticket.sh`
 - isolated self-test: `projects/nuinuiCAD/scripts/test-nuinui-handoff-check`
 - façade regression: `projects/nuinuiCAD/scripts/test-nuinui-handoff`
 

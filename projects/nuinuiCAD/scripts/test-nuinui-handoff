@@ -22,10 +22,14 @@ REMOTE=$ROOT/sayosomi/nuinuiCAD.git
 SEED=$ROOT/seed
 MAIN=$ROOT/main
 OTHER=$ROOT/other
+DEV_CONTEXT_REMOTE=$ROOT/sayosomi/dev-context.git
+DEV_CONTEXT_SEED=$ROOT/dev-context-seed
+DEV_CONTEXT_COORD=$ROOT/dev-context-coordinator
 CONTEXT=$ROOT/context
 MANIFEST=$PROJECT/LANES.conf
 CHECK_WRAPPER=$ROOT/handoff-check-wrapper
 CHECK_COUNT=$ROOT/handoff-check-count
+HANDOFF_ARGS=$ROOT/handoff-args
 SWITCH_COUNTER=$ROOT/resume-switch-count
 FAKE_GIT_DIR=$ROOT/fake-git-bin
 FAKE_GIT=$FAKE_GIT_DIR/git
@@ -33,6 +37,9 @@ CASE_BRANCH=
 CASE_CLAIM=
 CASE_BASE=
 CASE_CHECKPOINT=
+CASE_TICKET=
+CASE_REPOSITORY=sayosomi/nuinuiCAD
+TICKET_COUNTER=0
 
 mkdir -p "$PROJECT/scripts" "$ROOT/cwd" "$FAKE_GIT_DIR" "$(dirname "$REMOTE")"
 cp "$SOURCE_HELPER" "$HELPER"
@@ -52,7 +59,19 @@ git clone -q "$REMOTE" "$MAIN"
 git -C "$MAIN" config user.name test
 git -C "$MAIN" config user.email test@example.invalid
 git -C "$MAIN" worktree add -q --detach "$OTHER" origin/main
-git init -q "$CONTEXT"
+git init -q --bare "$DEV_CONTEXT_REMOTE"
+git init -q -b main "$DEV_CONTEXT_SEED"
+git -C "$DEV_CONTEXT_SEED" config user.name test
+git -C "$DEV_CONTEXT_SEED" config user.email test@example.invalid
+printf '%s\n' context > "$DEV_CONTEXT_SEED/context.txt"
+git -C "$DEV_CONTEXT_SEED" add context.txt
+git -C "$DEV_CONTEXT_SEED" commit -qm context
+git -C "$DEV_CONTEXT_SEED" remote add origin "$DEV_CONTEXT_REMOTE"
+git -C "$DEV_CONTEXT_SEED" push -qu origin main
+git clone -q "$DEV_CONTEXT_REMOTE" "$CONTEXT"
+git clone -q "$DEV_CONTEXT_REMOTE" "$DEV_CONTEXT_COORD"
+git -C "$DEV_CONTEXT_COORD" config user.name test
+git -C "$DEV_CONTEXT_COORD" config user.email test@example.invalid
 
 printf '%s\n' \
   'version=1' \
@@ -75,6 +94,7 @@ count=0
 [ -f "$NUINUI_HANDOFF_COUNTER" ] && count=$(cat "$NUINUI_HANDOFF_COUNTER")
 count=$((count + 1))
 printf '%s\n' "$count" > "$NUINUI_HANDOFF_COUNTER"
+printf '%s\n' "$@" > "$NUINUI_HANDOFF_ARGS"
 if [ "$NUINUI_HANDOFF_FAKE_MODE" = near-match ] && [ "$count" = 1 ]; then
   printf '%s\n' 'BLOCKED: handoff claimed branch mismatch (near-match)'
   exit 1
@@ -110,21 +130,25 @@ export NUINUI_SELFTEST_RESULT_REPO=$CONTEXT
 export NUINUI_HANDOFF_CHECK_HELPER=$CHECK_WRAPPER
 export NUINUI_HANDOFF_REAL_HELPER=$HANDOFF_CHECK
 export NUINUI_HANDOFF_COUNTER=$CHECK_COUNT
+export NUINUI_HANDOFF_ARGS=$HANDOFF_ARGS
 export NUINUI_RESUME_SWITCH_COUNTER=$SWITCH_COUNTER
 export NUINUI_REAL_GIT=$REAL_GIT
 NUINUI_HANDOFF_FAKE_MODE=
 NUINUI_HANDOFF_SECOND_DRIFT_SEED=
 NUINUI_FAIL_RESUME_SWITCH=
 export NUINUI_HANDOFF_FAKE_MODE NUINUI_HANDOFF_SECOND_DRIFT_SEED NUINUI_FAIL_RESUME_SWITCH
+export NUINUI_SELFTEST_EXPECTED_ORIGIN=$DEV_CONTEXT_REMOTE
 cd "$ROOT/cwd"
 git -C "$MAIN" switch -q --detach origin/main
 
-[ "$("$HELPER" version)" = 1.10.1 ] || fail 'handoff façade did not use standalone 1.10.1'
+[ "$("$HELPER" version)" = 1.11.0 ] || fail 'handoff façade did not use standalone 1.11.0'
 HELP_OUTPUT=$("$HELPER" --help)
 assert_contains "$HELP_OUTPUT" 'handoff' 'public help omitted handoff'
 assert_contains "$HELP_OUTPUT" \
-  'Usage: nuinui handoff --lane <implementation-lane> --issue <SAY-123> --claim <claim> --checkpoint <full-sha> --main <full-sha> --topic <absent|exact>' \
-  'public help omitted canonical named handoff usage'
+  'Usage: nuinui handoff <h1-24-hex-ticket>' \
+  'public help omitted short handoff ticket usage'
+assert_not_contains "$HELP_OUTPUT" '--checkpoint <full-sha>' \
+  'public help still advertises full-SHA handoff startup arguments'
 "$HELPER" lane-init renamed-implementation >/dev/null
 "$HELPER" lane-init additional-implementation >/dev/null
 
@@ -147,16 +171,80 @@ reset_generation() {
   done
   git -C "$MAIN" checkout -q -- handoff-case.txt 2>/dev/null || true
   rm -f "$MAIN/handoff-case.txt" "$CHECK_COUNT" "$SWITCH_COUNTER"
+  rm -f "$HANDOFF_ARGS"
   CASE_BRANCH=
   CASE_CLAIM=
   CASE_BASE=
   CASE_CHECKPOINT=
+  CASE_TICKET=
   NUINUI_HANDOFF_FAKE_MODE=
   NUINUI_HANDOFF_SECOND_DRIFT_SEED=
   NUINUI_FAIL_RESUME_SWITCH=
 }
 
+make_ticket_from_body() {
+  ticket_body=$1
+  ticket_parent=$(git -C "$CONTEXT" ls-remote --exit-code --heads origin \
+    refs/heads/main | awk 'NR == 1 {print $1}')
+  ticket_tree=$(git -C "$DEV_CONTEXT_COORD" rev-parse "$ticket_parent^{tree}")
+  ticket_sha=$(printf '%s\n' "$ticket_body" | git -C "$DEV_CONTEXT_COORD" \
+    commit-tree "$ticket_tree" -p "$ticket_parent")
+  CASE_TICKET=h1-$(printf '%s' "$ticket_sha" | cut -c1-24)
+  CASE_TICKET_SHA=$ticket_sha
+  git -C "$DEV_CONTEXT_COORD" push -q origin \
+    "$ticket_sha:refs/heads/nuinui-handoff-ticket/$CASE_TICKET"
+}
+
+make_ticket() {
+  TICKET_COUNTER=$((TICKET_COUNTER + 1))
+  ticket_nonce=$(printf '%016x' "$TICKET_COUNTER")
+  make_ticket_from_body "nuinui-handoff-ticket-v1
+repository=sayosomi/nuinuiCAD
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=$ticket_nonce"
+}
+
+make_tree_changed_ticket() {
+  ticket_parent=$(git -C "$CONTEXT" ls-remote --exit-code --heads origin \
+    refs/heads/main | awk 'NR == 1 {print $1}')
+  ticket_blob=$(printf '%s\n' changed | git -C "$DEV_CONTEXT_COORD" \
+    hash-object -w --stdin)
+  ticket_tree=$(git -C "$DEV_CONTEXT_COORD" rev-parse "$ticket_parent^{tree}")
+  ticket_tree=$( \
+    { git -C "$DEV_CONTEXT_COORD" ls-tree "$ticket_tree"
+      printf '100644 blob %s\tchanged.txt\n' "$ticket_blob"
+    } | LC_ALL=C sort | git -C "$DEV_CONTEXT_COORD" mktree)
+  ticket_sha=$(printf '%s\n' "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=0000000000000001" | git -C "$DEV_CONTEXT_COORD" \
+    commit-tree "$ticket_tree" -p "$ticket_parent")
+  CASE_TICKET=h1-$(printf '%s' "$ticket_sha" | cut -c1-24)
+  CASE_TICKET_SHA=$ticket_sha
+  git -C "$DEV_CONTEXT_COORD" push -q origin \
+    "$ticket_sha:refs/heads/nuinui-handoff-ticket/$CASE_TICKET"
+}
+
+ticket_reject_body() {
+  ticket_test_name=$1
+  ticket_test_expected=$2
+  shift 2
+  make_ticket_from_body "$1"
+  expect_no_recovery "$ticket_test_name" "$ticket_test_expected" "$CASE_TICKET"
+}
+
 start_generation() {
+  CASE_LANE=renamed-implementation
   CASE_ISSUE=$1
   CASE_BRANCH=$2
   git -C "$MAIN" fetch -q origin main
@@ -178,20 +266,15 @@ push_checkpoint() {
 }
 
 handoff_args() {
-  "$HELPER" handoff \
-    --lane renamed-implementation \
-    --issue "$CASE_ISSUE" \
-    --claim "$CASE_CLAIM" \
-    --checkpoint "$CASE_CHECKPOINT" \
-    --main "$CASE_MAIN" \
-    --topic "$CASE_TOPIC"
+  "$HELPER" handoff "$CASE_TICKET"
 }
 
 run_handoff() {
-  CASE_MAIN=$1
-  CASE_TOPIC=$2
-  shift 2
+  if [ "$#" -ge 2 ] && [ "$2" = absent -o "$2" = exact ]; then
+    shift 2
+  fi
   if [ "$#" = 0 ]; then
+    [ -n "$CASE_TICKET" ] || make_ticket
     (export PATH="$FAKE_GIT_DIR:$PATH"; handoff_args)
   else
     (export PATH="$FAKE_GIT_DIR:$PATH"; "$HELPER" handoff "$@")
@@ -221,9 +304,25 @@ reset_generation
 start_generation SAY-181 sayosomi/say-181-absent
 CASE_MAIN=$CASE_BASE
 CASE_TOPIC=absent
+make_ticket
 ABSENT_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC") || fail 'absent normal success failed'
 assert_contains "$ABSENT_OUTPUT" 'HANDOFF VERIFIED' 'absent normal success did not verify'
 [ "$(cat "$CHECK_COUNT")" = 1 ] || fail 'absent normal success ran a redundant proof'
+assert_contains "$(cat "$HANDOFF_ARGS")" "$CASE_LANE" \
+  'proof helper did not receive ticket-resolved lane'
+assert_contains "$(cat "$HANDOFF_ARGS")" "$CASE_CLAIM" \
+  'proof helper did not receive ticket-resolved claim'
+assert_contains "$(cat "$HANDOFF_ARGS")" "$CASE_CHECKPOINT" \
+  'proof helper did not receive ticket-resolved checkpoint'
+assert_contains "$(cat "$HANDOFF_ARGS")" "$CASE_MAIN" \
+  'proof helper did not receive ticket-resolved main'
+if SECOND_USED_OUTPUT=$(run_handoff "$CASE_TICKET" 2>&1); then
+  printf '%s\n' "$SECOND_USED_OUTPUT"
+  fail 'successfully used ticket was accepted a second time'
+fi
+assert_contains "$SECOND_USED_OUTPUT" 'already reserved or used' \
+  'used ticket did not fail closed'
+[ "$(cat "$CHECK_COUNT")" = 1 ] || fail 'used ticket reached proof on retry'
 echo 'PASS: absent normal success'
 
 reset_generation
@@ -231,6 +330,7 @@ start_generation SAY-181 sayosomi/say-181-exact
 push_checkpoint
 CASE_MAIN=$CASE_BASE
 CASE_TOPIC=exact
+make_ticket
 EXACT_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC") || fail 'exact normal success failed'
 assert_contains "$EXACT_OUTPUT" 'HANDOFF VERIFIED' 'exact normal success did not verify'
 [ "$(cat "$CHECK_COUNT")" = 1 ] || fail 'exact normal success ran a redundant proof'
@@ -242,6 +342,7 @@ push_checkpoint
 git -C "$MAIN" switch -q --detach "$CASE_BASE"
 CASE_MAIN=$CASE_BASE
 CASE_TOPIC=exact
+make_ticket
 RECOVERY_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC") ||
   fail 'exact branch-mismatch recovery failed'
 assert_contains "$RECOVERY_OUTPUT" 'HANDOFF VERIFIED' 'recovery did not complete second proof'
@@ -258,6 +359,7 @@ push_checkpoint
 git -C "$MAIN" switch -q --detach "$CASE_BASE"
 CASE_MAIN=$CASE_BASE
 CASE_TOPIC=exact
+make_ticket
 NUINUI_FAIL_RESUME_SWITCH=1
 rm -f "$CHECK_COUNT" "$SWITCH_COUNTER"
 if RESUME_FAILURE_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" 2>&1); then
@@ -298,18 +400,43 @@ start_generation SAY-181 sayosomi/say-181-identity
 push_checkpoint
 CASE_MAIN=$CASE_BASE
 CASE_TOPIC=exact
-expect_no_recovery 'wrong Claim' 'handoff claim mismatch' \
-  "$CASE_MAIN" "$CASE_TOPIC" \
-  --lane renamed-implementation --issue "$CASE_ISSUE" --claim wrong-claim-12345678 \
-  --checkpoint "$CASE_CHECKPOINT" --main "$CASE_MAIN" --topic exact
-expect_no_recovery 'wrong Checkpoint' 'handoff checkpoint mismatch' \
-  "$CASE_MAIN" "$CASE_TOPIC" \
-  --lane renamed-implementation --issue "$CASE_ISSUE" --claim "$CASE_CLAIM" \
-  --checkpoint "$CASE_BASE" --main "$CASE_MAIN" --topic exact
-expect_no_recovery 'wrong Issue' 'handoff Issue mismatch' \
-  "$CASE_MAIN" "$CASE_TOPIC" \
-  --lane renamed-implementation --issue SAY-999 --claim "$CASE_CLAIM" \
-  --checkpoint "$CASE_CHECKPOINT" --main "$CASE_MAIN" --topic exact
+make_ticket_from_body "nuinui-handoff-ticket-v1
+repository=sayosomi/nuinuiCAD
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=wrong-claim-12345678
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=exact
+nonce=0000000000000001"
+expect_no_recovery 'wrong Claim' 'handoff claim mismatch' "$CASE_TICKET"
+make_ticket_from_body "nuinui-handoff-ticket-v1
+repository=sayosomi/nuinuiCAD
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_BASE
+main=$CASE_MAIN
+topic=exact
+nonce=0000000000000002"
+expect_no_recovery 'wrong Checkpoint' 'handoff checkpoint mismatch' "$CASE_TICKET"
+make_ticket_from_body "nuinui-handoff-ticket-v1
+repository=sayosomi/nuinuiCAD
+lane=$CASE_LANE
+issue=SAY-999
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=exact
+nonce=0000000000000003"
+expect_no_recovery 'wrong Issue' 'handoff Issue mismatch' "$CASE_TICKET"
+if FAILED_RETRY_OUTPUT=$(run_handoff "$CASE_TICKET" 2>&1); then
+  printf '%s\n' "$FAILED_RETRY_OUTPUT"
+  fail 'ticket reserved by a failed invocation was accepted on retry'
+fi
+assert_contains "$FAILED_RETRY_OUTPUT" 'already reserved or used' \
+  'failed ticket reservation was not retained'
+echo 'PASS: failed ticket reservation is terminal'
 
 reset_generation
 start_generation SAY-181 sayosomi/say-181-main-drift
@@ -374,6 +501,167 @@ expect_no_recovery 'absent mode branch mismatch' 'handoff claimed branch mismatc
   "$CASE_MAIN" "$CASE_TOPIC"
 
 reset_generation
+start_generation SAY-181 sayosomi/say-181-ticket-shape
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+ticket_reject_body 'missing ticket field' \
+  'handoff ticket message is not the canonical field set' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC"
+ticket_reject_body 'duplicate ticket field' \
+  'handoff ticket message is not the canonical field set' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+topic=$CASE_TOPIC
+nonce=0000000000000001"
+ticket_reject_body 'unknown ticket field' \
+  'handoff ticket message is not the canonical field set' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+unknown=value
+nonce=0000000000000002"
+ticket_reject_body 'reordered ticket field' \
+  'handoff ticket message is not the canonical field set' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+main=$CASE_MAIN
+checkpoint=$CASE_CHECKPOINT
+topic=$CASE_TOPIC
+nonce=0000000000000003"
+ticket_reject_body 'wrong ticket repository' \
+  'handoff ticket repository is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=wrong/repository
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=0000000000000004"
+ticket_reject_body 'wrong ticket lane' \
+  'handoff ticket lane is not a declared implementation lane' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=unknown-lane
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=0000000000000005"
+ticket_reject_body 'wrong ticket Issue' \
+  'handoff ticket Issue is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=SAY-invalid
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=0000000000000006"
+ticket_reject_body 'wrong ticket claim syntax' \
+  'handoff ticket claim is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=bad
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=0000000000000007"
+ticket_reject_body 'wrong ticket checkpoint syntax' \
+  'handoff ticket checkpoint is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=invalid
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=0000000000000008"
+ticket_reject_body 'wrong ticket main syntax' \
+  'handoff ticket main is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=invalid
+topic=$CASE_TOPIC
+nonce=0000000000000009"
+ticket_reject_body 'wrong ticket topic' \
+  'handoff ticket topic is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=unknown
+nonce=000000000000000a"
+ticket_reject_body 'wrong ticket nonce' \
+  'handoff ticket nonce is invalid' \
+  "nuinui-handoff-ticket-v1
+repository=$CASE_REPOSITORY
+lane=$CASE_LANE
+issue=$CASE_ISSUE
+claim=$CASE_CLAIM
+checkpoint=$CASE_CHECKPOINT
+main=$CASE_MAIN
+topic=$CASE_TOPIC
+nonce=not-a-nonce"
+echo 'PASS: canonical ticket field and value validation'
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-corrupt-ref
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+make_ticket
+CORRUPTED_TOKEN=$CASE_TICKET
+make_ticket
+git -C "$DEV_CONTEXT_REMOTE" update-ref \
+  "refs/heads/nuinui-handoff-ticket/$CORRUPTED_TOKEN" "$CASE_TICKET_SHA"
+CASE_TICKET=$CORRUPTED_TOKEN
+expect_no_recovery 'corrupted ticket target prefix' \
+  'handoff ticket ref target does not match its token' "$CASE_TICKET"
+
+reset_generation
+start_generation SAY-181 sayosomi/say-181-tree-change
+CASE_MAIN=$CASE_BASE
+CASE_TOPIC=absent
+make_tree_changed_ticket
+expect_no_recovery 'ticket tree changes' \
+  'handoff ticket must have an identical tree to its parent' "$CASE_TICKET"
+echo 'PASS: ticket object binding and empty-tree proof'
+
+reset_generation
 CASE_MAIN=$(git -C "$MAIN" rev-parse origin/main)
 CASE_TOPIC=absent
 rm -f "$CHECK_COUNT" "$SWITCH_COUNTER"
@@ -382,30 +670,21 @@ if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
   --checkpoint "$CASE_MAIN" --main "$CASE_MAIN" --topic absent --branch ignored 2>&1); then
   fail 'Branch caller argument unexpectedly accepted'
 fi
-assert_contains "$MALFORMED_OUTPUT" 'ERROR: unknown option --branch' \
-  'Branch caller argument did not fail as malformed input'
-if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
-  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
-  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN" --topic absent --base ignored 2>&1); then
-  fail 'Base caller argument unexpectedly accepted'
+assert_contains "$MALFORMED_OUTPUT" 'ERROR: handoff expects exactly one short ticket' \
+  'old named handoff syntax did not fail closed'
+[ ! -f "$CHECK_COUNT" ] || fail 'old named syntax reached proof'
+if MALFORMED_OUTPUT=$(run_handoff h1-ABC 2>&1); then
+  fail 'malformed short token unexpectedly succeeded'
 fi
-assert_contains "$MALFORMED_OUTPUT" 'ERROR: unknown option --base' \
-  'Base caller argument did not fail as malformed input'
-if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
-  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
-  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN"); then
-  fail 'missing topic unexpectedly accepted'
+assert_contains "$MALFORMED_OUTPUT" 'ERROR: invalid handoff ticket' \
+  'malformed short token did not fail closed'
+[ ! -f "$CHECK_COUNT" ] || fail 'malformed short token reached proof'
+if MALFORMED_OUTPUT=$(run_handoff h1-000000000000000000000000 2>&1); then
+  fail 'missing ticket ref unexpectedly succeeded'
 fi
-assert_contains "$MALFORMED_OUTPUT" 'ERROR: missing required named option --topic' \
-  'missing topic did not fail closed'
-if MALFORMED_OUTPUT=$(run_handoff "$CASE_MAIN" "$CASE_TOPIC" \
-  --lane renamed-implementation --issue SAY-181 --claim claim-12345678 \
-  --checkpoint "$CASE_MAIN" --main "$CASE_MAIN" --topic absent \
-  --topic exact 2>&1); then
-  fail 'duplicate topic unexpectedly accepted'
-fi
-assert_contains "$MALFORMED_OUTPUT" 'ERROR: duplicate named option --topic' \
-  'duplicate topic did not fail closed'
-echo 'PASS: malformed named arguments and no Branch/Base caller requirement'
+assert_contains "$MALFORMED_OUTPUT" 'BLOCKED: handoff ticket ref is missing' \
+  'missing ticket ref did not fail closed'
+[ ! -f "$CHECK_COUNT" ] || fail 'missing ticket ref reached proof'
+echo 'PASS: public old syntax, malformed token, and missing ref rejection'
 
 echo 'HANDOFF TEST PASS'
