@@ -6,6 +6,24 @@ Repository: `sayosomi/nuinuiCAD`
 
 Current taskのSHA、branch、進捗、個別implementation planはここに書かない。詳細policyはowner documentへ置き、このREADMEは「何をいつ読むか」を中心に保つ。
 
+## Normal implementation flow
+
+```text
+Human asks ChatGPT to implement
+-> ChatGPT performs current-state / contract work
+-> Human runs one short local startup mutation only when genuinely required
+-> ChatGPT outputs the complete implementation-agent prompt directly in chat
+-> Human copies it to the implementation agent
+-> implementation agent runs canonical nuinui handoff
+-> HANDOFF VERIFIED
+-> implementation / test / commit / push
+-> result returns to ChatGPT
+```
+
+The Human does not run implementation-agent handoff verification or manage
+prompt files, expected-context files, ticket refs, ticket tokens, claims, or
+checkpoints as transport artifacts.
+
 ## Always load for development work
 
 開発作業では最初に次を読む。
@@ -28,8 +46,8 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 | declared execution lanes / checkout occupancy / checkpoint isolation | [Execution lane policy](./CHECKOUTS.md) + [Declared-lane Execution Model](../../shared/DECLARED-LANE-EXECUTION.md) |
 | local versioned helper / local dev-context sync / tool promotion | [Local tools](./LOCAL-TOOLS.md) |
 | execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
-| execution-agent prompt publication validation | [Shared Agent Prompt Preflight](../../shared/AGENT-PROMPT-PREFLIGHT.md) + `scripts/nuinui-prompt-check` |
-| execution-agent handoff state authority / stale-context prevention | [Execution handoff authority](./EXECUTION-HANDOFF.md) + [Handoff output safety](./HANDOFF-OUTPUT.md) |
+| execution-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
+| execution-agent handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
 | implementation / blocking-fix Luna workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
@@ -115,7 +133,7 @@ implementation lanesは互いの途中変更を取り込まない。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
-6. **Execution-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/AGENT-PROMPT-PREFLIGHT.md` + `EXECUTION-HANDOFF.md` + `HANDOFF-OUTPUT.md`。
+6. **Execution-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`。
 7. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`。該当する場合Shared / nuinuiCAD Agent Skillsも読む。
 8. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`。
 9. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`。詳細は`LINEAR.md`のroutingに従う。

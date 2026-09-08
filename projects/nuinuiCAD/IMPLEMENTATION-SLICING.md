@@ -185,7 +185,7 @@ implementation slice開始時は、ChatGPTがfresh remote state、Linear current
 - 全implementation laneがBUSY →新しいimplementationは開始しない;
 - `role=human-test` laneはimplementationへ使わない。
 
-same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけではdeclared-lane preflightへ戻らない。current Branch / Base / Claim / Checkpointをcaller expectationとしてLunaの [`nuinui-handoff-check`](./EXECUTION-HANDOFF.md) に渡し、actual local stateをそこで機械的に検証する。exact pushed-checkpoint continuationでfirst lineがexactly`BLOCKED: handoff claimed branch mismatch`の場合は、EXECUTION-HANDOFF.mdのone-attempt exact resume recoveryを先に使ってよい。canonical `IMPLEMENTATION RESUMED`とexact original handoff rerunの`HANDOFF VERIFIED`が揃わなければ、または別classificationのhandoff-check `BLOCKED`であれば、separate Human preflightへ戻る。`begin`、`resume`、`release`、このIssue #84 exception外のhandoff-check `BLOCKED`、crash suspicion、unexpected local state、identity不明、explicit diagnosis / recoveryだけがseparate preflightのrouting conditionである。`absent` modeにはautomatic recoveryを適用しない。
+same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけではdeclared-lane preflightへ戻らない。実装Agentはassigned checkoutで`nuinui handoff <SAY-N> <expected-main-sha>`を実行し、façadeがmanifestとdurable slotからBranch / Base / Claim / Checkpointとremote topic modeを解決して、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) のstandalone proofへ渡す。handoffが`HANDOFF VERIFIED`を返さなければ、実装Agentは変更せず停止してorchestratorへ戻る。resume、retry、repair、別のHuman handoff verificationは行わない。
 
 declared lane capacityを超えるparallelismをIssue / branch / worktree追加で表現しない。全laneを常時使用することも目標にしない。
 

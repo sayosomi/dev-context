@@ -29,14 +29,10 @@ nuinui_integrate_clean_command_source=$script_dir/nuinui-src/integrate-clean-com
 nuinui_context_sync_source=$script_dir/nuinui-src/context-sync.sh
 nuinui_diagnostics_source=$script_dir/nuinui-src/diagnostics.sh
 nuinui_command_result_source=$script_dir/nuinui-src/command-result.sh
-nuinui_handoff_ticket_source=$script_dir/nuinui-src/handoff-ticket.sh
 nuinui_handoff_source=$script_dir/nuinui-src/handoff.sh
 nuinui_self_test_source=$script_dir/nuinui-src/self-test.sh
 nuinui_dispatch_source=$script_dir/nuinui-src/cli-dispatch.sh
 handoff_body_source=$script_dir/nuinui-handoff-check-src/handoff-body.sh
-prompt_check_generator=$script_dir/generate-nuinui-prompt-check
-prompt_check_artifact=$script_dir/nuinui-prompt-check
-prompt_check_body_source=$script_dir/nuinui-prompt-check-src/prompt-check-body.sh
 e2e_prepare_generator=$script_dir/generate-nuinui-e2e-prepare
 e2e_prepare_artifact=$script_dir/nuinui-e2e-prepare
 e2e_prepare_runtime_source=$script_dir/nuinui-e2e-prepare-src/runtime.zsh
@@ -77,15 +73,11 @@ done
 [ -f "$nuinui_context_sync_source" ] || fail 'nuinui context-sync source is missing'
 [ -f "$nuinui_diagnostics_source" ] || fail 'nuinui diagnostics source is missing'
 [ -f "$nuinui_command_result_source" ] || fail 'nuinui command-result source is missing'
-[ -f "$nuinui_handoff_ticket_source" ] || fail 'nuinui handoff-ticket source is missing'
 [ -f "$nuinui_handoff_source" ] || fail 'nuinui handoff source is missing'
 [ -f "$nuinui_self_test_source" ] || fail 'nuinui self-test source is missing'
 [ -f "$nuinui_dispatch_source" ] || fail 'nuinui CLI dispatch source is missing'
 [ -f "$nuinui_release_command_source" ] || fail 'nuinui release-command source is missing'
 [ -f "$handoff_body_source" ] || fail 'handoff body source is missing'
-[ -x "$prompt_check_generator" ] || fail 'prompt-check generator is missing or not executable'
-[ -f "$prompt_check_artifact" ] || fail 'prompt-check production artifact is missing'
-[ -f "$prompt_check_body_source" ] || fail 'prompt-check body source is missing'
 for e2e_source in "$e2e_prepare_runtime_source" "$e2e_prepare_session_source" "$e2e_prepare_closure_source" "$e2e_prepare_commands_source"; do
   [ -f "$e2e_source" ] || fail "E2E preparation source is missing: $e2e_source"
 done
@@ -115,7 +107,9 @@ test_generator() {
 
   if [ "$name" = nuinui ]; then
     for obsolete_marker in fixed_2plus1 fixed-2plus1 peer_lane expected_peer \
-      '/Users/yosomi/Code/nuinuiCAD-sub'; do
+      '/Users/yosomi/Code/nuinuiCAD-sub' h1-24-hex-ticket \
+      nuinui-handoff-ticket nuinui-prompt-check generate-nuinui-prompt-check \
+      expected-context; do
       if grep -Fq -- "$obsolete_marker" "$candidate_a"; then
         fail "$name candidate contains obsolete production topology marker: $obsolete_marker"
       fi
@@ -134,11 +128,9 @@ test_generator() {
 
   protected_paths="$artifact_path"
   if [ "$name" = nuinui ]; then
-    protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_release_command_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_e2e_start_command_source $nuinui_integrate_clean_command_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_handoff_ticket_source $nuinui_handoff_source $nuinui_self_test_source $nuinui_dispatch_source"
+    protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_release_command_source $nuinui_body_source $nuinui_github_pr_source $nuinui_required_checks_source $nuinui_pr_auto_merge_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_e2e_start_command_source $nuinui_integrate_clean_command_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_handoff_source $nuinui_self_test_source $nuinui_dispatch_source"
   elif [ "$name" = nuinui-handoff-check ]; then
     protected_paths="$protected_paths $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_project_policy_source $handoff_body_source"
-  elif [ "$name" = nuinui-prompt-check ]; then
-    protected_paths="$protected_paths $prompt_check_body_source"
   else
     protected_paths="$protected_paths $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $e2e_prepare_runtime_source $e2e_prepare_session_source $e2e_prepare_closure_source $e2e_prepare_commands_source"
   fi
@@ -163,8 +155,26 @@ test_generator() {
   echo "PASS: $name generation candidate_sha256=$candidate_sha256 candidate_git_blob=$candidate_git_blob"
 }
 
-test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.11.0
+test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.12.0
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.1.1
-test_generator nuinui-prompt-check "$prompt_check_generator" "$prompt_check_artifact" 1.0.0
 test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.8.1
+
+fanbox_prompt_checker=$repo_root/projects/fanbox-level-manager/scripts/fanbox-prompt-check
+fanbox_prompt_test=$repo_root/projects/fanbox-level-manager/scripts/test-fanbox-prompt-check
+[ -x "$fanbox_prompt_checker" ] || fail 'fanbox prompt checker was removed'
+[ -x "$fanbox_prompt_test" ] || fail 'fanbox prompt checker test was removed'
+[ -f "$repo_root/projects/fanbox-level-manager/PROMPT-PREFLIGHT.md" ] ||
+  fail 'fanbox prompt-preflight contract was removed'
+echo 'PASS: fanbox-level-manager prompt preflight remains explicitly opted in'
+
+for obsolete_path in \
+  projects/nuinuiCAD/scripts/nuinui-src/handoff-ticket.sh \
+  projects/nuinuiCAD/scripts/nuinui-handoff-once \
+  projects/nuinuiCAD/scripts/test-nuinui-handoff-once \
+  projects/nuinuiCAD/scripts/nuinui-prompt-check \
+  projects/nuinuiCAD/scripts/generate-nuinui-prompt-check \
+  projects/nuinuiCAD/scripts/test-nuinui-prompt-check; do
+  [ ! -e "$repo_root/$obsolete_path" ] || fail "removed #224 path remains: $obsolete_path"
+done
+echo 'PASS: removed ticket and nuinuiCAD prompt-check paths are absent'
 echo 'GENERATION PASS'

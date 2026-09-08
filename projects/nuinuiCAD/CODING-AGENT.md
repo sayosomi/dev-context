@@ -152,13 +152,13 @@ implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLi
 
 具体的なlane nameとpathはcurrent `LANES.conf`から読む。lane nameからpathやroleを推測しない。
 
-Lunaは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushの対象としてassigned declared checkoutを明示的にtargetする。ただしticket-basedなnuinuiCAD startupでは、pathをtargetした後の最初のauthority operationはexactな`nuinui handoff <ticket>`であり、その前にhelper-ownedなrepository identity、branch、HEAD、clean state、remote stateを手作業で再構成・検証しない。
+Lunaは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushの対象としてassigned declared checkoutを明示的にtargetする。nuinuiCAD startupでは、pathをtargetした後の最初のauthority operationはexactな`nuinui handoff <SAY-N> <expected-main-sha>`であり、その前にhelper-ownedなrepository identity、branch、HEAD、clean state、remote stateを手作業で再構成・検証しない。
 
-session開始時の`pwd`がassigned laneと違うことだけを理由に`LANE_MISMATCH`として停止してはならない。ticket-based startupでは、`LANE_MISMATCH`はassigned checkoutをtargetした後のcanonical handoffまたは後続operationがrequired lane conditionの不一致を報告した場合だけ使う。
+session開始時の`pwd`がassigned laneと違うことだけを理由に`LANE_MISMATCH`として停止してはならない。`LANE_MISMATCH`はassigned checkoutをtargetした後のcanonical handoffまたは後続operationがrequired lane conditionの不一致を報告した場合だけ使う。
 
 declared laneを使うために別Codex Project、別VS Code window、extra checkout/worktreeを作る必要はない。同じCodex Projectからmanifest-declared checkoutをtargetしてよい。
 
-ChatGPTがLuna promptを生成するときは、initial `pwd`一致をpreconditionにせず、prompt-visibleなassigned checkout pathをrouting targetとして保持し、ticket-based startupでは`assigned checkoutをtargetする -> exactな nuinui handoff <ticket>を最初に実行する`順序で書く。pathはsecond identity proofにしない。
+ChatGPTがLuna promptを生成するときは、initial `pwd`一致をpreconditionにせず、prompt-visibleなassigned checkout pathをrouting targetとして保持し、`assigned checkoutをtargetする -> exactな nuinui handoff <SAY-N> <expected-main-sha>を最初に実行する`順序で書く。pathはsecond identity proofにしない。
 
 ## Base checkpoint semantics
 
@@ -212,29 +212,26 @@ Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repositor
 - selected lane;
 - Base checkpoint SHA;
 - branch;
-- fresh-audited current-run identity sealed by ChatGPT in one immutable Git-object handoff ticket, plus its short token and one exact canonical handoff command;
+- fresh-audited authoritative default-branch SHA for the implementation run;
 - concrete change owner / files / symbols / API boundary;
 - settled acceptance;
 - required verification;
 - explicit non-goals;
 - blocking / stop conditions。
 
-Ticket-basedなnuinuiCAD implementation / continuationでは、shared implementation-prompt completeness gateの`expected remote state` fieldは、freshなauthoritative nuinuiCAD `main`を封印したimmutable handoff ticket payloadで満たす。`branch / base` fieldは、ticket payloadに一致するdurable claimと、handoff façadeによるBranch / Baseの導出で満たす。この表現はfreshnessの省略や任意のcurrent state採用を許可しない。generic wordingだけを満たすためにfull Claim / Checkpoint / current-main SHAをLuna promptへ重複転記してはならない。
+nuinuiCAD implementation promptでは、freshなauthoritative `main` SHAをexpected remote stateとして示し、実装Issueとともに`nuinui handoff <SAY-N> <expected-main-sha>`を渡す。handoff façadeはmanifestとdurable implementation slotからlane、claim、branch、Base、current HEADを導出するため、これらをtransport artifactとしてpromptへ重複転記しない。
 
 Lunaへrepository全体のarchitecture探索やscope決定を依頼しない。
 
 ## Luna prompt contract
 
-Promptにはcurrent executable source-code sliceだけを書く。
-
-Prompt publication gateとして、ChatGPTはpromptのexpected-context fileを生成し、`projects/nuinuiCAD/scripts/nuinui-prompt-check <prompt-file> <expected-context-file>`を実行する。`PROMPT PREFLIGHT PASS`を得るまでLuna promptを提示しない。Checkerはexecution-envelopeのhard checksだけを担当し、implementation scope / architecture / product correctnessのreviewはこのdocumentとshared Coding Agent Workflowのauthorityに残す。
+Promptにはcurrent executable source-code sliceだけを書く。nuinuiCADでは、prompt publication checkerやexpected-context fileを作成せず、semantic completeness、scope、verification、Git safety、prompt styleをこのdocumentとshared Coding Agent Workflowのauthorityに従って確認する。
 
 必須:
 
 - repository
 - lane checkout path
-- current-run Execution Envelope with the immutable handoff ticket token
-- one exact prefilled `nuinui handoff <ticket>` command; the resolver derives the full identity, and the façade derives Branch / Base from the matched durable slot
+- one exact prefilled `nuinui handoff <SAY-N> <expected-main-sha>` command; the façade resolves the full execution identity from durable lane state
 - current slice / change target
 - concrete required changes
 - required tests / verification
@@ -244,34 +241,25 @@ Prompt publication gateとして、ChatGPTはpromptのexpected-context fileを�
 
 Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
 
-Promptのstartup sequenceでは、Luna processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <ticket>`を最初に実行する。repository identity、branch、HEAD、clean state、remote stateはhelperがticketとdurable claimに基づいて検証するため、Lunaはhandoff前に独立したhelper-owned precheckを再構成しない。
+Promptのstartup sequenceでは、Luna processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <SAY-N> <expected-main-sha>`を最初に実行する。repository identity、実行identity、branch、HEAD、clean state、remote stateはhandoff façadeとstandalone proofが検証するため、Lunaはhandoff前に独立したhelper-owned precheckを再構成しない。
 
-Expected lane state、dirty work、ownership、Base checkpointとの差異は、下記 `Luna startup handoff gate` のhelper-owned proof結果として扱う。exactなhandoffが失敗した場合は、exact pushed-checkpoint `claimed branch mismatch` recoveryだけを例外とし、それ以外は変更せず停止して報告させる。
+Expected lane state、dirty work、ownership、Base checkpointとの差異は、下記 `Luna startup handoff gate` のhelper-owned proof結果として扱う。handoffが失敗した場合は、変更せず停止して報告させる。
 
-Project-specific canonical `nuinui handoff` is the terminal startup façade for its helper-owned facts when it returns `HANDOFF VERIFIED`. It delegates proof to `nuinui-handoff-check` and owns the exact-mode one-shot resume recovery. Do not append `git fetch origin --prune` or another lane / topic / main verification after that success merely to re-prove those facts; the shared Coding Agent fetch rule does not create a second post-success handoff gate. A later fetch required for genuinely new implementation work is allowed, but its remote-tracking refs must not override the successful handoff or become authoritative topic evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
+Project-specific canonical `nuinui handoff` is the terminal startup façade for its helper-owned facts when it returns `HANDOFF VERIFIED`. It delegates proof to `nuinui-handoff-check`. Do not append another lane / topic / main verification after that success merely to re-prove those facts; a later fetch required for genuinely new implementation work is allowed, but it must not override the successful handoff evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
 
 ### Luna startup handoff gate
 
-Repository operation前に、Lunaはassigned checkout pathをtargetした後、current-run Execution Envelopeからsupplied exact `nuinui handoff <ticket>` commandをargument変更なしで最初に実行する。
+Repository operation前に、Lunaはassigned checkout pathをtargetした後、promptにあるexact `nuinui handoff <SAY-N> <expected-main-sha>` commandをargument変更なしで最初に実行する。
 
 ```text
 handoff succeeds
--> continue
-
-handoff exits nonzero and first proof output line exactly
-BLOCKED: handoff claimed branch mismatch
-and the validated ticket has topic=exact
--> façade re-reads the matched durable slot and executes existing resume once
--> require the canonical IMPLEMENTATION RESUMED envelope
--> façade reruns the same handoff proof once
--> require HANDOFF VERIFIED
 -> continue
 
 anything else
 -> stop
 ```
 
-The ticket resolver obtains Issue, lane, Claim, Checkpoint, Current remote main, and Topic remote mode only from the validated immutable ticket; Branch and Base are then derived only from the exact matched durable slot. Luna must not infer or regenerate any of those values or the handoff command from retained session context or repository history. `CALLER_EXPECTED` / `ACTUAL` output never authorizes identity substitution. A failed or ambiguous resume, or a failed second proof, is a hard-stop with no retry. The existing stale-context, dirty-state, ownership, and remote-mismatch hard-stop rules remain unchanged; `absent` mode is not eligible for this exception.
+The façade obtains Issue from the public command and lane, Claim, Branch, Base, and current checkpoint from the unique matching durable implementation generation. It derives remote topic mode from exact authoritative remote state and passes the resolved values to the retained standalone proof. Luna must not infer or regenerate identity from retained session context or repository history. Any identity or safety failure is a hard-stop with no resume, retry, repair, push, or recovery decision tree; return control to the orchestrator.
 
 ## Scope control
 

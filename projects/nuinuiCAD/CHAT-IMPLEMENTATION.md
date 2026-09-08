@@ -71,9 +71,9 @@ If a Human reports terminal disappearance or lost output after `begin`, `start`,
 
 start / resume後のidentity invariantは、physical BUSYなdeclared implementation laneから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数だけでは十分ではない。
 
-same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由に全宣言laneのpreflightへ戻さない。ChatGPTがfreshなsemantic identityとauthoritative remote stateを再監査してimmutable ticketへ封印し、promptには短いticket tokenとexact `nuinui handoff <ticket>`だけを渡す。resolverがticketのfull identityを解決し、actual local durable stateとのmatchをその場で検証する。
+same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHumanをhandoff準備へ戻さない。ChatGPTはcurrent contractとfresh remote stateをpromptへ反映し、implementation agentへIssueとexpected-mainだけを含むcanonical commandを渡す。handoff façadeがdurable slotからfull identityとtopic modeを解決する。
 
-Canonical `nuinui handoff`が`HANDOFF VERIFIED`を返した後は、通常そのままLuna implementationへ進む。exact modeのexact claimed-branch mismatchだけはfaçade自身が既存resumeを一度だけ実行し、同じproofの再検証まで完了する。成功済みhandoffのhelper-owned startup factsを再確認するだけのsecondary observationを理由に、Humanをpreflight、diagnosis、state paste、またはhandoff再生成へ戻さない。repository mutationまたはgenuinely new material drift signalがある場合だけ、既存ownerのdrift / recovery routeを使う。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
+Canonical `nuinui handoff <SAY-N> <expected-main-sha>`が`HANDOFF VERIFIED`を返した後は、通常そのままLuna implementationへ進む。handoffのidentityまたはsafety proofが失敗した場合は自動resume・retry・repairを行わず、implementation agentは停止してorchestratorへ戻す。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
 
 product / UX decision、approval-gated dev-context write、unsafe/destructive unknown-state recovery等のHuman判断boundaryは自動決定しない。その場合も必要な判断/actionを具体化する。
 
@@ -209,11 +209,11 @@ declared implementation lane ownershipはGit-local durable claimで保持する�
 
 new `nuinui begin`成功outputの`claim=<generation token>`を、`In Progress` transitionと同じcontinuationで`Implementation checkpoint`へ保存する。低レベル`start`を明示的に使った場合も同じく保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
 
-`nuinui handoff <ticket>`は、ChatGPTがfresh audit後に作成したimmutable Git-object ticketを一度だけconsumeする。ticketがLane、Issue、Claim、exact checkpoint、current remote main、topic modeを封印し、resolverがcanonical dev-context remoteから検証して既存proofへ内部的に渡す。Branch / Baseはmatching durable slotからfaçadeが導出し、exact branch-mismatch recoveryでもlocal slotをticketの代わりに採用しない。
+`nuinui handoff <SAY-N> <expected-main-sha>`は、requested Issueに一致する唯一のactive durable implementation generationをmanifest-declared lane stateから解決する。Branch、Base、Claim、current HEAD checkpoint、remote topic modeはcallerやpromptから受け取らず、matching durable slotとexact authoritative remote stateから導出して既存proofへ渡す。
 
 `release` handoffはexact saved / integration checkpointとclaimを使う。claimless legacy signatureへfallbackしない。
 
-preflightがslot / checkout mismatch、mutation lock、releasing tombstone、uninitialized ownership schema、malformed metadata等をBLOCKEDとして返した場合、laneをFREEと推測しない。known crash stateだけexplicit `nuinui recover`で復旧し、reset / stash / force-switchによる一般repairへ変換しない。
+handoffがslot / checkout mismatch、mutation lock、releasing tombstone、uninitialized ownership schema、malformed metadata等をBLOCKEDとして返した場合、laneをFREEと推測しない。handoffはresumeや一般repairを行わず、既存の診断・recovery ownerへ戻す。
 
 chat rotation / external-state recovery後にLuna handoffを生成するときはpast chatのclaimをauthorityにせず、fresh local durable evidenceからcurrent claimを読み直す。
 
