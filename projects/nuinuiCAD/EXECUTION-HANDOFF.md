@@ -114,6 +114,33 @@ or new checkpoint requires a newly issued ticket. Normal flow never updates or
 reuses an old ticket to represent new state. GitHub-side ticket creation is
 coordinator work, and Human does not paste execution identity into Terminal.
 
+Before reporting ticket readiness, the coordinator validates the current public
+façade mechanically. The canonical executable surface must be a non-symbolic,
+executable regular file at:
+
+```text
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui
+```
+
+The producer also validates that the surface contains the exact public handoff
+usage `Usage: nuinui handoff <h1-24-hex-ticket>` and the `handoff)` dispatch.
+If any of these checks fail, ticket readiness is blocked and no prompt command
+is reported.
+
+Successful issuance returns exactly one stable machine-readable command field
+alongside the immutable token:
+
+```text
+HANDOFF TICKET READY
+ticket=<token>
+command=/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff <token>
+```
+
+The coordinator copies the `command=` value verbatim into the prompt context
+and does not reconstruct the path or argument form in prose. Prompt publication
+then follows [`../../shared/AGENT-PROMPT-PREFLIGHT.md`](../../shared/AGENT-PROMPT-PREFLIGHT.md)
+and the nuinuiCAD `scripts/nuinui-prompt-check` gate.
+
 ## Mechanical handoff gate
 
 Lunaはrepository operation前に、ChatGPTがticketを埋めた次のcommandを**そのまま**最初に実行する。

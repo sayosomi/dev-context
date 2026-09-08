@@ -11,10 +11,14 @@ The semantic handoff authority remains [`EXECUTION-HANDOFF.md`](./EXECUTION-HAND
 For Luna implementation, integration, blocking-fix, continuation, or chat-rotation handoff, the Execution Envelope must use this command as the first repository operation:
 
 ```text
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-handoff-once <ticket>
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff <ticket>
 ```
 
-The wrapper invokes the sibling canonical `nuinui handoff <ticket>` exactly once. It does not reserve, validate, retry, resume, repair, or reconstruct execution identity itself.
+The coordinator obtains this exact line from the ticket producer's stable
+`command=` field and copies it verbatim. The private
+`nuinui-handoff-once` helper may remain an internal presentation implementation,
+but it is not the public prompt command and must not be substituted into an
+Execution Envelope.
 
 ## One-shot no-retry rule
 
@@ -43,11 +47,12 @@ Do not convert output uncertainty into manual branch/Base/Claim/Checkpoint recon
 
 ## Presentation façade contract
 
-`projects/nuinuiCAD/scripts/nuinui-handoff-once` is a non-semantic presentation façade.
+`projects/nuinuiCAD/scripts/nuinui-handoff-once` is a non-semantic internal
+presentation façade.
 
 It must:
 
-1. accept exactly one canonical short `h1-<24 hex>` ticket;
+1. accept exactly one canonical short `h1-<24 hex>` ticket when used internally;
 2. invoke the sibling `nuinui handoff <ticket>` no more than once;
 3. capture the complete child output before presenting it to the execution agent;
 4. on exit 0 with canonical success evidence, emit `HANDOFF VERIFIED` as the first line and emit only the successful proof block beginning at that marker;
@@ -63,7 +68,7 @@ The wrapper is not an alternative handoff authority. Any change to reservation s
 Every execution-agent handoff prompt must state, directly and without optional wording:
 
 ```text
-Run the exact handoff command once. Do not retry the same ticket even if output is truncated, incomplete, or ambiguous. Continue only if the visible first line is exactly HANDOFF VERIFIED. Otherwise stop and report the visible output; ChatGPT will fresh-audit state and issue a new ticket if continuation is still valid.
+Run the exact `/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff <ticket>` command once. Do not retry the same ticket even if output is truncated, incomplete, or ambiguous. Continue only if the visible first line is exactly HANDOFF VERIFIED. Otherwise stop and report the visible output; ChatGPT will fresh-audit state and issue a new ticket if continuation is still valid.
 ```
 
 The prompt must not tell the agent to repeat the command to confirm success.

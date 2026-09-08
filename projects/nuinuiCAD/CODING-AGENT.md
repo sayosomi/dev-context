@@ -4,7 +4,7 @@
 
 nuinuiCADのimplementation / blocking-fix executionを定義する。
 
-Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従う。
+Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従い、prompt publicationのmachine-checkable gateは [`../../shared/AGENT-PROMPT-PREFLIGHT.md`](../../shared/AGENT-PROMPT-PREFLIGHT.md) に従う。
 
 Project-specific overrideとして、nuinuiCADの**source-code implementation / blocking fix**は**Codex Luna xhigh**を標準かつ唯一のimplementation executorとする。web ChatGPTがdirect GitHub editingでsource-code implementationを代替するexecution routeは持たない。
 
@@ -226,6 +226,8 @@ Lunaへrepository全体のarchitecture探索やscope決定を依頼しない。
 ## Luna prompt contract
 
 Promptにはcurrent executable source-code sliceだけを書く。
+
+Prompt publication gateとして、ChatGPTはpromptのexpected-context fileを生成し、`projects/nuinuiCAD/scripts/nuinui-prompt-check <prompt-file> <expected-context-file>`を実行する。`PROMPT PREFLIGHT PASS`を得るまでLuna promptを提示しない。Checkerはexecution-envelopeのhard checksだけを担当し、implementation scope / architecture / product correctnessのreviewはこのdocumentとshared Coding Agent Workflowのauthorityに残す。
 
 必須:
 

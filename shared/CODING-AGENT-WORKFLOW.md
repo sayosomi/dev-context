@@ -4,7 +4,7 @@
 
 この文書は**implementation agent専用**。Manual E2E test operatorなど、repository implementationを変更しないexecution roleには適用しない。
 
-Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先し、shared ruleよりstricterなrequirementを追加できる。ただし、このshared completeness gateを省略してunder-specified promptをexecutableに扱ってはならない。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従う。
+Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先し、shared ruleよりstricterなrequirementを追加できる。ただし、このshared completeness gateを省略してunder-specified promptをexecutableに扱ってはならない。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従い、machine-checkableなexecution-envelope publication gateは [`AGENT-PROMPT-PREFLIGHT.md`](./AGENT-PROMPT-PREFLIGHT.md) に従う。
 
 Projectがimplementation Coding Agentのdefault product / reasoning effort / resource policyを定義している場合は、そのproject-specific authorityを使う。ユーザーまたはcurrent Taskの明示指定はproject defaultより優先する。Project-specific defaultがない場合、このshared workflowだけを根拠に特定Coding Agent product / effortを仮定しない。
 
@@ -123,6 +123,19 @@ exactなterminal verification commandが確定している場合、それはCodi
 required architecture、product、design decisionが未確定、またはcontractがこのgateを満たさない場合、ChatGPTはhandoffせず調査またはcontract workを継続する。Coding Agentをmissing ChatGPT-side investigationの代替にせず、incomplete promptを実行可能にするためのalternate design探索やarchitecture決定をCoding Agentへ指示しない。
 
 Promptのlanguage / formatting / directnessは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) をauthorityとする。
+
+## Prompt publication preflight
+
+Implementation-agent promptをユーザーへ提示する前に、ChatGPTはproject-specificなcanonical prompt checkerを実行し、`PROMPT PREFLIGHT PASS`を得る。checkerが存在しない、入力contextが不完全、またはhard checkが失敗した場合はpromptを提示せず`BLOCKED`としてcontract / generation contextを再評価する。
+
+このgateは次のownershipを混同しない。
+
+- [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) はpresentation/style authorityだけを持つ。
+- [`AGENT-PROMPT-PREFLIGHT.md`](./AGENT-PROMPT-PREFLIGHT.md) はmachine-checkableなexecution-envelope publication validationだけを持つ。
+- project-specific `EXECUTION-HANDOFF.md` はhandoff identity、canonical runtime command、one-shot ticket semantics、runtime proofを持つ。
+- このdocumentはimplementation-agent role、completeness、required verification、scope、completion reportを持つ。
+
+Prompt preflightはHuman/LLMによるarchitecture、scope、product decision、implementation correctnessのreviewを置き換えない。また、preflightのためにreal handoff ticketを検証・予約・消費しない。
 
 ## Excluded execution roles
 
