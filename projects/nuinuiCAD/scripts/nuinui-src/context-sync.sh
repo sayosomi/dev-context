@@ -351,6 +351,77 @@ context_dev_next_command() {
   esac
 }
 
+context_dev_stable_patch_id() {
+  context_patch_id_left=$1
+  context_patch_id_right=$2
+  context_patch_id_file=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-patch.XXXXXX") || return 1
+  if ! git -C "$C" diff --no-ext-diff --binary \
+    "$context_patch_id_left" "$context_patch_id_right" -- >"$context_patch_id_file" 2>/dev/null; then
+    rm -f "$context_patch_id_file"
+    return 1
+  fi
+  context_patch_id_output=$(git -C "$C" patch-id --stable <"$context_patch_id_file" 2>/dev/null) || {
+    rm -f "$context_patch_id_file"
+    return 1
+  }
+  rm -f "$context_patch_id_file" || return 1
+  context_dev_patch_id=
+  [ -n "$context_patch_id_output" ] || return 0
+  context_dev_patch_id=$(printf '%s\n' "$context_patch_id_output" | awk '
+    NF == 2 && $1 ~ /^[0-9a-fA-F]{40}$/ && $2 ~ /^[0-9a-fA-F]{40}$/ {
+      print $1
+      count++
+    }
+    END { if (count != 1) exit 1 }
+  ') || {
+    context_dev_patch_id=
+    return 1
+  }
+  context_valid_sha "$context_dev_patch_id" || {
+    context_dev_patch_id=
+    return 1
+  }
+}
+
+context_dev_transition_conclusion_prove() {
+  context_conclusion_old_head=$1
+  context_conclusion_expected_main=$2
+  an "$C" "$context_conclusion_old_head" "$context_conclusion_expected_main" && return 0
+
+  context_conclusion_merge_base=$(git -C "$C" merge-base \
+    "$context_conclusion_old_head" "$context_conclusion_expected_main" 2>/dev/null) || return 1
+  context_valid_sha "$context_conclusion_merge_base" || return 1
+
+  context_conclusion_pull_heads=$(git -C "$C" ls-remote --exit-code origin \
+    'refs/pull/*/head' 2>/dev/null) || return 1
+  [ -n "$context_conclusion_pull_heads" ] || return 1
+  printf '%s\n' "$context_conclusion_pull_heads" | awk -v wanted="$context_conclusion_old_head" '
+    BEGIN { valid = 1; found = 0 }
+    {
+      if (NF != 2 || $1 !~ /^[0-9a-fA-F]{40}$/ || $2 !~ /^refs\/pull\/[0-9][0-9]*\/head$/) {
+        valid = 0
+        next
+      }
+      if ($1 == wanted) found = 1
+    }
+    END { if (!valid || !found) exit 1 }
+  ' || return 1
+
+  context_dev_stable_patch_id "$context_conclusion_merge_base" "$context_conclusion_old_head" || return 1
+  [ -n "$context_dev_patch_id" ] || return 1
+  context_conclusion_topic_patch_id=$context_dev_patch_id
+
+  context_conclusion_main_commits=$(git -C "$C" rev-list --first-parent \
+    "$context_conclusion_merge_base..$context_conclusion_expected_main" 2>/dev/null) || return 1
+  [ -n "$context_conclusion_main_commits" ] || return 1
+  for context_conclusion_commit in $context_conclusion_main_commits; do
+    context_dev_stable_patch_id "$context_conclusion_commit^1" "$context_conclusion_commit" || return 1
+    [ -n "$context_dev_patch_id" ] || continue
+    [ "$context_dev_patch_id" = "$context_conclusion_topic_patch_id" ] && return 0
+  done
+  return 1
+}
+
 context_dev_transition_command() {
   context_transition_old_branch=$1
   context_transition_old_head=$2
@@ -394,7 +465,8 @@ context_dev_transition_command() {
       echo "BLOCKED: old local branch HEAD mismatch expected=$context_transition_old_head actual=$context_transition_old_local_head"
       return 1
     }
-    an "$C" "$context_transition_old_head" "$context_transition_expected_main" || {
+    context_dev_transition_conclusion_prove \
+      "$context_transition_old_head" "$context_transition_expected_main" || {
       echo "BLOCKED: old HEAD is not contained in expected main old=$context_transition_old_head expected_main=$context_transition_expected_main"
       return 1
     }
@@ -415,7 +487,8 @@ context_dev_transition_command() {
   [ "$(hh "$CD")" = "$context_transition_old_head" ] || { echo "BLOCKED: old dev HEAD mismatch expected=$context_transition_old_head actual=$(hh "$CD")"; return 1; }
   context_authoritative_main >/dev/null || { echo 'ERROR: authoritative remote main query failed'; return 1; }
   [ "$context_remote_main" = "$context_transition_expected_main" ] || { echo "BLOCKED: authoritative main mismatch expected=$context_transition_expected_main actual=$context_remote_main"; return 1; }
-  an "$C" "$context_transition_old_head" "$context_transition_expected_main" || { echo "BLOCKED: old HEAD is not contained in expected main old=$context_transition_old_head expected_main=$context_transition_expected_main"; return 1; }
+  context_dev_transition_conclusion_prove \
+    "$context_transition_old_head" "$context_transition_expected_main" || { echo "BLOCKED: old HEAD is not contained in expected main old=$context_transition_old_head expected_main=$context_transition_expected_main"; return 1; }
   context_local_branch_exists "$context_transition_new_branch" && { echo "BLOCKED: local new branch already exists: $context_transition_new_branch"; return 1; }
   context_remote_branch "$context_transition_new_branch" || { echo "ERROR: unable to query remote new branch: $context_transition_new_branch"; return 1; }
   [ "$context_remote_branch_state" = absent ] || { echo "BLOCKED: remote new branch already exists: $context_transition_new_branch"; return 1; }
@@ -427,7 +500,8 @@ context_dev_transition_command() {
   [ "$context_remote_main" = "$context_transition_expected_main" ] || { echo "BLOCKED: authoritative main raced before transition expected=$context_transition_expected_main actual=$context_remote_main"; return 1; }
   context_remote_branch "$context_transition_new_branch" || { echo "ERROR: unable to query remote new branch after fetch: $context_transition_new_branch"; return 1; }
   [ "$context_remote_branch_state" = absent ] || { echo "BLOCKED: remote new branch appeared before transition: $context_transition_new_branch"; return 1; }
-  an "$C" "$context_transition_old_head" "$context_transition_expected_main" || { echo "BLOCKED: old HEAD is not contained in expected main after fetch old=$context_transition_old_head expected_main=$context_transition_expected_main"; return 1; }
+  context_dev_transition_conclusion_prove \
+    "$context_transition_old_head" "$context_transition_expected_main" || { echo "BLOCKED: old HEAD is not contained in expected main after fetch old=$context_transition_old_head expected_main=$context_transition_expected_main"; return 1; }
   git -C "$CD" switch --detach "$context_transition_expected_main" >/dev/null 2>&1 || { echo "ERROR: ordinary detach to expected main failed: $context_transition_expected_main"; return 1; }
   git -C "$CD" switch -c "$context_transition_new_branch" "$context_transition_expected_main" >/dev/null 2>&1 || { echo "ERROR: ordinary create/switch of new branch failed: $context_transition_new_branch"; return 1; }
   context_worktree_registry || { echo 'ERROR: canonical dev worktree registration changed after transition'; return 1; }
