@@ -4,7 +4,7 @@
 
 この文書は**implementation agent専用**。Manual E2E test operatorなど、repository implementationを変更しないexecution roleには適用しない。
 
-Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先し、shared ruleよりstricterなrequirementを追加できる。ただし、このshared completeness gateを省略してunder-specified promptをexecutableに扱ってはならない。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従い、machine-checkableなexecution-envelope publication gateは [`AGENT-PROMPT-PREFLIGHT.md`](./AGENT-PROMPT-PREFLIGHT.md) に従う。
+Project固有のrepository policy、task contract、Agent skill ruleがある場合はそちらを優先し、shared ruleよりstricterなrequirementを追加できる。ただし、このshared completeness gateを省略してunder-specified promptをexecutableに扱ってはならない。Agent promptのlanguage / formattingは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) に従う。Project-specificなpublication checkerは、projectが明示的にrouteする場合だけ [`AGENT-PROMPT-PREFLIGHT.md`](./AGENT-PROMPT-PREFLIGHT.md) のopt-in mechanicsを使う。
 
 Projectがimplementation Coding Agentのdefault product / reasoning effort / resource policyを定義している場合は、そのproject-specific authorityを使う。ユーザーまたはcurrent Taskの明示指定はproject defaultより優先する。Project-specific defaultがない場合、このshared workflowだけを根拠に特定Coding Agent product / effortを仮定しない。
 
@@ -124,18 +124,11 @@ required architecture、product、design decisionが未確定、またはcontrac
 
 Promptのlanguage / formatting / directnessは [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) をauthorityとする。
 
-## Prompt publication preflight
+## Project-opt-in prompt publication checking
 
-Implementation-agent promptをユーザーへ提示する前に、ChatGPTはproject-specificなcanonical prompt checkerを実行し、`PROMPT PREFLIGHT PASS`を得る。checkerが存在しない、入力contextが不完全、またはhard checkが失敗した場合はpromptを提示せず`BLOCKED`としてcontract / generation contextを再評価する。
+Implementation-agent promptのpublication checkerはuniversalな前提ではない。Project ownerがchecker、入力、`PROMPT PREFLIGHT PASS`等のsuccess evidenceを明示的にrouteした場合だけ、ChatGPTはそのproject-specific contractを実行し、失敗時はprompt publicationを止める。Projectがrouteしない場合、ChatGPTはsemantic completeness、scope、verification、Git safety、prompt styleを既存のownerに従って直接確認する。
 
-このgateは次のownershipを混同しない。
-
-- [`AGENT-PROMPT-STYLE.md`](./AGENT-PROMPT-STYLE.md) はpresentation/style authorityだけを持つ。
-- [`AGENT-PROMPT-PREFLIGHT.md`](./AGENT-PROMPT-PREFLIGHT.md) はmachine-checkableなexecution-envelope publication validationだけを持つ。
-- project-specific `EXECUTION-HANDOFF.md` はhandoff identity、canonical runtime command、one-shot ticket semantics、runtime proofを持つ。
-- このdocumentはimplementation-agent role、completeness、required verification、scope、completion reportを持つ。
-
-Prompt preflightはHuman/LLMによるarchitecture、scope、product decision、implementation correctnessのreviewを置き換えない。また、preflightのためにreal handoff ticketを検証・予約・消費しない。
+[`AGENT-PROMPT-PREFLIGHT.md`](./AGENT-PROMPT-PREFLIGHT.md) は、project-specific checkerを持つprojectが再利用できるpublication-check mechanicsだけをownerする。Prompt preflightはHuman/LLMによるarchitecture、scope、product decision、implementation correctnessのreviewを置き換えない。
 
 ## Excluded execution roles
 
@@ -160,8 +153,8 @@ Manual E2Eではproject-specific Manual E2E authority / playbookをrole authorit
 1. remote state確認、existing Issue / Spec検索、repository調査を行い、implementation contractを確定する。
 2. `Pre-prompt remote freshness gate`を通過する。
 3. expected remote state / branch / baseをfreshness gateの結果でrefreshし、relevantなremote changeがcurrent Taskのcontract / semantic owner / slicingへ影響する場合は再評価する。branch名は、まだ存在しないIssue identifierやwork-management system生成branch名へ依存させずに決める。
-4. `Prompt-completeness gate`を、finalなimplementation-contract completeness approvalとして通過する。
-5. 両gateを通過した後だけimplementation promptを完成・提示する。新規Issueが必要な場合も、branch名を決めてpromptを完成させてからIssueを作る。
+4. `Prompt-completeness gate`を、finalなimplementation-contract completeness approvalとして通過する。Projectがpublication checkerを明示的にrouteする場合は、そのopt-in checkerも実行する。
+5. completenessとapplicableなproject-specific checkerを通過した後だけimplementation promptを完成・提示する。新規Issueが必要な場合も、branch名を決めてpromptを完成させてからIssueを作る。
 6. project-specific default agent / effortがあればそれを使い、ユーザーまたはcurrent Taskの明示overrideがあればそちらを使う。defaultがない場合は特定Coding Agent productを前提にしない。
 7. Coding Agent実行中に、ChatGPTが必要なIssue create / description / Project / status等のmanagement workを行う。
 

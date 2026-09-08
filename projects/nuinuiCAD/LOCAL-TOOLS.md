@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.11.0`。
+current standalone helper version: `1.12.0`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -169,9 +169,6 @@ diagnostics.sh
 command-result.sh
   durable Human mutation outcome storage and read-only last-result recovery
 
-handoff-ticket.sh
-  canonical dev-context Git-object handoff-ticket resolution, strict payload validation, and one-shot reservation
-
 self-test.sh
   built-in self-test + external regression aggregation
 
@@ -224,7 +221,7 @@ current commands:
 | `nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor human --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default\|ja>] [--port <port>]` | current Human-only Manual E2E intentをnamed optionsで受け、既存manifest/classifierをread-onlyでfresh検証し、same-terminalで実行するexact `e2e-start && nuinui-e2e-prepare prepare` continuationを生成。checkout、marker、session、host、GUI、oracleを変更しない |
 | `nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch> [--forensic-worktree <absolute-path>]` | mutation lock + durable slotをbranch switch前に取得してnew claim generationを開始。末尾optionはone-shot inventory exception |
 | `nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>` | exact Base / checkpoint / branch / claimでsame generationへ復帰 |
-| `nuinui handoff <ticket>` | `h1-` + 24 lowercase hex tokenでcanonical dev-context remoteからimmutable handoff ticketを解決・検証し、one-shot reservation後にstandalone handoff proofを実行。exact topicの厳密なclaimed-branch mismatchだけ既存resumeを1回実行して同じproofを再検証 |
+| `nuinui handoff <SAY-N> <expected-main-sha>` | requested Issueに一致する唯一のactive durable implementation generationをmanifest / ownership stateからread-onlyに解決し、current HEADとexact authoritative remote topicから内部modeを導出してstandalone handoff proofへ渡す。失敗時にresume / retry / repairを行わない |
 | `nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>` | current active generationまたはexact completed-release receiptをread-onlyで証明し、既存positional release commandのcanonical Human handoffを生成 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |

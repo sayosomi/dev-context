@@ -128,7 +128,16 @@ handoff_check() {
   remote_topic_state=$HANDOFF_REMOTE_STATE
   remote_topic_sha=$HANDOFF_REMOTE_SHA
   case "$remote_mode" in
-    absent) [ "$remote_topic_state" = absent ] || { echo "BLOCKED: handoff expected fresh unpushed topic branch"; return 1; } ;;
+    absent)
+      [ "$remote_topic_state" = absent ] || {
+        echo "BLOCKED: handoff expected fresh unpushed topic branch"
+        return 1
+      }
+      [ "$expected_checkpoint" = "$slot_base" ] || {
+        echo "BLOCKED: absent remote topic requires current HEAD to equal claimed Base"
+        return 1
+      }
+      ;;
     exact)
       [ "$remote_topic_state" = present ] || { echo "BLOCKED: authoritative remote topic is absent"; return 1; }
       [ "$remote_topic_sha" = "$expected_checkpoint" ] || blocked_mismatch "remote topic checkpoint" "$expected_checkpoint" "$remote_topic_sha" || return 1
