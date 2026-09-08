@@ -1,0 +1,56 @@
+#!/bin/sh
+set -u
+
+[ "$#" -eq 1 ] || {
+  printf 'ERROR: handoff-once expects exactly one short ticket\n'
+  printf 'Usage: nuinui-handoff-once <h1-24-hex-ticket>\n'
+  exit 2
+}
+
+case "$1" in
+  h1-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+  *)
+    printf 'ERROR: invalid handoff ticket; expected h1- followed by 24 lowercase hexadecimal characters\n'
+    exit 2
+    ;;
+esac
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+NUINUI=${NUINUI_HANDOFF_ONCE_HELPER:-$SCRIPT_DIR/nuinui}
+
+[ -f "$NUINUI" ] && [ ! -L "$NUINUI" ] || {
+  printf 'ERROR: canonical nuinui helper is unavailable\n'
+  exit 1
+}
+
+TMP_ROOT=${TMPDIR:-/tmp}
+OUTPUT=$(mktemp "$TMP_ROOT/nuinui-handoff-once.XXXXXX") || {
+  printf 'ERROR: unable to allocate handoff output buffer\n'
+  exit 1
+}
+trap 'rm -f "$OUTPUT"' EXIT HUP INT TERM
+
+rc=0
+"$NUINUI" handoff "$1" >"$OUTPUT" 2>&1 || rc=$?
+
+if [ "$rc" -eq 0 ]; then
+  if grep -q '^HANDOFF VERIFIED$' "$OUTPUT"; then
+    awk '
+      /^HANDOFF VERIFIED$/ { emit = 1 }
+      emit { print }
+    ' "$OUTPUT"
+    exit 0
+  fi
+  printf 'ERROR: handoff returned success without canonical HANDOFF VERIFIED evidence\n'
+  sed -n '1,20p' "$OUTPUT"
+  exit 1
+fi
+
+status=$(grep -m 1 -E '^(BLOCKED|ERROR): ' "$OUTPUT" || true)
+if [ -n "$status" ]; then
+  printf '%s\n' "$status"
+else
+  printf 'ERROR: handoff failed without canonical BLOCKED/ERROR evidence\n'
+fi
+sed -n '1,20p' "$OUTPUT" | grep -Fvx "$status" || true
+exit "$rc"

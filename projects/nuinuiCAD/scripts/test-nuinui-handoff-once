@@ -1,0 +1,110 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -gt 0 ]; then
+  SOURCE_WRAPPER=$1
+else
+  SOURCE_WRAPPER=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/nuinui-handoff-once
+fi
+
+ROOT=$(CDPATH= cd -- "$(mktemp -d /tmp/nuinui-handoff-once.XXXXXX)" && pwd -P)
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+WRAPPER=$ROOT/nuinui-handoff-once
+FAKE_NUINUI=$ROOT/nuinui
+COUNT=$ROOT/count
+TICKET=h1-0123456789abcdef01234567
+
+cp "$SOURCE_WRAPPER" "$WRAPPER"
+chmod 755 "$WRAPPER"
+
+cat > "$FAKE_NUINUI" <<'EOF'
+#!/bin/sh
+count=0
+[ -f "$FAKE_COUNT" ] && count=$(cat "$FAKE_COUNT")
+printf '%s\n' $((count + 1)) > "$FAKE_COUNT"
+case "$FAKE_MODE" in
+  recovered)
+    printf '%s\n' \
+      'BLOCKED: handoff claimed branch mismatch' \
+      'IMPLEMENTATION RESUMED' \
+      'lots of noisy recovery evidence' \
+      'HANDOFF VERIFIED' \
+      '  lane=main' \
+      '  clean=yes'
+    exit 0
+    ;;
+  blocked)
+    printf '%s\n' 'BLOCKED: some exact failure' 'verbose diagnostic'
+    exit 1
+    ;;
+  bad-success)
+    printf '%s\n' 'unexpected success text'
+    exit 0
+    ;;
+  *)
+    printf '%s\n' 'ERROR: unknown fake mode'
+    exit 2
+    ;;
+esac
+EOF
+chmod 755 "$FAKE_NUINUI"
+
+export FAKE_COUNT=$COUNT
+export NUINUI_HANDOFF_ONCE_HELPER=$FAKE_NUINUI
+
+FAKE_MODE=recovered
+export FAKE_MODE
+recovered_output=$("$WRAPPER" "$TICKET") || {
+  printf '%s\n' "$recovered_output"
+  echo 'HANDOFF-ONCE TEST FAIL: recovered success failed' >&2
+  exit 1
+}
+[ "$(printf '%s\n' "$recovered_output" | sed -n '1p')" = 'HANDOFF VERIFIED' ] || {
+  echo 'HANDOFF-ONCE TEST FAIL: recovered success did not lead with HANDOFF VERIFIED' >&2
+  exit 1
+}
+if printf '%s\n' "$recovered_output" | grep -q '^BLOCKED:'; then
+  echo 'HANDOFF-ONCE TEST FAIL: recovered success leaked pre-recovery BLOCKED output' >&2
+  exit 1
+fi
+[ "$(cat "$COUNT")" = 1 ] || {
+  echo 'HANDOFF-ONCE TEST FAIL: recovered success invoked nuinui handoff more than once' >&2
+  exit 1
+}
+
+rm -f "$COUNT"
+FAKE_MODE=blocked
+export FAKE_MODE
+if blocked_output=$("$WRAPPER" "$TICKET" 2>&1); then
+  printf '%s\n' "$blocked_output"
+  echo 'HANDOFF-ONCE TEST FAIL: blocked case unexpectedly succeeded' >&2
+  exit 1
+fi
+[ "$(printf '%s\n' "$blocked_output" | sed -n '1p')" = 'BLOCKED: some exact failure' ] || {
+  echo 'HANDOFF-ONCE TEST FAIL: blocked case did not lead with canonical status' >&2
+  exit 1
+}
+[ "$(cat "$COUNT")" = 1 ] || {
+  echo 'HANDOFF-ONCE TEST FAIL: blocked case invoked nuinui handoff more than once' >&2
+  exit 1
+}
+
+rm -f "$COUNT"
+FAKE_MODE=bad-success
+export FAKE_MODE
+if bad_output=$("$WRAPPER" "$TICKET" 2>&1); then
+  printf '%s\n' "$bad_output"
+  echo 'HANDOFF-ONCE TEST FAIL: markerless success unexpectedly succeeded' >&2
+  exit 1
+fi
+[ "$(printf '%s\n' "$bad_output" | sed -n '1p')" = \
+  'ERROR: handoff returned success without canonical HANDOFF VERIFIED evidence' ] || {
+  echo 'HANDOFF-ONCE TEST FAIL: markerless success did not fail canonically' >&2
+  exit 1
+}
+[ "$(cat "$COUNT")" = 1 ] || {
+  echo 'HANDOFF-ONCE TEST FAIL: markerless success invoked nuinui handoff more than once' >&2
+  exit 1
+}
+
+echo 'PASS: handoff-once presentation wrapper'
