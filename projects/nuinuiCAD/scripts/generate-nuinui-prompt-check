@@ -1,0 +1,63 @@
+#!/bin/sh
+set -eu
+
+usage() {
+  echo 'Usage: generate-nuinui-prompt-check <output-path>' >&2
+  exit 2
+}
+
+[ "$#" = 1 ] || usage
+output=$1
+[ -n "$output" ] || usage
+
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+body_source=$script_dir/nuinui-prompt-check-src/prompt-check-body.sh
+artifact_path=$script_dir/nuinui-prompt-check
+
+[ -f "$body_source" ] || {
+  echo "generate-nuinui-prompt-check: source is missing: $body_source" >&2
+  exit 1
+}
+
+output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
+  echo "generate-nuinui-prompt-check: output directory does not exist: $(dirname "$output")" >&2
+  exit 1
+}
+output_path=$output_dir/$(basename "$output")
+
+case "$output_path" in
+  "$body_source"|"$artifact_path")
+    echo 'generate-nuinui-prompt-check: refusing to overwrite a checked-in source or production artifact' >&2
+    exit 1
+    ;;
+esac
+
+[ ! -d "$output_path" ] || {
+  echo "generate-nuinui-prompt-check: output is a directory: $output_path" >&2
+  exit 1
+}
+[ ! -L "$output_path" ] || {
+  echo 'generate-nuinui-prompt-check: refusing to overwrite a symbolic link' >&2
+  exit 1
+}
+
+temporary_path=$output_path.tmp.$$
+[ ! -e "$temporary_path" ] || {
+  echo "generate-nuinui-prompt-check: temporary output already exists: $temporary_path" >&2
+  exit 1
+}
+
+cleanup() {
+  result=$?
+  trap - EXIT HUP INT TERM
+  rm -f "$temporary_path"
+  exit "$result"
+}
+trap cleanup EXIT HUP INT TERM
+
+umask 077
+cat "$body_source" > "$temporary_path"
+chmod 755 "$temporary_path"
+mv "$temporary_path" "$output_path"
+
+trap - EXIT HUP INT TERM
