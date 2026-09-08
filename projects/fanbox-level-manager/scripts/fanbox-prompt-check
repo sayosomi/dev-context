@@ -1,0 +1,176 @@
+#!/bin/sh
+
+fail() {
+  printf '%s\n' "PROMPT PREFLIGHT BLOCKED: $1"
+  exit 1
+}
+
+if [ "$#" -ne 2 ]; then
+  fail "usage requires a prompt file and an expected-context file"
+fi
+
+prompt_file=$1
+context_file=$2
+
+if [ ! -f "$prompt_file" ] || [ ! -r "$prompt_file" ]; then
+  fail "prompt file is not a readable regular file"
+fi
+
+if [ ! -f "$context_file" ] || [ ! -r "$context_file" ]; then
+  fail "expected-context file is not a readable regular file"
+fi
+
+context_line_count=$(awk 'END { print NR + 0 }' "$context_file" 2>/dev/null) ||
+  fail "expected-context file cannot be read"
+[ "$context_line_count" = 6 ] || fail "expected-context file must contain exactly six lines"
+
+context_header=$(sed -n '1p' "$context_file" 2>/dev/null) || fail "missing expected-context header"
+[ "$context_header" = "fanbox-prompt-preflight-context-v1" ] ||
+  fail "invalid expected-context header"
+
+repository_line=$(sed -n '2p' "$context_file" 2>/dev/null) || fail "missing repository field"
+[ "$repository_line" = "repository=sayosomi/fanbox-level-manager" ] ||
+  fail "repository field must equal sayosomi/fanbox-level-manager"
+
+role_line=$(sed -n '3p' "$context_file" 2>/dev/null) || fail "missing role field"
+[ "$role_line" = "role=implementation" ] || fail "role field must equal implementation"
+
+branch_line=$(sed -n '4p' "$context_file" 2>/dev/null) || fail "missing branch field"
+case "$branch_line" in
+  branch=*) branch=${branch_line#branch=} ;;
+  *) fail "malformed branch field" ;;
+esac
+
+if ! awk -v branch="$branch" '
+  BEGIN {
+    if (branch == "" || branch !~ /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/) exit 1
+    if (branch ~ /\.\.|@\{|\/\// || branch == "@") exit 1
+    count = split(branch, parts, "/")
+    for (i = 1; i <= count; i++) {
+      if (parts[i] == "" || parts[i] ~ /^\./ || parts[i] ~ /\.$/ || parts[i] ~ /\.lock$/) exit 1
+    }
+    exit 0
+  }
+' </dev/null 2>/dev/null; then
+  fail "branch is not a safe non-empty Git branch-shaped value"
+fi
+
+base_line=$(sed -n '5p' "$context_file" 2>/dev/null) || fail "missing base field"
+case "$base_line" in
+  base=*) base=${base_line#base=} ;;
+  *) fail "malformed base field" ;;
+esac
+
+if ! awk -v base="$base" '
+  BEGIN {
+    if (length(base) != 40 || base ~ /[^0-9A-Fa-f]/) exit 1
+    exit 0
+  }
+' </dev/null 2>/dev/null; then
+  fail "base must be exactly 40 hexadecimal characters"
+fi
+
+oracle_line=$(sed -n '6p' "$context_file" 2>/dev/null) || fail "missing verification oracle field"
+case "$oracle_line" in
+  verification_oracle=*) oracle=${oracle_line#verification_oracle=} ;;
+  *) fail "malformed verification oracle field" ;;
+esac
+
+case "$oracle" in
+  /*) ;;
+  *) fail "verification oracle must be an absolute path" ;;
+esac
+
+if [ -L "$oracle" ] || [ ! -f "$oracle" ] || [ ! -r "$oracle" ]; then
+  fail "verification oracle must be a readable regular non-symbolic file"
+fi
+
+require_prompt_field() {
+  prefix=$1
+  expected=$2
+  reason=$3
+  field_counts=$(awk -v prefix="$prefix" -v expected="$expected" '
+    index($0, prefix) == 1 { fields++; if ($0 == expected) matching++ }
+    END { printf "%d %d\n", fields + 0, matching + 0 }
+  ' "$prompt_file" 2>/dev/null) ||
+    fail "prompt file cannot be read"
+  set -- $field_counts
+  [ "$1" = 1 ] && [ "$2" = 1 ] || fail "$reason"
+}
+
+require_prompt_line() {
+  expected=$1
+  reason=$2
+  line_count=$(awk -v expected="$expected" '$0 == expected { count++ } END { print count + 0 }' "$prompt_file" 2>/dev/null) ||
+    fail "prompt file cannot be read"
+  [ "$line_count" = 1 ] || fail "$reason"
+}
+
+require_prompt_field "Repository: " "Repository: sayosomi/fanbox-level-manager" \
+  "prompt must contain exactly one matching Repository line"
+require_prompt_field "Role: " "Role: implementation" \
+  "prompt must contain exactly one matching Role line"
+require_prompt_field "Branch: " "Branch: $branch" \
+  "prompt must contain exactly one matching Branch line"
+require_prompt_field "Base: " "Base: $base" \
+  "prompt must contain exactly one matching Base line"
+
+prompt_time_check=$(awk '
+  $0 ~ /^Prompt time:/ {
+    total++
+    if ($0 ~ /^Prompt time: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9] JST$/) {
+      month = substr($0, 19, 2) + 0
+      day = substr($0, 22, 2) + 0
+      hour = substr($0, 25, 2) + 0
+      minute = substr($0, 28, 2) + 0
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) matching++
+    }
+  }
+  END { exit !(total == 1 && matching == 1) }
+' "$prompt_file" 2>/dev/null) || fail "prompt must contain exactly one well-formed Prompt time line"
+
+require_prompt_line "Final success and BLOCKED/stopped reports must include a fresh Output time in the form Output time: YYYY-MM-DD HH:MM JST; do not reuse Prompt time." \
+  "prompt is missing the fresh Output time reporting requirement"
+require_prompt_line "Run git fetch origin --prune before changing files." \
+  "prompt is missing the git-fetch requirement"
+require_prompt_line "Require a clean intended checkout before changing files." \
+  "prompt is missing the clean-checkout requirement"
+require_prompt_line "Stop as BLOCKED if the expected remote state does not match after fetch." \
+  "prompt is missing the remote-mismatch BLOCKED requirement"
+require_prompt_line "Do not use reset, rebase, merge, stash, or force-push to recover from a mismatch." \
+  "prompt is missing the no-recovery requirement"
+require_prompt_line "Commit only the intended changes and push the specified branch normally." \
+  "prompt is missing the commit/push requirement"
+require_prompt_line "Completion report must include branch, base SHA, final HEAD, changed files, verification results, acceptance coverage, scope deviation, and blockers or residual risks." \
+  "prompt is missing the completion-report requirement"
+
+marker_counts=$(awk '
+  index($0, "Verification block:") == 1 { markers++ }
+  $0 == "Verification block: begin" { begin++; begin_line = NR }
+  $0 == "Verification block: end" { end++; end_line = NR }
+  END { printf "%d %d %d %d %d\n", markers + 0, begin + 0, end + 0, begin_line + 0, end_line + 0 }
+' "$prompt_file" 2>/dev/null) || fail "prompt verification markers cannot be read"
+
+set -- $marker_counts
+marker_count=$1
+begin_count=$2
+end_count=$3
+begin_line=$4
+end_line=$5
+[ "$marker_count" = 2 ] && [ "$begin_count" = 1 ] && [ "$end_count" = 1 ] ||
+  fail "prompt must contain exactly one verification block of each marker"
+[ "$begin_line" -lt "$end_line" ] || fail "verification block markers are reordered"
+
+verification_body=$(mktemp "${TMPDIR:-/tmp}/fanbox-prompt-check.XXXXXX" 2>/dev/null) ||
+  fail "cannot create temporary verification body"
+cleanup() {
+  rm -f "$verification_body"
+}
+trap cleanup EXIT HUP INT TERM
+
+sed -n "$((begin_line + 1)),$((end_line - 1))p" "$prompt_file" >"$verification_body" 2>/dev/null ||
+  fail "cannot extract verification block"
+cmp -s "$verification_body" "$oracle" 2>/dev/null ||
+  fail "verification block does not match the verification oracle"
+
+printf '%s\n' "PROMPT PREFLIGHT PASS"
