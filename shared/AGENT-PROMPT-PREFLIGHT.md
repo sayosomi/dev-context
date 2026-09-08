@@ -19,6 +19,23 @@ Do not present an implementation-agent prompt until the project prompt checker r
 
 The coordinator first completes the role-specific contract and fresh handoff-ticket audit, then writes the prompt and its expected context, then runs the project checker. A blocked result stops publication. The checker is a second, deterministic envelope gate; it is not permission to invent missing scope or to repair a failed handoff.
 
+### First-checker bootstrap exception
+
+A project that does not yet have an applicable project-specific prompt checker may use a one-time bootstrap exception only for the implementation Task that establishes its first checker. This is a fail-closed bootstrap path, not a generic publication bypass.
+
+Before publishing that bootstrap implementation prompt, the coordinator must satisfy all of the following:
+
+- fresh authoritative repository inspection confirms that no applicable project-specific prompt checker exists;
+- the Human explicitly approves both the checker-bootstrap change and the implementation route used for that bootstrap;
+- the Task scope is limited to adding the first checker, its narrowly required tests or generated helper, and the project routing needed to make that checker authoritative;
+- no unrelated product, repository-governance, or workflow change is included in the bootstrap Task;
+- the bootstrap prompt satisfies every shared implementation-agent contract requirement that does not depend on the missing checker, including exact repository, branch and base, required prompt/output timestamp semantics, exact verification input, settled scope, Git safety, commit/push requirements, stop conditions, and completion reporting;
+- immediately before publication, the coordinator rechecks that an applicable checker still does not exist; if one is found, the exception is invalid and the normal checker gate applies instead.
+
+The exception ends when the first checker is merged into the authoritative project routing. It cannot be reused for later checker changes, fixes, replacements, or ordinary implementation work. After bootstrap, every implementation-agent prompt for that project must pass the applicable project-specific checker and produce `PROMPT PREFLIGHT PASS` before publication.
+
+Do not infer project execution semantics from this exception. In particular, nuinuiCAD-specific lane, claim, checkpoint, handoff-ticket, one-shot reservation, or cross-lane requirements do not become requirements for projects that do not independently own them.
+
 ## nuinuiCAD checker interface
 
 The nuinuiCAD implementation is:
