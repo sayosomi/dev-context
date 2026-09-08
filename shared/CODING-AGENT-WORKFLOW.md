@@ -114,6 +114,8 @@ Current implementation Coding AgentがLunaの場合、上記fieldsに加えて�
 
 `Task-specific acceptance criteria`はTask完了時にtrueであるべきことを定義し、`required tests / verification`はそのacceptanceをどのtest、command、oracle、またはevidenceで証明するかを定義する。acceptanceとverificationを同じ曖昧なstatementで代用しない。
 
+exactなterminal verification commandが確定している場合、それはCoding Agentが自然言語として解釈するinstructionではなく、verbatimに実行するexecutable inputとして扱う。ChatGPTはassigned checkoutへの`cd`を先頭に含み、実行順序やfail-fast等のexecution semanticsもshell syntaxへencodeした単一のcopy/paste-executable shell blockとして提示する。同じcommandをprose listとして再掲せず、誤ったcommandやalternate spellingを説明のためにblock外へ書かない。Coding Agentはblock内commandをrename / infer / substitute / omit / reorder / addしてはならない。non-command verification oracleだけをblock外で別に記述してよい。
+
 `explicit non-goals`はgeneric policyの反復ではなく、current executable scopeをboundするTask-specificな除外事項として必須にする。
 
 `Git safety conditions`には、Coding Agent側の`git fetch origin --prune`、expected remote stateとの照合、cleanなintended checkout、mismatch時のreset / rebase / merge / force-pushによるrecovery禁止、および指定branchへの通常のcommit / push条件を含める。詳細なprocedureは [`GIT-WORKFLOW.md`](./GIT-WORKFLOW.md) に従う。
