@@ -54,6 +54,14 @@ write直前にlatest remote SHAとtarget file freshnessを再確認する。fres
 
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
+### Human-authorized exact source-fix exception
+
+通常のsource-code implementation / blocking fixは引き続きLuna xhighが標準かつ唯一のexecutorである。例外として、ChatGPTがcurrent contract内の単一で自明なtextual repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用helperを使ったmechanical executionを許可する。このexceptionは一般的なimplementation、design、debugging、test-driven iteration、conflict resolution、またはambiguous fixをHumanへ移さない。
+
+eligibilityとcheckout safetyのauthorityはCHECKOUTS.mdのHuman-authorized exact source-fix exception sectionであり、helperは既存handoff / manifest / ownership primitiveを再利用する。callerはlane、claim、Base、checkpoint、ticket、authorization tokenを渡さず、Issueとexpected remote refs、absolute patch / verifier、commit message、repo-relative declared filesだけを渡す。patchは既存tracked regular fileへのexact textual modificationに限り、verifierとpost-verifier diff、freshness、ordinary commit、normal non-force pushを含む全boundaryがpassしなければ停止する。failure pathではsafe restoreが証明できる場合だけ復元し、それ以外は状態を保持してmutation=unknownとする。
+
+exact-fixが適用できない場合、source implementation ownershipはHumanへ移らない。fixが自明でない、複数の意味解釈がある、複数surfaceに広がる、verifierが失敗する、freshness / identity / file-set proofが成立しない、またはdebug loopが必要な場合はLuna xhighへ戻す。normal implementation branchでは通常どおりLunaがimplementation / test / commit / pushを担当する。
+
 ## Role boundary
 
 ChatGPT owns:
@@ -117,10 +125,15 @@ Documentation / policy direct execution exceptionのdocumentation / policy editi
 
 Default routing:
 
+The one-shot Human-authorized exact source-fix route is selected only after
+the CHECKOUTS.md eligibility proof; it invokes exact-fix and does not replace
+the normal Luna source-implementation route.
+
 ```text
 ChatGPT determines the operation
 -> documentation / policy direct-execution exception? YES -> ChatGPT direct execution after explicit user plan approval
 -> narrow CI/tooling direct-execution exception? YES -> ChatGPT direct execution after explicit user plan approval
+-> eligible one-shot Human-authorized exact source-fix? YES -> Human `nuinui exact-fix`
 -> eligible conflict-free merge-only integration refresh? YES -> Human `nuinui integrate-clean`
 -> simple deterministic local operation? YES -> Human terminal assistance
 -> NO / source-code implementation work -> Luna xhigh

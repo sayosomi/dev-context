@@ -155,7 +155,7 @@ expect_blocked() {
   echo "PASS: $name"
 }
 
-[ "$("$HELPER" version)" = 1.12.0 ] || fail 'handoff façade did not use standalone 1.12.0'
+[ "$("$HELPER" version)" = 1.13.0 ] || fail 'handoff façade did not use standalone 1.13.0'
 HELP_OUTPUT=$($HELPER --help)
 assert_contains "$HELP_OUTPUT" 'Usage: nuinui handoff <SAY-N> <expected-main-sha>' \
   'public help omitted Issue-oriented handoff usage'

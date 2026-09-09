@@ -3,7 +3,7 @@
 
 nuinui_command_result_tracked() {
   case "$1" in
-    lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition) return 0 ;;
+    lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -157,6 +157,16 @@ nuinui_command_result_request_metadata() {
       fi
       ;;
     context-sync|context-dev-transition) nuinui_command_result_meta_lane=dev-context ;;
+    exact-fix)
+      nuinui_command_result_meta_issue=-
+      while [ "$#" -gt 0 ]; do
+        if [ "$1" = --issue ] && [ "$#" -gt 1 ]; then
+          nuinui_command_result_meta_issue=$2
+          break
+        fi
+        shift
+      done
+      ;;
   esac
   case "$nuinui_command_result_meta_lane" in
     -|dev-context|[A-Za-z0-9._-]*) ;;
@@ -188,7 +198,7 @@ nuinui_command_result_state_valid() {
       if (values["version"] != "1") invalid=1
       if (values["operation_id"] !~ /^[0-9a-f]{40}$/) invalid=1
       if (values["timestamp"] !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) invalid=1
-      if (values["command"] !~ /^(lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition)$/) invalid=1
+      if (values["command"] !~ /^(lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix)$/) invalid=1
       if (values["phase"] !~ /^(STARTED|TERMINAL)$/) invalid=1
       if (values["result"] !~ /^(INCOMPLETE|SUCCESS|BLOCKED|ERROR)$/) invalid=1
       if (values["lane"] !~ /^([A-Za-z0-9._-]+|dev-context|-)$/) invalid=1
@@ -211,6 +221,7 @@ nuinui_command_result_state_valid() {
         if (values["command"] == "integrate-clean" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
         if (values["command"] ~ /^(e2e-start|e2e-start-local-main|e2e-release)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
         if (values["command"] ~ /^(context-sync|context-dev-transition)$/ && (values["lane"] != "dev-context" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
+        if (values["command"] == "exact-fix" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
       }
       if (invalid) exit 1
     }
@@ -284,6 +295,12 @@ nuinui_command_result_run() {
   }
   nuinui_command_result_underlying_rc=0
   "$@" >"$nuinui_command_result_capture" 2>&1 || nuinui_command_result_underlying_rc=$?
+  if [ "$nuinui_command_result_command" = exact-fix ] &&
+    [ -n "${NUINUI_EXACT_FIX_RESOLVED_LANE:-}" ]; then
+    nuinui_command_result_meta_lane=$NUINUI_EXACT_FIX_RESOLVED_LANE
+    nuinui_command_result_meta_issue=$NUINUI_EXACT_FIX_RESOLVED_ISSUE
+    nuinui_command_result_meta_claim=$NUINUI_EXACT_FIX_RESOLVED_CLAIM
+  fi
   if [ "$nuinui_command_result_underlying_rc" = 0 ] && [ "${nuinui_forensic_option_active:-0}" = 1 ]; then
     nuinui_command_result_has_trailing_newline "$nuinui_command_result_capture" || [ ! -s "$nuinui_command_result_capture" ] || printf '\n' >> "$nuinui_command_result_capture"
     printf 'forensic_exception=active\nforensic_worktree=%s\n' "$nuinui_forensic_worktree" >> "$nuinui_command_result_capture"
@@ -300,6 +317,15 @@ nuinui_command_result_run() {
     nuinui_command_result_mutation=no
   elif nuinui_command_result_line "$nuinui_command_result_capture" '^mutation_state=COMPLETED$'; then
     nuinui_command_result_mutation=yes
+  elif [ "$nuinui_command_result_command" = exact-fix ] && {
+    nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: push failed after verified exact-fix commit$' ||
+    nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: pushed exact-fix branch read-back did not equal the new HEAD$' ||
+    nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: checkout cleanliness could not be proven after push$';
+  }; then
+    nuinui_command_result_mutation=yes
+  elif [ "$nuinui_command_result_command" = exact-fix ] &&
+    nuinui_command_result_canonical_blocked "$nuinui_command_result_capture"; then
+    nuinui_command_result_mutation=no
   elif nuinui_command_result_line "$nuinui_command_result_capture" '^mutation_state=UNKNOWN$'; then
     nuinui_command_result_mutation=unknown
   elif [ "$nuinui_command_result_underlying_rc" = 0 ]; then

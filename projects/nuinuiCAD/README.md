@@ -24,6 +24,12 @@ The Human does not run implementation-agent handoff verification or manage
 prompt files, expected-context files, ticket refs, ticket tokens, claims, or
 checkpoints as transport artifacts.
 
+For a single self-contained textual repair, ChatGPT may explicitly authorize the
+one-shot Human exact-fix exception defined in CHECKOUTS.md and routed by
+CODING-AGENT.md. The helper resolves the active generation itself and records
+recovery evidence through the existing last-result surface; it is not a
+replacement for the normal Luna route.
+
 ## Always load for development work
 
 開発作業では最初に次を読む。
@@ -37,6 +43,7 @@ checkpoints as transport artifacts.
 
 | Topic | Owner |
 | --- | --- |
+| Human-authorized exact source-fix exception | CHECKOUTS.md + LOCAL-TOOLS.md |
 | inactive contingency workflow for ChatGPT availability / token constraints | [Codex-only interim workflow](./CODEX-ONLY-INTERIM.md) — **Inactive; load only when reactivation is being considered** |
 | Chat common lifecycle / role routing / rotation / external-state recovery | [Chat workflow](./CHAT-WORKFLOW.md) |
 | Coordinator status / Work selection / routing handoff | [Coordinator chat](./CHAT-COORDINATOR.md) |

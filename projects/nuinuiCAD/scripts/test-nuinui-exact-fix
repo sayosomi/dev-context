@@ -1,0 +1,298 @@
+#!/bin/sh
+set -eu
+
+SOURCE_HELPER=
+[ "$#" -gt 0 ] && SOURCE_HELPER=$1
+[ -n "$SOURCE_HELPER" ] || SOURCE_HELPER=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)/nuinui
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+ROOT=$(CDPATH= cd -- "$(mktemp -d /tmp/nuinui-exact-fix-test.XXXXXX)" && pwd -P)
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() { echo "EXACT-FIX TEST FAIL: $*" >&2; exit 1; }
+contains() { printf '%s\n' "$1" | grep -Fq -- "$2" || fail "$3"; }
+
+PROJECT=$ROOT/project
+HELPER=$PROJECT/scripts/nuinui
+HANDOFF_CHECK=$PROJECT/scripts/nuinui-handoff-check
+REMOTE=$ROOT/sayosomi/nuinuiCAD.git
+SEED=$ROOT/seed
+MAIN=$ROOT/main
+CONTEXT=$ROOT/context
+MANIFEST=$PROJECT/LANES.conf
+PATCH=$ROOT/fix.patch
+VERIFY=$ROOT/verify.sh
+
+mkdir -p "$PROJECT/scripts" "$ROOT/cwd" "$ROOT/sayosomi"
+cp "$SOURCE_HELPER" "$HELPER"
+cp "$SCRIPT_DIR/nuinui-handoff-check" "$HANDOFF_CHECK"
+chmod 755 "$HELPER" "$HANDOFF_CHECK"
+
+git init -q --bare "$REMOTE"
+git init -q -b main "$SEED"
+git -C "$SEED" config user.name test
+git -C "$SEED" config user.email test@example.invalid
+printf '%s\n' base > "$SEED/base.txt"
+printf '%s\n' untouched > "$SEED/second.txt"
+git -C "$SEED" add base.txt second.txt
+git -C "$SEED" commit -qm base
+git -C "$SEED" remote add origin "$REMOTE"
+git -C "$SEED" push -qu origin main
+git clone -q "$REMOTE" "$MAIN"
+git -C "$MAIN" config user.name test
+git -C "$MAIN" config user.email test@example.invalid
+git init -q "$CONTEXT"
+
+printf '%s\n' \
+  'version=1' \
+  'repository=sayosomi/nuinuiCAD' \
+  'default_branch=main' \
+  '' \
+  '[lane alpha]' \
+  'role=implementation' \
+  "path=$MAIN" \
+  'idle=branch' > "$MANIFEST"
+
+export NUINUI_SELFTEST=1
+export NUINUI_SELFTEST_MANIFEST=$MANIFEST
+export NUINUI_SELFTEST_RESULT_REPO=$CONTEXT
+export NUINUI_DEV_CONTEXT_WT=$CONTEXT
+export NUINUI_DEV_CONTEXT_DEV_WT=$CONTEXT
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
+cd "$ROOT/cwd"
+
+assert_clean() {
+  [ -z "$(git -C "$MAIN" status --porcelain -uall)" ] || fail "$1 left the lane dirty"
+}
+
+make_patch() {
+  printf '%s\n' "$1" > "$MAIN/base.txt"
+  git -C "$MAIN" diff --binary > "$PATCH"
+  git -C "$MAIN" restore --worktree -- base.txt
+}
+
+write_verify() {
+  printf '%s\n' "$1" > "$VERIFY"
+  chmod 755 "$VERIFY"
+}
+
+BASE=$(git -C "$MAIN" rev-parse origin/main)
+"$HELPER" lane-init alpha >/dev/null
+START_OUTPUT=$("$HELPER" start alpha SAY-225 "$BASE" sayosomi/say-225-human-fixture 2>&1) || {
+  printf '%s\n' "$START_OUTPUT"
+  fail 'fixture implementation start failed'
+}
+CLAIM=$(printf '%s\n' "$START_OUTPUT" | sed -n 's/^claim=//p' | head -1)
+[ -n "$CLAIM" ] || fail 'fixture start did not expose a claim'
+BRANCH=sayosomi/say-225-human-fixture
+git -C "$MAIN" push -q -u origin "$BRANCH"
+TOPIC=$(git -C "$MAIN" rev-parse HEAD)
+make_patch fixed
+write_verify '#!/bin/sh
+grep -Fxq fixed base.txt'
+
+SUCCESS_OUTPUT=$("$HELPER" exact-fix \
+  --message 'fix issue 225' \
+  --file base.txt \
+  --expected-main "$BASE" \
+  --verify "$VERIFY" \
+  --issue SAY-225 \
+  --patch "$PATCH" \
+  --expected-topic "$TOPIC")
+contains "$SUCCESS_OUTPUT" 'EXACT-FIX VERIFIED' 'successful exact-fix did not verify'
+contains "$SUCCESS_OUTPUT" 'lane=alpha' 'success omitted resolved lane'
+contains "$SUCCESS_OUTPUT" 'claim=' 'success omitted resolved claim'
+contains "$SUCCESS_OUTPUT" 'verification=PASS' 'success omitted verifier PASS'
+contains "$SUCCESS_OUTPUT" 'file_set=VERIFIED' 'success omitted file-set proof'
+contains "$SUCCESS_OUTPUT" 'mutation=yes' 'success omitted mutation evidence'
+contains "$SUCCESS_OUTPUT" 'clean=yes' 'success omitted clean evidence'
+NEW_HEAD=$(git -C "$MAIN" rev-parse HEAD)
+[ "$NEW_HEAD" != "$TOPIC" ] || fail 'successful exact-fix did not create a commit'
+[ "$(git -C "$MAIN" ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 {print $1}')" = "$NEW_HEAD" ] ||
+  fail 'successful exact-fix did not push the new HEAD'
+assert_clean successful-exact-fix
+RESULT_DIR=$(git -C "$CONTEXT" rev-parse --absolute-git-dir)/nuinui-command-result-v1
+grep -Fxq 'command=exact-fix' "$RESULT_DIR/state" || fail 'result state command is not exact-fix'
+grep -Fxq 'lane=alpha' "$RESULT_DIR/state" || fail 'result state did not retain resolved lane'
+grep -Fxq 'issue=SAY-225' "$RESULT_DIR/state" || fail 'result state did not retain Issue'
+grep -Fxq "claim=$CLAIM" "$RESULT_DIR/state" || fail 'result state did not retain claim'
+LAST_OUTPUT=$("$HELPER" last-result)
+contains "$LAST_OUTPUT" 'command=exact-fix' 'last-result did not recover exact-fix'
+contains "$LAST_OUTPUT" 'EXACT-FIX VERIFIED' 'last-result lost exact-fix output'
+echo 'PASS: successful exact-fix commit, push, and last-result recovery'
+
+make_patch changed
+write_verify '#!/bin/sh
+exit 7'
+if VERIFY_FAIL_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'must not commit' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$VERIFY_FAIL_OUTPUT"
+  fail 'failing verifier unexpectedly succeeded'
+fi
+contains "$VERIFY_FAIL_OUTPUT" 'BLOCKED:' 'failing verifier was not blocked'
+contains "$VERIFY_FAIL_OUTPUT" 'mutation=no' 'failing verifier did not report no mutation'
+contains "$VERIFY_FAIL_OUTPUT" 'restored=yes' 'failing verifier was not safely restored'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$NEW_HEAD" ] || fail 'failing verifier changed HEAD'
+[ "$(cat "$MAIN/base.txt")" = fixed ] || fail 'failing verifier did not restore the file'
+assert_clean failing-verifier
+echo 'PASS: verifier failure restores the authorized patch safely'
+
+make_patch beyond
+write_verify '#!/bin/sh
+printf tampered > base.txt'
+if TAMPER_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'tampered' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$TAMPER_OUTPUT"
+  fail 'verifier source tampering unexpectedly succeeded'
+fi
+contains "$TAMPER_OUTPUT" 'working-tree diff' 'verifier source tampering missed exact-diff diagnostic'
+contains "$TAMPER_OUTPUT" 'mutation=no' 'verifier source tampering did not report no mutation'
+contains "$TAMPER_OUTPUT" 'restored=yes' 'verifier source tampering was not safely restored'
+[ "$(cat "$MAIN/base.txt")" = fixed ] || fail 'verifier source tampering did not restore the file'
+assert_clean verifier-source-tampering
+echo 'PASS: verifier changes beyond the exact patch are rejected and restored'
+
+make_patch remote-drift
+write_verify "#!/bin/sh
+git --git-dir='$REMOTE' update-ref 'refs/heads/$BRANCH' '$BASE'"
+if DRIFT_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'remote drift' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$DRIFT_OUTPUT"
+  fail 'remote drift unexpectedly succeeded'
+fi
+contains "$DRIFT_OUTPUT" 'freshness proof failed before commit' \
+  'remote drift did not fail at the freshness proof'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$NEW_HEAD" ] || fail 'remote drift changed HEAD'
+[ "$(cat "$MAIN/base.txt")" = fixed ] || fail 'remote drift did not restore the file'
+git --git-dir "$REMOTE" update-ref "refs/heads/$BRANCH" "$NEW_HEAD"
+assert_clean remote-drift
+echo 'PASS: remote drift after verification creates no commit and restores safely'
+
+printf '%s\n' extra > "$MAIN/second.txt"
+printf '%s\n' multi > "$MAIN/base.txt"
+git -C "$MAIN" diff --binary > "$PATCH"
+git -C "$MAIN" restore --worktree -- base.txt second.txt
+write_verify '#!/bin/sh
+exit 0'
+if UNDECLARED_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'undeclared' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$UNDECLARED_OUTPUT"
+  fail 'undeclared patch unexpectedly succeeded'
+fi
+contains "$UNDECLARED_OUTPUT" 'declared --file set' 'undeclared patch missed exact file-set diagnostic'
+contains "$UNDECLARED_OUTPUT" 'mutation=no' 'undeclared patch did not report no mutation'
+assert_clean undeclared-patch
+echo 'PASS: undeclared file changes are rejected before mutation'
+
+make_patch unknown
+write_verify '#!/bin/sh
+printf surprise > generated-by-verifier.txt'
+if UNKNOWN_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'unknown' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$UNKNOWN_OUTPUT"
+  fail 'unproven verifier side effect unexpectedly succeeded'
+fi
+contains "$UNKNOWN_OUTPUT" 'safe restoration could not be proven' 'unproven verifier side effect was not preserved'
+contains "$UNKNOWN_OUTPUT" 'mutation=unknown' 'unproven verifier side effect was not unknown'
+[ -f "$MAIN/generated-by-verifier.txt" ] || fail 'unsafe state was not preserved for diagnosis'
+rm -f "$MAIN/generated-by-verifier.txt"
+git -C "$MAIN" restore --source HEAD --staged --worktree -- base.txt
+assert_clean unknown-verifier-side-effect
+echo 'PASS: unproven restoration preserves state with unknown mutation'
+
+make_patch malformed
+if MALFORMED_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'malformed path' \
+  --file ../base.txt 2>&1); then
+  printf '%s\n' "$MALFORMED_OUTPUT"
+  fail 'malformed declared path unexpectedly succeeded'
+fi
+contains "$MALFORMED_OUTPUT" 'normalized repository-relative path' 'malformed path was not rejected'
+assert_clean malformed-path
+echo 'PASS: unsafe declared paths are rejected'
+
+SECOND=$ROOT/second
+git -C "$MAIN" worktree add -q --detach "$SECOND" origin/main
+git -C "$SECOND" config user.name test
+git -C "$SECOND" config user.email test@example.invalid
+printf '%s\n' \
+  'version=1' \
+  'repository=sayosomi/nuinuiCAD' \
+  'default_branch=main' \
+  '' \
+  '[lane alpha]' \
+  'role=implementation' \
+  "path=$MAIN" \
+  'idle=branch' \
+  '' \
+  '[lane beta]' \
+  'role=implementation' \
+  "path=$SECOND" \
+  'idle=detached' > "$MANIFEST"
+"$HELPER" lane-init beta >/dev/null
+"$HELPER" start beta SAY-225 "$BASE" sayosomi/say-225-human-fixture-beta >/dev/null
+if MULTIPLE_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'multiple' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$MULTIPLE_OUTPUT"
+  fail 'multiple matching generations unexpectedly succeeded'
+fi
+contains "$MULTIPLE_OUTPUT" 'multiple active implementation generations' 'multiple generation was not rejected'
+assert_clean multiple-generations
+echo 'PASS: multiple active generations are rejected'
+
+printf '%s\n' \
+  'version=1' \
+  'repository=sayosomi/nuinuiCAD' \
+  'default_branch=main' \
+  '' \
+  '[lane alpha]' \
+  'role=implementation' \
+  "path=$MAIN" \
+  'idle=branch' > "$MANIFEST"
+make_patch pushfail
+write_verify '#!/bin/sh
+exit 0'
+printf '%s\n' '#!/bin/sh' 'exit 1' > "$REMOTE/hooks/pre-receive"
+chmod 755 "$REMOTE/hooks/pre-receive"
+if PUSH_FAIL_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'push failure' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$PUSH_FAIL_OUTPUT"
+  fail 'push failure unexpectedly succeeded'
+fi
+contains "$PUSH_FAIL_OUTPUT" 'push failed after verified exact-fix commit' \
+  'push failure did not report the preserved local commit'
+contains "$PUSH_FAIL_OUTPUT" 'current_remote_topic=' \
+  'push failure did not report authoritative remote topic evidence'
+contains "$PUSH_FAIL_OUTPUT" 'local_commit_preserved=yes' \
+  'push failure did not report local commit preservation'
+PUSH_HEAD=$(git -C "$MAIN" rev-parse HEAD)
+[ "$PUSH_HEAD" != "$NEW_HEAD" ] || fail 'push failure did not create the local commit'
+contains "$PUSH_FAIL_OUTPUT" "head=$PUSH_HEAD" \
+  'push failure did not report the local committed HEAD'
+[ "$(git -C "$MAIN" ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 {print $1}')" = "$NEW_HEAD" ] || \
+  fail 'push failure unexpectedly moved the remote topic'
+assert_clean push-failure
+PUSH_LAST_OUTPUT=$("$HELPER" last-result)
+contains "$PUSH_LAST_OUTPUT" 'local_commit_preserved=yes' \
+  'last-result did not recover push-failure evidence'
+rm -f "$REMOTE/hooks/pre-receive"
+if RERUN_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HEAD" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'push failure' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$RERUN_OUTPUT"
+  fail 'rerun after preserved push failure unexpectedly succeeded'
+fi
+contains "$RERUN_OUTPUT" 'current HEAD does not equal --expected-topic' \
+  'rerun after preserved push failure did not fail closed'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$PUSH_HEAD" ] || \
+  fail 'rerun after preserved push failure created a duplicate commit'
+echo 'PASS: push failure preserves local commit and rerun stays fail-closed'
+
+echo 'EXACT-FIX TEST PASS'

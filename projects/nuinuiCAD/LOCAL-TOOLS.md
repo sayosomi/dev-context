@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.12.0`。
+current standalone helper version: `1.13.0`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -141,6 +141,9 @@ projects/nuinuiCAD/scripts/nuinui-src/e2e-start-command.sh
 projects/nuinuiCAD/scripts/nuinui-src/cli-dispatch.sh
   public command membership / usage / validation / dispatch and the standalone nuinui public version, including the e2e-start-command façade boundary
 
+projects/nuinuiCAD/scripts/nuinui-src/exact-fix.sh
+  Human-authorized exact source-fix patch / verifier / freshness / ordinary commit / normal push boundary; durable generation identity remains owned by CHECKOUTS.md and the existing handoff façade
+
 nuinui-body.sh
   narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks; it does not own the standalone public version
 
@@ -213,6 +216,7 @@ current commands:
 
 | Command | Purpose |
 | --- | --- |
+| nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...] | CHECKOUTS.mdのone-shot Human authorization下で、既存durable implementation generationを一意に解決し、declared existing-file textual patchとverifierをfreshに証明してordinary commit / normal non-force push。lane、claim、Base、checkpoint、ticket、authorization tokenはcallerから受け取らない |
 | `nuinui preflight [--forensic-worktree <absolute-path>]` | LANES.confで宣言された全laneとdurable ownershipをread-only auditし、必要な場合だけHuman-authorized forensic inventory exceptionをone-shotで認識 |
 | `nuinui verify <implementation-lane> <SAY-123> <expected-base-sha> <branch>` | manifestで宣言されたinitialized FREE implementation laneのstart preconditionをread-only検証 |
 | `nuinui lane-init <implementation-lane>` | manifestで宣言されたexact idle implementation laneへpermanent v1 ownership schema markerをbootstrap |
@@ -344,9 +348,19 @@ helper-generated canonical begin lineをChatGPTが受け取った場合も、Hum
 
 旧claimless `resume <lane> <Issue> <checkpoint> <branch>`、旧`release <lane> <checkpoint>`、active checkoutをownershipへadoptするpublic commandはcurrent CLIではない。argument count mismatchはfail-closedでusage errorにする。
 
+### Human-authorized exact-fix
+
+The one-shot interface is `nuinui exact-fix`:
+
+~~~
+nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...]
+~~~
+
+This command is available only for the explicit exception owned by CHECKOUTS.md. It resolves exactly one active durable implementation generation through the existing handoff facade; the caller never supplies lane, claim, Base, checkpoint, ticket, or authorization token. It snapshots and validates the absolute patch and verifier, applies only an exact textual modification to existing tracked regular files, verifies the declared file set and deterministic diff before and after the verifier, rechecks freshness, creates one ordinary commit, and performs a normal non-force push. Unknown or ignored state, any unsupported Git operation, any identity drift, or any unproven restoration blocks the operation. A push failure preserves the local commit and is recovered through the existing last-result command.
+
 ### Recoverable Human mutation results
 
-Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `integrate-clean-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
+Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `exact-fix`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `integrate-clean-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
 
 The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-parse --absolute-git-dir)/nuinui-command-result-v1/` in the standard dev-context Git directory and contains only `state` and `output`。 It is recovery evidence only; lane ownership, claims, locks, release receipts, E2E markers/sessions, and other authorities remain authoritative. The production helper uses the canonical standard clone represented by `C`; isolated `NUINUI_SELFTEST` runs use an isolated dev-context repository and never the production store.
 
