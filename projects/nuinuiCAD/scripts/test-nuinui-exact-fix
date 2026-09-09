@@ -76,6 +76,37 @@ write_verify() {
   chmod 755 "$VERIFY"
 }
 
+write_race_manifest() {
+  race_manifest_path=$1
+  race_lane=$2
+  race_lane_path=$3
+  printf '%s\n' \
+    'version=1' \
+    'repository=sayosomi/nuinuiCAD' \
+    'default_branch=main' \
+    '' \
+    "[lane $race_lane]" \
+    'role=implementation' \
+    "path=$race_lane_path" \
+    'idle=branch' > "$race_manifest_path"
+}
+
+make_race_patch() {
+  race_repo=$1
+  race_patch=$2
+  race_value=$3
+  printf '%s\n' "$race_value" > "$race_repo/base.txt"
+  git -C "$race_repo" diff --binary > "$race_patch"
+  git -C "$race_repo" restore --worktree -- base.txt
+}
+
+write_race_verify() {
+  race_verify=$1
+  race_expected=$2
+  printf '%s\n' '#!/bin/sh' "grep -Fxq '$race_expected' base.txt" > "$race_verify"
+  chmod 755 "$race_verify"
+}
+
 expect_exact_blocked() {
   exact_case_name=$1
   shift
@@ -258,6 +289,156 @@ echo 'PASS: remote main drift after verification is rejected and restored'
 
 
 
+
+RACE_MAIN=$ROOT/race-main
+RACE_MANIFEST=$ROOT/race-LANES.conf
+RACE_PATCH=$ROOT/race-fix.patch
+RACE_VERIFY=$ROOT/race-verify.sh
+RACE_RESULT_DIR=$(git -C "$CONTEXT" rev-parse --absolute-git-dir)/nuinui-command-result-v1
+git clone -q "$REMOTE" "$RACE_MAIN"
+git -C "$RACE_MAIN" config user.name test
+git -C "$RACE_MAIN" config user.email test@example.invalid
+write_race_manifest "$RACE_MANIFEST" race-main "$RACE_MAIN"
+export NUINUI_SELFTEST_MANIFEST=$RACE_MANIFEST
+"$HELPER" lane-init race-main >/dev/null
+RACE_MAIN_START=$(
+  "$HELPER" start race-main SAY-225 "$BASE" sayosomi/say-225-race-main
+) || fail 'commit/main race fixture start failed'
+RACE_MAIN_CLAIM=$(printf '%s\n' "$RACE_MAIN_START" | sed -n 's/^claim=//p' | head -1)
+[ -n "$RACE_MAIN_CLAIM" ] || fail 'commit/main race fixture start did not expose a claim'
+RACE_MAIN_BRANCH=sayosomi/say-225-race-main
+git -C "$RACE_MAIN" push -q -u origin "$RACE_MAIN_BRANCH"
+RACE_MAIN_TOPIC=$(git -C "$RACE_MAIN" rev-parse HEAD)
+make_race_patch "$RACE_MAIN" "$RACE_PATCH" race-main-fixed
+write_race_verify "$RACE_VERIFY" race-main-fixed
+RACE_MAIN_HOOK=$RACE_MAIN/.git/hooks/pre-commit
+printf '%s\n' '#!/bin/sh' \
+  "git --git-dir='$REMOTE' update-ref refs/heads/main '$MAIN_DRIFT'" > "$RACE_MAIN_HOOK"
+chmod 755 "$RACE_MAIN_HOOK"
+if RACE_MAIN_OUTPUT=$(
+  "$HELPER" exact-fix --issue SAY-225 --expected-topic "$RACE_MAIN_TOPIC" \
+    --expected-main "$BASE" --patch "$RACE_PATCH" --verify "$RACE_VERIFY" \
+    --message 'commit/main race' --file base.txt 2>&1
+); then
+  printf '%s\n' "$RACE_MAIN_OUTPUT"
+  fail 'commit/main race unexpectedly succeeded'
+fi
+contains "$RACE_MAIN_OUTPUT" 'post-commit freshness proof failed before push' \
+  'commit/main race did not fail at the post-commit proof'
+contains "$RACE_MAIN_OUTPUT" "current_remote_main=$MAIN_DRIFT" \
+  'commit/main race omitted current authoritative main'
+contains "$RACE_MAIN_OUTPUT" "current_remote_topic=$RACE_MAIN_TOPIC" \
+  'commit/main race omitted the unchanged prior topic'
+contains "$RACE_MAIN_OUTPUT" 'mutation=yes' \
+  'commit/main race did not report local mutation'
+contains "$RACE_MAIN_OUTPUT" 'local_commit_preserved=yes' \
+  'commit/main race did not preserve the local commit'
+RACE_MAIN_HEAD=$(git -C "$RACE_MAIN" rev-parse HEAD)
+contains "$RACE_MAIN_OUTPUT" "head=$RACE_MAIN_HEAD" \
+  'commit/main race omitted the local committed HEAD'
+[ "$RACE_MAIN_HEAD" != "$RACE_MAIN_TOPIC" ] || fail 'commit/main race created no local commit'
+[ "$(git -C "$RACE_MAIN" rev-parse "$RACE_MAIN_HEAD^")" = "$RACE_MAIN_TOPIC" ] || \
+  fail 'commit/main race local commit has an unexpected parent'
+[ "$(git -C "$RACE_MAIN" rev-list --count "$RACE_MAIN_TOPIC..$RACE_MAIN_HEAD")" = 1 ] || \
+  fail 'commit/main race created more than one local commit'
+[ "$(git -C "$RACE_MAIN" ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')" = "$MAIN_DRIFT" ] || \
+  fail 'commit/main race did not leave remote main advanced for diagnosis'
+[ "$(git -C "$RACE_MAIN" ls-remote origin "refs/heads/$RACE_MAIN_BRANCH" | awk 'NR == 1 {print $1}')" = "$RACE_MAIN_TOPIC" ] || \
+  fail 'commit/main race pushed or overwrote the prior remote topic'
+RACE_MAIN_LAST=$("$HELPER" last-result)
+contains "$RACE_MAIN_LAST" 'mutation=yes' 'commit/main race last-result lost local mutation evidence'
+contains "$RACE_MAIN_LAST" 'local_commit_preserved=yes' \
+  'commit/main race last-result lost local commit preservation'
+contains "$RACE_MAIN_LAST" "head=$RACE_MAIN_HEAD" \
+  'commit/main race last-result lost the committed HEAD'
+contains "$RACE_MAIN_LAST" "current_remote_main=$MAIN_DRIFT" \
+  'commit/main race last-result lost current authoritative main'
+contains "$RACE_MAIN_LAST" "current_remote_topic=$RACE_MAIN_TOPIC" \
+  'commit/main race last-result lost the prior remote topic'
+grep -Fxq 'mutation=yes' "$RACE_RESULT_DIR/state" || \
+  fail 'commit/main race command-result did not record local mutation'
+rm -f "$RACE_MAIN_HOOK"
+git --git-dir "$REMOTE" update-ref refs/heads/main "$BASE"
+git --git-dir "$REMOTE" update-ref "refs/heads/$RACE_MAIN_BRANCH" "$RACE_MAIN_TOPIC"
+[ "$(git --git-dir "$REMOTE" rev-parse refs/heads/main)" = "$BASE" ] || \
+  fail 'commit/main race fixture did not restore remote main'
+[ "$(git --git-dir "$REMOTE" rev-parse "refs/heads/$RACE_MAIN_BRANCH")" = "$RACE_MAIN_TOPIC" ] || \
+  fail 'commit/main race fixture did not restore remote topic'
+echo 'PASS: commit-time authoritative main drift preserves the local commit and skips push'
+
+RACE_TOPIC_MAIN=$ROOT/race-topic-main
+git clone -q "$REMOTE" "$RACE_TOPIC_MAIN"
+git -C "$RACE_TOPIC_MAIN" config user.name test
+git -C "$RACE_TOPIC_MAIN" config user.email test@example.invalid
+write_race_manifest "$RACE_MANIFEST" race-topic "$RACE_TOPIC_MAIN"
+export NUINUI_SELFTEST_MANIFEST=$RACE_MANIFEST
+"$HELPER" lane-init race-topic >/dev/null
+RACE_TOPIC_START=$(
+  "$HELPER" start race-topic SAY-225 "$BASE" sayosomi/say-225-race-topic
+) || fail 'commit/topic race fixture start failed'
+RACE_TOPIC_CLAIM=$(printf '%s\n' "$RACE_TOPIC_START" | sed -n 's/^claim=//p' | head -1)
+[ -n "$RACE_TOPIC_CLAIM" ] || fail 'commit/topic race fixture start did not expose a claim'
+RACE_TOPIC_BRANCH=sayosomi/say-225-race-topic
+git -C "$RACE_TOPIC_MAIN" push -q -u origin "$RACE_TOPIC_BRANCH"
+RACE_TOPIC_PRIOR=$(git -C "$RACE_TOPIC_MAIN" rev-parse HEAD)
+RACE_TOPIC_DRIFT=$WRONG_REMOTE_TOPIC
+make_race_patch "$RACE_TOPIC_MAIN" "$RACE_PATCH" race-topic-fixed
+write_race_verify "$RACE_VERIFY" race-topic-fixed
+RACE_TOPIC_HOOK=$RACE_TOPIC_MAIN/.git/hooks/pre-commit
+printf '%s\n' '#!/bin/sh' \
+  "git --git-dir='$REMOTE' update-ref refs/heads/$RACE_TOPIC_BRANCH '$RACE_TOPIC_DRIFT'" > "$RACE_TOPIC_HOOK"
+chmod 755 "$RACE_TOPIC_HOOK"
+if RACE_TOPIC_OUTPUT=$(
+  "$HELPER" exact-fix --issue SAY-225 --expected-topic "$RACE_TOPIC_PRIOR" \
+    --expected-main "$BASE" --patch "$RACE_PATCH" --verify "$RACE_VERIFY" \
+    --message 'commit/topic race' --file base.txt 2>&1
+); then
+  printf '%s\n' "$RACE_TOPIC_OUTPUT"
+  fail 'commit/topic race unexpectedly succeeded'
+fi
+contains "$RACE_TOPIC_OUTPUT" 'post-commit freshness proof failed before push' \
+  'commit/topic race did not fail at the post-commit proof'
+contains "$RACE_TOPIC_OUTPUT" "current_remote_main=$BASE" \
+  'commit/topic race omitted the unchanged authoritative main'
+contains "$RACE_TOPIC_OUTPUT" "current_remote_topic=$RACE_TOPIC_DRIFT" \
+  'commit/topic race omitted the changed remote topic'
+contains "$RACE_TOPIC_OUTPUT" 'mutation=yes' \
+  'commit/topic race did not report local mutation'
+contains "$RACE_TOPIC_OUTPUT" 'local_commit_preserved=yes' \
+  'commit/topic race did not preserve the local commit'
+RACE_TOPIC_HEAD=$(git -C "$RACE_TOPIC_MAIN" rev-parse HEAD)
+contains "$RACE_TOPIC_OUTPUT" "head=$RACE_TOPIC_HEAD" \
+  'commit/topic race omitted the local committed HEAD'
+[ "$RACE_TOPIC_HEAD" != "$RACE_TOPIC_PRIOR" ] || fail 'commit/topic race created no local commit'
+[ "$(git -C "$RACE_TOPIC_MAIN" rev-parse "$RACE_TOPIC_HEAD^")" = "$RACE_TOPIC_PRIOR" ] || \
+  fail 'commit/topic race local commit has an unexpected parent'
+[ "$(git -C "$RACE_TOPIC_MAIN" rev-list --count "$RACE_TOPIC_PRIOR..$RACE_TOPIC_HEAD")" = 1 ] || \
+  fail 'commit/topic race created more than one local commit'
+[ "$(git -C "$RACE_TOPIC_MAIN" ls-remote origin refs/heads/main | awk 'NR == 1 {print $1}')" = "$BASE" ] || \
+  fail 'commit/topic race changed remote main'
+[ "$(git -C "$RACE_TOPIC_MAIN" ls-remote origin "refs/heads/$RACE_TOPIC_BRANCH" | awk 'NR == 1 {print $1}')" = "$RACE_TOPIC_DRIFT" ] || \
+  fail 'commit/topic race overwrote the changed remote topic'
+RACE_TOPIC_LAST=$("$HELPER" last-result)
+contains "$RACE_TOPIC_LAST" 'mutation=yes' 'commit/topic race last-result lost local mutation evidence'
+contains "$RACE_TOPIC_LAST" 'local_commit_preserved=yes' \
+  'commit/topic race last-result lost local commit preservation'
+contains "$RACE_TOPIC_LAST" "head=$RACE_TOPIC_HEAD" \
+  'commit/topic race last-result lost the committed HEAD'
+contains "$RACE_TOPIC_LAST" "current_remote_main=$BASE" \
+  'commit/topic race last-result lost current authoritative main'
+contains "$RACE_TOPIC_LAST" "current_remote_topic=$RACE_TOPIC_DRIFT" \
+  'commit/topic race last-result lost the changed remote topic'
+grep -Fxq 'mutation=yes' "$RACE_RESULT_DIR/state" || \
+  fail 'commit/topic race command-result did not record local mutation'
+rm -f "$RACE_TOPIC_HOOK"
+git --git-dir "$REMOTE" update-ref refs/heads/main "$BASE"
+git --git-dir "$REMOTE" update-ref "refs/heads/$RACE_TOPIC_BRANCH" "$RACE_TOPIC_PRIOR"
+[ "$(git --git-dir "$REMOTE" rev-parse refs/heads/main)" = "$BASE" ] || \
+  fail 'commit/topic race fixture did not restore remote main'
+[ "$(git --git-dir "$REMOTE" rev-parse "refs/heads/$RACE_TOPIC_BRANCH")" = "$RACE_TOPIC_PRIOR" ] || \
+  fail 'commit/topic race fixture did not restore remote topic'
+export NUINUI_SELFTEST_MANIFEST=$MANIFEST
+echo 'PASS: commit-time remote topic drift preserves the local commit and skips push'
 
 SUCCESS_OUTPUT=$("$HELPER" exact-fix \
   --message 'fix issue 225' \

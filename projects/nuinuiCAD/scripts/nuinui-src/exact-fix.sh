@@ -288,6 +288,10 @@ nuinui_exact_fix_remote_ref() {
     printf 'BLOCKED: authoritative remote ref SHA is invalid: %s\n' "$nuinui_exact_fix_remote_ref_name"
     return 1
   }
+  case "$nuinui_exact_fix_remote_ref_name" in
+    refs/heads/$nuinui_exact_fix_default_branch) nuinui_exact_fix_rmain=$nuinui_exact_fix_remote_sha ;;
+    refs/heads/$nuinui_exact_fix_branch) nuinui_exact_fix_rtopic=$nuinui_exact_fix_remote_sha ;;
+  esac
   [ "$nuinui_exact_fix_remote_sha" = "$nuinui_exact_fix_remote_expected" ] || {
     printf 'BLOCKED: authoritative remote ref changed: %s\nexpected=%s\nactual=%s\n' \
       "$nuinui_exact_fix_remote_ref_name" "$nuinui_exact_fix_remote_expected" "$nuinui_exact_fix_remote_sha"
@@ -296,6 +300,9 @@ nuinui_exact_fix_remote_ref() {
 }
 
 nuinui_exact_fix_freshness() {
+  nuinui_exact_fix_expected_head=${1:-$nuinui_exact_fix_prior_head}
+  nuinui_exact_fix_rmain=unknown
+  nuinui_exact_fix_rtopic=unknown
   nuinui_handoff_issue=$nuinui_exact_fix_issue
   nuinui_handoff_main=$nuinui_exact_fix_expected_main
   nuinui_handoff_resolve_identity || return 1
@@ -305,13 +312,13 @@ nuinui_exact_fix_freshness() {
     [ "$nuinui_handoff_branch" = "$nuinui_exact_fix_branch" ] &&
     [ "$nuinui_handoff_base" = "$nuinui_exact_fix_base" ] &&
     [ "$nuinui_handoff_claim" = "$nuinui_exact_fix_claim" ] &&
-    [ "$nuinui_handoff_checkpoint" = "$nuinui_exact_fix_prior_head" ] &&
+    [ "$nuinui_handoff_checkpoint" = "$nuinui_exact_fix_expected_head" ] &&
     [ "$nuinui_handoff_match_slot_snapshot" = "$nuinui_exact_fix_slot_snapshot" ] || {
       printf 'BLOCKED: durable implementation generation identity changed during exact-fix\n'
       return 1
     }
   [ "$(bn "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_branch" ] &&
-    [ "$(hh "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_prior_head" ] || {
+    [ "$(hh "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_expected_head" ] || {
       printf 'BLOCKED: branch or prior topic HEAD changed during exact-fix\n'
       return 1
     }
@@ -331,10 +338,6 @@ nuinui_exact_fix_freshness() {
   }
   nuinui_exact_fix_branch_ref=refs/heads/$nuinui_exact_fix_branch
   nuinui_exact_fix_default_branch=$(lane_execution_runtime_default_branch) || return 1
-  nuinui_exact_fix_remote_ref "refs/heads/$nuinui_exact_fix_default_branch" \
-    "$nuinui_exact_fix_expected_main" || return 1
-  nuinui_exact_fix_remote_ref "$nuinui_exact_fix_branch_ref" \
-    "$nuinui_exact_fix_prior_head" || return 1
   nuinui_exact_fix_remote_ref "refs/heads/$nuinui_exact_fix_default_branch" \
     "$nuinui_exact_fix_expected_main" || return 1
   nuinui_exact_fix_remote_ref "$nuinui_exact_fix_branch_ref" \
@@ -399,20 +402,19 @@ nuinui_exact_fix_push_failure() {
   nuinui_exact_fix_push_reason=$1
   nuinui_exact_fix_push_clean=no
   [ -z "$(git --literal-pathspecs -C "$nuinui_exact_fix_repo" status --porcelain -uall)" ] && nuinui_exact_fix_push_clean=yes
-  nuinui_exact_fix_current_remote_topic=unknown
-  nuinui_exact_fix_current_remote_raw=$(git -C "$nuinui_exact_fix_repo" ls-remote --exit-code origin \
-    "refs/heads/$nuinui_exact_fix_branch" 2>/dev/null || true)
-  if [ "$(printf '%s\n' "$nuinui_exact_fix_current_remote_raw" | awk 'NF {count++} END {print count+0}')" = 1 ]; then
-    nuinui_exact_fix_current_remote_topic=$(printf '%s\n' "$nuinui_exact_fix_current_remote_raw" | awk 'NR == 1 {print $1}')
-    nuinui_exact_fix_valid_sha "$nuinui_exact_fix_current_remote_topic" || nuinui_exact_fix_current_remote_topic=invalid
-  elif [ -n "$nuinui_exact_fix_current_remote_raw" ]; then
-    nuinui_exact_fix_current_remote_topic=ambiguous
-  fi
-  printf 'ERROR: %s\nlane=%s\nissue=%s\nclaim=%s\nbranch=%s\nbase=%s\nprior_topic=%s\nhead=%s\nexpected_main=%s\ncurrent_remote_topic=%s\nmutation=yes\nclean=%s\nlocal_commit_preserved=yes\n' \
+  nuinui_exact_fix_branch_ref=refs/heads/$nuinui_exact_fix_branch
+  nuinui_exact_fix_default_branch=${nuinui_exact_fix_default_branch:-$(lane_execution_runtime_default_branch 2>/dev/null || true)}
+  [ -n "$nuinui_exact_fix_default_branch" ] &&
+    nuinui_exact_fix_remote_ref "refs/heads/$nuinui_exact_fix_default_branch" \
+      "$nuinui_exact_fix_expected_main" >/dev/null || true
+  nuinui_exact_fix_remote_ref "$nuinui_exact_fix_branch_ref" \
+    "$nuinui_exact_fix_prior_head" >/dev/null || true
+  printf 'ERROR: %s\nlane=%s\nissue=%s\nclaim=%s\nbranch=%s\nbase=%s\nprior_topic=%s\nhead=%s\nexpected_main=%s\ncurrent_remote_main=%s\ncurrent_remote_topic=%s\nmutation=yes\nclean=%s\nlocal_commit_preserved=yes\n' \
     "$nuinui_exact_fix_push_reason" "$nuinui_exact_fix_lane" "$nuinui_exact_fix_issue" \
     "$nuinui_exact_fix_claim" "$nuinui_exact_fix_branch" "$nuinui_exact_fix_base" \
     "$nuinui_exact_fix_prior_head" "$(hh "$nuinui_exact_fix_repo" 2>/dev/null || printf unknown)" \
-    "$nuinui_exact_fix_expected_main" "$nuinui_exact_fix_current_remote_topic" "$nuinui_exact_fix_push_clean"
+    "$nuinui_exact_fix_expected_main" "$nuinui_exact_fix_rmain" \
+    "$nuinui_exact_fix_rtopic" "$nuinui_exact_fix_push_clean"
   return 1
 }
 
@@ -618,6 +620,10 @@ nuinui_exact_fix() {
   cmp -s "$nuinui_exact_fix_expected_diff" "$nuinui_exact_fix_root/commit.diff" || {
     printf 'ERROR: resulting commit diff is not the deterministic expected diff; preserving local state\nmutation=yes\nclean=unknown\nlocal_commit_preserved=yes\n'
     return 1
+  }
+  nuinui_exact_fix_freshness "$nuinui_exact_fix_new_head" || {
+    nuinui_exact_fix_push_failure 'post-commit freshness proof failed before push'
+    return $?
   }
   nuinui_exact_fix_push_output=$nuinui_exact_fix_root/push-output
   nuinui_exact_fix_push_rc=0

@@ -320,7 +320,8 @@ nuinui_command_result_run() {
   elif [ "$nuinui_command_result_command" = exact-fix ] && {
     nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: push failed after verified exact-fix commit$' ||
     nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: pushed exact-fix branch read-back did not equal the new HEAD$' ||
-    nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: checkout cleanliness could not be proven after push$';
+    nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: checkout cleanliness could not be proven after push$' ||
+    nuinui_command_result_line "$nuinui_command_result_capture" '^ERROR: post-commit freshness proof failed before push$';
   }; then
     nuinui_command_result_mutation=yes
   elif [ "$nuinui_command_result_command" = exact-fix ] &&
