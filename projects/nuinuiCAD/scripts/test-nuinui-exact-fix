@@ -76,6 +76,20 @@ write_verify() {
   chmod 755 "$VERIFY"
 }
 
+expect_exact_blocked() {
+  exact_case_name=$1
+  shift
+  if exact_case_output=$("$HELPER" exact-fix "$@" 2>&1); then
+    printf '%s\n' "$exact_case_output"
+    fail "$exact_case_name unexpectedly succeeded"
+  fi
+  contains "$exact_case_output" 'BLOCKED' "$exact_case_name was not blocked"
+  contains "$exact_case_output" 'result=BLOCKED' "$exact_case_name was not recorded as BLOCKED"
+  contains "$exact_case_output" 'mutation=no' "$exact_case_name reported mutation"
+  assert_clean "$exact_case_name"
+  echo "PASS: $exact_case_name"
+}
+
 BASE=$(git -C "$MAIN" rev-parse origin/main)
 "$HELPER" lane-init alpha >/dev/null
 START_OUTPUT=$("$HELPER" start alpha SAY-225 "$BASE" sayosomi/say-225-human-fixture 2>&1) || {
@@ -87,9 +101,163 @@ CLAIM=$(printf '%s\n' "$START_OUTPUT" | sed -n 's/^claim=//p' | head -1)
 BRANCH=sayosomi/say-225-human-fixture
 git -C "$MAIN" push -q -u origin "$BRANCH"
 TOPIC=$(git -C "$MAIN" rev-parse HEAD)
+WRONG_REMOTE_TOPIC=$(git -C "$SEED" commit-tree "$BASE^{tree}" -p "$BASE" -m wrong-topic)
+git -C "$SEED" push -q origin "$WRONG_REMOTE_TOPIC:refs/heads/wrong-topic-object"
 make_patch fixed
 write_verify '#!/bin/sh
 grep -Fxq fixed base.txt'
+WRONG_VERIFIER_MARKER=$ROOT/wrong-verifier-ran
+WRONG_EXPECTED_TOPIC=1111111111111111111111111111111111111111
+write_verify "#!/bin/sh
+printf executed > '$WRONG_VERIFIER_MARKER'
+exit 0"
+if WRONG_TOPIC_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$WRONG_EXPECTED_TOPIC" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'wrong topic' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$WRONG_TOPIC_OUTPUT"
+  fail 'wrong expected-topic unexpectedly succeeded'
+fi
+contains "$WRONG_TOPIC_OUTPUT" 'current HEAD does not equal --expected-topic' \
+  'wrong expected-topic did not stop before patch execution'
+contains "$WRONG_TOPIC_OUTPUT" 'result=BLOCKED' 'wrong expected-topic was not recorded as BLOCKED'
+contains "$WRONG_TOPIC_OUTPUT" 'mutation=no' 'wrong expected-topic did not report no mutation'
+[ ! -e "$WRONG_VERIFIER_MARKER" ] || fail 'wrong expected-topic reached verifier execution'
+[ "$(cat "$MAIN/base.txt")" = base ] || fail 'wrong expected-topic changed file contents'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$TOPIC" ] || fail 'wrong expected-topic changed local HEAD'
+[ "$(git -C "$MAIN" ls-remote origin "refs/heads/$BRANCH" | awk 'NR == 1 {print $1}')" = "$TOPIC" ] || \
+  fail 'wrong expected-topic changed remote topic'
+assert_clean wrong-expected-topic
+write_verify '#!/bin/sh
+grep -Fxq fixed base.txt'
+echo 'PASS: wrong expected-topic fails before patch and verifier mutation'
+
+GITDIR=$(git -C "$MAIN" rev-parse --absolute-git-dir)
+SLOT_FILE=$GITDIR/nuinui-implementation-slot/state
+SLOT_STATE=$(cat "$SLOT_FILE")
+expect_exact_blocked no-matching-generation \
+  --issue SAY-999 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'no match' --file base.txt
+printf 'version=broken\n' > "$SLOT_FILE"
+expect_exact_blocked malformed-active-generation \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'malformed' --file base.txt
+printf '%s\n' "$SLOT_STATE" > "$SLOT_FILE"
+printf dirty > "$MAIN/exact-fix-dirty"
+if DIRTY_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$TOPIC" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'dirty' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$DIRTY_OUTPUT"
+  fail 'dirty-checkout unexpectedly succeeded'
+fi
+contains "$DIRTY_OUTPUT" 'BLOCKED' 'dirty-checkout was not blocked'
+contains "$DIRTY_OUTPUT" 'result=BLOCKED' 'dirty-checkout was not recorded as BLOCKED'
+contains "$DIRTY_OUTPUT" 'mutation=no' 'dirty-checkout reported mutation'
+rm -f "$MAIN/exact-fix-dirty"
+assert_clean dirty-checkout
+echo 'PASS: dirty-checkout'
+LOCK_DIR=$GITDIR/nuinui-implementation-lock
+mkdir "$LOCK_DIR"
+printf 'lock\n' > "$LOCK_DIR/state"
+expect_exact_blocked mutation-lock \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'lock' --file base.txt
+rm -rf "$LOCK_DIR"
+PENDING_DIR=$GITDIR/nuinui-implementation-slot.releasing.$CLAIM
+mkdir "$PENDING_DIR"
+expect_exact_blocked release-pending \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'pending' --file base.txt
+rm -rf "$PENDING_DIR"
+sed 's|^branch=.*|branch=sayosomi/wrong-exact-fix-branch|' "$SLOT_FILE" > "$SLOT_FILE.wrong"
+mv "$SLOT_FILE.wrong" "$SLOT_FILE"
+expect_exact_blocked claimed-branch-mismatch \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'wrong branch' --file base.txt
+printf '%s\n' "$SLOT_STATE" > "$SLOT_FILE"
+git --git-dir "$REMOTE" update-ref -d "refs/heads/$BRANCH"
+expect_exact_blocked remote-topic-absent \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'absent topic' --file base.txt
+git --git-dir "$REMOTE" update-ref "refs/heads/$BRANCH" "$TOPIC"
+git --git-dir "$REMOTE" update-ref "refs/heads/$BRANCH" "$WRONG_REMOTE_TOPIC"
+expect_exact_blocked remote-topic-wrong-sha \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'wrong topic' --file base.txt
+git --git-dir "$REMOTE" update-ref "refs/heads/$BRANCH" "$TOPIC"
+expect_exact_blocked expected-main-mismatch \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main 1111111111111111111111111111111111111111 \
+  --patch "$PATCH" --verify "$VERIFY" --message 'wrong main' --file base.txt
+BAD_PATCH=$ROOT/preimage.patch
+sed 's/^-base$/-not-base/' "$PATCH" > "$BAD_PATCH"
+expect_exact_blocked patch-preimage-mismatch \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$BAD_PATCH" --verify "$VERIFY" --message 'bad preimage' --file base.txt
+expect_exact_blocked declared-file-absent-from-patch \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'missing file' --file second.txt
+expect_exact_blocked duplicate-file-declaration \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'duplicate file' --file base.txt --file base.txt
+expect_exact_blocked malformed-file-declaration \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$PATCH" --verify "$VERIFY" --message 'malformed file' --file ./base.txt
+echo 'PASS: exact-fix preproof and file-set matrix'
+ADD_PATCH=$ROOT/add.patch
+printf '%s\n' 'diff --git a/added.txt b/added.txt' 'new file mode 100644' 'index 0000000..1111111' '--- /dev/null' '+++ b/added.txt' '@@ -0,0 +1 @@' '+added' > "$ADD_PATCH"
+expect_exact_blocked add-patch-rejected \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$ADD_PATCH" --verify "$VERIFY" --message 'add' --file base.txt
+DELETE_PATCH=$ROOT/delete.patch
+printf '%s\n' 'diff --git a/base.txt b/base.txt' 'deleted file mode 100644' 'index 1111111..0000000' '--- a/base.txt' '+++ /dev/null' '@@ -1 +0,0 @@' '-base' > "$DELETE_PATCH"
+expect_exact_blocked delete-patch-rejected \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$DELETE_PATCH" --verify "$VERIFY" --message 'delete' --file base.txt
+RENAME_PATCH=$ROOT/rename.patch
+printf '%s\n' 'diff --git a/base.txt b/renamed.txt' 'similarity index 100%%' 'rename from base.txt' 'rename to renamed.txt' > "$RENAME_PATCH"
+expect_exact_blocked rename-patch-rejected \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$RENAME_PATCH" --verify "$VERIFY" --message 'rename' --file base.txt
+COPY_PATCH=$ROOT/copy.patch
+printf '%s\n' 'diff --git a/base.txt b/copied.txt' 'similarity index 100%%' 'copy from base.txt' 'copy to copied.txt' > "$COPY_PATCH"
+expect_exact_blocked copy-patch-rejected \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$COPY_PATCH" --verify "$VERIFY" --message 'copy' --file base.txt
+BINARY_PATCH=$ROOT/binary.patch
+printf '%s\n' 'diff --git a/base.txt b/base.txt' 'GIT binary patch' > "$BINARY_PATCH"
+expect_exact_blocked binary-patch-rejected \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$BINARY_PATCH" --verify "$VERIFY" --message 'binary' --file base.txt
+UNSUPPORTED_PATCH=$ROOT/unsupported.patch
+printf '%s\n' 'not a standard textual Git patch' > "$UNSUPPORTED_PATCH"
+expect_exact_blocked unsupported-patch-shape \
+  --issue SAY-225 --expected-topic "$TOPIC" --expected-main "$BASE" \
+  --patch "$UNSUPPORTED_PATCH" --verify "$VERIFY" --message 'unsupported' --file base.txt
+echo 'PASS: add, delete, rename, copy, binary, and unsupported patch shapes are rejected'
+printf '%s\n' main-drift > "$SEED/main-drift.txt"
+git -C "$SEED" add main-drift.txt
+git -C "$SEED" commit -qm main-drift
+MAIN_DRIFT=$(git -C "$SEED" rev-parse HEAD)
+git -C "$SEED" push -q origin "$MAIN_DRIFT:refs/heads/main-drift-object"
+write_verify "#!/bin/sh
+git --git-dir='$REMOTE' update-ref refs/heads/main '$MAIN_DRIFT'"
+if MAIN_DRIFT_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$TOPIC" \
+  --expected-main "$BASE" --patch "$PATCH" --verify "$VERIFY" --message 'main drift' \
+  --file base.txt 2>&1); then
+  printf '%s\n' "$MAIN_DRIFT_OUTPUT"
+  fail 'remote main drift unexpectedly succeeded'
+fi
+contains "$MAIN_DRIFT_OUTPUT" 'authoritative remote ref changed' \
+  'remote main drift missed freshness evidence'
+contains "$MAIN_DRIFT_OUTPUT" 'restored=yes' 'remote main drift was not safely restored'
+[ "$(git -C "$MAIN" rev-parse HEAD)" = "$TOPIC" ] || fail 'remote main drift changed local HEAD'
+[ "$(cat "$MAIN/base.txt")" = base ] || fail 'remote main drift did not restore the file'
+git --git-dir "$REMOTE" update-ref refs/heads/main "$BASE"
+write_verify '#!/bin/sh
+grep -Fxq fixed base.txt'
+echo 'PASS: remote main drift after verification is rejected and restored'
+
+
+
 
 SUCCESS_OUTPUT=$("$HELPER" exact-fix \
   --message 'fix issue 225' \
@@ -147,12 +315,14 @@ if TAMPER_OUTPUT=$("$HELPER" exact-fix --issue SAY-225 --expected-topic "$NEW_HE
   printf '%s\n' "$TAMPER_OUTPUT"
   fail 'verifier source tampering unexpectedly succeeded'
 fi
-contains "$TAMPER_OUTPUT" 'working-tree diff' 'verifier source tampering missed exact-diff diagnostic'
-contains "$TAMPER_OUTPUT" 'mutation=no' 'verifier source tampering did not report no mutation'
-contains "$TAMPER_OUTPUT" 'restored=yes' 'verifier source tampering was not safely restored'
-[ "$(cat "$MAIN/base.txt")" = fixed ] || fail 'verifier source tampering did not restore the file'
+contains "$TAMPER_OUTPUT" 'safe restoration could not be proven' \
+  'verifier source tampering did not preserve an unknown state'
+contains "$TAMPER_OUTPUT" 'mutation=unknown' \
+  'verifier source tampering did not report unknown mutation'
+[ "$(cat "$MAIN/base.txt")" = tampered ] || fail 'verifier source tampering was silently discarded'
+git -C "$MAIN" restore --source HEAD --staged --worktree -- base.txt
 assert_clean verifier-source-tampering
-echo 'PASS: verifier changes beyond the exact patch are rejected and restored'
+echo 'PASS: verifier changes beyond the exact patch are rejected and preserved'
 
 make_patch remote-drift
 write_verify "#!/bin/sh

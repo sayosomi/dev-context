@@ -7518,6 +7518,10 @@ nuinui_exact_fix_safe_restore() {
     [ "$nuinui_exact_fix_restore_branch" = "$nuinui_exact_fix_branch" ] || return 1
   nuinui_exact_fix_gitdir=$(gd "$nuinui_exact_fix_repo" 2>/dev/null) || return 1
   [ ! -e "$nuinui_exact_fix_gitdir/MERGE_HEAD" ] && [ ! -L "$nuinui_exact_fix_gitdir/MERGE_HEAD" ] || return 1
+  [ -n "${nuinui_exact_fix_expected_diff:-}" ] &&
+    [ -f "$nuinui_exact_fix_expected_diff" ] || return 1
+  nuinui_exact_fix_diff_is_expected cached || return 1
+  nuinui_exact_fix_diff_is_expected full || return 1
   nuinui_exact_fix_restore_names=$nuinui_exact_fix_root/restore-names
   {
     git --literal-pathspecs -C "$nuinui_exact_fix_repo" diff --name-only "$nuinui_exact_fix_prior_head"
@@ -7616,25 +7620,35 @@ nuinui_exact_fix() {
   NUINUI_EXACT_FIX_RESOLVED_LANE=$nuinui_exact_fix_lane
   NUINUI_EXACT_FIX_RESOLVED_ISSUE=$nuinui_exact_fix_issue
   NUINUI_EXACT_FIX_RESOLVED_CLAIM=$nuinui_exact_fix_claim
-  [ "$nuinui_exact_fix_prior_head" = "$nuinui_exact_fix_expected_topic" ] ||
+  [ "$nuinui_exact_fix_prior_head" = "$nuinui_exact_fix_expected_topic" ] || {
     nuinui_exact_fix_preproof_failure 'resolved current HEAD does not equal --expected-topic'
+    return $?
+  }
   nuinui_handoff_derive_topic_mode || return 1
-  [ "$nuinui_handoff_topic" = exact ] ||
+  [ "$nuinui_handoff_topic" = exact ] || {
     nuinui_exact_fix_preproof_failure 'expected topic branch is not present at the resolved current HEAD'
+    return $?
+  }
   nuinui_handoff_run_check > "$nuinui_exact_fix_root/handoff.log" 2>&1 || {
     cat "$nuinui_exact_fix_root/handoff.log"
     return 1
   }
-  [ "$(bn "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_branch" ] ||
+  [ "$(bn "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_branch" ] || {
     nuinui_exact_fix_preproof_failure 'resolved checkout is not on the claimed branch'
-  [ "$(hh "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_prior_head" ] ||
+    return $?
+  }
+  [ "$(hh "$nuinui_exact_fix_repo")" = "$nuinui_exact_fix_prior_head" ] || {
     nuinui_exact_fix_preproof_failure 'resolved checkout HEAD changed before patch validation'
+    return $?
+  }
   nuinui_exact_fix_repo=$(CDPATH= cd -- "$nuinui_exact_fix_repo" && pwd -P) || return 1
 
   nuinui_exact_fix_sorted_files > "$nuinui_exact_fix_root/declared-sorted"
   nuinui_exact_fix_duplicate_count=$(uniq -d "$nuinui_exact_fix_root/declared-sorted" | wc -l | tr -d ' ')
-  [ "$nuinui_exact_fix_duplicate_count" = 0 ] ||
+  [ "$nuinui_exact_fix_duplicate_count" = 0 ] || {
     nuinui_exact_fix_preproof_failure 'declared file set contains duplicate paths'
+    return $?
+  }
   while IFS= read -r nuinui_exact_fix_path ||
     [ -n "$nuinui_exact_fix_path" ]; do
     [ -n "$nuinui_exact_fix_path" ] || continue
