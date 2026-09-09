@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.12.0
-K='preflight verify lane-init begin begin-command start resume handoff release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
+V=1.13.0
+K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -412,6 +412,7 @@ nuinui_usage() {
   echo "nuinui $V"
   echo "Commands: $K"
   echo 'Usage: nuinui handoff <SAY-N> <expected-main-sha>'
+  echo 'Usage: nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...]'
   echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
   echo 'Usage: nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>'
   echo 'Usage: nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]'
@@ -696,6 +697,13 @@ case "$1" in
     shift
     nuinui_require_runtime_manifest || exit 1
     nuinui_run_public handoff nuinui_handoff "$@"
+    exit $?
+    ;;
+  exact-fix)
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_exact_fix_request_count=$#
+    shift
+    nuinui_run_tracked exact-fix "$nuinui_exact_fix_request_count" exact-fix "$@" nuinui_exact_fix "$@"
     exit $?
     ;;
   release)

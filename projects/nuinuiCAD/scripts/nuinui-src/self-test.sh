@@ -99,6 +99,10 @@ nuinui_self_test() {
     echo 'SELFTEST BLOCKED: command-result test is missing or not executable'
     return 1
   }
+  [ -x "$nuinui_selftest_dir/test-nuinui-exact-fix" ] || {
+    echo 'SELFTEST BLOCKED: exact-fix test is missing or not executable'
+    return 1
+  }
   [ -x "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" ] || {
     echo 'SELFTEST BLOCKED: pr-auto-merge test is missing or not executable'
     return 1
@@ -121,6 +125,7 @@ nuinui_self_test() {
   /bin/zsh "$nuinui_selftest_dir/test-nuinui-e2e-prepare" "$EH" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-topology-matrix" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-command-result" "$P" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-exact-fix" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-lifecycle" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-integration-clean" "$P" || return $?

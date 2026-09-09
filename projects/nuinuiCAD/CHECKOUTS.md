@@ -57,6 +57,22 @@ Human向けterminal instructionを生成する場合はshared `human-terminal-in
 
 versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent local clone上で利用可能なら、Human handoffではhelperを優先してよい。helper commandの存在はlane利用許可を意味しない。executor / lane選択はREADME routerとcurrent policyがauthorityである。
 
+## Human-authorized exact source-fix exception
+
+通常のsource-code implementation / blocking-fix executorはLuna xhighのままである。ただし、ChatGPTがcurrent implementation contract内の単一で自明なmechanical repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用のexact-fix boundaryを使える。このexceptionは一般的なsource implementation、debug loop、design判断、conflict resolution、または任意のlane mutationを許可しない。
+
+exact-fixのeligibility / identity / Base / checkpoint / lock / release-pending / remote freshness semanticsはこのsectionがownerする。active durable implementation generationがIssueに対して一意であり、resolved checkoutがそのgenerationのbranch / Base / current remote topicへ一致し、expected authoritative mainがfreshであることを証明する。callerはlane、claim、Base、checkpoint、ticket、またはauthorization tokenを渡さず、helperが既存のhandoff / manifest / ownership primitiveから一意に解決する。zero / multiple / malformed generation、near-match、stale remote、dirty startup、または曖昧なidentityはmutation前にBLOCKEDとする。
+
+許可されるpatchは、resolved checkoutの既存tracked regular fileだけに対するexact textual modificationで、file declarationの集合と完全一致しなければならない。add / delete / rename / copy / binary / submodule / symlink ambiguity / outside-repository input / unknown tracked・untracked・ignored changeは受理しない。absolute patch fileとabsolute executable verifierをsnapshotして、patch applicability、deterministic diff、verifier、post-verifier diff、fresh pre-commit proofを同じresolved checkoutで確認した後、helperが宣言fileだけをstageし、supplied messageでordinary one-commitを作り、normal non-force pushを行う。
+
+commit前の失敗は、authorized pathsだけが触られ、original HEAD / branch / lock / generation identityが変わっていないことを証明できる場合に限りexact restorationする。証明できない場合は状態を保持してmutation=unknownで停止し、reset / stash / clean / rebase / force操作はしない。push failure後はlocal commitを保持してlast-resultで復旧する。success envelopeはverification=PASS、file_set=VERIFIED、mutation=yes、clean=yes、lane / Issue / claim / branch / Base / prior topic / new HEAD / expected mainを返す。tracked exact-fix resultは既存のcommand-result storeへ記録し、別registryを作らない。
+
+canonical interface:
+
+~~~
+nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...]
+~~~
+
 ### Preflight diagnostic / routing rule
 
 `nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation Luna handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。

@@ -94,7 +94,7 @@ unset NUINUI_SELFTEST_MANIFEST NUINUI_RUNTIME_MANIFEST
 
 cd "$ROOT/cwd"
 VERSION_OUTPUT=$($HELPER version)
-[ "$VERSION_OUTPUT" = 1.12.0 ] || fail "version output changed: $VERSION_OUTPUT"
+[ "$VERSION_OUTPUT" = 1.13.0 ] || fail "version output changed: $VERSION_OUTPUT"
 HELP_OUTPUT=$($HELPER --help)
 assert_contains "$HELP_OUTPUT" 'handoff' \
   'public help did not include handoff'
@@ -111,6 +111,9 @@ assert_contains "$HELP_OUTPUT" \
 assert_contains "$HELP_OUTPUT" \
   'Usage: nuinui e2e-start-command --issue' \
   'public help did not include e2e-start-command named usage'
+assert_contains "$HELP_OUTPUT" \
+  'Usage: nuinui exact-fix --issue' \
+  'public help did not include exact-fix named usage'
 assert_contains "$HELP_OUTPUT" 'integrate-clean-command' \
   'public help did not include integrate-clean-command'
 assert_contains "$HELP_OUTPUT" \
