@@ -1,0 +1,126 @@
+#!/bin/sh
+
+fail() {
+  printf '%s\n' "HANDOFF BLOCKED: $1"
+  exit 1
+}
+
+if [ "$#" -ne 2 ]; then
+  fail "usage requires an issue number and expected main SHA"
+fi
+
+issue_number=$1
+expected_main=$2
+
+if ! awk -v issue="$issue_number" '
+  BEGIN { exit !(issue ~ /^[1-9][0-9]*$/) }
+' </dev/null 2>/dev/null; then
+  fail "issue number must be a positive decimal"
+fi
+
+if ! awk -v sha="$expected_main" '
+  BEGIN { exit !(length(sha) == 40 && sha !~ /[^0-9A-Fa-f]/) }
+' </dev/null 2>/dev/null; then
+  fail "expected main SHA must be exactly 40 hexadecimal characters"
+fi
+
+production_checkout=/Users/yosomi/Code/fanbox-level-manager
+canonical_origin=sayosomi/fanbox-level-manager
+checkout=$production_checkout
+expected_origin=$canonical_origin
+
+if [ "${FANBOX_HANDOFF_SELF_TEST:-}" = 1 ]; then
+  checkout=${FANBOX_HANDOFF_TEST_CHECKOUT:-$production_checkout}
+  expected_origin=${FANBOX_HANDOFF_TEST_ORIGIN:-$canonical_origin}
+fi
+
+if [ ! -d "$checkout" ]; then
+  fail "canonical product checkout does not exist"
+fi
+
+checkout_root=$(CDPATH= cd "$checkout" 2>/dev/null && pwd -P) ||
+  fail "checkout cannot be resolved"
+repo_root=$(git -C "$checkout" rev-parse --show-toplevel 2>/dev/null) ||
+  fail "checkout is not a Git repository"
+repo_root=$(CDPATH= cd "$repo_root" 2>/dev/null && pwd -P) ||
+  fail "repository root cannot be resolved"
+[ "$repo_root" = "$checkout_root" ] ||
+  fail "checkout must resolve as its own Git repository root"
+
+origin_count=$(git -C "$checkout" config --get-all remote.origin.url 2>/dev/null | awk 'END { print NR + 0 }') ||
+  fail "origin remote cannot be read"
+[ "$origin_count" = 1 ] || fail "origin remote must have exactly one URL"
+origin_url=$(git -C "$checkout" config --get remote.origin.url 2>/dev/null) ||
+  fail "origin remote is missing"
+
+if [ "${FANBOX_HANDOFF_SELF_TEST:-}" = 1 ]; then
+  [ -n "$expected_origin" ] || fail "self-test expected origin is empty"
+  [ "$origin_url" = "$expected_origin" ] ||
+    fail "origin does not match the self-test expected repository"
+else
+  case "$origin_url" in
+    git@github.com:sayosomi/fanbox-level-manager|\
+    git@github.com:sayosomi/fanbox-level-manager.git|\
+    ssh://git@github.com/sayosomi/fanbox-level-manager|\
+    ssh://git@github.com/sayosomi/fanbox-level-manager.git|\
+    https://github.com/sayosomi/fanbox-level-manager|\
+    https://github.com/sayosomi/fanbox-level-manager.git) ;;
+    *) fail "origin does not identify sayosomi/fanbox-level-manager" ;;
+  esac
+fi
+
+working_tree=$(git -C "$checkout" status --porcelain --untracked-files=all 2>/dev/null) ||
+  fail "working tree status cannot be read"
+[ -z "$working_tree" ] || fail "working tree is not clean"
+
+branch_before=$(git -C "$checkout" symbolic-ref --quiet --short HEAD 2>/dev/null) ||
+  fail "detached HEAD is not allowed"
+[ "$branch_before" != main ] || fail "main branch is not allowed"
+
+head_before=$(git -C "$checkout" rev-parse --verify HEAD 2>/dev/null) ||
+  fail "current HEAD cannot be resolved"
+
+git -C "$checkout" fetch origin --prune >/dev/null 2>&1 ||
+  fail "git fetch origin --prune failed"
+
+branch_after=$(git -C "$checkout" symbolic-ref --quiet --short HEAD 2>/dev/null) ||
+  fail "branch became detached during fetch"
+head_after=$(git -C "$checkout" rev-parse --verify HEAD 2>/dev/null) ||
+  fail "HEAD cannot be resolved after fetch"
+[ "$branch_after" = "$branch_before" ] || fail "branch drifted during fetch"
+[ "$head_after" = "$head_before" ] || fail "HEAD drifted during fetch"
+
+working_tree_after=$(git -C "$checkout" status --porcelain --untracked-files=all 2>/dev/null) ||
+  fail "working tree status cannot be read after fetch"
+[ -z "$working_tree_after" ] || fail "working tree became dirty during fetch"
+
+origin_main=$(git -C "$checkout" rev-parse --verify refs/remotes/origin/main 2>/dev/null) ||
+  fail "origin/main cannot be resolved"
+[ "$origin_main" = "$expected_main" ] ||
+  fail "origin/main does not equal expected main SHA"
+
+git -C "$checkout" merge-base --is-ancestor "$expected_main" "$head_before" 2>/dev/null ||
+  fail "expected main SHA is not an ancestor of current HEAD"
+
+topic_ref=refs/remotes/origin/$branch_before
+if git -C "$checkout" show-ref --verify --quiet "$topic_ref"; then
+  remote_topic_head=$(git -C "$checkout" rev-parse --verify "$topic_ref" 2>/dev/null) ||
+    fail "remote topic HEAD cannot be resolved"
+  [ "$remote_topic_head" = "$head_before" ] ||
+    fail "remote topic HEAD does not equal current HEAD"
+  remote_topic_mode=exact
+else
+  [ "$head_before" = "$expected_main" ] ||
+    fail "remote topic is absent but current HEAD is not expected main"
+  remote_topic_mode=absent
+fi
+
+printf '%s\n' "HANDOFF VERIFIED"
+printf '%s\n' "repository=sayosomi/fanbox-level-manager"
+printf '%s\n' "issue=$issue_number"
+printf '%s\n' "checkout=$checkout_root"
+printf '%s\n' "branch=$branch_before"
+printf '%s\n' "HEAD=$head_before"
+printf '%s\n' "expected-main=$expected_main"
+printf '%s\n' "remote-topic-mode=$remote_topic_mode"
+printf '%s\n' "clean=true"

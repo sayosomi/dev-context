@@ -8,6 +8,28 @@ Shared prompt language and presentation remain owned by [`shared/AGENT-PROMPT-ST
 
 The checker validates only the settled execution envelope. It does not decide product architecture, Issue semantics, implementation correctness, file-change scope, or business logic.
 
+## Publication boundary
+
+The prompt file, expected-context file, and verification-oracle file are
+internal publication-validation plumbing owned by ChatGPT and the project
+preflight process. They are not Human-managed transport artifacts in the
+normal ChatGPT -> Human -> Luna flow.
+
+The normal publication boundary is:
+
+```text
+ChatGPT prepares complete prompt
+-> project prompt preflight passes
+-> ChatGPT prints the complete prompt directly in chat
+-> Human copies that prompt to Luna
+```
+
+The Human does not reconstruct these files merely to transport a prompt.
+Canonical Luna handoff requirements are owned by
+[`CODING-AGENT.md`](./CODING-AGENT.md) and
+[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md), not by
+`fanbox-prompt-check`.
+
 ## Checker command
 
 Run the checked-in executable with a prompt file and its expected context file:
