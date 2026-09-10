@@ -378,10 +378,19 @@ status() {
         result=1
       fi
     elif [[ "$SESSION_LANE" == "$E2E_LANE" ]] &&
-      assert_session_root "$root" >/dev/null 2>&1 && assert_session_handoff "$issue" "$handoff" >/dev/null 2>&1; then
+      assert_session_root "$root" >/dev/null 2>&1 && assert_persisted_handoff "$issue" "$handoff" "$SESSION_LANE" >/dev/null 2>&1; then
       session_valid=1; echo "  session=active"; echo "  issue=$issue"; echo "  ref=$tested_ref"
       echo "  locale=$SESSION_LOCALE"
       echo "  root=$root ($([[ -e "$root" ]] && echo present || echo missing))"; echo "  handoff=$handoff ($([[ -e "$handoff" ]] && echo present || echo missing))"
+      if path_exists "$handoff"; then
+        assert_handoff_file "$handoff" "$issue" "$tested_ref" "$root" "$SESSION_CDP_PORT" "$source_fixture" >/dev/null 2>&1 || {
+          echo '  handoff=INVALID'
+          result=1
+        }
+      elif (( HANDOFF_IS_LEGACY == 1 )); then
+        echo '  handoff=INVALID'
+        result=1
+      fi
       if kill -0 "$launch_pid" >/dev/null 2>&1; then
         command_line="$(ps -ww -p "$launch_pid" -o command= 2>/dev/null || true)"
         if [[ -n "$command_line" ]] && assert_process_ownership "$root" "$launch_pid" 1 >/dev/null 2>&1; then
@@ -434,7 +443,10 @@ closure_check_lane() {
     [[ -d "$temp_parent" ]] || continue
     root_candidates=("$temp_parent"/nuinui-say${issue_number}-e2e.*(N) "$temp_parent"/nuinui-SAY${issue_number}-e2e.*(N) "$temp_parent"/nuinui-SAY-${issue_number}-e2e.*(N))
     for candidate in "${root_candidates[@]}"; do [[ -d "$candidate" ]] && { echo "  fallback-root=BLOCKING:$candidate"; result=1; }; done
-    for candidate in "$temp_parent/nuinui-${requested_issue}-human-e2e.env" "$temp_parent/nuinui-say${issue_number}-human-e2e.env"; do path_exists "$candidate" && { echo "  handoff=BLOCKING:$candidate"; result=1; }; done
+    candidate="$(canonical_handoff_path "$requested_issue" "$E2E_LANE" "$temp_parent")" || return 1
+    path_exists "$candidate" && { echo "  handoff=BLOCKING:$candidate"; result=1; }
+    candidate="$(legacy_handoff_path "$requested_issue" "$temp_parent")" || return 1
+    path_exists "$candidate" && { echo "  handoff=BLOCKING:$candidate"; result=1; }
   done
   processes="$({ pgrep -fal "nuinui-say${issue_number}-e2e\\." 2>/dev/null || true; pgrep -fal "nuinui-SAY${issue_number}-e2e\\." 2>/dev/null || true; pgrep -fal "nuinui-SAY-${issue_number}-e2e\\." 2>/dev/null || true; } | awk '!seen[$0]++')"
   if [[ -n "$processes" ]]; then echo "  process=BLOCKING"; printf '%s\n' "$processes"; result=1; else echo "  process=none-for-requested-issue"; fi
@@ -489,7 +501,7 @@ assert_no_owned_processes() {
 }
 
 cleanup_duplicate() {
-  local issue="$1" tested_ref="$2" root="$3" receipt receipt_issue receipt_ref receipt_root handoff
+  local issue="$1" tested_ref="$2" root="$3" receipt receipt_issue receipt_ref receipt_root handoff legacy_handoff
   receipt="$(cleanup_receipt_path)" || return 1
   path_exists "$receipt" || { echo "BLOCKED: E2E cleanup receipt is missing"; return 1; }
   metadata_matches "$receipt" "$CLEANUP_RECEIPT_KEYS" || { echo "BLOCKED: E2E cleanup receipt is malformed"; return 1; }
@@ -502,8 +514,13 @@ cleanup_duplicate() {
   [[ "$receipt_issue" == "$issue" && "$receipt_ref" == "$tested_ref" && "$receipt_root" == "$root" ]] || { echo "BLOCKED: E2E cleanup receipt identity mismatch"; return 1; }
   assert_checkout "$issue" "$tested_ref" >/dev/null || return $?
   path_exists "$root" && { echo "BLOCKED: cleaned E2E root still exists"; return 1; }
-  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  handoff="$(canonical_handoff_path "$issue")" || return 1
   path_exists "$handoff" && { echo "BLOCKED: cleaned E2E handoff still exists"; return 1; }
+  legacy_handoff="$(legacy_handoff_path "$issue")" || return 1
+  if [[ "$legacy_handoff" != "$handoff" ]] && path_exists "$legacy_handoff"; then
+    echo "BLOCKED: legacy E2E handoff still exists"
+    return 1
+  fi
   assert_no_owned_processes "$root" || return 1
   printf 'E2E CLEANUP ALREADY COMPLETE\nissue=%s\nref=%s\ne2e_root=%s\nmutation=no-op\n' \
     "$issue" "$tested_ref" "$root"
@@ -554,9 +571,12 @@ cleanup() {
     return 1
   }
   assert_session_root "$SESSION_ROOT" || return 1
-  assert_session_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" || return 1
+  assert_persisted_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" "$SESSION_LANE" || return 1
   if path_exists "$SESSION_HANDOFF"; then
     assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
+  elif (( HANDOFF_IS_LEGACY == 1 )); then
+    echo "BLOCKED: legacy E2E handoff is missing"
+    return 1
   fi
   assert_checkout "$SESSION_ISSUE" "$SESSION_REF" >/dev/null || return $?
   stop_owned_processes "$SESSION_ROOT" "$SESSION_LAUNCH_PID" || return 1

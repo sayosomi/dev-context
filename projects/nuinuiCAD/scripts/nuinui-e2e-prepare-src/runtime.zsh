@@ -1,5 +1,5 @@
 # E2E preparation runtime context, lane selection, and strict metadata helpers.
-VERSION="1.8.1"
+VERSION="1.8.2"
 E2E_HELPER_INVOCATION="$0"
 E2E_WT=""
 E2E_LANE=""
@@ -17,6 +17,7 @@ HANDOFF_KEYS='LANE,ISSUE,TESTED_REF,CHECKOUT,E2E_ROOT,FIXTURE,CDP_PORT,RUST_BIN'
 PREPARING_SESSION_OWNER='nuinui-e2e-prepare'
 VS_CODE_APP_REAL=''
 VS_CODE_APPLICATION_EXECUTABLE=''
+HANDOFF_IS_LEGACY=0
 
 e2e_context() {
   E2E_MANIFEST="$(lane_standalone_context_manifest "$E2E_HELPER_INVOCATION" \
@@ -584,7 +585,7 @@ load_session() {
   SESSION_CDP_PORT="$(metadata_value "$metadata" cdp_port)" || return 1; SESSION_LAUNCH_PID="$(metadata_value "$metadata" launch_pid)" || return 1
   if [[ "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ]]; then
     SESSION_LANE="$(metadata_value "$metadata" lane)" || return 1
-    [[ -n "$SESSION_LANE" ]] || return 1
+    [[ "$SESSION_LANE" =~ '^[A-Za-z0-9._-]+$' ]] || return 1
     SESSION_SOURCE_FIXTURE="$(metadata_value "$metadata" source_fixture)" || return 1
     case "$SESSION_SOURCE_FIXTURE" in /*) ;; *) return 1 ;; esac
     [[ "$SESSION_SOURCE_FIXTURE" != */ && "$SESSION_SOURCE_FIXTURE" != *'/./'* && "$SESSION_SOURCE_FIXTURE" != *'/../'* && "$SESSION_SOURCE_FIXTURE" != *//* ]] || return 1
@@ -625,8 +626,32 @@ assert_session_root() {
   fi
 }
 
+canonical_handoff_path() {
+  local issue="$1" lane="${2:-$E2E_LANE}" parent="${3:-$E2E_TEMP_PARENT}"
+  [[ "$issue" =~ '^SAY-[0-9]+$' && "$lane" =~ '^[A-Za-z0-9._-]+$' ]] || return 1
+  print -r -- "$parent/nuinui-${issue}-${lane}-human-e2e.env"
+}
+
+legacy_handoff_path() {
+  local issue="$1" parent="${2:-$E2E_TEMP_PARENT}"
+  [[ "$issue" =~ '^SAY-[0-9]+$' ]] || return 1
+  print -r -- "$parent/nuinui-${issue}-human-e2e.env"
+}
+
 assert_session_handoff() {
-  [[ "$2" == "$E2E_TEMP_PARENT/nuinui-${1}-human-e2e.env" ]]
+  local expected=""
+  expected="$(canonical_handoff_path "$1" "${3:-$E2E_LANE}")" || return 1
+  [[ "$2" == "$expected" ]]
+}
+
+assert_persisted_handoff() {
+  local issue="$1" handoff="$2" lane="${3:-$E2E_LANE}" legacy=""
+  HANDOFF_IS_LEGACY=0
+  assert_session_handoff "$issue" "$handoff" "$lane" && return 0
+  [[ "$lane" == "$E2E_LANE" ]] || return 1
+  legacy="$(legacy_handoff_path "$issue")" || return 1
+  [[ "$handoff" == "$legacy" ]] || return 1
+  HANDOFF_IS_LEGACY=1
 }
 
 assert_handoff_file() {
