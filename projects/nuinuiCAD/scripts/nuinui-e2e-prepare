@@ -1780,6 +1780,43 @@ status() {
   echo "E2E STATUS COMPLETE"
 }
 
+legacy_handoff_owned_by_other_lane() {
+  local issue="$1" legacy="$2" candidate session raw_handoff owner_result
+  local valid_owner_count=0
+  local -a lanes
+
+  lanes=("${(@f)$(lane_manifest_lanes_by_role "$E2E_MANIFEST" human-test)}")
+  for candidate in "${lanes[@]}"; do
+    [[ -n "$candidate" && "$candidate" != "$E2E_LANE" ]] || continue
+    (
+      select_human_lane "$candidate" >/dev/null 2>&1 || exit 1
+      session="$(session_path)" || exit 1
+      path_exists "$session" || exit 1
+      raw_handoff="$(metadata_value "$session" handoff 2>/dev/null || true)"
+      [[ "$raw_handoff" == "$legacy" ]] || exit 1
+      [[ -f "$session" && ! -L "$session" ]] || exit 2
+      load_session "$session" || exit 2
+      [[ ( "$SESSION_KIND" == current || "$SESSION_KIND" == pre-locale ) &&
+        "$SESSION_LANE" == "$candidate" && "$SESSION_ISSUE" == "$issue" &&
+        "$SESSION_HANDOFF" == "$legacy" ]] || exit 2
+      assert_session_root "$SESSION_ROOT" || exit 2
+      assert_persisted_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" "$SESSION_LANE" || exit 2
+      assert_checkout "$issue" "$SESSION_REF" >/dev/null || exit 2
+      assert_handoff_file "$SESSION_HANDOFF" "$issue" "$SESSION_REF" \
+        "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || exit 2
+      assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 1 || exit 2
+      assert_cdp_reachable "$SESSION_CDP_PORT" || exit 2
+    ) >/dev/null 2>&1
+    owner_result=$?
+    if (( owner_result == 0 )); then
+      (( valid_owner_count++ ))
+    elif (( owner_result == 2 )); then
+      return 1
+    fi
+  done
+  (( valid_owner_count == 1 ))
+}
+
 
 closure_check_lane() {
   setopt local_options null_glob
@@ -1812,7 +1849,14 @@ closure_check_lane() {
     candidate="$(canonical_handoff_path "$requested_issue" "$E2E_LANE" "$temp_parent")" || return 1
     path_exists "$candidate" && { echo "  handoff=BLOCKING:$candidate"; result=1; }
     candidate="$(legacy_handoff_path "$requested_issue" "$temp_parent")" || return 1
-    path_exists "$candidate" && { echo "  handoff=BLOCKING:$candidate"; result=1; }
+    if path_exists "$candidate"; then
+      if legacy_handoff_owned_by_other_lane "$requested_issue" "$candidate"; then
+        echo "  handoff=owned-by-other-lane:$candidate"
+      else
+        echo "  handoff=BLOCKING:$candidate"
+        result=1
+      fi
+    fi
   done
   processes="$({ pgrep -fal "nuinui-say${issue_number}-e2e\\." 2>/dev/null || true; pgrep -fal "nuinui-SAY${issue_number}-e2e\\." 2>/dev/null || true; pgrep -fal "nuinui-SAY-${issue_number}-e2e\\." 2>/dev/null || true; } | awk '!seen[$0]++')"
   if [[ -n "$processes" ]]; then echo "  process=BLOCKING"; printf '%s\n' "$processes"; result=1; else echo "  process=none-for-requested-issue"; fi
@@ -1884,8 +1928,10 @@ cleanup_duplicate() {
   path_exists "$handoff" && { echo "BLOCKED: cleaned E2E handoff still exists"; return 1; }
   legacy_handoff="$(legacy_handoff_path "$issue")" || return 1
   if [[ "$legacy_handoff" != "$handoff" ]] && path_exists "$legacy_handoff"; then
-    echo "BLOCKED: legacy E2E handoff still exists"
-    return 1
+    legacy_handoff_owned_by_other_lane "$issue" "$legacy_handoff" || {
+      echo "BLOCKED: legacy E2E handoff still exists"
+      return 1
+    }
   fi
   assert_no_owned_processes "$root" || return 1
   printf 'E2E CLEANUP ALREADY COMPLETE\nissue=%s\nref=%s\ne2e_root=%s\nmutation=no-op\n' \

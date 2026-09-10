@@ -2003,6 +2003,7 @@ two_env_b+=("NUINUI_FAKE_REPO=$human_b")
 two_env=("${two_env_b[@]}")
 two_handoff_a="$temp_parent/nuinui-SAY-997-human-a-human-e2e.env"
 two_handoff_b="$temp_parent/nuinui-SAY-997-human-b-human-e2e.env"
+two_legacy_handoff="$temp_parent/nuinui-SAY-997-human-e2e.env"
 
 two_snapshot() {
   local topology_path metadata
@@ -2014,7 +2015,7 @@ two_snapshot() {
     print -r -- "refs=$(git -C "$topology_path" for-each-ref --format='%(refname) %(objectname)' | sort)"
   done
   for metadata in "$session_two_a" "$session_two" "$receipt_two_a" "$receipt_two_b" \
-    "$two_handoff_a" "$two_handoff_b"; do
+    "$two_handoff_a" "$two_handoff_b" "$two_legacy_handoff"; do
     if [[ -e "$metadata" || -L "$metadata" ]]; then
       print -r -- "metadata=$metadata"
       cat "$metadata"
@@ -2158,11 +2159,45 @@ print -r -- "$two_wrong_handoff_before" > "$two_handoff_a"
 
 two_b_session_before="$(cat "$session_two")"
 two_b_handoff_before="$(cat "$two_handoff_b")"
+two_b_marker_before="$(cat "$marker_two_b")"
+two_b_head_before="$(git -C "$human_b" rev-parse HEAD)"
+two_b_status_before="$(git -C "$human_b" status --porcelain)"
+two_b_refs_before="$(git -C "$human_b" for-each-ref --format='%(refname) %(objectname)' | sort)"
+two_b_pid="$(sed -n 's/^launch_pid=//p' "$session_two")"
+cp -- "$two_handoff_b" "$two_legacy_handoff" || fail "mixed migration legacy handoff setup"
+rm -f -- "$two_handoff_b"
+sed "s#^handoff=.*#handoff=$two_legacy_handoff#" "$session_two" > "$session_two.tmp"
+mv -- "$session_two.tmp" "$session_two"
+two_b_session_before="$(cat "$session_two")"
+env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" status human-b >/dev/null || fail "mixed migration legacy status"
 env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a" >/dev/null || fail "first concurrent cleanup"
 [[ ! -e "$session_two_a" && ! -e "$two_root_a" && ! -e "$two_handoff_a" ]] || fail "first concurrent cleanup retained state"
 [[ "$(cat "$session_two")" == "$two_b_session_before" && -d "$two_root_b" && \
-  "$(cat "$two_handoff_b")" == "$two_b_handoff_before" ]] || fail "closing first lane changed second lane state"
+  "$(cat "$two_legacy_handoff")" == "$two_b_handoff_before" && \
+  "$(cat "$marker_two_b")" == "$two_b_marker_before" && \
+  "$(git -C "$human_b" rev-parse HEAD)" == "$two_b_head_before" && \
+  "$(git -C "$human_b" status --porcelain)" == "$two_b_status_before" && \
+  "$(git -C "$human_b" for-each-ref --format='%(refname) %(objectname)' | sort)" == "$two_b_refs_before" && \
+  "$(kill -0 "$two_b_pid" 2>/dev/null; print -r -- $?)" == 0 ]] || fail "closing first lane changed second lane state"
+two_duplicate_mixed_output="$(env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" \
+  cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a")" || {
+  print -r -- "$two_duplicate_mixed_output"
+  fail "mixed migration exact duplicate cleanup"
+}
+print -r -- "$two_duplicate_mixed_output" | grep -Fq 'E2E CLEANUP ALREADY COMPLETE' || \
+  fail "mixed migration duplicate cleanup was not a no-op"
+[[ "$(cat "$session_two")" == "$two_b_session_before" && -d "$two_root_b" && \
+  "$(cat "$two_legacy_handoff")" == "$two_b_handoff_before" ]] || fail "mixed migration duplicate cleanup changed second lane state"
 rm -f -- "$marker_two_a"
+two_legacy_handoff_before="$(cat "$two_legacy_handoff")"
+sed "s/^ISSUE='SAY-997'$/ISSUE='SAY-996'/" "$two_legacy_handoff" > "$two_legacy_handoff.tmp"
+mv -- "$two_legacy_handoff.tmp" "$two_legacy_handoff"
+two_mixed_block_snapshot="$(two_snapshot)"
+if env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" closure-check human-a SAY-997 >/dev/null 2>&1; then
+  fail "corrupt other-lane legacy handoff unexpectedly passed closure-check"
+fi
+[[ "$(two_snapshot)" == "$two_mixed_block_snapshot" ]] || fail "corrupt other-lane legacy handoff was mutated"
+print -r -- "$two_legacy_handoff_before" > "$two_legacy_handoff"
 env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" closure-check human-a SAY-997 >/dev/null || \
   fail "first lane closure-check was not clean after release"
 two_status_b="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" status human-b)" || fail "second status after first cleanup"
@@ -2174,7 +2209,7 @@ else
   print -r -- "$two_cleanup_b_out"
   fail "second concurrent cleanup"
 fi
-[[ ! -e "$session_two" && ! -e "$two_root_b" && ! -e "$two_handoff_b" ]] || fail "second concurrent cleanup retained state"
+[[ ! -e "$session_two" && ! -e "$two_root_b" && ! -e "$two_handoff_b" && ! -e "$two_legacy_handoff" ]] || fail "second concurrent cleanup retained state"
 [[ -f "$receipt_two_a" && -f "$receipt_two_b" ]] || fail "concurrent cleanup receipts missing"
 rm -f -- "$marker_two_b"
 env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" closure-check human-b SAY-997 >/dev/null || \
@@ -2189,18 +2224,32 @@ two_root_a="$(sed -n 's/^root=//p' "$session_two_a")"
 two_root_b="$(sed -n 's/^root=//p' "$session_two")"
 two_a_session_before="$(cat "$session_two_a")"
 two_a_handoff_before="$(cat "$two_handoff_a")"
+cp -- "$two_handoff_a" "$two_legacy_handoff" || fail "symmetric mixed migration legacy handoff setup"
+rm -f -- "$two_handoff_a"
+sed "s#^handoff=.*#handoff=$two_legacy_handoff#" "$session_two_a" > "$session_two_a.tmp"
+mv -- "$session_two_a.tmp" "$session_two_a"
+two_a_session_before="$(cat "$session_two_a")"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" status human-a >/dev/null || fail "symmetric mixed migration legacy status"
 env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" cleanup human-b SAY-997 "$tested_ref_two" "$two_root_b" >/dev/null || fail "reverse-order second cleanup"
 [[ "$(cat "$session_two_a")" == "$two_a_session_before" && -d "$two_root_a" && \
-  "$(cat "$two_handoff_a")" == "$two_a_handoff_before" ]] || fail "closing second lane changed first lane state"
+  "$(cat "$two_legacy_handoff")" == "$two_a_handoff_before" && ! -e "$two_handoff_a" ]] || fail "closing second lane changed first lane state"
+two_duplicate_symmetric_output="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" \
+  cleanup human-b SAY-997 "$tested_ref_two" "$two_root_b")" || {
+  print -r -- "$two_duplicate_symmetric_output"
+  fail "symmetric mixed migration exact duplicate cleanup"
+}
+print -r -- "$two_duplicate_symmetric_output" | grep -Fq 'E2E CLEANUP ALREADY COMPLETE' || \
+  fail "symmetric mixed migration duplicate cleanup was not a no-op"
 rm -f -- "$marker_two_b"
 env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" closure-check human-b SAY-997 >/dev/null || \
   fail "reverse-order second closure-check was not clean"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" status human-a >/dev/null || fail "legacy first lane status after canonical second cleanup"
 env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a" >/dev/null || fail "reverse-order first cleanup"
 [[ ! -e "$session_two_a" && ! -e "$two_root_a" && ! -e "$two_handoff_a" ]] || fail "reverse-order first cleanup retained state"
 rm -f -- "$marker_two_a"
 env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" closure-check human-a SAY-997 >/dev/null || \
   fail "reverse-order first closure-check was not clean"
-[[ ! -e "$session_two_a" && ! -e "$session_two" && ! -e "$two_handoff_a" && ! -e "$two_handoff_b" ]] || \
+[[ ! -e "$session_two_a" && ! -e "$session_two" && ! -e "$two_handoff_a" && ! -e "$two_handoff_b" && ! -e "$two_legacy_handoff" ]] || \
   fail "concurrent lanes retained final state"
 
 manifest_zero="$TEST_ROOT/LANES-zero-human.conf"
