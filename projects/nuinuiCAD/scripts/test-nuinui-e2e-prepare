@@ -638,7 +638,7 @@ grep -Fq 'generation drift detected before active publication' "$drift_log" || {
   fail "generation drift was not reported before active publication"
 }
 [[ ! -e "$session" && ! -e "$drift_root" && \
-  ! -e "$temp_parent/nuinui-SAY-999-human-e2e.env" ]] || \
+  ! -e "$temp_parent/nuinui-SAY-999-test-human-human-e2e.env" ]] || \
   fail "generation drift retained owned session/root/handoff"
 [[ "$(sed -n 's/^issue=//p' "$marker")" == SAY-998 && \
   "$(sed -n 's/^ref=//p' "$marker")" == "$drift_ref" ]] || \
@@ -691,7 +691,7 @@ print -r -- "$stale_recovery_output" | grep -Fq 'issue=SAY-999' || fail "stale p
 print -r -- "$stale_recovery_output" | grep -Fq "ref=$tested_ref" || fail "stale preparing recovery omitted ref evidence"
 print -r -- "$stale_recovery_output" | grep -Fq "e2e_root=$stale_root" || fail "stale preparing recovery omitted root evidence"
 print -r -- "$stale_recovery_output" | grep -Fq 'mutation=yes' || fail "stale preparing recovery omitted mutation evidence"
-[[ ! -e "$session" && ! -e "$stale_root" && ! -e "$temp_parent/nuinui-SAY-999-human-e2e.env" ]] || \
+[[ ! -e "$session" && ! -e "$stale_root" && ! -e "$temp_parent/nuinui-SAY-999-test-human-human-e2e.env" ]] || \
   fail "stale preparing recovery retained owned state"
 [[ "$(cat "$marker")" == "$stale_marker_before" ]] || fail "stale preparing recovery changed marker"
 [[ "$(git -C "$repo" rev-parse HEAD)" == "$stale_head_before" ]] || fail "stale preparing recovery changed checkout"
@@ -771,7 +771,7 @@ rm -rf -- "$unrelated_preparing_root"
 echo "TEST: recover-preparing rejects foreign handoff and process ownership mismatch"
 foreign_preparing_root="$temp_parent/nuinui-vscode-e2e.preparing-foreign"
 foreign_preparing_fixture="$foreign_preparing_root/fixture.nui"
-foreign_preparing_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+foreign_preparing_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 mkdir -p "$foreign_preparing_root/user-data" "$foreign_preparing_root/extensions" \
   "$foreign_preparing_root/evidence" || fail "foreign preparing root setup"
 print -r -- fixture > "$foreign_preparing_fixture"
@@ -818,7 +818,7 @@ rm -rf -- "$preparing_wrong_owner_root"
 echo "TEST: recover-preparing stops only owned root processes and removes exact handoff"
 owned_preparing_root="$temp_parent/nuinui-vscode-e2e.preparing-owned"
 owned_preparing_fixture="$owned_preparing_root/fixture.nui"
-owned_preparing_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+owned_preparing_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 owned_unrelated_root="$temp_parent/nuinui-vscode-e2e.preparing-unrelated-live"
 mkdir -p "$owned_preparing_root/user-data" "$owned_preparing_root/extensions" \
   "$owned_preparing_root/evidence" "$owned_unrelated_root/user-data" \
@@ -913,7 +913,7 @@ rm -f -- "$(git -C "$repo" rev-parse --absolute-git-dir)/nuinui-e2e-cleanup-rece
 
 concurrent_preparing_root="$temp_parent/nuinui-vscode-e2e.preparing-concurrent"
 concurrent_preparing_fixture="$concurrent_preparing_root/fixture.nui"
-concurrent_preparing_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+concurrent_preparing_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 mkdir -p "$concurrent_preparing_root/user-data" "$concurrent_preparing_root/extensions" \
   "$concurrent_preparing_root/evidence" || fail "concurrent preparing root setup"
 print -r -- fixture > "$concurrent_preparing_fixture"
@@ -949,7 +949,7 @@ env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fix
   || fail "split recovery active session setup"
 recovery_root="$(sed -n 's/^root=//p' "$session")"
 recovery_pid="$(sed -n 's/^launch_pid=//p' "$session")"
-recovery_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+recovery_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 recovery_session_before="$(cat "$session")"
 git -C "$repo" switch --detach -q "$drift_ref" || fail "split recovery marker generation checkout"
 printf 'issue=SAY-998\nref=%s\n' "$drift_ref" > "$marker"
@@ -992,7 +992,7 @@ env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fix
   || fail "split recovery rejection setup"
 recovery_root="$(sed -n 's/^root=//p' "$session")"
 recovery_pid="$(sed -n 's/^launch_pid=//p' "$session")"
-recovery_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+recovery_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 recovery_session_before="$(cat "$session")"
 git -C "$repo" switch --detach -q "$drift_ref" || fail "split recovery rejection checkout"
 printf 'issue=SAY-998\nref=%s\n' "$drift_ref" > "$marker"
@@ -1073,7 +1073,7 @@ printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
 echo "PASS: recover-split fail-closed regression coverage"
 
 echo "TEST: version and help expose the identity-bearing release lifecycle"
-[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.8.1" ]] || fail "unexpected preparation helper version"
+[[ "$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" version)" == "1.8.2" ]] || fail "unexpected preparation helper version"
 help_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" --help 2>&1 || true)"
 print -r -- "$help_out" | grep -Fq "nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>" || fail "help omitted identity-bearing e2e-release arguments"
 print -r -- "$help_out" | grep -Fq "nuinui-e2e-prepare recover-split <human-test-lane> <marker-issue> <marker-ref> <session-issue> <session-ref> <e2e-root>" || fail "help omitted explicit recover-split arguments"
@@ -1596,7 +1596,7 @@ fi
 echo "TEST: prepare records exact session and cleanup removes it"
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "prepare"
 [[ -f "$session" ]] || fail "session metadata missing"
-handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 [[ -f "$handoff" ]] || fail "handoff missing"
 root="$(sed -n 's/^root=//p' "$session")"
 [[ -d "$root" ]] || fail "E2E root missing"
@@ -1643,7 +1643,7 @@ fi
 echo "TEST: cleanup removes owned artifacts and preserves the tested marker"
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "second prepare"
 [[ -f "$session" ]] || fail "second session metadata missing"
-handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 [[ -f "$handoff" ]] || fail "second handoff missing"
 root="$(sed -n 's/^root=//p' "$session")"
 [[ -d "$root" ]] || fail "second E2E root missing"
@@ -1694,7 +1694,7 @@ echo "PASS: changed session is retained with receipt after cleanup revalidation 
 
 echo "TEST: status blocks malformed session without mutation"
 printf 'issue=SAY-999\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9555\nlaunch_pid=1\n' \
-  "$tested_ref" "$TEST_ROOT/not-owned" "$temp_parent/nuinui-SAY-999-human-e2e.env" > "$session"
+  "$tested_ref" "$TEST_ROOT/not-owned" "$temp_parent/nuinui-SAY-999-test-human-human-e2e.env" > "$session"
 if status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status 2>&1)"; then
   fail "status accepted malformed session"
 fi
@@ -1865,7 +1865,7 @@ echo "TEST: stale same-Issue cleanup cannot mutate a newer root generation"
 old_root="$root"
 env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9555 >/dev/null || fail "newer same-Issue prepare"
 new_root="$(sed -n 's/^root=//p' "$session")"
-new_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+new_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
 new_session_before="$(cat "$session")"
 if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$old_root" >/dev/null 2>&1; then
   fail "stale same-Issue cleanup unexpectedly succeeded"
@@ -1898,6 +1898,45 @@ if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-998 "$other_ref" "$a
   fail "wrong cleanup root unexpectedly succeeded"
 fi
 
+echo "TEST: intact legacy Issue-only handoff closes, while overwritten legacy identity stays blocked"
+git -C "$repo" switch --detach -q "$tested_ref" || fail "legacy compatibility checkout reset"
+printf 'issue=SAY-999\nref=%s\n' "$tested_ref" > "$marker"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9564 >/dev/null || fail "legacy compatibility setup prepare"
+legacy_root="$(sed -n 's/^root=//p' "$session")"
+canonical_handoff="$temp_parent/nuinui-SAY-999-test-human-human-e2e.env"
+legacy_handoff="$temp_parent/nuinui-SAY-999-human-e2e.env"
+cp -- "$canonical_handoff" "$legacy_handoff" || fail "legacy compatibility handoff setup"
+rm -f -- "$canonical_handoff"
+sed "s#^handoff=.*#handoff=$legacy_handoff#" "$session" > "$session.tmp"
+mv -- "$session.tmp" "$session"
+legacy_session_before="$(cat "$session")"
+legacy_handoff_before="$(cat "$legacy_handoff")"
+legacy_status_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" status)" || fail "intact legacy status"
+print -r -- "$legacy_status_out" | grep -Fq 'session=active' || fail "intact legacy status did not validate active state"
+print -r -- "$legacy_status_out" | grep -Fq "handoff=$legacy_handoff (present)" || fail "intact legacy status did not retain legacy identity"
+legacy_duplicate_out="$(env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9564)" || {
+  print -r -- "$legacy_duplicate_out"
+  fail "intact legacy duplicate prepare was not accepted"
+}
+print -r -- "$legacy_duplicate_out" | grep -Fq 'E2E SETUP ALREADY READY' || fail "intact legacy duplicate prepare was not a no-op"
+[[ "$(cat "$session")" == "$legacy_session_before" && "$(cat "$legacy_handoff")" == "$legacy_handoff_before" ]] || \
+  fail "legacy duplicate prepare rewrote persisted state"
+printf '%s\n' "$(sed "s/^ISSUE='SAY-999'\$/ISSUE='SAY-998'/" <<< "$legacy_handoff_before")" > "$legacy_handoff"
+if env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$legacy_root" >/dev/null 2>&1; then
+  fail "overwritten legacy handoff unexpectedly cleaned"
+fi
+[[ "$(cat "$session")" == "$legacy_session_before" && -d "$legacy_root" && \
+  "$(cat "$legacy_handoff")" != "$legacy_handoff_before" ]] || fail "overwritten legacy handoff was repaired or mutated"
+print -r -- "$legacy_handoff_before" > "$legacy_handoff"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$legacy_root" >/dev/null || fail "intact legacy cleanup"
+[[ ! -e "$session" && ! -e "$legacy_root" && ! -e "$legacy_handoff" && ! -e "$canonical_handoff" ]] || \
+  fail "legacy cleanup retained state"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" prepare SAY-999 "$tested_ref" "$fixture" 9564 >/dev/null || \
+  fail "post-legacy prepare"
+[[ -f "$canonical_handoff" && ! -e "$legacy_handoff" ]] || fail "post-legacy prepare did not publish only the canonical lane-specific handoff"
+post_legacy_root="$(sed -n 's/^root=//p' "$session")"
+env "${common_env[@]}" zsh "$PREPARE_SCRIPT" cleanup SAY-999 "$tested_ref" "$post_legacy_root" >/dev/null || fail "post-legacy cleanup"
+
 echo "TEST: explicit Human-test lanes remain independent in a 2+2 topology"
 topology_bare="$TEST_ROOT/2plus2.git"
 implementation_a="$TEST_ROOT/implementation-a"
@@ -1927,7 +1966,7 @@ session_two_a="$human_a_gitdir/nuinui-e2e-session"
 session_two="$human_b_gitdir/nuinui-e2e-session"
 receipt_two_a="$human_a_gitdir/nuinui-e2e-cleanup-receipt"
 receipt_two_b="$human_b_gitdir/nuinui-e2e-cleanup-receipt"
-printf 'issue=SAY-996\nref=%s\n' "$tested_ref_two" > "$marker_two_a"
+printf 'issue=SAY-997\nref=%s\n' "$tested_ref_two" > "$marker_two_a"
 printf 'issue=SAY-997\nref=%s\n' "$tested_ref_two" > "$marker_two_b"
 manifest_two="$TEST_ROOT/LANES-2plus2.conf"
 cat > "$manifest_two" <<MANIFEST
@@ -1955,10 +1994,16 @@ role=human-test
 path=$human_b
 idle=detached
 MANIFEST
-two_env=("${common_env[@]}")
-two_env+=("NUINUI_E2E_MANIFEST=$manifest_two")
-two_env+=("NUINUI_FAKE_REPO=$human_b")
-two_handoff="$temp_parent/nuinui-SAY-997-human-e2e.env"
+two_env_a=("${common_env[@]}")
+two_env_a+=("NUINUI_E2E_MANIFEST=$manifest_two")
+two_env_a+=("NUINUI_FAKE_REPO=$human_a")
+two_env_b=("${common_env[@]}")
+two_env_b+=("NUINUI_E2E_MANIFEST=$manifest_two")
+two_env_b+=("NUINUI_FAKE_REPO=$human_b")
+two_env=("${two_env_b[@]}")
+two_handoff_a="$temp_parent/nuinui-SAY-997-human-a-human-e2e.env"
+two_handoff_b="$temp_parent/nuinui-SAY-997-human-b-human-e2e.env"
+two_legacy_handoff="$temp_parent/nuinui-SAY-997-human-e2e.env"
 
 two_snapshot() {
   local topology_path metadata
@@ -1969,7 +2014,8 @@ two_snapshot() {
     print -r -- "status=$(git -C "$topology_path" status --porcelain)"
     print -r -- "refs=$(git -C "$topology_path" for-each-ref --format='%(refname) %(objectname)' | sort)"
   done
-  for metadata in "$session_two_a" "$session_two" "$receipt_two_a" "$receipt_two_b" "$two_handoff"; do
+  for metadata in "$session_two_a" "$session_two" "$receipt_two_a" "$receipt_two_b" \
+    "$two_handoff_a" "$two_handoff_b" "$two_legacy_handoff"; do
     if [[ -e "$metadata" || -L "$metadata" ]]; then
       print -r -- "metadata=$metadata"
       cat "$metadata"
@@ -2030,12 +2076,12 @@ print -r -- "$two_recover_preparing_short_output" | grep -Fq \
 }
 [[ "$(two_snapshot)" == "$two_before" ]] || fail "2+2 short-form rejection mutated fixture state"
 
-two_status_a="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" status human-a)" || fail "explicit Human-test status before prepare"
+two_status_a="$(env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" status human-a)" || fail "explicit Human-test status before prepare"
 print -r -- "$two_status_a" | grep -Fq 'E2E STATUS COMPLETE' || fail "explicit Human-test status did not complete"
 print -r -- "$two_status_a" | grep -Fq 'session=none' || fail "explicit Human-test status did not use its own session"
 
 two_omitted_port_before="$(two_snapshot)"
-if two_omitted_port_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
+if two_omitted_port_output="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" \
   prepare human-b SAY-997 "$tested_ref_two" "$fixture" 2>&1)"; then
   print -r -- "$two_omitted_port_output"
   fail "2+2 explicit lane omitted CDP port unexpectedly succeeded"
@@ -2048,58 +2094,163 @@ print -r -- "$two_omitted_port_output" | grep -Fq \
 [[ "$(two_snapshot)" == "$two_omitted_port_before" ]] || \
   fail "2+2 explicit lane omitted CDP port mutated preparation state"
 
-two_prepare_out="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9556 2>&1)" || {
-  print -r -- "$two_prepare_out"
-  fail "explicit second Human-test prepare"
+two_prepare_a_out="$(env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-a SAY-997 "$tested_ref_two" "$fixture" 9556 2>&1)" || {
+  print -r -- "$two_prepare_a_out"
+  fail "explicit first concurrent Human-test prepare"
 }
-[[ -f "$session_two" ]] || fail "explicit second Human-test session missing"
-[[ "$(sed -n 's/^lane=//p' "$session_two")" == human-b ]] || fail "session did not retain exact Human-test lane"
-two_root="$(sed -n 's/^root=//p' "$session_two")"
-two_session_before="$(cat "$session_two")"
-two_marker_a_before="$(cat "$marker_two_a")"
-two_marker_b_before="$(cat "$marker_two_b")"
-two_handoff_before="$(cat "$two_handoff")"
+[[ -f "$session_two_a" && -f "$two_handoff_a" ]] || fail "first concurrent Human-test state missing"
+[[ "$(sed -n 's/^lane=//p' "$session_two_a")" == human-a ]] || fail "first session did not retain exact Human-test lane"
+two_root_a="$(sed -n 's/^root=//p' "$session_two_a")"
+two_session_a_before="$(cat "$session_two_a")"
+two_handoff_a_before="$(cat "$two_handoff_a")"
+
+two_prepare_b_out="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9557 2>&1)" || {
+  print -r -- "$two_prepare_b_out"
+  fail "explicit second concurrent Human-test prepare"
+}
+[[ -f "$session_two" && -f "$two_handoff_b" ]] || fail "second concurrent Human-test state missing"
+[[ "$(sed -n 's/^lane=//p' "$session_two")" == human-b ]] || fail "second session did not retain exact Human-test lane"
+two_root_b="$(sed -n 's/^root=//p' "$session_two")"
+[[ "$two_handoff_a" != "$two_handoff_b" ]] || fail "concurrent lane handoffs are not distinct"
+[[ "$(cat "$two_handoff_a")" == "$two_handoff_a_before" ]] || fail "second prepare changed first lane handoff bytes"
+
+two_status_a="$(env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" status human-a)" || fail "first concurrent Human-test status"
+two_status_b="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" status human-b)" || fail "second concurrent Human-test status"
+print -r -- "$two_status_a" | grep -Fq 'session=active' || fail "first concurrent status did not validate active state"
+print -r -- "$two_status_b" | grep -Fq 'session=active' || fail "second concurrent status did not validate active state"
+
 two_active_before="$(two_snapshot)"
-two_duplicate_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
-  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9556)" || {
-  print -r -- "$two_duplicate_output"
-  fail "2+2 exact duplicate prepare failed with the same explicit port"
+two_duplicate_a_output="$(env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-a SAY-997 "$tested_ref_two" "$fixture" 9556)" || {
+  print -r -- "$two_duplicate_a_output"
+  fail "first exact duplicate prepare failed"
 }
-print -r -- "$two_duplicate_output" | grep -Fq 'E2E SETUP ALREADY READY' || \
-  fail "2+2 exact duplicate prepare did not remain a no-op"
-if two_wrong_port_output="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" \
-  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9557 2>&1)"; then
+print -r -- "$two_duplicate_a_output" | grep -Fq 'E2E SETUP ALREADY READY' || fail "first duplicate prepare was not a no-op"
+two_duplicate_b_output="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9557)" || {
+  print -r -- "$two_duplicate_b_output"
+  fail "second exact duplicate prepare failed"
+}
+print -r -- "$two_duplicate_b_output" | grep -Fq 'E2E SETUP ALREADY READY' || fail "second duplicate prepare was not a no-op"
+[[ "$(two_snapshot)" == "$two_active_before" ]] || fail "exact duplicate prepare mutated concurrent state"
+
+if two_wrong_port_output="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" \
+  prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9558 2>&1)"; then
   print -r -- "$two_wrong_port_output"
-  fail "2+2 duplicate prepare accepted a different explicit port"
+  fail "duplicate prepare accepted a different explicit port"
 fi
 print -r -- "$two_wrong_port_output" | grep -Fq 'BLOCKED: active session identity mismatch' || {
   print -r -- "$two_wrong_port_output"
-  fail "2+2 duplicate prepare did not remain port-sensitive"
+  fail "duplicate prepare did not remain port-sensitive"
 }
-[[ "$(two_snapshot)" == "$two_active_before" ]] || \
-  fail "2+2 wrong-port duplicate prepare mutated active state"
-expect_short_blocked "2+2 short status with persisted session" two status
-expect_short_blocked "2+2 short cleanup with persisted session" two cleanup SAY-997 "$tested_ref_two" "$two_root"
-expect_short_blocked "2+2 short closure-check with persisted session" two closure-check SAY-997
-[[ "$(two_snapshot)" == "$two_active_before" ]] || fail "2+2 ambiguous short form mutated active state"
-[[ "$(cat "$session_two")" == "$two_session_before" && -d "$two_root" ]] || fail "2+2 short cleanup changed active session"
-[[ "$(cat "$marker_two_a")" == "$two_marker_a_before" && "$(cat "$marker_two_b")" == "$two_marker_b_before" ]] \
-  || fail "2+2 short rejection changed a marker"
-[[ "$(cat "$two_handoff")" == "$two_handoff_before" ]] || fail "2+2 short rejection changed handoff"
+[[ "$(two_snapshot)" == "$two_active_before" ]] || fail "wrong-port duplicate prepare mutated concurrent state"
 
-two_status_b="$(env "${two_env[@]}" zsh "$PREPARE_SCRIPT" status human-b)" || fail "explicit Human-test status with persisted session"
-print -r -- "$two_status_b" | grep -Fq 'session=active' || fail "explicit Human-test status did not find its exact session"
-env "${two_env[@]}" zsh "$PREPARE_SCRIPT" cleanup human-b SAY-997 "$tested_ref_two" "$two_root" >/dev/null || fail "explicit second Human-test cleanup"
-[[ ! -e "$session_two" && ! -e "$two_root" ]] || fail "second Human-test cleanup retained state"
-[[ -f "$receipt_two_b" ]] || fail "explicit second Human-test cleanup receipt missing"
-[[ "$(cat "$marker_two_a")" == "$two_marker_a_before" ]] || fail "Human-test cleanup changed the other lane marker"
-[[ ! -e "$session_two_a" && ! -e "$receipt_two_a" ]] || fail "Human-test cleanup changed the other lane metadata"
-[[ "$(git -C "$human_a" rev-parse HEAD)" == "$two_human_a_head_before" ]] || fail "Human-test cleanup changed the other lane HEAD"
-[[ "$(git -C "$human_a" status --porcelain)" == "$two_human_a_status_before" ]] || fail "Human-test cleanup changed the other lane checkout"
-[[ "$(git -C "$human_a" for-each-ref --format='%(refname) %(objectname)' | sort)" == "$two_human_a_refs_before" ]] \
-  || fail "Human-test cleanup changed the other lane refs"
-env "${two_env[@]}" zsh "$PREPARE_SCRIPT" closure-check human-b SAY-998 >/dev/null \
-  || fail "explicit Human-test closure-check"
+two_wrong_handoff_before="$(cat "$two_handoff_a")"
+sed "s/^LANE='human-a'\$/LANE='human-b'/" "$two_handoff_a" > "$two_handoff_a.tmp"
+mv -- "$two_handoff_a.tmp" "$two_handoff_a"
+two_wrong_handoff_snapshot="$(two_snapshot)"
+if env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a" >/dev/null 2>&1; then
+  fail "wrong-lane handoff cleanup unexpectedly succeeded"
+fi
+[[ "$(two_snapshot)" == "$two_wrong_handoff_snapshot" ]] || fail "wrong-lane handoff cleanup mutated state"
+print -r -- "$two_wrong_handoff_before" > "$two_handoff_a"
+
+two_b_session_before="$(cat "$session_two")"
+two_b_handoff_before="$(cat "$two_handoff_b")"
+two_b_marker_before="$(cat "$marker_two_b")"
+two_b_head_before="$(git -C "$human_b" rev-parse HEAD)"
+two_b_status_before="$(git -C "$human_b" status --porcelain)"
+two_b_refs_before="$(git -C "$human_b" for-each-ref --format='%(refname) %(objectname)' | sort)"
+two_b_pid="$(sed -n 's/^launch_pid=//p' "$session_two")"
+cp -- "$two_handoff_b" "$two_legacy_handoff" || fail "mixed migration legacy handoff setup"
+rm -f -- "$two_handoff_b"
+sed "s#^handoff=.*#handoff=$two_legacy_handoff#" "$session_two" > "$session_two.tmp"
+mv -- "$session_two.tmp" "$session_two"
+two_b_session_before="$(cat "$session_two")"
+env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" status human-b >/dev/null || fail "mixed migration legacy status"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a" >/dev/null || fail "first concurrent cleanup"
+[[ ! -e "$session_two_a" && ! -e "$two_root_a" && ! -e "$two_handoff_a" ]] || fail "first concurrent cleanup retained state"
+[[ "$(cat "$session_two")" == "$two_b_session_before" && -d "$two_root_b" && \
+  "$(cat "$two_legacy_handoff")" == "$two_b_handoff_before" && \
+  "$(cat "$marker_two_b")" == "$two_b_marker_before" && \
+  "$(git -C "$human_b" rev-parse HEAD)" == "$two_b_head_before" && \
+  "$(git -C "$human_b" status --porcelain)" == "$two_b_status_before" && \
+  "$(git -C "$human_b" for-each-ref --format='%(refname) %(objectname)' | sort)" == "$two_b_refs_before" && \
+  "$(kill -0 "$two_b_pid" 2>/dev/null; print -r -- $?)" == 0 ]] || fail "closing first lane changed second lane state"
+two_duplicate_mixed_output="$(env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" \
+  cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a")" || {
+  print -r -- "$two_duplicate_mixed_output"
+  fail "mixed migration exact duplicate cleanup"
+}
+print -r -- "$two_duplicate_mixed_output" | grep -Fq 'E2E CLEANUP ALREADY COMPLETE' || \
+  fail "mixed migration duplicate cleanup was not a no-op"
+[[ "$(cat "$session_two")" == "$two_b_session_before" && -d "$two_root_b" && \
+  "$(cat "$two_legacy_handoff")" == "$two_b_handoff_before" ]] || fail "mixed migration duplicate cleanup changed second lane state"
+rm -f -- "$marker_two_a"
+two_legacy_handoff_before="$(cat "$two_legacy_handoff")"
+sed "s/^ISSUE='SAY-997'$/ISSUE='SAY-996'/" "$two_legacy_handoff" > "$two_legacy_handoff.tmp"
+mv -- "$two_legacy_handoff.tmp" "$two_legacy_handoff"
+two_mixed_block_snapshot="$(two_snapshot)"
+if env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" closure-check human-a SAY-997 >/dev/null 2>&1; then
+  fail "corrupt other-lane legacy handoff unexpectedly passed closure-check"
+fi
+[[ "$(two_snapshot)" == "$two_mixed_block_snapshot" ]] || fail "corrupt other-lane legacy handoff was mutated"
+print -r -- "$two_legacy_handoff_before" > "$two_legacy_handoff"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" closure-check human-a SAY-997 >/dev/null || \
+  fail "first lane closure-check was not clean after release"
+two_status_b="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" status human-b)" || fail "second status after first cleanup"
+print -r -- "$two_status_b" | grep -Fq 'session=active' || fail "second lane did not remain active after first cleanup"
+
+if two_cleanup_b_out="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" cleanup human-b SAY-997 "$tested_ref_two" "$two_root_b" 2>&1)"; then
+  :
+else
+  print -r -- "$two_cleanup_b_out"
+  fail "second concurrent cleanup"
+fi
+[[ ! -e "$session_two" && ! -e "$two_root_b" && ! -e "$two_handoff_b" && ! -e "$two_legacy_handoff" ]] || fail "second concurrent cleanup retained state"
+[[ -f "$receipt_two_a" && -f "$receipt_two_b" ]] || fail "concurrent cleanup receipts missing"
+rm -f -- "$marker_two_b"
+env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" closure-check human-b SAY-997 >/dev/null || \
+  fail "second lane closure-check was not clean after release"
+
+echo "TEST: recreate concurrent lanes and close in reverse order without cross-lane mutation"
+printf 'issue=SAY-997\nref=%s\n' "$tested_ref_two" > "$marker_two_a"
+printf 'issue=SAY-997\nref=%s\n' "$tested_ref_two" > "$marker_two_b"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" prepare human-a SAY-997 "$tested_ref_two" "$fixture" 9560 >/dev/null || fail "reverse-order first prepare"
+env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" prepare human-b SAY-997 "$tested_ref_two" "$fixture" 9561 >/dev/null || fail "reverse-order second prepare"
+two_root_a="$(sed -n 's/^root=//p' "$session_two_a")"
+two_root_b="$(sed -n 's/^root=//p' "$session_two")"
+two_a_session_before="$(cat "$session_two_a")"
+two_a_handoff_before="$(cat "$two_handoff_a")"
+cp -- "$two_handoff_a" "$two_legacy_handoff" || fail "symmetric mixed migration legacy handoff setup"
+rm -f -- "$two_handoff_a"
+sed "s#^handoff=.*#handoff=$two_legacy_handoff#" "$session_two_a" > "$session_two_a.tmp"
+mv -- "$session_two_a.tmp" "$session_two_a"
+two_a_session_before="$(cat "$session_two_a")"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" status human-a >/dev/null || fail "symmetric mixed migration legacy status"
+env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" cleanup human-b SAY-997 "$tested_ref_two" "$two_root_b" >/dev/null || fail "reverse-order second cleanup"
+[[ "$(cat "$session_two_a")" == "$two_a_session_before" && -d "$two_root_a" && \
+  "$(cat "$two_legacy_handoff")" == "$two_a_handoff_before" && ! -e "$two_handoff_a" ]] || fail "closing second lane changed first lane state"
+two_duplicate_symmetric_output="$(env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" \
+  cleanup human-b SAY-997 "$tested_ref_two" "$two_root_b")" || {
+  print -r -- "$two_duplicate_symmetric_output"
+  fail "symmetric mixed migration exact duplicate cleanup"
+}
+print -r -- "$two_duplicate_symmetric_output" | grep -Fq 'E2E CLEANUP ALREADY COMPLETE' || \
+  fail "symmetric mixed migration duplicate cleanup was not a no-op"
+rm -f -- "$marker_two_b"
+env "${two_env_b[@]}" zsh "$PREPARE_SCRIPT" closure-check human-b SAY-997 >/dev/null || \
+  fail "reverse-order second closure-check was not clean"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" status human-a >/dev/null || fail "legacy first lane status after canonical second cleanup"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" cleanup human-a SAY-997 "$tested_ref_two" "$two_root_a" >/dev/null || fail "reverse-order first cleanup"
+[[ ! -e "$session_two_a" && ! -e "$two_root_a" && ! -e "$two_handoff_a" ]] || fail "reverse-order first cleanup retained state"
+rm -f -- "$marker_two_a"
+env "${two_env_a[@]}" zsh "$PREPARE_SCRIPT" closure-check human-a SAY-997 >/dev/null || \
+  fail "reverse-order first closure-check was not clean"
+[[ ! -e "$session_two_a" && ! -e "$session_two" && ! -e "$two_handoff_a" && ! -e "$two_handoff_b" && ! -e "$two_legacy_handoff" ]] || \
+  fail "concurrent lanes retained final state"
 
 manifest_zero="$TEST_ROOT/LANES-zero-human.conf"
 cat > "$manifest_zero" <<MANIFEST
@@ -2150,7 +2301,7 @@ closure_prepare_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" prepare 
   fail "closure active prepare"
 }
 closure_root="$(sed -n 's/^root=//p' "$session")"
-closure_handoff="$temp_parent/nuinui-SAY-996-human-e2e.env"
+closure_handoff="$temp_parent/nuinui-SAY-996-test-human-human-e2e.env"
 closure_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-996)" || {
   print -r -- "$closure_output"
   fail "closure active handoff"
@@ -2313,7 +2464,7 @@ closure_mismatch_root="$temp_parent/nuinui-vscode-e2e.closure-mismatch"
 rm -rf -- "$closure_mismatch_root"
 printf 'issue=SAY-992\nref=%s\n' "$tested_ref" > "$marker"
 printf 'lane=test-human\nissue=SAY-991\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9560\nlaunch_pid=1\nlocale=ja\n' \
-  "$tested_ref" "$fixture" "$closure_mismatch_root" "$temp_parent/nuinui-SAY-991-human-e2e.env" > "$session"
+  "$tested_ref" "$fixture" "$closure_mismatch_root" "$temp_parent/nuinui-SAY-991-test-human-human-e2e.env" > "$session"
 mismatch_closure_marker_before="$(cat "$marker")"
 mismatch_closure_session_before="$(cat "$session")"
 if mismatch_closure_output="$(env "${closure_env[@]}" zsh "$PREPARE_SCRIPT" closure-command --issue SAY-992 2>&1)"; then

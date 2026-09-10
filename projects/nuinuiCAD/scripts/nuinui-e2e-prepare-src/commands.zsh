@@ -63,7 +63,7 @@ prepare_duplicate() {
   }
   assert_session_root "$SESSION_ROOT" || return 1
   [[ -d "$SESSION_ROOT" && ! -L "$SESSION_ROOT" ]] || { echo "BLOCKED: active E2E root is missing or invalid"; return 1; }
-  assert_session_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" || return 1
+  assert_persisted_handoff "$SESSION_ISSUE" "$SESSION_HANDOFF" "$SESSION_LANE" || return 1
   assert_handoff_file "$SESSION_HANDOFF" "$SESSION_ISSUE" "$SESSION_REF" \
     "$SESSION_ROOT" "$SESSION_CDP_PORT" "$SESSION_SOURCE_FIXTURE" || return 1
   assert_process_ownership "$SESSION_ROOT" "$SESSION_LAUNCH_PID" 1 || return 1
@@ -201,7 +201,11 @@ prepare() {
     return 1
   }
 
-  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  handoff="$(canonical_handoff_path "$issue")" || {
+    echo "BLOCKED: cannot resolve canonical E2E handoff"
+    cleanup_failed_prepare 1
+    return 1
+  }
   write_preparing_session "$E2E_LANE" "$issue" "$tested_ref" "$e2e_root" "$$" || {
     cleanup_failed_prepare 1
     return 1
@@ -466,7 +470,7 @@ recover_split() {
     return 1
   }
   handoff="$SESSION_HANDOFF"
-  assert_session_handoff "$SESSION_ISSUE" "$handoff" || {
+  assert_persisted_handoff "$SESSION_ISSUE" "$handoff" "$SESSION_LANE" || {
     echo 'BLOCKED: split recovery session handoff path is invalid'
     return 1
   }
@@ -629,7 +633,10 @@ recover_preparing() {
     return 1
   fi
 
-  handoff="$E2E_TEMP_PARENT/nuinui-${issue}-human-e2e.env"
+  handoff="$(canonical_handoff_path "$issue")" || {
+    echo 'BLOCKED: cannot resolve canonical E2E handoff'
+    return 1
+  }
   if path_exists "$handoff"; then
     [[ -f "$handoff" && ! -L "$handoff" ]] || {
       echo 'BLOCKED: canonical E2E handoff is ambiguous'
