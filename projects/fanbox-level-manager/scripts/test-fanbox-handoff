@@ -1,0 +1,173 @@
+#!/bin/sh
+
+script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd) || exit 1
+handoff=$script_dir/fanbox-handoff
+test_root=$(mktemp -d "${TMPDIR:-/tmp}/fanbox-handoff-test.XXXXXX") || exit 1
+
+cleanup() {
+  rm -rf "$test_root"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  printf '%s\n' "test-fanbox-handoff: FAIL: $1" >&2
+  exit 1
+}
+
+assert_contains() {
+  assert_output=$1
+  assert_text=$2
+  assert_name=$3
+  case "$assert_output" in
+    *"$assert_text"*) ;;
+    *) fail "$assert_name did not contain: $assert_text" ;;
+  esac
+}
+
+assert_blocked() {
+  blocked_output=$1
+  blocked_name=$2
+  case "$blocked_output" in
+    "HANDOFF BLOCKED: "*) ;;
+    *) fail "$blocked_name returned unexpected output: $blocked_output" ;;
+  esac
+}
+
+make_fixture() {
+  fixture_root=$1
+  mkdir -p "$fixture_root" || fail "cannot create fixture root"
+  fixture_remote=$fixture_root/remote.git
+  fixture_checkout=$fixture_root/checkout
+  git init --bare "$fixture_remote" >/dev/null 2>&1 || fail "cannot initialize fixture remote"
+  git init "$fixture_checkout" >/dev/null 2>&1 || fail "cannot initialize fixture checkout"
+  git -C "$fixture_checkout" config user.name 'fanbox handoff test'
+  git -C "$fixture_checkout" config user.email 'fanbox-handoff-test@example.invalid'
+  printf '%s\n' 'initial' >"$fixture_checkout/state.txt"
+  git -C "$fixture_checkout" add state.txt || fail "cannot stage fixture main"
+  git -C "$fixture_checkout" commit -m 'fixture main' >/dev/null 2>&1 || fail "cannot commit fixture main"
+  git -C "$fixture_checkout" branch -M main || fail "cannot name fixture main branch"
+  git -C "$fixture_checkout" remote add origin "$fixture_remote" || fail "cannot add fixture origin"
+  git -C "$fixture_checkout" push origin main >/dev/null 2>&1 || fail "cannot publish fixture main"
+  fixture_main=$(git -C "$fixture_checkout" rev-parse HEAD) || fail "cannot resolve fixture main"
+}
+
+run_fixture() {
+  run_issue=$1
+  run_expected_main=$2
+  run_checkout=$3
+  run_origin=$4
+  FANBOX_HANDOFF_SELF_TEST=1 \
+  FANBOX_HANDOFF_TEST_CHECKOUT=$run_checkout \
+  FANBOX_HANDOFF_TEST_ORIGIN=$run_origin \
+    "$handoff" "$run_issue" "$run_expected_main" 2>&1
+}
+
+run_blocked_preserving() {
+  preserve_name=$1
+  preserve_issue=$2
+  preserve_expected_main=$3
+  preserve_checkout=$4
+  preserve_origin=$5
+  preserve_branch=$(git -C "$preserve_checkout" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  preserve_head=$(git -C "$preserve_checkout" rev-parse --verify HEAD 2>/dev/null || true)
+  preserve_status=$(git -C "$preserve_checkout" status --porcelain --untracked-files=all 2>/dev/null) ||
+    fail "$preserve_name could not capture initial status"
+  if preserve_output=$(run_fixture "$preserve_issue" "$preserve_expected_main" "$preserve_checkout" "$preserve_origin"); then
+    fail "$preserve_name unexpectedly passed"
+  fi
+  assert_blocked "$preserve_output" "$preserve_name"
+  preserve_branch_after=$(git -C "$preserve_checkout" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  preserve_head_after=$(git -C "$preserve_checkout" rev-parse --verify HEAD 2>/dev/null || true)
+  preserve_status_after=$(git -C "$preserve_checkout" status --porcelain --untracked-files=all 2>/dev/null) ||
+    fail "$preserve_name could not capture final status"
+  [ "$preserve_branch_after" = "$preserve_branch" ] || fail "$preserve_name repaired or changed branch"
+  [ "$preserve_head_after" = "$preserve_head" ] || fail "$preserve_name repaired or changed HEAD"
+  [ "$preserve_status_after" = "$preserve_status" ] || fail "$preserve_name repaired or changed working-tree state"
+}
+
+test -f "$handoff" && test ! -L "$handoff" && test -x "$handoff" ||
+  fail 'fanbox-handoff is not an executable regular file'
+
+fresh_root=$test_root/fresh
+make_fixture "$fresh_root"
+git -C "$fresh_root/checkout" switch -c topic/fresh >/dev/null 2>&1 || fail 'cannot create fresh topic'
+fresh_output=$(run_fixture 228 "$fixture_main" "$fresh_root/checkout" "$fresh_root/remote.git") ||
+  fail "fresh local topic failed: $fresh_output"
+assert_contains "$fresh_output" 'HANDOFF VERIFIED' 'fresh local topic'
+assert_contains "$fresh_output" 'remote-topic-mode=absent' 'fresh local topic'
+assert_contains "$fresh_output" 'clean=true' 'fresh local topic'
+
+continuation_root=$test_root/continuation
+make_fixture "$continuation_root"
+git -C "$continuation_root/checkout" switch -c topic/continuation >/dev/null 2>&1 || fail 'cannot create continuation topic'
+printf '%s\n' 'continuation' >>"$continuation_root/checkout/state.txt"
+git -C "$continuation_root/checkout" add state.txt || fail 'cannot stage continuation'
+git -C "$continuation_root/checkout" commit -m 'fixture continuation' >/dev/null 2>&1 || fail 'cannot commit continuation'
+git -C "$continuation_root/checkout" push -u origin topic/continuation >/dev/null 2>&1 || fail 'cannot publish continuation topic'
+continuation_output=$(run_fixture 228 "$fixture_main" "$continuation_root/checkout" "$continuation_root/remote.git") ||
+  fail "exact remote topic failed: $continuation_output"
+assert_contains "$continuation_output" 'HANDOFF VERIFIED' 'exact remote topic'
+assert_contains "$continuation_output" 'remote-topic-mode=exact' 'exact remote topic'
+
+wrong_origin_root=$test_root/wrong-origin
+make_fixture "$wrong_origin_root"
+run_blocked_preserving 'wrong repository/origin' 228 "$fixture_main" "$wrong_origin_root/checkout" "$wrong_origin_root/not-the-expected-remote.git"
+
+dirty_root=$test_root/dirty
+make_fixture "$dirty_root"
+git -C "$dirty_root/checkout" switch -c topic/dirty >/dev/null 2>&1 || fail 'cannot create dirty topic'
+printf '%s\n' 'untracked' >"$dirty_root/checkout/untracked.txt"
+run_blocked_preserving 'dirty checkout' 228 "$fixture_main" "$dirty_root/checkout" "$dirty_root/remote.git"
+
+main_root=$test_root/main
+make_fixture "$main_root"
+run_blocked_preserving 'main branch' 228 "$fixture_main" "$main_root/checkout" "$main_root/remote.git"
+
+detached_root=$test_root/detached
+make_fixture "$detached_root"
+git -C "$detached_root/checkout" switch -c topic/detached >/dev/null 2>&1 || fail 'cannot create detached topic'
+git -C "$detached_root/checkout" switch --detach >/dev/null 2>&1 || fail 'cannot detach fixture HEAD'
+run_blocked_preserving 'detached HEAD' 228 "$fixture_main" "$detached_root/checkout" "$detached_root/remote.git"
+
+mismatch_root=$test_root/expected-main-mismatch
+make_fixture "$mismatch_root"
+git -C "$mismatch_root/checkout" switch -c topic/mismatch >/dev/null 2>&1 || fail 'cannot create mismatch topic'
+run_blocked_preserving 'expected-main mismatch' 228 '0000000000000000000000000000000000000000' "$mismatch_root/checkout" "$mismatch_root/remote.git"
+
+ancestry_root=$test_root/ancestry
+make_fixture "$ancestry_root"
+git -C "$ancestry_root/checkout" switch --orphan topic/unrelated >/dev/null 2>&1 || fail 'cannot create unrelated topic'
+git -C "$ancestry_root/checkout" rm -rf . >/dev/null 2>&1 || true
+printf '%s\n' 'unrelated' >"$ancestry_root/checkout/unrelated.txt"
+git -C "$ancestry_root/checkout" add unrelated.txt || fail 'cannot stage unrelated topic'
+git -C "$ancestry_root/checkout" commit -m 'fixture unrelated topic' >/dev/null 2>&1 || fail 'cannot commit unrelated topic'
+run_blocked_preserving 'current topic not containing expected main' 228 "$fixture_main" "$ancestry_root/checkout" "$ancestry_root/remote.git"
+
+remote_mismatch_root=$test_root/remote-mismatch
+make_fixture "$remote_mismatch_root"
+git -C "$remote_mismatch_root/checkout" switch -c topic/remote-mismatch >/dev/null 2>&1 || fail 'cannot create remote mismatch topic'
+printf '%s\n' 'remote' >>"$remote_mismatch_root/checkout/state.txt"
+git -C "$remote_mismatch_root/checkout" add state.txt || fail 'cannot stage remote mismatch base'
+git -C "$remote_mismatch_root/checkout" commit -m 'fixture remote topic' >/dev/null 2>&1 || fail 'cannot commit remote topic'
+git -C "$remote_mismatch_root/checkout" push -u origin topic/remote-mismatch >/dev/null 2>&1 || fail 'cannot publish remote mismatch topic'
+printf '%s\n' 'local' >>"$remote_mismatch_root/checkout/state.txt"
+git -C "$remote_mismatch_root/checkout" add state.txt || fail 'cannot stage local remote mismatch'
+git -C "$remote_mismatch_root/checkout" commit -m 'fixture local-only commit' >/dev/null 2>&1 || fail 'cannot commit local remote mismatch'
+run_blocked_preserving 'remote topic differing from local HEAD' 228 "$fixture_main" "$remote_mismatch_root/checkout" "$remote_mismatch_root/remote.git"
+
+invalid_root=$test_root/invalid
+make_fixture "$invalid_root"
+for invalid_args in \
+  '' \
+  '228' \
+  '228 main extra' \
+  '0 0000000000000000000000000000000000000000' \
+  'abc 0000000000000000000000000000000000000000' \
+  '228 not-a-sha'; do
+  if invalid_output=$(FANBOX_HANDOFF_SELF_TEST=1 FANBOX_HANDOFF_TEST_CHECKOUT="$invalid_root/checkout" FANBOX_HANDOFF_TEST_ORIGIN="$invalid_root/remote.git" sh -c 'exec "$1" $2' sh "$handoff" "$invalid_args" 2>&1); then
+    fail "argument validation unexpectedly passed: $invalid_args"
+  fi
+  assert_blocked "$invalid_output" "argument validation: $invalid_args"
+done
+
+printf '%s\n' 'test-fanbox-handoff: PASS'
