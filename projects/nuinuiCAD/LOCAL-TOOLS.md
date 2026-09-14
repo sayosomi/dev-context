@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.13.1`。
+current standalone helper version: `1.13.2`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -261,6 +261,8 @@ nuinui e2e-start-command \
 ```
 
 generatorはread-onlyでfull manifest preflightとselected laneの`lane_execution_nuinui_human_test_classify`をfreshに行う。唯一のHuman-test laneは省略解決できるが、複数laneでは明示laneと明示CDP portが必要である。portはcaller-controlledで、lane名・宣言順・空き状況から推測または自動選択しない。singleton topologyではport省略時の既定port互換を維持する。`FREE`は生成候補、exact same Issue/refの`BUSY`は既存duplicate/no-op ownerへ委譲する候補、別Issue/refの`BUSY`やmalformed/dirty/named/stale/ambiguous stateは`BLOCKED`である。
+
+`--fixture`は、absoluteでcontrol characterを含まず、既存のregular non-symlink fileであれば受け付ける。`e2e-start-command`はそのcaller pathをfilesystem canonicalizationしてからselected Human-test checkoutとのcontainment checkとcontinuation serializationに使い、downstreamのpersisted/session fixture identityは引き続きcanonical pathをstrictに要求する。
 
 成功時は次の1行をterminal formatting authorityとして出力する。
 

@@ -152,7 +152,7 @@ Human setupはproduct oracleを実行しない。例えばCompletionを開く、
 
 ## Fixture rule
 
-- Task-specific fixtureは`/tmp`等checkout/worktreeを汚さない場所へ生成する。
+- Task-specific fixtureは`/private/tmp`等checkout/worktreeを汚さない場所へ生成する。macOSの`/tmp`は`/private/tmp`へのaliasなので、fixtureの通常例ではcanonicalな`/private/tmp`を使う。
 - setup lifecycle内でfixtureをmaterializeし、そのfileを起動時に明示的にopenする。
 - current runのfixtureはunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
 - fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
@@ -219,7 +219,7 @@ RUST_BIN="$CHECKOUT/rust-evaluator/target/debug/evaluation_stdio"
 test -x "$RUST_BIN"
 test -f "$CHECKOUT/vscode-extension/dist/extension.js"
 
-E2E_ROOT="$(mktemp -d /tmp/nuinui-vscode-e2e.XXXXXX)"
+E2E_ROOT="$(mktemp -d /private/tmp/nuinui-vscode-e2e.XXXXXX)"
 mkdir -p \
   "$E2E_ROOT/user-data/User" \
   "$E2E_ROOT/extensions" \
@@ -273,7 +273,7 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 
 失敗したprepareの復旧で次を行わない。
 
-- `/tmp`や他temporary parentを`find`等で走査して「前回のE2E root」を推測する;
+- `/private/tmp`や他temporary parentを`find`等で走査して「前回のE2E root」を推測する;
 - session metadataを無視してPID / root / fixtureを再構築する;
 - helper failure直後に別のad-hoc VS Code launcherを生成して同じrunを継続する;
 - marker / checkout mismatchを手書きscriptでrepairする。
