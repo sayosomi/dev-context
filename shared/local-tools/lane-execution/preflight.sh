@@ -386,7 +386,14 @@ EOF
   return "$lane_execution_inventory_rc"
 }
 
-lane_execution_preflight() {
+lane_execution__preflight_audit() {
+  [ "$#" = 2 ] || [ "$#" = 4 ] || return 2
+  lane_execution_audit_mode=$1
+  case "$lane_execution_audit_mode" in
+    full|implementation) ;;
+    *) return 2 ;;
+  esac
+  shift
   [ "$#" = 1 ] || [ "$#" = 3 ] || return 2
   lane_execution_manifest=$1
   lane_execution_forensic=
@@ -445,8 +452,12 @@ lane_execution_preflight() {
           "$lane_execution_physical" "$lane_execution_idle" "$lane_execution_default_branch" || lane_execution_result=1
         ;;
       human-test)
-        lane_execution_human_test_preflight "$lane_execution_lane" \
-          "$lane_execution_physical" "$lane_execution_manifest" || lane_execution_result=1
+        if lane_execution_human_test_preflight "$lane_execution_lane" \
+          "$lane_execution_physical" "$lane_execution_manifest"; then
+          :
+        elif [ "$lane_execution_audit_mode" = full ]; then
+          lane_execution_result=1
+        fi
         ;;
       *)
         echo '  state=BLOCKED reason=invalid-role'
@@ -466,11 +477,27 @@ EOF
   rm -f "$lane_execution_seen_paths"
   trap - HUP INT TERM
   if [ "$lane_execution_result" = 0 ]; then
-    echo 'PREFLIGHT PASS'
+    if [ "$lane_execution_audit_mode" = implementation ]; then
+      echo 'IMPLEMENTATION PREFLIGHT PASS'
+    else
+      echo 'PREFLIGHT PASS'
+    fi
     return 0
   fi
-  echo 'PREFLIGHT BLOCKED'
+  if [ "$lane_execution_audit_mode" = implementation ]; then
+    echo 'IMPLEMENTATION PREFLIGHT BLOCKED'
+  else
+    echo 'PREFLIGHT BLOCKED'
+  fi
   return 1
+}
+
+lane_execution_preflight() {
+  lane_execution__preflight_audit full "$@"
+}
+
+lane_execution_implementation_preflight() {
+  lane_execution__preflight_audit implementation "$@"
 }
 
 lane_execution_preflight_command() {

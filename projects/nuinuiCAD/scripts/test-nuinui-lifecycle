@@ -784,6 +784,48 @@ expect_e2e_command_failure 'E2E handoff malformed Human-test session' \
 clear_human_state
 echo 'PASS: e2e-start-command reuses blocked Human-test evidence'
 
+echo 'TEST: implementation admission ignores unrelated Human-test invalid-session'
+prepare_duplicate
+write_human_marker SAY-515 "$BASE"
+printf 'lane=human\nissue=SAY-515\n' > "$HUMAN_SESSION"
+run_human_preflight
+[ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'strict full preflight accepted malformed Human-test session'
+assert_contains "$HUMAN_PREFLIGHT_OUTPUT" 'reason=invalid-session' \
+  'strict full preflight hid malformed Human-test session'
+
+begin_command_output=$(
+  "$HELPER" begin-command --lane impl --issue SAY-515 --base "$BASE" \
+    --branch codex/SAY-515-role-aware 2>&1
+) || {
+  printf '%s\n' "$begin_command_output"
+  fail 'implementation begin-command was blocked by unrelated Human-test invalid-session'
+}
+assert_contains "$begin_command_output" 'BEGIN COMMAND READY' \
+  'implementation begin-command did not emit its ready envelope'
+begin_command_line=$(printf '%s\n' "$begin_command_output" |
+  sed -n '/^BEGIN COMMAND READY$/{n;p;}')
+[ -n "$begin_command_line" ] || fail 'implementation begin-command did not emit an executable continuation'
+begin_output=$(sh -c "$begin_command_line") || {
+  printf '%s\n' "$begin_output"
+  fail 'generated implementation begin was blocked by unrelated Human-test invalid-session'
+}
+assert_contains "$begin_output" 'IMPLEMENTATION STARTED' \
+  'generated implementation begin did not start'
+assert_contains "$begin_output" 'preflight=PASS' \
+  'generated implementation begin did not report passing admission'
+assert_contains "$begin_output" 'post_audit=PASS' \
+  'generated implementation begin reported a blocked post-audit'
+expect_e2e_command_failure 'E2E operation targeting invalid-session Human-test lane' \
+  'reason=invalid-session' \
+  --lane human --issue SAY-515 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_FIXTURE"
+begin_claim=$(printf '%s\n' "$begin_output" | sed -n 's/^claim=//p')
+[ -n "$begin_claim" ] || fail 'generated implementation begin did not return its claim'
+"$HELPER" release impl "$BASE" "$begin_claim" >/dev/null ||
+  fail 'implementation invalid-session regression could not clean up its generation'
+clear_human_state
+echo 'PASS: strict full preflight and Human-test operations remain fail-closed while implementation starts'
+
 rm -f "$PREPARE_ARGS"
 drift_output=$("$HELPER" e2e-start-command --issue SAY-510 --tested-ref "$BASE" \
   --executor human --fixture "$HUMAN_FIXTURE") || {

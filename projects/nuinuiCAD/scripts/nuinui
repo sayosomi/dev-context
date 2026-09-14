@@ -1032,7 +1032,14 @@ EOF
   return "$lane_execution_inventory_rc"
 }
 
-lane_execution_preflight() {
+lane_execution__preflight_audit() {
+  [ "$#" = 2 ] || [ "$#" = 4 ] || return 2
+  lane_execution_audit_mode=$1
+  case "$lane_execution_audit_mode" in
+    full|implementation) ;;
+    *) return 2 ;;
+  esac
+  shift
   [ "$#" = 1 ] || [ "$#" = 3 ] || return 2
   lane_execution_manifest=$1
   lane_execution_forensic=
@@ -1091,8 +1098,12 @@ lane_execution_preflight() {
           "$lane_execution_physical" "$lane_execution_idle" "$lane_execution_default_branch" || lane_execution_result=1
         ;;
       human-test)
-        lane_execution_human_test_preflight "$lane_execution_lane" \
-          "$lane_execution_physical" "$lane_execution_manifest" || lane_execution_result=1
+        if lane_execution_human_test_preflight "$lane_execution_lane" \
+          "$lane_execution_physical" "$lane_execution_manifest"; then
+          :
+        elif [ "$lane_execution_audit_mode" = full ]; then
+          lane_execution_result=1
+        fi
         ;;
       *)
         echo '  state=BLOCKED reason=invalid-role'
@@ -1112,11 +1123,27 @@ EOF
   rm -f "$lane_execution_seen_paths"
   trap - HUP INT TERM
   if [ "$lane_execution_result" = 0 ]; then
-    echo 'PREFLIGHT PASS'
+    if [ "$lane_execution_audit_mode" = implementation ]; then
+      echo 'IMPLEMENTATION PREFLIGHT PASS'
+    else
+      echo 'PREFLIGHT PASS'
+    fi
     return 0
   fi
-  echo 'PREFLIGHT BLOCKED'
+  if [ "$lane_execution_audit_mode" = implementation ]; then
+    echo 'IMPLEMENTATION PREFLIGHT BLOCKED'
+  else
+    echo 'PREFLIGHT BLOCKED'
+  fi
   return 1
+}
+
+lane_execution_preflight() {
+  lane_execution__preflight_audit full "$@"
+}
+
+lane_execution_implementation_preflight() {
+  lane_execution__preflight_audit implementation "$@"
 }
 
 lane_execution_preflight_command() {
@@ -1419,11 +1446,11 @@ lane_execution__audit() {
   lane_execution_audit_output=
   lane_execution_audit_rc=0
   if [ -n "$lane_execution_audit_forensic" ]; then
-    lane_execution_audit_output=$(lane_execution_preflight "$lane_execution_audit_manifest" \
+    lane_execution_audit_output=$(lane_execution_implementation_preflight "$lane_execution_audit_manifest" \
       --forensic-worktree "$lane_execution_audit_forensic" 2>&1) ||
       lane_execution_audit_rc=$?
   else
-    lane_execution_audit_output=$(lane_execution_preflight "$lane_execution_audit_manifest" 2>&1) ||
+    lane_execution_audit_output=$(lane_execution_implementation_preflight "$lane_execution_audit_manifest" 2>&1) ||
       lane_execution_audit_rc=$?
   fi
   lane_execution_audit_inventory=
@@ -7958,7 +7985,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.13.0
+V=1.13.1
 K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
@@ -8193,11 +8220,11 @@ nuinui_begin_command() {
   nuinui_begin_command_preflight_output=
   nuinui_begin_command_preflight_rc=0
   if [ "$nuinui_forensic_option_active" = 1 ]; then
-    nuinui_begin_command_preflight_output=$(lane_execution_preflight \
+    nuinui_begin_command_preflight_output=$(lane_execution_implementation_preflight \
       "$NUINUI_RUNTIME_MANIFEST" --forensic-worktree "$nuinui_forensic_worktree" 2>&1) ||
       nuinui_begin_command_preflight_rc=$?
   else
-    nuinui_begin_command_preflight_output=$(lane_execution_preflight \
+    nuinui_begin_command_preflight_output=$(lane_execution_implementation_preflight \
       "$NUINUI_RUNTIME_MANIFEST" 2>&1) ||
       nuinui_begin_command_preflight_rc=$?
   fi
