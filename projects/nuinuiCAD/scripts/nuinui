@@ -3276,7 +3276,7 @@ nuinui_e2e_start_command_parse_args() {
 }
 
 nuinui_e2e_start_command_invalid_fixture() {
-  printf 'ERROR: invalid --fixture; expected a canonical absolute regular file outside the selected Human-test checkout\n'
+  printf 'ERROR: invalid --fixture; expected an absolute regular non-symlink file outside the selected Human-test checkout\n'
   return 2
 }
 
@@ -3298,18 +3298,23 @@ nuinui_e2e_start_command_validate_fixture() {
     nuinui_e2e_start_command_invalid_fixture
     return 2
   }
-  [ "$(realpath "$nuinui_e2e_start_command_fixture_path" 2>/dev/null)" = \
-    "$nuinui_e2e_start_command_fixture_path" ] || {
+  nuinui_e2e_start_command_fixture_canonical=$(realpath \
+    "$nuinui_e2e_start_command_fixture_path" 2>/dev/null) || {
     nuinui_e2e_start_command_invalid_fixture
     return 2
   }
-  case "$nuinui_e2e_start_command_fixture_path" in
+  [ -n "$nuinui_e2e_start_command_fixture_canonical" ] || {
+    nuinui_e2e_start_command_invalid_fixture
+    return 2
+  }
+  case "$nuinui_e2e_start_command_fixture_canonical" in
     "$nuinui_e2e_start_command_human_path"|\
     "$nuinui_e2e_start_command_human_path"/*)
       nuinui_e2e_start_command_invalid_fixture
       return 2
       ;;
   esac
+  nuinui_e2e_start_command_fixture=$nuinui_e2e_start_command_fixture_canonical
 }
 
 nuinui_e2e_start_command_validate_helper() {
@@ -7985,7 +7990,7 @@ nuinui_self_test() {
 }
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.13.1
+V=1.13.2
 K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {

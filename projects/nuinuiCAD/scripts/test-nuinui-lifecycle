@@ -220,6 +220,14 @@ HUMAN_FIXTURE_SYMLINK=$ROOT/human-fixture.symlink
 HUMAN_FIXTURE_DIR=$ROOT/human-fixture-dir
 HUMAN_FIXTURE_DIR_SYMLINK=$ROOT/human-fixture-dir.symlink
 HUMAN_FIXTURE_NONCANONICAL=$HUMAN_FIXTURE_DIR_SYMLINK/fixture.nui
+HUMAN_FIXTURE_CANONICAL=$HUMAN_FIXTURE_DIR/fixture.nui
+HUMAN_FIXTURE_MISSING=$ROOT/missing-fixture.nui
+HUMAN_FIXTURE_NONREGULAR=$ROOT/nonregular-fixture
+HUMAN_FIXTURE_CONTROL="$ROOT/fixture$(printf '\t')name.nui"
+HUMAN_CHECKOUT_ALIAS=$ROOT/human-checkout.alias
+HUMAN_CHECKOUT_FIXTURE_DIR=$HUMAN/issue-232-fixture-dir
+HUMAN_CHECKOUT_FIXTURE=$HUMAN_CHECKOUT_FIXTURE_DIR/fixture.nui
+HUMAN_CHECKOUT_ALIAS_FIXTURE=$HUMAN_CHECKOUT_ALIAS/issue-232-fixture-dir/fixture.nui
 HUMAN_SESSION_ROOT=$ROOT/nuinui-vscode-e2e.human
 HUMAN_NESTED_ROOT=$ROOT/nuinui-vscode-e2e.parent/nested
 HUMAN_HANDOFF=$ROOT/nuinui-SAY-401-human-e2e.env
@@ -230,6 +238,7 @@ ln -s "$HUMAN_FIXTURE" "$HUMAN_FIXTURE_SYMLINK"
 mkdir "$HUMAN_FIXTURE_DIR"
 printf '%s\n' fixture > "$HUMAN_FIXTURE_DIR/fixture.nui"
 ln -s "$HUMAN_FIXTURE_DIR" "$HUMAN_FIXTURE_DIR_SYMLINK"
+mkdir "$HUMAN_FIXTURE_NONREGULAR"
 
 clear_human_state() {
   rm -f "$HUMAN_MARKER" "$HUMAN_SESSION" "$HUMAN/human-dirty-file"
@@ -756,6 +765,64 @@ expect_e2e_command_failure 'E2E handoff invalid locale' \
 expect_e2e_command_failure 'E2E handoff invalid fixture form' \
   'ERROR: invalid --fixture' \
   --issue SAY-500 --tested-ref "$BASE" --executor human --fixture relative-fixture
+expect_e2e_command_failure 'E2E handoff missing fixture file' \
+  'ERROR: invalid --fixture' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_FIXTURE_MISSING"
+expect_e2e_command_failure 'E2E handoff non-regular fixture' \
+  'ERROR: invalid --fixture' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_FIXTURE_NONREGULAR"
+expect_e2e_command_failure 'E2E handoff control-character fixture path' \
+  'ERROR: invalid --fixture' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_FIXTURE_CONTROL"
+expect_e2e_command_failure 'E2E handoff fixture-self-symlink' \
+  'ERROR: invalid --fixture' \
+  --issue SAY-500 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_FIXTURE_SYMLINK"
+canonical_e2e_command_output=$(
+  "$HELPER" e2e-start-command --issue SAY-500 --tested-ref "$BASE" \
+    --executor human --fixture "$HUMAN_FIXTURE"
+) || {
+  printf '%s\n' "$canonical_e2e_command_output"
+  fail 'ordinary canonical fixture was rejected'
+}
+canonical_e2e_command=$(printf '%s\n' "$canonical_e2e_command_output" |
+  sed -n '/^E2E START COMMAND READY$/{n;p;}')
+assert_contains "$canonical_e2e_command" "'$HUMAN_FIXTURE'" \
+  'ordinary canonical fixture was not serialized'
+assert_contains "$canonical_e2e_command_output" "fixture=$HUMAN_FIXTURE" \
+  'ordinary canonical fixture was not reported'
+
+alias_e2e_command_output=$(
+  "$HELPER" e2e-start-command --issue SAY-501 --tested-ref "$BASE" \
+    --executor human --fixture "$HUMAN_FIXTURE_NONCANONICAL"
+) || {
+  printf '%s\n' "$alias_e2e_command_output"
+  fail 'fixture through an outside symlinked parent was rejected'
+}
+alias_e2e_command=$(printf '%s\n' "$alias_e2e_command_output" |
+  sed -n '/^E2E START COMMAND READY$/{n;p;}')
+assert_contains "$alias_e2e_command" "'$HUMAN_FIXTURE_CANONICAL'" \
+  'outside symlinked-parent fixture was not canonicalized in continuation'
+assert_not_contains "$alias_e2e_command" "'$HUMAN_FIXTURE_NONCANONICAL'" \
+  'outside symlinked-parent alias spelling leaked into continuation'
+assert_contains "$alias_e2e_command_output" "fixture=$HUMAN_FIXTURE_CANONICAL" \
+  'outside symlinked-parent fixture was not canonically reported'
+assert_not_contains "$alias_e2e_command_output" "fixture=$HUMAN_FIXTURE_NONCANONICAL" \
+  'outside symlinked-parent alias spelling leaked into report'
+echo 'PASS: e2e-start-command accepts and canonicalizes an outside symlinked-parent fixture'
+
+mkdir "$HUMAN_CHECKOUT_FIXTURE_DIR"
+printf '%s\n' fixture > "$HUMAN_CHECKOUT_FIXTURE"
+ln -s "$HUMAN" "$HUMAN_CHECKOUT_ALIAS"
+expect_e2e_command_failure 'E2E handoff rejects symlinked-parent fixture inside Human-test checkout' \
+  'ERROR: invalid --fixture' \
+  --issue SAY-502 --tested-ref "$BASE" --executor human \
+  --fixture "$HUMAN_CHECKOUT_ALIAS_FIXTURE"
+rm -f "$HUMAN_CHECKOUT_ALIAS"
+rm -rf "$HUMAN_CHECKOUT_FIXTURE_DIR"
 expect_e2e_command_failure 'E2E handoff invalid port' \
   'ERROR: invalid --port' \
   --issue SAY-500 --tested-ref "$BASE" --executor human --fixture "$HUMAN_FIXTURE" \

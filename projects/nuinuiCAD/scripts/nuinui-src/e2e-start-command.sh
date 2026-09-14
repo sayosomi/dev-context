@@ -143,7 +143,7 @@ nuinui_e2e_start_command_parse_args() {
 }
 
 nuinui_e2e_start_command_invalid_fixture() {
-  printf 'ERROR: invalid --fixture; expected a canonical absolute regular file outside the selected Human-test checkout\n'
+  printf 'ERROR: invalid --fixture; expected an absolute regular non-symlink file outside the selected Human-test checkout\n'
   return 2
 }
 
@@ -165,18 +165,23 @@ nuinui_e2e_start_command_validate_fixture() {
     nuinui_e2e_start_command_invalid_fixture
     return 2
   }
-  [ "$(realpath "$nuinui_e2e_start_command_fixture_path" 2>/dev/null)" = \
-    "$nuinui_e2e_start_command_fixture_path" ] || {
+  nuinui_e2e_start_command_fixture_canonical=$(realpath \
+    "$nuinui_e2e_start_command_fixture_path" 2>/dev/null) || {
     nuinui_e2e_start_command_invalid_fixture
     return 2
   }
-  case "$nuinui_e2e_start_command_fixture_path" in
+  [ -n "$nuinui_e2e_start_command_fixture_canonical" ] || {
+    nuinui_e2e_start_command_invalid_fixture
+    return 2
+  }
+  case "$nuinui_e2e_start_command_fixture_canonical" in
     "$nuinui_e2e_start_command_human_path"|\
     "$nuinui_e2e_start_command_human_path"/*)
       nuinui_e2e_start_command_invalid_fixture
       return 2
       ;;
   esac
+  nuinui_e2e_start_command_fixture=$nuinui_e2e_start_command_fixture_canonical
 }
 
 nuinui_e2e_start_command_validate_helper() {
