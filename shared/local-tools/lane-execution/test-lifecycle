@@ -362,6 +362,7 @@ uncertain_git_dir=$(git -C "$lifecycle_test_alpha" rev-parse --absolute-git-dir)
 [ -e "$uncertain_git_dir/nuinui-implementation-lock" ] &&
   [ -e "$uncertain_git_dir/nuinui-implementation-slot" ] ||
   fail 'uncertain generic mutation did not retain durable recovery state'
+unset NUINUI_SELFTEST_CRASH_AT
 echo 'PASS: uncertain generic mutation completion remains BLOCKED with durable state retained'
 
 invalid_root=$test_root/invalid
@@ -410,5 +411,50 @@ capture_begin "$lifecycle_test_manifest" alpha SAY-602 "$pending_base" topic/say
 [ "$lifecycle_test_rc" != 0 ] || fail 'RELEASE-PENDING state satisfied an occupancy expectation'
 assert_contains "$lifecycle_test_output" 'RELEASE-PENDING' 'release-pending evidence'
 echo 'PASS: RELEASE-PENDING preflight state cannot satisfy implementation inventory'
+
+lane_execution_human_test_preflight() {
+  [ "$1" = verify1 ] || fail "unexpected Human-test lane=$1"
+  echo '  state=BLOCKED reason=invalid-session'
+  return 1
+}
+
+scoped_start_root=$test_root/scoped-start
+fixture_setup "$scoped_start_root" 1 1
+scoped_start_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+scoped_start_audit=$(lane_execution_implementation_preflight \
+  "$lifecycle_test_manifest") || fail 'role-local Human-test failure blocked scoped start audit'
+assert_contains "$scoped_start_audit" 'state=BLOCKED reason=invalid-session' \
+  'scoped start audit hid Human-test failure evidence'
+if lane_execution_preflight "$lifecycle_test_manifest" >/dev/null 2>&1; then
+  fail 'role-local Human-test failure passed strict full preflight'
+fi
+capture_start "$lifecycle_test_manifest" alpha SAY-701 "$scoped_start_base" topic/say-701
+[ "$lifecycle_test_rc" = 0 ] || fail "scoped direct start failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION STARTED' \
+  'scoped direct start did not begin'
+assert_contains "$lifecycle_test_output" 'preflight=PASS' \
+  'scoped direct start did not report passing admission'
+assert_contains "$lifecycle_test_output" 'post_audit=PASS' \
+  'scoped direct start reported a blocked post-audit'
+echo 'PASS: implementation start ignores only unrelated Human-test runtime failure'
+
+scoped_begin_root=$test_root/scoped-begin
+fixture_setup "$scoped_begin_root" 1 1
+scoped_begin_base=$(git -C "$lifecycle_test_alpha" rev-parse HEAD)
+capture_begin "$lifecycle_test_manifest" alpha SAY-702 "$scoped_begin_base" topic/say-702 \
+  alpha=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "scoped begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION STARTED' \
+  'scoped begin did not begin'
+assert_contains "$lifecycle_test_output" 'post_audit=PASS' \
+  'scoped begin reported a blocked post-audit'
+capture_begin "$lifecycle_test_manifest" alpha SAY-702 "$scoped_begin_base" topic/say-702 \
+  alpha=FREE
+[ "$lifecycle_test_rc" = 0 ] || fail "scoped duplicate begin failed: $lifecycle_test_output"
+assert_contains "$lifecycle_test_output" 'IMPLEMENTATION ALREADY STARTED' \
+  'scoped duplicate begin did not remain read-only'
+assert_contains "$lifecycle_test_output" 'mutation=no-op' \
+  'scoped duplicate begin did not report no-op mutation'
+echo 'PASS: begin mutation-boundary, post-audit, and duplicate proof ignore unrelated Human-test failure'
 
 echo 'LANE LIFECYCLE TEST PASS'

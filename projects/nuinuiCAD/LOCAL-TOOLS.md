@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.13.0`。
+current standalone helper version: `1.13.1`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -179,7 +179,7 @@ cli-dispatch.sh
   public command membership / usage / validation / dispatch
 ```
 
-これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`generate-nuinui`はgeneric ownership / manifest / runtime / lifecycle sources、nuinuiCAD project policy、operation adapters、remaining project commandsをexplicit dependency orderでassembleしてstandalone helperを生成する。`begin`は既存の`preflight` / `start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
+これらはdevelopment source onlyであり、production helperがruntimeにdynamic `source`することはない。`generate-nuinui`はgeneric ownership / manifest / runtime / lifecycle sources、nuinuiCAD project policy、operation adapters、remaining project commandsをexplicit dependency orderでassembleしてstandalone helperを生成する。`begin`は既存のstrict full diagnostic、implementation-scoped admission、`start` ownerを薄く組み合わせ、ownership state machineを二重実装しない。
 
 ### Manifest-driven preflight foundation
 
@@ -335,14 +335,14 @@ progressed new branch、remote new branch、wrong expectation、dirty / malforme
 nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
 ```
 
-`begin-command`はnormal runtime `LANES.conf`を解決・検証し、全laneのread-only fresh preflight（supplied forensic optionを含む）、generic ownerによるdeclaration-order implementation inventory、target `FREE`、既存のread-only verifyを通過した場合だけ、次のenvelopeと1行のexecutable commandを返す。
+`begin-command`はnormal runtime `LANES.conf`を解決・検証し、全laneのglobal topology / registered-worktree proof、implementation-scoped admission（supplied forensic optionを含む）、generic ownerによるdeclaration-order implementation inventory、target `FREE`、既存のread-only verifyを通過した場合だけ、次のenvelopeと1行のexecutable commandを返す。strictな`nuinui preflight`は引き続き全roleのdiagnostic commandである。
 
 ```text
 BEGIN COMMAND READY
 <absolute-helper> begin <lane> <issue> <base> <branch> <canonical-inventory> [--forensic-worktree <absolute-path>]
 ```
 
-Humanはその出力行を同じterminalで直ちに実行できる。後続の既存`begin`はcurrent full preflight、stale-inventory、target-FREE、mutation-boundary、duplicate-generation、forensic、claim、Base、checkpoint、lock、durable ownership checksを従来どおり再実行し、成功時に`IMPLEMENTATION STARTED`を返す。このhandoffはChatGPT/Humanのunconditionalな往復を追加しない。
+Humanはその出力行を同じterminalで直ちに実行できる。後続の既存`begin`はimplementation-scoped admission、stale-inventory、target-FREE、mutation-boundary、duplicate-generation、forensic、claim、Base、checkpoint、lock、durable ownership checksを従来どおり再実行し、成功時に`IMPLEMENTATION STARTED`を返す。global topology ambiguityとimplementation-lane failureは引き続きBLOCKし、無関係なHuman-test role-local runtime failureだけはimplementation capacityをBLOCKしない。このhandoffはChatGPT/Humanのunconditionalな往復を追加しない。
 
 helper-generated canonical begin lineをChatGPTが受け取った場合も、Humanへ渡す・Humanが実行するcommandはその行をverbatimで使う。argumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ戻さない。別のdiagnostic preflight / recoveryが必要な場合の既存routingはこのhandoffで変更しない。
 
@@ -388,13 +388,13 @@ The duplicate implementation path performs no Git, worktree, ref, or fetch mutat
 
 ownership schemaは[`CHECKOUTS.md`](./CHECKOUTS.md)の`version=1`をそのままconsumeする。helper versionとmetadata versionは独立している。
 
-`preflight`はread-only diagnostic / routing command。各implementation laneのFREE判定は、initializedでclean、validなcheckout / HEAD evidenceがあり、manifestの`idle`（branchならdeclared default branch、detachedならdetached）を満たし、mutation lock / active slot / releasing tombstoneがないことを使う。manifestのdefault branchに対するauthoritative `ls-remote`は別のfreshness evidenceとして表示し、cleanでもbehindなstale idle laneは`freshness=STALE`のままFREEである。strict schema violationはBLOCKする。validなactive slotのbranch / Base ancestry / claim identityが一致していれば、working treeがdirtyでも`clean=no`と`state=BUSY`を返す。branch / Base / metadata identity mismatchは引き続きBLOCKする。通常startでは、`begin`が全implementation laneのcomplete inventoryを同じauditで確認するため、別preflightを先に実行しない。
+`preflight`はread-only strict whole-topology diagnostic / routing command。各implementation laneのFREE判定は、initializedでclean、validなcheckout / HEAD evidenceがあり、manifestの`idle`（branchならdeclared default branch、detachedならdetached）を満たし、mutation lock / active slot / releasing tombstoneがないことを使う。manifestのdefault branchに対するauthoritative `ls-remote`は別のfreshness evidenceとして表示し、cleanでもbehindなstale idle laneは`freshness=STALE`のままFREEである。strict schema violationはBLOCKする。validなactive slotのbranch / Base ancestry / claim identityが一致していれば、working treeがdirtyでも`clean=no`と`state=BUSY`を返す。branch / Base / metadata identity mismatchは引き続きBLOCKする。implementation-scoped admissionは同じ全laneのglobal topology / inventory proofを行ったうえで、implementation classifier failureとcomplete implementation inventoryを必須とし、Human-test role-local classifier failureはevidenceとして表示しても実装開始のreturn codeにはしない。通常startでは、`begin`がこのimplementation-scoped auditで全implementation laneのcomplete inventoryを確認するため、別preflightを先に実行しない。
 
 `lane-init`はmanifestで宣言されたimplementation laneを正当に新規 / 再作成した場合のschema bootstrap。slot / lock / release stateがなくexact safe idleを証明できる場合だけmarkerを書く。既存active-looking checkoutからclaimを生成するrepair用途には使わない。
 
 `begin`の形式は`nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>`。inventoryはmanifest順の全implementation laneを一度ずつ`lane=FREE`または`lane=SAY-123`で指定する。targetは必ずphysically FREEで、全laneの期待値とfull preflightが一致しなければ開始しない。mutation-boundaryではauthoritative defaultがcallerのexact Baseと一致し、exact Base objectがlocalにmaterializedされ、targetのcleanなdeclared idle formが再証明できる場合だけ`start`へ委譲する。post-mutation consistencyを証明できない場合は新しいdurable ownershipを推測・削除せずBLOCKEDで返し、target generationを検証できれば`mutation_state=COMPLETED`とtargetのissue / branch / base / checkpoint / claim / clean / `state=BUSY`を返す。検証不能なら`mutation_state=UNKNOWN`と既知のrequested/new identityを返す。
 
-同じ`begin` commandを直後に誤って再実行した場合、最初のfull preflightがPASSでtargetがBUSYなら、targetのdurable Issue / branch / Base、validな既存claim、slot / checkout identity、cleanなcheckout、checkout `HEAD == Base`、no lock / tombstone、callerのcomplete inventory、およびfull preflight PASSをすべてread-onlyで再証明できたときだけduplicateとして扱う。進行後のgenerationでcheckout `HEAD != Base`ならduplicate successにしない。再証明中にstateが変化した場合、または証明できない場合は既存のBLOCKEDへfail-closedする。
+同じ`begin` commandを直後に誤って再実行した場合、最初のimplementation-scoped admissionがPASSでtargetがBUSYなら、targetのdurable Issue / branch / Base、validな既存claim、slot / checkout identity、cleanなcheckout、checkout `HEAD == Base`、no lock / tombstone、callerのcomplete inventory、およびimplementation-scoped admission PASSをすべてread-onlyで再証明できたときだけduplicateとして扱う。進行後のgenerationでcheckout `HEAD != Base`ならduplicate successにしない。再証明中にstateが変化した場合、または証明できない場合は既存のBLOCKEDへfail-closedする。
 
 duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / base / `checkpoint=<Base>` / existing `claim` / `clean=yes` / `state=BUSY` / complete inventory fields / `mutation=no-op` / `preflight=PASS`を返す。既存のdurable claimをそのまま再利用し、slot、claim、lock、tombstone、branch、checkout、inventory stateを変更しない。これは新しい`start`ではなく、`resume`や`recover`を内部で代用するものでもない。
 
@@ -410,7 +410,7 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / manifest-derived complete inventory fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。通常の`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative default / `clean=yes` / `state=FREE`を返し、exact duplicateは`IMPLEMENTATION ALREADY RELEASED`とlane / Issue / Base / saved checkpoint / released claim / released branch / authoritative default / `clean=yes` / `mutation=no-op` / `state=FREE`を返す。
 
-`start`をexplicit low-level primitiveとして直接使った場合も、full local audit後にlocal transition envelopeを返す。`start`のinventory evidenceはmanifest-derived observationであり、callerのcomplete expectation照合は`begin`の責務である。canonical normal startupでは`begin`のcomplete inventory照合と`preflight=PASS`をadmission evidenceに使う。
+`start`をexplicit low-level primitiveとして直接使った場合も、implementation-scoped local audit後にlocal transition envelopeを返す。`start`のinventory evidenceはmanifest-derived observationであり、callerのcomplete expectation照合は`begin`の責務である。canonical normal startupでは`begin`のcomplete inventory照合とimplementation-scoped admissionの`preflight=PASS`をadmission evidenceに使う。strict full `nuinui preflight`は全role diagnosticとして独立してBLOCKEDを返し得る。
 
 ### `integrate-clean` merge-only integration
 

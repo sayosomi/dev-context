@@ -328,6 +328,11 @@ role=implementation
 path=$fixture_root/root
 idle=branch
 
+[lane sub]
+role=implementation
+path=$fixture_root/lanes/sub
+idle=detached
+
 [lane verify]
 role=human-test
 path=$fixture_root/lanes/e2e
@@ -341,6 +346,89 @@ lane_execution_human_test_preflight() {
 }
 if lane_execution_preflight "$bad_human" >/dev/null 2>&1; then fail 'malformed Human-test state passed'; fi
 echo 'PASS: malformed Human-test status blocks through explicit hook'
+
+scoped_human_output=$(lane_execution_implementation_preflight "$bad_human") ||
+  fail 'role-local Human-test failure blocked implementation-scoped audit'
+assert_contains "$scoped_human_output" 'state=BLOCKED reason=malformed-human-status' \
+  'implementation-scoped audit hid Human-test failure evidence'
+assert_contains "$scoped_human_output" 'IMPLEMENTATION PREFLIGHT PASS' \
+  'implementation-scoped audit did not pass valid implementation capacity'
+scoped_human_inventory=$(lane_execution_inventory_from_audit \
+  "$bad_human" "$scoped_human_output") ||
+  fail 'implementation inventory was unavailable from scoped Human-test audit'
+[ "$scoped_human_inventory" = 'main=FREE,sub=FREE' ] ||
+  fail "scoped Human-test audit changed implementation inventory: $scoped_human_inventory"
+echo 'PASS: role-local Human-test failure remains visible without blocking implementation audit'
+
+if lane_execution_implementation_preflight "$duplicate_path_manifest" >/dev/null 2>&1; then
+  fail 'duplicate physical path passed implementation-scoped audit'
+fi
+if lane_execution_implementation_preflight "$missing_worktree_manifest" >/dev/null 2>&1; then
+  fail 'missing configured worktree passed implementation-scoped audit'
+fi
+if lane_execution_implementation_preflight "$bad_repository_manifest" >/dev/null 2>&1; then
+  fail 'repository mismatch passed implementation-scoped audit'
+fi
+echo 'PASS: global topology failures still block implementation-scoped audit'
+
+multi_human_root=$test_root/multi-human
+lane_preflight_repository_root=$multi_human_root
+new_repository "$multi_human_root" example/project
+mkdir -p "$multi_human_root/lanes"
+multi_human_healthy=$multi_human_root/lanes/healthy
+multi_human_broken=$multi_human_root/lanes/broken
+add_detached_lane "$multi_human_healthy"
+add_detached_lane "$multi_human_broken"
+initialize_lane "$multi_human_root/root"
+multi_human_manifest=$multi_human_root/multi-human.conf
+write_manifest "$multi_human_manifest" "version=1
+repository=example/project
+default_branch=main
+
+[lane only]
+role=implementation
+path=$multi_human_root/root
+idle=branch
+
+[lane healthy]
+role=human-test
+path=$multi_human_healthy
+idle=detached
+
+[lane broken]
+role=human-test
+path=$multi_human_broken
+idle=detached"
+lane_execution_human_test_preflight() {
+  case "$1" in
+    healthy)
+      echo '  state=FREE'
+      return 0
+      ;;
+    broken)
+      echo '  state=BLOCKED reason=invalid-session'
+      return 1
+      ;;
+    *) fail "unexpected multi-Human-test lane=$1" ;;
+  esac
+}
+if lane_execution_preflight "$multi_human_manifest" >/dev/null 2>&1; then
+  fail 'mixed Human-test runtime health passed strict full preflight'
+fi
+multi_human_scoped=$(lane_execution_implementation_preflight "$multi_human_manifest") ||
+  fail 'mixed Human-test runtime health blocked implementation audit'
+assert_contains "$multi_human_scoped" 'lane name=healthy role=human-test' \
+  'healthy Human-test lane was omitted from mixed scoped audit'
+assert_contains "$multi_human_scoped" 'lane name=broken role=human-test' \
+  'broken Human-test lane was omitted from mixed scoped audit'
+assert_contains "$multi_human_scoped" 'reason=invalid-session' \
+  'broken Human-test evidence was omitted from mixed scoped audit'
+multi_human_inventory=$(lane_execution_inventory_from_audit \
+  "$multi_human_manifest" "$multi_human_scoped") ||
+  fail 'mixed Human-test scoped audit inventory was unavailable'
+[ "$multi_human_inventory" = 'only=FREE' ] ||
+  fail "mixed Human-test scoped audit inventory changed: $multi_human_inventory"
+echo 'PASS: one malformed Human-test lane does not consume implementation capacity'
 
 busy_root=$test_root/busy
 lane_preflight_repository_root=$busy_root

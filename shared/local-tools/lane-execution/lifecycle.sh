@@ -78,11 +78,11 @@ lane_execution__audit() {
   lane_execution_audit_output=
   lane_execution_audit_rc=0
   if [ -n "$lane_execution_audit_forensic" ]; then
-    lane_execution_audit_output=$(lane_execution_preflight "$lane_execution_audit_manifest" \
+    lane_execution_audit_output=$(lane_execution_implementation_preflight "$lane_execution_audit_manifest" \
       --forensic-worktree "$lane_execution_audit_forensic" 2>&1) ||
       lane_execution_audit_rc=$?
   else
-    lane_execution_audit_output=$(lane_execution_preflight "$lane_execution_audit_manifest" 2>&1) ||
+    lane_execution_audit_output=$(lane_execution_implementation_preflight "$lane_execution_audit_manifest" 2>&1) ||
       lane_execution_audit_rc=$?
   fi
   lane_execution_audit_inventory=

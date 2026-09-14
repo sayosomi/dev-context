@@ -1,6 +1,6 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.13.0
+V=1.13.1
 K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
@@ -235,11 +235,11 @@ nuinui_begin_command() {
   nuinui_begin_command_preflight_output=
   nuinui_begin_command_preflight_rc=0
   if [ "$nuinui_forensic_option_active" = 1 ]; then
-    nuinui_begin_command_preflight_output=$(lane_execution_preflight \
+    nuinui_begin_command_preflight_output=$(lane_execution_implementation_preflight \
       "$NUINUI_RUNTIME_MANIFEST" --forensic-worktree "$nuinui_forensic_worktree" 2>&1) ||
       nuinui_begin_command_preflight_rc=$?
   else
-    nuinui_begin_command_preflight_output=$(lane_execution_preflight \
+    nuinui_begin_command_preflight_output=$(lane_execution_implementation_preflight \
       "$NUINUI_RUNTIME_MANIFEST" 2>&1) ||
       nuinui_begin_command_preflight_rc=$?
   fi

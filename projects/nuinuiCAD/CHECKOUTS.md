@@ -81,14 +81,14 @@ nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-s
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
 ```
 
-このhelperはnormal runtime manifestをread-onlyで解決し、fresh full preflight、canonical declaration-order inventory、target `FREE`、existing read-only verifyを行って、copy/paste-readyな次の既存positional commandを出力する。
+このhelperはnormal runtime manifestをread-onlyで解決し、global topology / registered-worktree proof、implementation-scoped admission、canonical declaration-order inventory、target `FREE`、existing read-only verifyを行って、copy/paste-readyな次の既存positional commandを出力する。strictな`nuinui preflight`は引き続き全roleのdiagnostic commandであり、Human-test role-local runtime failureがあってもこのimplementation capacityのproofとは混同しない。
 
 ```text
 BEGIN COMMAND READY
 <absolute-helper> begin <lane> <issue> <base> <branch> <canonical-inventory> [--forensic-worktree <absolute-path>]
 ```
 
-Humanはその出力行をChatGPTへ戻さず、同じterminalでverbatimに実行する。既存`begin`が通常のmutation-time revalidationを行い、成功後に`IMPLEMENTATION STARTED`、normal checkpoint / continuationへ進む。generated lineはargumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ変換しない。
+Humanはその出力行をChatGPTへ戻さず、同じterminalでverbatimに実行する。既存`begin`が同じimplementation-scoped admissionと通常のmutation-time revalidationを行い、成功後に`IMPLEMENTATION STARTED`、normal checkpoint / continuationへ進む。generated lineはargumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ変換しない。
 
 ### Canonical Manual E2E startup handoff
 

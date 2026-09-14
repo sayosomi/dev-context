@@ -78,6 +78,24 @@ accepted only after the complete receipt, initialization marker, tombstone
 absence, lock absence, checkout idle proof, Base-to-checkpoint ancestry, and
 checkpoint-to-fresh-authoritative-default ancestry are all re-proven.
 
+## Role-aware operation admission
+
+`nuinui preflight` is the strict whole-topology diagnostic surface. It reports
+role-local runtime failures from every declared lane, including malformed
+Human-test marker/session state, and remains `PREFLIGHT BLOCKED` when any such
+failure is present. Operation-specific admission uses the same classification
+and topology path but requires only the role-local runtime dimensions relevant
+to that operation.
+
+Global structural or inventory ambiguity cross-blocks operations: manifest and
+declared paths, repository identity, duplicate physical paths,
+registered-worktree inventory, and checkout readability must remain provable
+for every declared lane. After that topology proof succeeds, a role-local
+Human-test runtime failure does not consume or invalidate independent
+implementation capacity. Implementation `begin` and `start` still require
+complete declaration-order implementation inventory and safe implementation
+lane state.
+
 ## Human-test execution
 
 Human-test commands accept an explicit declared Human-test lane. Short forms
