@@ -230,7 +230,7 @@ HUMAN_CHECKOUT_FIXTURE=$HUMAN_CHECKOUT_FIXTURE_DIR/fixture.nui
 HUMAN_CHECKOUT_ALIAS_FIXTURE=$HUMAN_CHECKOUT_ALIAS/issue-232-fixture-dir/fixture.nui
 HUMAN_SESSION_ROOT=$ROOT/nuinui-vscode-e2e.human
 HUMAN_NESTED_ROOT=$ROOT/nuinui-vscode-e2e.parent/nested
-HUMAN_HANDOFF=$ROOT/nuinui-SAY-401-human-e2e.env
+HUMAN_HANDOFF=$ROOT/nuinui-SAY-401-human-human-e2e.env
 HUMAN_BAD_ROOT=$(dirname "$ROOT")/nuinui-vscode-e2e.invalid
 HUMAN_BAD_HANDOFF=$ROOT/wrong-handoff.env
 printf '%s\n' fixture > "$HUMAN_FIXTURE"
@@ -254,6 +254,14 @@ human_state_snapshot() {
 }
 
 human_handoff_for_issue() {
+  printf '%s/nuinui-%s-human-human-e2e.env\n' "$ROOT" "$1"
+}
+
+human_handoff_for_lane_issue() {
+  printf '%s/nuinui-%s-%s-human-e2e.env\n' "$ROOT" "$1" "$2"
+}
+
+human_legacy_handoff_for_issue() {
   printf '%s/nuinui-%s-human-e2e.env\n' "$ROOT" "$1"
 }
 
@@ -292,7 +300,7 @@ write_human_preparing_session() {
 
 write_human_legacy_session() {
   printf 'issue=%s\nref=%s\nroot=%s\nhandoff=%s\ncdp_port=9223\nlaunch_pid=1\n' \
-    "$1" "$2" "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue "$1")" > "$HUMAN_SESSION"
+    "$1" "$2" "$HUMAN_SESSION_ROOT" "$(human_legacy_handoff_for_issue "$1")" > "$HUMAN_SESSION"
 }
 
 run_human_preflight() {
@@ -584,7 +592,7 @@ clear_human_state
 
 write_human_marker SAY-412 "$BASE"
 write_human_current_session_values other-human SAY-412 "$BASE" "$HUMAN_FIXTURE" \
-  "$HUMAN_SESSION_ROOT" "$(human_handoff_for_issue SAY-412)"
+  "$HUMAN_SESSION_ROOT" "$(human_handoff_for_lane_issue SAY-412 other-human)"
 run_human_preflight
 [ "$HUMAN_PREFLIGHT_RC" != 0 ] || fail 'session lane mismatch was accepted'
 assert_human_state human BLOCKED

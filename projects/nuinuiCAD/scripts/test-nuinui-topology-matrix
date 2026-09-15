@@ -37,6 +37,8 @@ run_topology() {
   matrix_prepare_args="$matrix_root/prepare-args"
   matrix_fixture="$matrix_root/fixture file's.nui"
   mkdir -p "$matrix_project/scripts" "$matrix_root/unrelated" "$(dirname "$matrix_remote")"
+  matrix_e2e_temp_parent=$matrix_root/e2e-temp
+  mkdir -p "$matrix_e2e_temp_parent"
   cp "$SOURCE_HELPER" "$matrix_helper"
   cp "$SOURCE_HANDOFF" "$matrix_handoff"
   chmod 755 "$matrix_helper" "$matrix_handoff"
@@ -102,6 +104,7 @@ run_topology() {
   export NUINUI_SELFTEST=1 NUINUI_SELFTEST_RESULT_REPO="$matrix_result"
   export NUINUI_E2E_STATUS_HELPER="$matrix_prepare"
   export NUINUI_TEST_PREPARE_ARGS="$matrix_prepare_args"
+  export NUINUI_E2E_TEMP_PARENT="$matrix_e2e_temp_parent"
   cd "$matrix_root/unrelated"
 
   expect_blocked "$matrix_name preflight rejects uninitialized lanes" "$matrix_helper" preflight
@@ -254,8 +257,34 @@ run_topology() {
       fail "$matrix_name generated E2E continuation cleanup"
     echo "PASS: $matrix_name generated E2E handoff, parser parity, quoting, and duplicate guard"
   else
-    "$matrix_helper" e2e-start manual-a SAY-900 "$matrix_base" >/dev/null ||
+    "$matrix_helper" e2e-start manual-a "$issue" "$matrix_base" >/dev/null ||
       fail "$matrix_name mixed Human-test BUSY setup"
+    human_a_git_dir=$(git -C "$human_a" rev-parse --absolute-git-dir) ||
+      fail "$matrix_name current Human-test session git directory"
+    human_a_session=$human_a_git_dir/nuinui-e2e-session
+    human_a_root=$matrix_e2e_temp_parent/nuinui-vscode-e2e.manual-a
+    human_a_handoff=$matrix_e2e_temp_parent/nuinui-$issue-manual-a-human-e2e.env
+    printf 'lane=manual-a\nissue=%s\nref=%s\nsource_fixture=%s\nroot=%s\nhandoff=%s\ncdp_port=9554\nlaunch_pid=1\nlocale=default\n' \
+      "$issue" "$matrix_base" "$matrix_fixture" "$human_a_root" \
+      "$human_a_handoff" > "$human_a_session" ||
+      fail "$matrix_name current Human-test session setup"
+    matrix_preflight=$("$matrix_helper" preflight 2>&1) ||
+      fail "$matrix_name preflight with current session BUSY/FREE lanes"
+    contains "$matrix_preflight" 'PREFLIGHT PASS' "$matrix_name current-session preflight"
+    human_session_busy_block=$(printf '%s\n' "$matrix_preflight" | awk '
+      index($0, "lane name=manual-a role=human-test ") == 1 { found=1; print; next }
+      found && /^lane name=/ { exit }
+      found { print }
+    ')
+    human_session_free_block=$(printf '%s\n' "$matrix_preflight" | awk '
+      index($0, "lane name=manual-b role=human-test ") == 1 { found=1; print; next }
+      found && /^lane name=/ { exit }
+      found { print }
+    ')
+    contains "$human_session_busy_block" 'state=BUSY' "$matrix_name current session is BUSY"
+    contains "$human_session_busy_block" "owner_issue=$issue" "$matrix_name current session owner Issue"
+    contains "$human_session_busy_block" "owner_ref=$matrix_base" "$matrix_name current session owner ref"
+    contains "$human_session_free_block" 'state=FREE' "$matrix_name other current-session lane remains FREE"
     if e2e_lane_omitted_output=$(
       "$matrix_helper" e2e-start-command --issue "$issue" \
         --tested-ref "$matrix_base" --executor human \
@@ -325,9 +354,27 @@ run_topology() {
       --tested-ref "$matrix_base" --executor human --fixture "$matrix_fixture" --port 9555
     "$matrix_helper" e2e-release manual-b "$issue" "$matrix_base" >/dev/null ||
       fail "$matrix_name explicit generated E2E cleanup"
-    "$matrix_helper" e2e-release manual-a SAY-900 "$matrix_base" >/dev/null ||
+    human_a_wrong_handoff=$matrix_e2e_temp_parent/nuinui-$issue-manual-b-human-e2e.env
+    human_a_session_backup=$matrix_root/human-a-session-backup
+    cp "$human_a_session" "$human_a_session_backup" ||
+      fail "$matrix_name current Human-test session backup"
+    sed "s#^handoff=.*#handoff=$human_a_wrong_handoff#" \
+      "$human_a_session_backup" > "$human_a_session" ||
+      fail "$matrix_name wrong-lane session handoff setup"
+    if wrong_lane_preflight=$(
+      "$matrix_helper" preflight 2>&1
+    ); then
+      printf '%s\n' "$wrong_lane_preflight"
+      fail "$matrix_name wrong-lane current session unexpectedly passed preflight"
+    fi
+    contains "$wrong_lane_preflight" 'reason=invalid-session' \
+      "$matrix_name wrong-lane current session was not rejected as invalid-session"
+    mv "$human_a_session_backup" "$human_a_session" ||
+      fail "$matrix_name current Human-test session restore"
+    rm "$human_a_session" || fail "$matrix_name current Human-test session cleanup"
+    "$matrix_helper" e2e-release manual-a "$issue" "$matrix_base" >/dev/null ||
       fail "$matrix_name mixed Human-test cleanup"
-    echo "PASS: $matrix_name generated explicit E2E handoff and mixed occupancy guards"
+    echo "PASS: $matrix_name generated explicit E2E handoff, current-session occupancy, and wrong-lane guard"
   fi
   echo "PASS: topology $matrix_name (${matrix_impl_count} implementation + ${matrix_human_count} Human-test) helper_sha256=$SOURCE_HELPER_SHA256 helper_blob=$SOURCE_HELPER_BLOB"
 }

@@ -78,10 +78,11 @@ lane_execution_nuinui_e2e__valid_session_root() {
 }
 
 lane_execution_nuinui_e2e__expected_session_handoff() {
+  [ "$#" = 2 ] || return 1
   lane_execution_nuinui_e2e_temp_parent=${NUINUI_E2E_TEMP_PARENT-/private/tmp}
   lane_execution_nuinui_e2e_temp_parent=${lane_execution_nuinui_e2e_temp_parent%/}
-  printf '%s/nuinui-%s-human-e2e.env\n' \
-    "$lane_execution_nuinui_e2e_temp_parent" "$1"
+  printf '%s/nuinui-%s-%s-human-e2e.env\n' \
+    "$lane_execution_nuinui_e2e_temp_parent" "$1" "$2"
 }
 
 lane_execution_nuinui_e2e__valid_port() {
@@ -173,7 +174,8 @@ lane_execution_nuinui_e2e__read_session() {
     [ "$lane_execution_nuinui_e2e_session_kind" = pre-locale ]; then
     [ "$lane_execution_nuinui_e2e_session_handoff" = \
       "$(lane_execution_nuinui_e2e__expected_session_handoff \
-        "$lane_execution_nuinui_e2e_session_issue")" ] || return 1
+        "$lane_execution_nuinui_e2e_session_issue" \
+        "$lane_execution_nuinui_e2e_session_lane")" ] || return 1
   fi
   lane_execution_nuinui_e2e_session_cdp=$(nuinui_ownership_field \
     "$lane_execution_nuinui_e2e_session_path" cdp_port) || return 1
