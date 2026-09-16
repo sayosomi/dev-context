@@ -173,15 +173,15 @@ remote `main` advanceは観測してよい。contract / ownershipを無効化す
 1. current sliceの実装とfocused verificationを完了する。
 2. branchへcommit / pushしcurrent stateをremote保存する。
 3. Base checkpoint以降のremote `main` changeを確認する。
-4. 原則Lunaが必要なintegration / conflict fixをそのlaneで行う。semantic driftが`NON-INTERFERING`でcurrent-base freshnessだけがmerge gateとなるexact narrow caseは`nuinui integrate-clean`を使ってよい。
+4. ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditする。conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使い、それ以外のintegration / conflict fixはそのlaneのLunaが行う。
 5. integration後のrequired verificationを行う。
 6. blocking review / merge gateへ進む。
 
 integration checkpoint前に相手laneの進行中branchへ依存しない。dependencyが必要なら依存先mergeまでsafe checkpointで止める。Post-integration Driftの扱いは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
 
-### Conflict-free merge-only refresh exception
+### Conflict-free merge-only Human integration exception
 
-Integration Watermark到達後のalready-reviewed topicについて、ChatGPTがpost-integration semantic driftを`NON-INTERFERING`とfresh判定し、repository merge gateがcurrent-base freshnessだけを要求する場合は、`nuinui integrate-clean`をsame active durable generationでHumanが実行してよい。
+first / routine Integration checkpointで、ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、conflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、prior Integration WatermarkまたはReview Headなしで`nuinui integrate-clean`をsame active durable generationでHumanが実行してよい。既存のpost-review refreshでは、Integration Watermark到達後のalready-reviewed topic、freshな`NON-INTERFERING` drift判定、およびcurrent-base freshnessだけを要求するmerge gateを引き続き要求する。
 
 このhelperはnew lane claim / Base refresh / source implementation routeではない。current durable slotをconsumeし、exact Issue / claim / branch / Base / local topic / remote topic / current main / clean stateをmutation boundaryで再検証する。conflict resolutionやintegration fixは行わず、conflictまたはpre-commit failureではoriginal topic checkpointへのexact rollbackを証明する。push failure後はverified local merge commitを保持してfresh diagnosisへ戻す。
 

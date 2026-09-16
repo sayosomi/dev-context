@@ -157,7 +157,7 @@ pr-auto-merge.sh
   reservation state machine
 
 integration-clean.sh
-  conflict-free merge-only Human integration refresh
+  ChatGPT-authorized deterministic conflict-free merge-only Human integration
 
 e2e.sh
   nuinuiCAD E2E adapter: presentation, session integration, and e2e-start-local-main interim semantics;
@@ -230,8 +230,8 @@ current commands:
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
 | `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | reviewed exact headへrequired CI pending時だけGitHub Auto-mergeを予約 |
-| `nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | ChatGPT-authorized NON-INTERFERING merge-gate refreshをselected manifest laneでconflict-free merge-only実行し、verify後にnormal push |
-| `nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]` | settledなcaller intentをread-onlyでcanonicalなshell-safe positional `integrate-clean` commandへ変換。semantic NON-INTERFERING authorization、verification-plan selection、mutationは行わない |
+| `nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | eligible Integration checkpointでChatGPTがauthorizeしたdeterministic conflict-free merge-only integrationをselected manifest laneで実行し、verify後にnormal push |
+| `nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]` | settledなcaller intentをread-onlyでcanonicalなshell-safe positional `integrate-clean` commandへ変換。semantic eligibility authorization、verification-plan selection、mutationは行わない |
 | `nuinui e2e-start [<human-test-lane>] <SAY-123> <tested-ref>` | unique Human-test laneのshort form、またはexplicit manifest laneをexact tested refへ固定しmarker作成 |
 | `nuinui e2e-start-local-main [<human-test-lane>] <SAY-123> <tested-ref>` | Active interim workflow時だけselected Human-test laneをproject policyのimplementation sourceへ安全に固定 |
 | `nuinui e2e-release [<human-test-lane>] <SAY-123> <tested-ref>` | unique Human-test laneのshort form、またはexplicit manifest laneでcaller identityを照合し、verified stateをlatest authoritative default branchへ戻してmarkerを削除。exact duplicateはread-only no-op |
@@ -416,17 +416,17 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 ### `integrate-clean` merge-only integration
 
-`nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->` は、already-reviewed topicに対するcurrent-base freshnessだけが必要な場合のnarrow Human integration helper。
+`nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest|->` は、ChatGPTがeligibleなIntegration checkpointでauthorizeしたdeterministic conflict-free merge-only integrationのためのHuman handoff helper。`expected-topic-head`はcallerがauthorizeしたexact topic checkpointであり、orchestration contextに応じてimplementation checkpointまたはalready-reviewed Review Headとなる。
 
-通常のHuman handoffでは、ChatGPTはfreshにauthorizeしたIssue / claim / Review Head / current mainとsettledなabsolute verification script（必要ならexact effective-file manifest）をnamed optionsで渡し、Humanは次を同じterminalで実行する。
+通常のHuman handoffでは、ChatGPTはfreshにauthorizeしたIssue / claim / topic checkpoint / current mainとsettledなabsolute verification script（必要ならexact effective-file manifest）をnamed optionsで渡し、Humanは次を同じterminalで実行する。
 
 ```bash
-nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <reviewed-topic-head> --main <current-main> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]
+nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <topic-checkpoint> --main <current-main> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]
 ```
 
 成功時の`INTEGRATE CLEAN COMMAND READY`に続く1行が、既存のpositional `integrate-clean` commandをexact order・shell quoting・manifest sentinel `-`付きで出力する。Humanはその行をverbatimで直ちに実行する。helperはsemantic eligibility、test selection、またはintegration mutationを行わず、Issue / claim / topic head / mainのcaller expectationsをcurrent stateへ置き換えない。
 
-eligibilityとpost-integration driftのsemantic `NON-INTERFERING`判断はChatGPTが行い、helper自身は判断しない。active durable lane / Issue / claim / branch / Base / exact local and remote topic / exact current main / clean stateを再検証してから、exact current mainの`--no-commit --no-ff` mergeだけを行う。
+eligibilityとpost-integration driftのsemantic判断はChatGPTが行い、helper自身は判断しない。active durable lane / Issue / claim / branch / Base / exact local and remote topic / exact current main / clean stateを再検証してから、exact current mainの`--no-commit --no-ff` mergeだけを行う。
 
 `verification-script`はChatGPTがcurrent Task contractから確定したabsolute executable pathを渡す。helperはtest selectionやCI classificationを再決定しない。optional manifestを使う場合はabsolute readable regular fileとし、`expected-main -> prospective merge tree`のNUL-delimited exact file setと比較する。
 
