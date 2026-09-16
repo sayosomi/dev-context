@@ -146,13 +146,13 @@ release anomalyがpost-merge E2E-only handoffで発生した場合:
 
 ## Merge-only Human integration continuation
 
-Integration Watermark到達済みのalready-reviewed Review Headに対し、fresh post-integration semantic driftが`NON-INTERFERING`で、repository merge gateがcurrent-base freshnessだけを要求する場合は、[`CODING-AGENT.md`](./CODING-AGENT.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のnarrow exceptionとしてHuman `nuinui integrate-clean`へ直接handoffしてよい。
+ChatGPTがIntegration checkpointでBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、conflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、[`CODING-AGENT.md`](./CODING-AGENT.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のdeterministic Human routeとして`nuinui integrate-clean`へ直接handoffしてよい。first / routine checkpointではIntegration WatermarkまたはReview Headを要求しない。
 
-このrouteではnew implementation lane / Base / Luna sessionを作らない。current active durable generationのIssue / claim / Review Headとfresh current main、settled verification script、optional expected-file manifestをexact inputとして渡す。
+このrouteではnew implementation lane / Base / Luna sessionを作らない。current active durable generationのIssue / claim / exact topic checkpoint（implementation checkpointまたはalready-reviewed Review Head）、fresh current main、settled verification script、optional expected-file manifestをexact inputとして渡す。既存のpost-review merge-gate refreshでは、Integration Watermark、Review Head、freshな`NON-INTERFERING` drift判定、focused merge-only review、およびfresh required CIを引き続き要求する。
 
-`INTEGRATION PUSHED`を受けたら、ChatGPTはnew merge headのparents、effective diff / merge tree、verification evidence、remote topic/current mainをfresh確認してfocused merge-only blocking reviewを行う。その後もrequired PR CIを通常どおり満たす。
+routine checkpointで`INTEGRATION PUSHED`を受けたら、ChatGPTはnew merge headのparents、effective diff / merge tree、verification evidence、remote topic/current mainをfresh確認してpushed-state blocking reviewを行い、normal PR / merge workflowへ進む。post-review refreshではfocused merge-only blocking reviewを行い、その後もfresh required PR CIを通常どおり満たす。
 
-helperが`BLOCKED:` / `ERROR:`を返し、conflict、source edit、integration fix、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常Luna lifecycleへ戻す。
+helperが`BLOCKED:` / `ERROR:`を返した場合、stale / mechanical preconditionがsource reasoningなしに一意にrefreshできるかをChatGPTがfreshに再評価する。解決可能なら同じHuman routeを継続できるが、conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常Luna lifecycleへ戻す。
 
 ## Final closure declaration rule
 

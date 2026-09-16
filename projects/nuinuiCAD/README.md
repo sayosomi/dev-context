@@ -127,7 +127,7 @@ each declared Human-test lane    -> at most one current Manual E2E Issue
 
 implementation lanesは互いの途中変更を取り込まない。
 
-一方のPRが先にmainへmergeされても、もう一方はactive slice途中でmerge-main / rebase-mainしない。自身のintegration checkpointへ到達したときだけlatest intended baseをLunaが統合し、必要なconflict / integration fixとverificationを行う。
+一方のPRが先にmainへmergeされても、もう一方はactive slice途中でmerge-main / rebase-mainしない。Integration checkpointの実行は[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) / [`CODING-AGENT.md`](./CODING-AGENT.md)に従い、eligibleなdeterministic merge-only workはHuman `nuinui integrate-clean`を使い、integration reasoning / conflict / fixが必要な場合はLunaが担当する。
 
 同じlaneで次Taskへ進むときは、前Taskをmergeまたはremote保存済みsafe checkpointでreleaseした後、新Task startとしてlatest remote stateからnew Base checkpointを固定する。
 

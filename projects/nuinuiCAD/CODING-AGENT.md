@@ -83,7 +83,7 @@ Luna owns:
 - focused / required test execution;
 - implementation-side failure diagnosis and fix within the settled contract;
 - branch commit / push;
-- integration checkpointで必要なlatest-main integration / conflict resolution / integration fix。ただし上記のconflict-free merge-only Human integration exceptionにexactly該当するfreshness-only refreshは除く。
+- integration checkpointで必要なlatest-main integration reasoning / conflict resolution / integration fix。ただし上記のeligible deterministic merge-only Human integrationは除く。
 
 Lunaへopen-ended product designやarchitecture選択を委ねない。
 
@@ -105,11 +105,11 @@ Human terminal assistanceを使う場合、ChatGPTはshared `human-terminal-inst
 
 ### Conflict-free merge-only Human integration exception
 
-already-reviewed Review HeadがIntegration Watermark到達後にremote `main`からbehindになり、ChatGPTがpost-integration semantic driftを`NON-INTERFERING`とfresh判定した上で、repository merge gateがcurrent-base freshnessだけを要求する場合は、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)の`nuinui integrate-clean`をHuman terminal assistanceとして使ってよい。
+ChatGPTがIntegration checkpointでBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、conflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)の`nuinui integrate-clean`をHuman terminal assistanceとして使ってよい。first / routine checkpointではprior Integration Watermarkまたはblocking Review Headを要求しない。既存のpost-review merge-gate refreshでは、already-reviewed Review Head、Integration Watermark、freshな`NON-INTERFERING` drift判定、およびcurrent-base freshnessだけを要求するmerge gateを引き続き要求する。
 
-このexceptionはsource implementation ownershipをHumanへ移さない。Human/helperが許可されるmutationは、exact durable claim generation上でのconflict-free `--no-commit --no-ff` current-main merge、settled verifier、verified merge commit、normal non-force topic pushだけ。
+このexceptionはsource implementation ownershipをHumanへ移さない。Human/helperが許可されるmutationは、exact durable identity / claim generation、exact topic / main、clean checkoutを再検証した上でのconflict-free merge-only operation、settled verifier、optional file manifest、race checks、verified exact merge commit、normal non-force topic pushだけ。
 
-conflict、integration fix、source edit、relevant/ambiguous drift、verification failureのdiagnosis、test-debug loop、post-commit ambiguous stateは通常のLuna xhigh lifecycleへ戻す。helper成功後もfresh required PR CIとChatGPT blocking reviewを省略しない。
+stale / mechanical precondition failureがsource reasoningなしに一意にrefreshできる場合は、fresh ChatGPT evaluation後もHuman routeへ残してよい。conflict、integration fix、source edit、relevant / ambiguous semantic drift、verification failureのdiagnosis、test-debug loop、ambiguous repository state、post-commit ambiguous stateは通常のLuna xhigh lifecycleへ戻す。helper成功後もfresh required PR CIとChatGPT blocking reviewを省略しない。
 
 一方、次はHuman terminal assistanceへ委譲せずLuna xhighへ渡す。
 
@@ -118,7 +118,7 @@ conflict、integration fix、source edit、relevant/ambiguous drift、verificati
 - code changeを伴うimplementation-side failure diagnosis;
 - broad local iteration / test-debug loop;
 - merge / rebase conflict resolution;
-- integration checkpointのintegration fix;
+- integration checkpointのintegration reasoning / conflict resolution / integration fix。ただし上記のeligible deterministic merge-only Human integrationは除く;
 - branch commit / pushを含むsource-code implementation execution。
 
 Documentation / policy direct execution exceptionのdocumentation / policy editingと、narrow CI/tooling direct execution exceptionのCI/tooling editing / focused verification / review / mergeは、この一覧のsource-code implementationには含めない。
@@ -134,7 +134,7 @@ ChatGPT determines the operation
 -> documentation / policy direct-execution exception? YES -> ChatGPT direct execution after explicit user plan approval
 -> narrow CI/tooling direct-execution exception? YES -> ChatGPT direct execution after explicit user plan approval
 -> eligible one-shot Human-authorized exact source-fix? YES -> Human `nuinui exact-fix`
--> eligible conflict-free merge-only integration refresh? YES -> Human `nuinui integrate-clean`
+-> eligible deterministic conflict-free merge-only Integration checkpoint? YES -> Human `nuinui integrate-clean`
 -> simple deterministic local operation? YES -> Human terminal assistance
 -> NO / source-code implementation work -> Luna xhigh
 ```
@@ -203,14 +203,17 @@ remote advanceを理由にactive slice途中でbaseをrefreshしない。
 
 current source-code sliceの実装とfocused verificationが完了し、remoteへ保存された時点でlatest remote `main`を再確認する。
 
-必要なintegrationは原則そのlaneのLunaが行う。ただし、Review Headがalready-reviewedで、post-integration semantic driftがChatGPTにより`NON-INTERFERING`とfresh判定され、唯一のmerge-gate理由がcurrent-base freshnessであり、conflict / source edit / integration fix / debuggingを必要としない場合だけ、Human `nuinui integrate-clean`を使える。
+ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditした結果、conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使う。その他のintegration、またはconflict / source edit / integration fix / debuggingを必要とする場合はそのlaneのLunaが担当する。
 
 ```text
 slice implementation complete
 -> push checkpoint
 -> inspect latest main
--> Luna merge/rebase/conflict resolution/integration fix
+-> ChatGPT drift / contract audit
+-> eligible deterministic merge-only? YES -> Human `nuinui integrate-clean`
+-> otherwise Luna integration reasoning / conflict resolution / integration fix
 -> required verification
+-> Integration Watermark
 -> blocking review
 -> merge
 ```

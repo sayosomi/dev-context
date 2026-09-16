@@ -112,11 +112,17 @@ current slice implementationとfocused verificationを完了しremoteへ保存�
 pushed implementation checkpoint
 -> inspect Base checkpoint..latest main
 -> determine relevant drift
--> Luna integrates latest intended base in same lane, or the exact freshness-only exception uses Human `nuinui integrate-clean`
--> resolve conflicts / integration regressions
--> required broad verification
--> record Integration Watermark
--> blocking review
+-> ChatGPT audits Base/current-main drift and current contract
+-> deterministic conflict-free merge-only integration with settled verification?
+   -> Human `nuinui integrate-clean`
+   -> required verification
+   -> record Integration Watermark
+   -> blocking review
+   or
+-> integration reasoning / conflict resolution / integration fix required
+   -> Luna xhigh integrates and verifies
+   -> record Integration Watermark
+   -> blocking review
 -> merge
 ```
 
@@ -154,13 +160,15 @@ blocking fix中やreview中にremote `main`がadvanceした場合、その差分
 
 blocking review PASS時にはexact topic SHAを`Review Head`として扱う。PR / auto-merge / merge直前はcurrent `main`と`Post-integration Drift`をfreshに確認するが、`NON-INTERFERING` driftならReview Headを作り直すためのintegrationを要求しない。
 
-#### Merge-gate freshness-only Human refresh
+#### Deterministic merge-only Human integration
 
-`MERGE-GATE`のうち、underlying post-integration semantic drift自体はChatGPTが`NON-INTERFERING`とfresh判定でき、merge gateの唯一の要求がcurrent-base CI / branch freshnessである場合は、source implementationとは別のdeterministic integration operationとしてHuman `nuinui integrate-clean`を使ってよい。
+ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、integrationがconflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、source implementationとは別のdeterministic integration operationとしてHuman `nuinui integrate-clean`を使ってよい。これはfirst / routine Integration checkpointにも適用でき、prior Integration Watermarkまたはblocking Review Headを要求しない。
 
-preconditionはalready-reviewed exact Review Head、same durable generation、known exact verification plan、no Manual E2E追加要求、conflict / source edit / integration fix / ambiguous diagnosis不要であること。helperはcurrent mainをconflict-free merge-onlyで取り込み、verification後にnormal pushする。successful pushed merge headでIntegration Watermarkを更新し、parents / effective diff / verification evidence / remote stateを対象とするfocused blocking reviewとfresh required PR CIを行う。
+first / routine checkpointではexact implementation checkpoint、same durable generation、fresh current main、known exact verification plan、no Manual E2E追加要求、conflict / source edit / integration fix / ambiguous diagnosis不要であることがpreconditionとなる。successful `INTEGRATION PUSHED`ではmerged current-main SHAを`Integration Watermark`として記録し、pushed-state blocking reviewとnormal PR / merge workflowへ進む。
 
-この条件を外れた`RELEVANT` / `MERGE-GATE` integrationは従来どおりLunaが担当する。
+既存のpost-review merge-gate refreshでは、already-reviewed exact Review Headと既存のIntegration Watermarkがあり、post-integration semantic driftをChatGPTがfreshに`NON-INTERFERING`と判定し、merge gateの唯一の要求がcurrent-base CI / branch freshnessであることが追加のpreconditionとなる。この場合もhelperはcurrent `main`をconflict-free merge-onlyで取り込み、verification後にnormal pushする。successful pushed merge headでIntegration Watermarkを更新し、parents / effective diff / verification evidence / remote stateを対象とするfocused blocking reviewとfresh required PR CIを行う。
+
+`integrate-clean`のstale / mechanical precondition failureが、source reasoningなしに一意にfreshへ更新できる場合は、ChatGPTのfresh re-evaluation後も同じdeterministic Human routeに残してよい。conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous repository stateが必要なintegrationはLunaが担当する。Human `integrate-clean`はdeterministic terminal assistanceであり、別のsource implementation executorではない。
 
 ### Verification boundary
 
