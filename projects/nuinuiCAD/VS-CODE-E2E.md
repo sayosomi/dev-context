@@ -8,6 +8,7 @@ VS Code extensionのuser-facing behaviorをManual E2Eで確認するときの**i
 - current Manual E2E executorはHuman only。
 - local versioned helperのavailability / sync / repair / fallbackは [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) がauthority。
 - locale-specific / translated-UI verificationは必要な場合だけ [`VS-CODE-E2E-LOCALE.md`](./VS-CODE-E2E-LOCALE.md) を追加で読む。
+- abnormal mouse / pointer state（例: idle `MouseEvent.buttons === 16`）の切り分けは [`VS-CODE-E2E-INPUT-TROUBLESHOOTING.md`](./VS-CODE-E2E-INPUT-TROUBLESHOOTING.md) を読む。
 - この文書はHumanが操作するVS Code production-hostのisolation / local preparation / launch baselineをownerとする。
 
 `LUNA-E2E-PLAYBOOK.md`はinactive historical reactivation referenceであり、normal Human Manual E2Eのhost authorityではない。
@@ -293,6 +294,8 @@ Host preparationまたはHuman executionにGUI-only permission / modal / OS prer
 - required host prerequisiteを客観確認できない状態
 
 Prerequisiteを解決した後は、current planが要求するfresh stateからsetupをやり直す。Full Disk Access等を全runのbaseline requirementとして先回りで要求しない。
+
+Canvasのselection / drag / pan等が広く死に、VS Code / Electron側のabnormal mouse-button stateが疑われる場合は、product FAILへ確定する前に [`VS-CODE-E2E-INPUT-TROUBLESHOOTING.md`](./VS-CODE-E2E-INPUT-TROUBLESHOOTING.md) のboundary checkを実行する。
 
 ## Extension-registration / initial-state check
 
