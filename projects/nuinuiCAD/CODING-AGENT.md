@@ -8,7 +8,7 @@ Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGE
 
 Project-specific overrideとして、nuinuiCADの**source-code implementation / blocking fix**は**Codex Luna xhigh**を標準かつ唯一のimplementation executorとする。web ChatGPTがdirect GitHub editingでsource-code implementationを代替するexecution routeは持たない。
 
-GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割はLuna xhighのimplementation ownershipを弱めず、競合もしない。Known Bug implementation、blocking fix、deterministic regression tests、routine verification、integration、implementation Git workはAstraへrouteしない。
+GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割は、本書が定める通常のLuna xhigh implementation ownershipを弱めず、競合もしない。
 
 ### Documentation / policy direct execution exception
 
