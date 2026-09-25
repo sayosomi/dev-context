@@ -8,6 +8,8 @@ nuinuiCADのlocal execution capacityとlane ownershipを、versioned `LANES.conf
 
 再利用可能なexecution semantics（role、capacity、FREE/BUSY/RELEASE-PENDING/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md) がsole ownerする。この文書はnuinuiCAD固有のmanifest、Luna implementation policy、Human-only Manual E2E policyをownerする。
 
+Astra探索のroleとfinding handoffは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)がownerする。この文書は、既存checkoutを一時的なread-only / execution-only探索に使う場合のlane境界をownerする。
+
 ## Declared lanes
 
 The checked-in manifest currently declares these example lanes; the names and paths are data, not the capacity model.
@@ -38,6 +40,19 @@ forensic checkoutの作成・利用には、事前の明示的なHuman authoriza
 current `preflight` / `begin` / `start` invocationで認識できるsupplied registered forensic worktreeは正確に1つだけである。persistent allowlist、marker、config、receipt、environment settingは存在せず、directory nameやbranch nameのnaming conventionもexceptionを付与しない。forensic worktreeは宣言laneにならず、execution capacity・implementation capacity・Human-test capacityを消費も追加もしない。また、durable implementation metadataをownerできない。
 
 exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、declared lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、宣言laneに対する通常のlane safety checkはすべて引き続き適用される。
+
+## Temporary Astra execution use of an implementation lane
+
+Astraの探索条件とfindingsの扱いは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)に従う。このtemporary useは既存declared laneに対するexecution-only予約であり、lane roleは`implementation`のまま変えず、新しいimplementation generation、capacity、permanent Astra checkoutを作らない。
+
+- Astra may use only a Human-authorized `role=implementation` lane that is `FREE` and clean before the run. The authorization identifies the exact lane, fixed audit revision, and bounded exploration scope.
+- ChatGPT records the temporary reservation in the current Work context under [`LINEAR.md`](./LINEAR.md) and [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md), and excludes that lane from implementation admission until release. While Astra holds it, Luna must not use that lane for implementation, even if the lane's prior state was `FREE`.
+- Keep the audit on the fixed revision. If using it requires moving the checkout, first record the exact repository/worktree identity, path, original branch or detached state, original `HEAD`, and clean status. Move only with an ordinary safe checkout operation; do not create an implementation branch or implementation claim/checkpoint.
+- All tracked files, including product source, are read-only. Astra must not edit, stage, commit, or push tracked files. Keep temporary generators, harnesses, reducers, logs, evidence, generated output, and caches outside the checkout. If a tool cannot do that, use only explicitly recorded new paths and remove them only when their audit ownership and absence from the original state are proven; never overwrite or remove pre-existing ignored or untracked data.
+- After exploration, restore the original checkout state and verify the same repository/worktree identity, path, branch or detached state, `HEAD`, and clean tracked/untracked status. Release the temporary reservation only after this restoration is proven.
+- If a tracked file changes, the checkout becomes dirty, or any other local change prevents proving the original state, stop and fail closed. Do not use reset, stash, clean, force operations, or destructive cleanup to make the lane appear available. Preserve the state and report the blocker; do not start Luna on that lane.
+
+This temporary reservation makes one existing implementation lane unavailable during the Astra run; it adds no implementation capacity and changes no declared lane count. If isolation is needed, Astra may use an already registered forensic worktree only after separate explicit Human authorization and under the exception's inventory rules above. The same fixed-revision, read-only, and safe-restoration requirements apply. A forensic worktree remains an inventory exception, not an implementation lane or permanent Astra workspace; `--forensic-worktree` only identifies a preauthorized worktree in supported inventory operations and does not create or authorize one.
 
 ## Human terminal operations
 

@@ -12,15 +12,15 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 Human asks ChatGPT to implement
 -> ChatGPT performs current-state / contract work
 -> Human runs one short local startup mutation only when genuinely required
--> ChatGPT outputs the complete implementation-agent prompt directly in chat
--> Human copies it to the implementation agent
--> implementation agent runs canonical nuinui handoff
+-> ChatGPT outputs the complete Luna implementation-agent prompt directly in chat
+-> Human copies it to the Luna implementation agent
+-> Luna runs canonical nuinui handoff
 -> HANDOFF VERIFIED
 -> implementation / test / commit / push
 -> result returns to ChatGPT
 ```
 
-The Human does not run implementation-agent handoff verification or manage
+The Human does not run Luna implementation-agent handoff verification or manage
 prompt files, expected-context files, ticket refs, ticket tokens, claims, or
 checkpoints as transport artifacts.
 
@@ -52,10 +52,11 @@ replacement for the normal Luna route.
 | E2E chat lifecycle | [E2E chat](./CHAT-E2E.md) |
 | declared execution lanes / checkout occupancy / checkpoint isolation | [Execution lane policy](./CHECKOUTS.md) + [Declared-lane Execution Model](../../shared/DECLARED-LANE-EXECUTION.md) |
 | local versioned helper / local dev-context sync / tool promotion | [Local tools](./LOCAL-TOOLS.md) |
-| execution-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
-| execution-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
-| execution-agent handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
+| Luna implementation-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
+| Luna implementation-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
+| Luna implementation handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
 | implementation / blocking-fix Luna workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
+| open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Astra Evaluator Audit Policy](./ASTRA-AUDIT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Linear overview / routing | [Linear policy router](./LINEAR.md) |
@@ -140,16 +141,17 @@ implementation lanesは互いの途中変更を取り込まない。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
-6. **Execution-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`。
-7. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`。該当する場合Shared / nuinuiCAD Agent Skillsも読む。
-8. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`。
-9. **Linear操作・参照、またはimplementation contract策定:** `LINEAR.md`、`CONTRACT-DECISIONS.md`、`LINEAR-CAPACITY.md`、`GITHUB-ISSUES-SYNC.md`。詳細は`LINEAR.md`のroutingに従う。
-10. **PR create / review / merge / Auto-merge / PR authorization judgment:** [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)。
-11. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`。VS Code hostなら`VS-CODE-E2E.md`。**display-language / locale-specific verificationが必要な場合だけ**`VS-CODE-E2E-LOCALE.md`を追加で読む。Manual E2E executorはHuman固定。`LUNA-E2E-PLAYBOOK.md`はInactiveで、HumanがLuna E2Eの再有効化を明示的に検討・指示した場合だけ読む。
-12. **Shared CI incident suspicion / local reproduction:** strong signalがある場合だけ`CI-INCIDENTS.md`。reproductionにもFREEなdeclared implementation laneだけを使う。
-13. **User-facing command追加・surface変更:** `COMMAND-CONTRACTS.md`。
-14. **Legacy履歴または移行中例外:** 必要なときだけ`NOTION-LEGACY.md`。
-15. **Current implementation / architecture / DSL判断:** 必ずlatest repositoryから取得する。
+6. **Astra evaluator exploration:** `ASTRA-AUDIT.md`. Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; Work tracking follows `LINEAR.md` and `LINEAR-ISSUES.md`.
+7. **Luna implementation-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`.
+8. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`. Read Shared / nuinuiCAD Agent Skills when applicable.
+9. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`.
+10. **Linear operations or references, or implementation contract work:** `LINEAR.md`, `CONTRACT-DECISIONS.md`, `LINEAR-CAPACITY.md`, `GITHUB-ISSUES-SYNC.md`; follow `LINEAR.md` for detailed routing.
+11. **PR creation / review / merge / Auto-merge / PR authorization:** [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
+12. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`. For a VS Code host, also read `VS-CODE-E2E.md`. Read `VS-CODE-E2E-LOCALE.md` only when display-language / locale-specific verification is required. The Manual E2E executor is always Human. `LUNA-E2E-PLAYBOOK.md` is inactive; load it only if the Human explicitly asks to consider reactivating Luna E2E.
+13. **Shared CI incident suspicion / local reproduction:** read `CI-INCIDENTS.md` only when there is a strong signal. Reproduction also uses only a FREE declared implementation lane.
+14. **Adding or changing a user-facing command surface:** `COMMAND-CONTRACTS.md`.
+15. **Legacy history or migration exception:** read `NOTION-LEGACY.md` only when needed.
+16. **Current implementation / architecture / DSL decisions:** always inspect the latest repository.
 
 ## Maintenance rule
 
