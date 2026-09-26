@@ -8,6 +8,8 @@ nuinuiCADのlocal execution capacityとlane ownershipを、versioned `LANES.conf
 
 再利用可能なexecution semantics（role、capacity、FREE/BUSY/RELEASE-PENDING/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md) がsole ownerする。この文書はnuinuiCAD固有のmanifest、Luna implementation policy、Human-only Manual E2E policyをownerする。
 
+Astra探索のroleとfinding handoffは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)がownerする。この文書は、既存checkoutを一時的なread-only / execution-only探索に使う場合のlane境界をownerする。
+
 ## Declared lanes
 
 The checked-in manifest currently declares these example lanes; the names and paths are data, not the capacity model.
@@ -38,6 +40,22 @@ forensic checkoutの作成・利用には、事前の明示的なHuman authoriza
 current `preflight` / `begin` / `start` invocationで認識できるsupplied registered forensic worktreeは正確に1つだけである。persistent allowlist、marker、config、receipt、environment settingは存在せず、directory nameやbranch nameのnaming conventionもexceptionを付与しない。forensic worktreeは宣言laneにならず、execution capacity・implementation capacity・Human-test capacityを消費も追加もしない。また、durable implementation metadataをownerできない。
 
 exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、declared lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、宣言laneに対する通常のlane safety checkはすべて引き続き適用される。
+
+## Temporary Astra execution use of an implementation lane
+
+Astraの探索条件とfindingsの扱いは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)に従う。このtemporary useは既存declared laneに対するexecution-only予約であり、lane roleは`implementation`のまま変えず、新しいimplementation generation、capacity、permanent Astra checkoutを作らない。
+
+- Astra may start in a declared `role=implementation` lane only after a Human authorizes the exact lane, fixed audit revision, and bounded exploration scope, and the existing read-only lane classifier proves that lane is initially `FREE` and clean.
+- Before moving it, record the exact repository/worktree identity, path, original branch or detached state, original `HEAD`, and clean status.
+- The temporary reservation recorded in the current Work context under [`LINEAR.md`](./LINEAR.md) and [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) is coordination evidence only; it is not a physical mutex and does not affect the local classifier or `nuinui begin`. Move the lane by an ordinary safe checkout operation to a clean, read-only checkout at the fixed audit revision, then run the existing `nuinui preflight` classifier again. Start Astra only if that exact lane is classified `BLOCKED` because it no longer matches its declared idle form, with no ownership slot, mutation lock, or release tombstone. `FREE`, `BUSY`, `RELEASE-PENDING`, any other `BLOCKED` reason, or an ambiguous result does not authorize the run.
+- For a declared `idle=branch` lane, a clean detached checkout at the fixed audit revision is a valid non-`FREE` audit state. For an `idle=detached` lane, do not assume that detaching makes it unavailable: it may still satisfy the declared `FREE` form. Use a declared lane only if its idle policy can safely produce a read-only state that the existing classifier proves is non-`FREE`; otherwise use the separately Human-authorized forensic-worktree path below.
+- Keep that exact classifier-proven idle-form `BLOCKED` state for the entire Astra execution session. Do not switch or restore the lane while Astra is running. If the checkout drifts or no longer has that clean, ownership-free classification, stop Astra and fail closed.
+- Do not create an implementation branch, marker, helper, claim, checkpoint, or implementation generation for Astra.
+- All tracked files, including product source, are read-only. Astra must not edit, stage, commit, or push tracked files. Keep temporary generators, harnesses, reducers, logs, evidence, generated output, and caches outside the checkout. If a tool cannot do that, use only explicitly recorded new paths and remove them only when their audit ownership and absence from the original state are proven; never overwrite or remove pre-existing ignored or untracked data.
+- After exploration, restore the exact original checkout state and verify the same repository/worktree identity, path, branch or detached state, `HEAD`, and clean tracked/untracked status. Then run the existing `nuinui preflight` classifier and release the temporary reservation only after it proves the lane is back in its canonical `FREE` form. If Astra cannot start because the expected non-`FREE` proof fails, restore and prove that same canonical `FREE` form before releasing the reservation; otherwise fail closed and retain the reservation.
+- If a tracked file changes, the checkout becomes dirty, or any other local change prevents proving the original state, stop and fail closed. Do not use reset, stash, clean, force operations, or destructive cleanup to make the lane appear available. Preserve the state and report the blocker; do not start Luna on that lane.
+
+This temporary reservation makes one existing implementation lane unavailable during the Astra run; it adds no implementation capacity and changes no declared lane count. If isolation is needed, Astra may use an already registered forensic worktree only after separate explicit Human authorization and under the exception's inventory rules above. The same fixed-revision, read-only, and safe-restoration requirements apply. A forensic worktree remains an inventory exception, not an implementation lane or permanent Astra workspace; `--forensic-worktree` only identifies a preauthorized worktree in supported inventory operations and does not create or authorize one.
 
 ## Human terminal operations
 
