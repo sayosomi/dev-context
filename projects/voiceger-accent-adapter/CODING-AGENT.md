@@ -39,7 +39,7 @@ This project does not define a project-wide default Coding Agent product or reas
 
 Use the shared Git freshness and safety rules.
 
-Before implementation, the Coding Agent must refresh remote state and verify the expected base supplied by ChatGPT. On mismatch, dirty checkout, unexpected branch ownership, or other ambiguous repository state, stop instead of repairing with reset, stash, rebase, merge, force-switch, or force-push.
+Before implementation, the Coding Agent must refresh remote state and verify the expected remote state supplied by ChatGPT. For a fresh Task or branch transition, a dirty checkout remains a blocker. For an explicitly authorized continuation of the same implementation or blocking-fix Task on the same branch, apply the shared Git workflow's preserved-dirty continuation rule: verify the local branch HEAD against the freshly verified remote target-branch checkpoint, inspect `git status --short` and the existing diff, and continue only when every dirty path is explicitly authorized as preserved in-progress work for this Task and no unrelated or ambiguous change is present. Do not require an already-advanced Task branch HEAD to equal the Task's original `main` / base SHA. On any other mismatch, unexpected branch ownership, or ambiguous repository state, stop instead of repairing with reset, stash, rebase, merge, force-switch, or force-push.
 
 Normal work uses the primary repository checkout. Do not create a new worktree merely to start another sequential Task or topic branch. Parallel worktrees require an actual simultaneous implementation need.
 
