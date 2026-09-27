@@ -48,6 +48,8 @@ fetch後、promptで指定したexpected remote commit / branchとactual remote 
 
 Expected baseは必ずしも`origin/main`ではない。連続Taskでは前Taskのblocking-review-approved pushed commitを使ってよい。
 
+同じTask branch上のblocking fix / interrupted implementationを継続する場合、local branch HEADの照合対象はoriginal `main` / original baseではなく、ChatGPTがfreshに確認してpromptで指定したremote target-branch checkpointである。target branchが既にTask commitを持つ継続runで、local target branchへoriginal baseと同一HEADであることを要求しない。
+
 ## Checkout / worktree
 
 - 通常の開発ではprimary repository checkoutを使う。Taskごとにworktreeを作らない。
@@ -61,6 +63,7 @@ Expected baseは必ずしも`origin/main`ではない。連続Taskでは前Task�
 - Taskごとにmain mergeやPR作成を機械的に要求しない。current track / planに従う。
 - unrelated user changes、branch、worktreeを勝手に削除・上書き・resetしない。
 - local target branchが既に存在すること自体をambiguity / blockerとして扱わない。fresh fetch後、working treeがcleanで、そのlocal target branchのHEADがcurrent Taskでfreshly verifiedしたexpected baseと完全一致し、conflictingなunexpected remote target branchも存在しない場合は、そのbranchを通常switchして再利用してよい。HEAD不一致、dirty state、branch ownership / provenanceが不明、またはremote conflictがある場合だけfail closedする。再作成のためだけに既存branchをdelete / resetしない。
+- dirty checkoutはnew Task開始や別branchへのtransitionでは引き続きblockerとする。ただし、同じTask・同じtarget branchのimplementation / blocking fix継続で、current handoff / promptが前回停止時に保存されたin-progress changesのdirty pathを明示的にauthorizeしている場合は例外とする。fresh fetch後、local target branch HEADがfreshly verifiedしたremote target-branch checkpointと一致し、`git status --short`とdiff inspectionで全dirty pathがそのauthorized path集合内にあり、unexpected untracked / unrelated changeがないことを確認してから、その未commit差分を保持したまま継続してよい。authorized範囲外のpath、checkpoint不一致、provenance不明、またはdiff内容がcurrent Taskと一意に結び付かない場合はfail closedする。継続のためにreset / stash / checkout overwriteで差分を消さない。
 
 Projectがpersistent sub worktree等の明示的例外を持つ場合はproject policyを優先する。
 
@@ -76,4 +79,4 @@ blocking-review PASS後にPR / mergeするか、review済みcommitから次Task�
 
 ## Safety boundary
 
-remote mismatch、unrelated user changes、dirty checkout、unexpected branch ownership等で安全に進められない場合、勝手なreset / stash / force-switch / force-pushで解消しない。blocking pointとして扱う。
+remote mismatch、unrelated user changes、unauthorized / ambiguous dirty checkout、unexpected branch ownership等で安全に進められない場合、勝手なreset / stash / force-switch / force-pushで解消しない。blocking pointとして扱う。上記のsame-Task authorized dirty continuationだけをdirty-state exceptionとして扱う。
