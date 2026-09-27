@@ -62,7 +62,7 @@ Expected baseは必ずしも`origin/main`ではない。連続Taskでは前Task�
 - unrelated user changesがある作業環境を無理に再利用しない。並列実装が不要なら新worktreeを既定解にせず、安全なbranch / checkout整理を優先する。
 - Taskごとにmain mergeやPR作成を機械的に要求しない。current track / planに従う。
 - unrelated user changes、branch、worktreeを勝手に削除・上書き・resetしない。
-- local target branchが既に存在すること自体をambiguity / blockerとして扱わない。fresh fetch後、working treeがcleanで、そのlocal target branchのHEADがcurrent Taskでfreshly verifiedしたexpected baseと完全一致し、conflictingなunexpected remote target branchも存在しない場合は、そのbranchを通常switchして再利用してよい。HEAD不一致、dirty state、branch ownership / provenanceが不明、またはremote conflictがある場合だけfail closedする。再作成のためだけに既存branchをdelete / resetしない。
+- local target branchが既に存在すること自体をambiguity / blockerとして扱わない。cleanなstart / reuseでは、fresh fetch後、そのlocal target branchのHEADがcurrent Taskでfreshly verifiedしたexpected start checkpointと完全一致し、conflictingなunexpected remote target branchも存在しない場合は、そのbranchを通常switchして再利用してよい。HEAD不一致、branch ownership / provenanceが不明、またはremote conflictがある場合はfail closedする。dirtyなsame-Task continuationは直後の限定例外だけに従う。再作成のためだけに既存branchをdelete / resetしない。
 - dirty checkoutはnew Task開始や別branchへのtransitionでは引き続きblockerとする。ただし、同じTask・同じtarget branchのimplementation / blocking fix継続で、current handoff / promptが前回停止時に保存されたin-progress changesのdirty pathを明示的にauthorizeしている場合は例外とする。fresh fetch後、local target branch HEADがfreshly verifiedしたremote target-branch checkpointと一致し、`git status --short`とdiff inspectionで全dirty pathがそのauthorized path集合内にあり、unexpected untracked / unrelated changeがないことを確認してから、その未commit差分を保持したまま継続してよい。authorized範囲外のpath、checkpoint不一致、provenance不明、またはdiff内容がcurrent Taskと一意に結び付かない場合はfail closedする。継続のためにreset / stash / checkout overwriteで差分を消さない。
 
 Projectがpersistent sub worktree等の明示的例外を持つ場合はproject policyを優先する。
