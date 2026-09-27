@@ -20,6 +20,7 @@ root README は repository overview / router であり、詳細な development w
 
 - [nuinuiCAD](./projects/nuinuiCAD/README.md)
 - [fanbox-level-manager](./projects/fanbox-level-manager/README.md)
+- [voiceger-accent-adapter](./projects/voiceger-accent-adapter/README.md)
 
 ## Shared context
 
