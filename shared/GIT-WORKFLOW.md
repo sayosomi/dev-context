@@ -60,6 +60,7 @@ Expected baseは必ずしも`origin/main`ではない。連続Taskでは前Task�
 - unrelated user changesがある作業環境を無理に再利用しない。並列実装が不要なら新worktreeを既定解にせず、安全なbranch / checkout整理を優先する。
 - Taskごとにmain mergeやPR作成を機械的に要求しない。current track / planに従う。
 - unrelated user changes、branch、worktreeを勝手に削除・上書き・resetしない。
+- local target branchが既に存在すること自体をambiguity / blockerとして扱わない。fresh fetch後、working treeがcleanで、そのlocal target branchのHEADがcurrent Taskでfreshly verifiedしたexpected baseと完全一致し、conflictingなunexpected remote target branchも存在しない場合は、そのbranchを通常switchして再利用してよい。HEAD不一致、dirty state、branch ownership / provenanceが不明、またはremote conflictがある場合だけfail closedする。再作成のためだけに既存branchをdelete / resetしない。
 
 Projectがpersistent sub worktree等の明示的例外を持つ場合はproject policyを優先する。
 
