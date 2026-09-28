@@ -78,7 +78,7 @@ Output time: 2026-09-05 23:10 JST
 このruleを次へ拡張しない。
 
 - implementation promptをHumanへ提示するChatGPT responseのprompt外側の文章
-- Luna resultをconsume / summarize / reviewするChatGPT response
+- Coding Agent resultをconsume / summarize / reviewするChatGPT response
 - next stepを説明する通常のChatGPT workflow / coordinator response
 - Manual E2E test-operator prompt / resultなど、このimplementation-agent workflow外のsurface
 - durable work-management checkpoint、repository policy record、commit messageなどexecution-state authorityになり得るrecord
