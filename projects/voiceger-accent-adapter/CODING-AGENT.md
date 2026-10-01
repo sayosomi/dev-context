@@ -1,6 +1,6 @@
-# voiceger-accent-adapter Implementation Coding Agent Policy
+# Voiceger Editor Implementation Coding Agent Policy
 
-This document owns the voiceger-accent-adapter project-specific implementation and blocking-fix route.
+This document owns the Voiceger Editor project-specific implementation and blocking-fix route.
 
 Shared implementation role, prompt completeness, Git safety, commit / push, review, and completion-report mechanics remain owned by:
 
@@ -45,7 +45,7 @@ Normal work uses the primary repository checkout. Do not create a new worktree m
 
 ## Voiceger upstream boundary
 
-Voiceger is a separate upstream dependency and is not an implementation surface of an ordinary voiceger-accent-adapter Task.
+Voiceger is a separate upstream dependency and is not an implementation surface of an ordinary Voiceger Editor Task.
 
 Do not:
 
