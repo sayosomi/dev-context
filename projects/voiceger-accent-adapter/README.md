@@ -1,13 +1,13 @@
-# voiceger-accent-adapter Project Context
+# Voiceger Editor Project Context
 
-Repository: `sayosomi/voiceger-accent-adapter`
+Repository: `sayosomi/voiceger-editor`
 
 This README is the fixed project entrypoint and router. Keep it limited to project-wide authority, loading, and routing. Repository implementation facts and product behavior belong to the product repository.
 
 ## Normal development flow
 
 ```text
-Human asks ChatGPT to develop or fix voiceger-accent-adapter
+Human asks ChatGPT to develop or fix voiceger-editor
 -> ChatGPT refreshes current dev-context, product remote, relevant GitHub Issue, and repository documentation
 -> ChatGPT investigates the repository and settles the implementation contract
 -> ChatGPT performs the shared remote freshness gate
@@ -21,7 +21,7 @@ No dedicated execution-handoff helper, declared lane, or persistent parallel-wor
 ## Always load for development work
 
 - [Shared Development Workflow](../../shared/DEVELOPMENT.md)
-- The product repository's current [`AGENTS.md`](https://github.com/sayosomi/voiceger-accent-adapter/blob/main/AGENTS.md)
+- The product repository's current [`AGENTS.md`](https://github.com/sayosomi/voiceger-editor/blob/main/AGENTS.md)
 
 When Git state, checkout, branch, commit, push, or review is involved, load:
 
@@ -39,9 +39,9 @@ This project currently has no project-specific prompt-publication checker or exe
 
 ## Authority
 
-Implemented behavior and repository facts are authoritative only from the latest remote `sayosomi/voiceger-accent-adapter` repository, not from dev-context, past chats, or local copies.
+Implemented behavior and repository facts are authoritative only from the latest remote `sayosomi/voiceger-editor` repository, not from dev-context, past chats, or local copies.
 
-GitHub Issues in `sayosomi/voiceger-accent-adapter` are the primary Work / current implementation-contract authority.
+GitHub Issues in `sayosomi/voiceger-editor` are the primary Work / current implementation-contract authority.
 
 Long-lived product requirements, API behavior, supported Voiceger compatibility targets, and design documentation belong in versioned documents in the product repository.
 
@@ -61,7 +61,7 @@ Do not load this document into implementation Coding Agent prompts.
 
 Voiceger is maintained separately from this repository. The adapter integrates with a locally installed Voiceger runtime but does not own Voiceger source, models, reference audio, or upstream behavior.
 
-Do not modify Voiceger source as part of a voiceger-accent-adapter Task unless the current Task explicitly authorizes a separate upstream Voiceger change. If the adapter contract cannot be completed without an upstream change that was not authorized, stop and report the boundary instead of silently editing Voiceger.
+Do not modify Voiceger source as part of a Voiceger Editor Task unless the current Task explicitly authorizes a separate upstream Voiceger change. If the adapter contract cannot be completed without an upstream change that was not authorized, stop and report the boundary instead of silently editing Voiceger.
 
 Treat normal repository unit tests and opt-in real Voiceger integration tests as distinct verification layers. Exact commands, environment paths, and compatibility revisions are read from the current product repository rather than copied into dev-context.
 
