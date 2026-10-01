@@ -1,6 +1,6 @@
-# voiceger-accent-adapter Manual E2E Orchestration
+# Voiceger Editor Manual E2E Orchestration
 
-This document owns ChatGPT coordination of Human-run manual E2E for `voiceger-accent-adapter`.
+This document owns ChatGPT coordination of Human-run manual E2E for `voiceger-editor`.
 
 Do not load or copy this document into implementation Coding Agent prompts or product `AGENTS.md`. Repository implementation facts, automated test commands, and generated-file placement rules remain owned by the product repository.
 
