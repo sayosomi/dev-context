@@ -4,6 +4,19 @@ This document owns the implementation-agent startup boundary for nuinuiCAD.
 The implementation agent, not the Human or ChatGPT, runs the public handoff
 command after receiving the complete prompt.
 
+## Executor selection boundary
+
+The Human selects the Coding Agent product, model, effort, and concrete UI
+session outside the implementation prompt and outside this handoff contract.
+The prompt may define the implementation-agent role and repository contract,
+but it must not require or validate a specific product, model name, or effort
+level. A runtime's self-reported model identity is not authorization evidence
+and is not a valid reason to reject an otherwise authorized implementation run.
+
+This handoff validates durable repository execution identity and startup safety
+only: Issue, lane, claim, branch, Base, checkpoint, checkout state, and
+authoritative remote state. It does not validate model identity.
+
 ## Public contract
 
 ```text
