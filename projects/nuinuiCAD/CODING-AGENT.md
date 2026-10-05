@@ -89,7 +89,7 @@ Implementation Coding Agent owns:
 
 implementation Coding Agentへopen-ended product designやarchitecture選択を委ねない。
 
-## Human terminal assistance vs Luna
+## Human terminal assistance vs implementation Coding Agent
 
 Humanがcopy/pasteできる単純なlocal terminal operationはimplementation executorではない。
 
@@ -141,7 +141,7 @@ ChatGPT determines the operation
 -> NO / source-code implementation work -> implementation Coding Agent
 ```
 
-Humanがterminal commandを実行したことを理由にsource-code implementation ownershipをHumanへ移さない。source-code implementation contract、lane、Base checkpoint、Luna ownershipはそのまま維持する。
+Humanがterminal commandを実行したことを理由にsource-code implementation ownershipをHumanへ移さない。source-code implementation contract、lane、Base checkpoint、implementation Coding Agent ownershipはそのまま維持する。
 
 ## Declared execution lanes
 
@@ -257,7 +257,7 @@ Promptにはcurrent executable source-code sliceだけを書く。nuinuiCADで�
 - no-mid-slice-main-sync rule
 - blocking conditions
 
-Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
+Implementation-agent start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
 
 Promptのstartup sequenceでは、implementation-agent processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <SAY-N> <expected-main-sha>`を最初に実行する。repository identity、実行identity、branch、HEAD、clean state、remote stateはhandoff façadeとstandalone proofが検証するため、implementation Coding Agentはhandoff前に独立したhelper-owned precheckを再構成しない。
 
@@ -277,7 +277,7 @@ anything else
 -> stop
 ```
 
-The façade obtains Issue from the public command and lane, Claim, Branch, Base, and current checkpoint from the unique matching durable implementation generation. It derives remote topic mode from exact authoritative remote state and passes the resolved values to the retained standalone proof. Luna must not infer or regenerate identity from retained session context or repository history. Any identity or safety failure is a hard-stop with no resume, retry, repair, push, or recovery decision tree; return control to the orchestrator.
+The façade obtains Issue from the public command and lane, Claim, Branch, Base, and current checkpoint from the unique matching durable implementation generation. It derives remote topic mode from exact authoritative remote state and passes the resolved values to the retained standalone proof. The implementation agent must not infer or regenerate identity from retained session context or repository history. Any identity or safety failure is a hard-stop with no resume, retry, repair, push, or recovery decision tree; return control to the orchestrator.
 
 ## Scope control
 
