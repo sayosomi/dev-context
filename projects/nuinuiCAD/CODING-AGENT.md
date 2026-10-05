@@ -6,15 +6,15 @@ nuinuiCADのimplementation / blocking-fix executionを定義する。
 
 Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従い、prompt publicationのmachine-checkable gateは [`../../shared/AGENT-PROMPT-PREFLIGHT.md`](../../shared/AGENT-PROMPT-PREFLIGHT.md) に従う。
 
-Project-specific overrideとして、nuinuiCADの**source-code implementation / blocking fix**は**Codex Luna xhigh**を標準かつ唯一のimplementation executorとする。web ChatGPTがdirect GitHub editingでsource-code implementationを代替するexecution routeは持たない。
+Project-specific ruleとして、nuinuiCADの**source-code implementation / blocking fix**はmanifest-declared `role=implementation` laneを担当する**implementation Coding Agent**が実行する。Coding Agent product / model / effortの選択はHumanがprompt / handoffの外側で行う。ChatGPTはimplementation promptへ特定product / model / effortをrequired executor identityとして埋め込まず、implementation agentもself-reported model nameをauthorization / safety gateとして扱わない。web ChatGPTがdirect GitHub editingでsource-code implementationを代替するexecution routeは持たない。
 
-GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割は、本書が定める通常のLuna xhigh implementation ownershipを弱めず、競合もしない。
+GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割は、本書が定める通常のimplementation Coding Agent ownershipを弱めず、競合もしない。
 
 ### Documentation / policy direct execution exception
 
 Repository-owned documentation / specification / policy workはsource-code implementationとは別のexecution classとする。
 
-次の条件をすべて満たすdocumentation/policy Taskは、Luna xhighを使わずChatGPTがremote repository上で直接実行してよい。
+次の条件をすべて満たすdocumentation/policy Taskは、implementation Coding Agentを使わずChatGPTがremote repository上で直接実行してよい。
 
 - 変更対象が`docs/**`、`AGENTS.md`、repository/project `README.md`、`ARCHITECTURE.md`、CHANGELOG等のrepository-owned documentation / specification / policy fileに限定される;
 - source code、test code、fixtures、build設定、CI、runtime behavior、generated artifactを変更しない;
@@ -24,17 +24,17 @@ Repository-owned documentation / specification / policy workはsource-code imple
 - verificationがdocumentation/policy consistencyを確認するread-only / focused checkで足り、source-code implementation-side test-debug loopを必要としない;
 - scopeがdocumentation / specification / policy workからsource-code implementationへmaterially拡大しない。
 
-この例外ではimplementation lane、Base checkpoint、Luna sessionを要求しない。ChatGPTが編集、必要なfocused verification、blocking review、commit / push / merge、Linear synchronizationまで担当してよい。
+この例外ではimplementation lane、Base checkpoint、implementation-agent sessionを要求しない。ChatGPTが編集、必要なfocused verification、blocking review、commit / push / merge、Linear synchronizationまで担当してよい。
 
 ユーザーの許可なしに新しいrepository policy / product ruleをChatGPT判断だけで直接commitしてはならない。許可済みplanの意味上のscopeを越える場合はwrite前にplanを更新して再承認を得る。
 
-途中でsource code / test / generated outputの変更、broad implementation-side debugging、または許可済みplanを越える変更が必要になった場合は例外を解除し、通常のLuna xhigh lifecycleへ戻す。
+途中でsource code / test / generated outputの変更、broad implementation-side debugging、または許可済みplanを越える変更が必要になった場合は例外を解除し、通常のimplementation Coding Agent lifecycleへ戻す。
 
 ### Narrow CI/tooling direct execution exception
 
 CI / repository tooling / automation workのうち、product implementationから独立した**狭く一意なCI/tooling-only変更**は、source-code implementationとは別のexecution classとする。
 
-次の条件をすべて満たすTaskは、Luna xhighを使わずChatGPTが直接実行してよい。
+次の条件をすべて満たすTaskは、implementation Coding Agentを使わずChatGPTが直接実行してよい。
 
 - targetがCI workflow / CI config、repository-only automation / tooling、またはrepository checkの狭い配線変更に限定される;
 - product source implementation、runtime semantics、DSL semantics、fixtures、generated artifacts、product build output / packaging semanticsを変更しない;
@@ -46,11 +46,11 @@ CI / repository tooling / automation workのうち、product implementationか�
 
 典型例は、既存CI jobへrepository内にすでに存在するcheck commandを1 step追加するだけで、上記条件をすべて満たす変更である。
 
-この例外ではdeclared execution lane、Base checkpoint、Luna sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、merge、relevant work-management synchronizationまで担当してよい。
+この例外ではdeclared execution lane、Base checkpoint、implementation-agent sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、merge、relevant work-management synchronizationまで担当してよい。
 
 write直前にlatest remote SHAとtarget file freshnessを再確認する。freshness driftによってintended change、scope、またはverification routeが一意でなくなった場合はwriteせず再評価する。
 
-途中でproduct source / runtime behavior / DSL semantics側の変更、broad debugging、conflict resolution、integration-heavy work、またはその他の除外scopeが必要になった場合はdirect executionを停止し、通常のLuna xhigh + declared implementation lane lifecycleへ戻す。
+途中でproduct source / runtime behavior / DSL semantics側の変更、broad debugging、conflict resolution、integration-heavy work、またはその他の除外scopeが必要になった場合はdirect executionを停止し、通常のimplementation Coding Agent + declared implementation lane lifecycleへ戻す。
 
 このexceptionは旧 `only_chatgpt` execution model全体を復活させるものではない。
 
@@ -58,11 +58,11 @@ Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md
 
 ### Human-authorized exact source-fix exception
 
-通常のsource-code implementation / blocking fixは引き続きLuna xhighが標準かつ唯一のexecutorである。例外として、ChatGPTがcurrent contract内の単一で自明なtextual repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用helperを使ったmechanical executionを許可する。このexceptionは一般的なimplementation、design、debugging、test-driven iteration、conflict resolution、またはambiguous fixをHumanへ移さない。
+通常のsource-code implementation / blocking fixは引き続きimplementation Coding Agentが標準かつ唯一のexecutorである。例外として、ChatGPTがcurrent contract内の単一で自明なtextual repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用helperを使ったmechanical executionを許可する。このexceptionは一般的なimplementation、design、debugging、test-driven iteration、conflict resolution、またはambiguous fixをHumanへ移さない。
 
 eligibilityとcheckout safetyのauthorityはCHECKOUTS.mdのHuman-authorized exact source-fix exception sectionであり、helperは既存handoff / manifest / ownership primitiveを再利用する。callerはlane、claim、Base、checkpoint、ticket、authorization tokenを渡さず、Issueとexpected remote refs、absolute patch / verifier、commit message、repo-relative declared filesだけを渡す。patchは既存tracked regular fileへのexact textual modificationに限り、verifierとpost-verifier diff、freshness、ordinary commit、normal non-force pushを含む全boundaryがpassしなければ停止する。failure pathではsafe restoreが証明できる場合だけ復元し、それ以外は状態を保持してmutation=unknownとする。
 
-exact-fixが適用できない場合、source implementation ownershipはHumanへ移らない。fixが自明でない、複数の意味解釈がある、複数surfaceに広がる、verifierが失敗する、freshness / identity / file-set proofが成立しない、またはdebug loopが必要な場合はLuna xhighへ戻す。normal implementation branchでは通常どおりLunaがimplementation / test / commit / pushを担当する。
+exact-fixが適用できない場合、source implementation ownershipはHumanへ移らない。fixが自明でない、複数の意味解釈がある、複数surfaceに広がる、verifierが失敗する、freshness / identity / file-set proofが成立しない、またはdebug loopが必要な場合はimplementation Coding Agentへ戻す。normal implementation branchでは通常どおりimplementation Coding Agentがimplementation / test / commit / pushを担当する。
 
 ## Role boundary
 
@@ -73,13 +73,13 @@ ChatGPT owns:
 - product / architecture / implementation contract決定;
 - implementation slicingとsafe checkpoint決定;
 - execution lane選択;
-- Human terminal assistanceとLuna handoffの使い分け;
-- Luna prompt生成;
+- Human terminal assistanceとimplementation-agent handoffの使い分け;
+- implementation-agent prompt生成;
 - blocking review / merge判断;
 - Linear / GitHub management;
 - documentation / specification / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionのplan策定、承認取得、remote edit、focused verification、review、merge判断。
 
-Luna owns:
+Implementation Coding Agent owns:
 
 - current executable source-code implementation sliceの具体的implementation;
 - focused / required test execution;
@@ -87,9 +87,9 @@ Luna owns:
 - branch commit / push;
 - integration checkpointで必要なlatest-main integration reasoning / conflict resolution / integration fix。ただし上記のeligible deterministic merge-only Human integrationは除く。
 
-Lunaへopen-ended product designやarchitecture選択を委ねない。
+implementation Coding Agentへopen-ended product designやarchitecture選択を委ねない。
 
-## Human terminal assistance vs Luna
+## Human terminal assistance vs implementation Coding Agent
 
 Humanがcopy/pasteできる単純なlocal terminal operationはimplementation executorではない。
 
@@ -111,9 +111,9 @@ ChatGPTがIntegration checkpointでBase checkpointとcurrent `main`のdriftお�
 
 このexceptionはsource implementation ownershipをHumanへ移さない。Human/helperが許可されるmutationは、exact durable identity / claim generation、exact topic / main、clean checkoutを再検証した上でのconflict-free merge-only operation、settled verifier、optional file manifest、race checks、verified exact merge commit、normal non-force topic pushだけ。
 
-stale / mechanical precondition failureがsource reasoningなしに一意にrefreshできる場合は、fresh ChatGPT evaluation後もHuman routeへ残してよい。conflict、integration fix、source edit、relevant / ambiguous semantic drift、verification failureのdiagnosis、test-debug loop、ambiguous repository state、post-commit ambiguous stateは通常のLuna xhigh lifecycleへ戻す。helper成功後もfresh required PR CIとChatGPT blocking reviewを省略しない。
+stale / mechanical precondition failureがsource reasoningなしに一意にrefreshできる場合は、fresh ChatGPT evaluation後もHuman routeへ残してよい。conflict、integration fix、source edit、relevant / ambiguous semantic drift、verification failureのdiagnosis、test-debug loop、ambiguous repository state、post-commit ambiguous stateは通常のimplementation Coding Agent lifecycleへ戻す。helper成功後もfresh required PR CIとChatGPT blocking reviewを省略しない。
 
-一方、次はHuman terminal assistanceへ委譲せずLuna xhighへ渡す。
+一方、次はHuman terminal assistanceへ委譲せずimplementation Coding Agentへ渡す。
 
 - product codeのimplementation;
 - blocking fix;
@@ -129,7 +129,7 @@ Default routing:
 
 The one-shot Human-authorized exact source-fix route is selected only after
 the CHECKOUTS.md eligibility proof; it invokes exact-fix and does not replace
-the normal Luna source-implementation route.
+the normal implementation-agent source-implementation route.
 
 ```text
 ChatGPT determines the operation
@@ -138,10 +138,10 @@ ChatGPT determines the operation
 -> eligible one-shot Human-authorized exact source-fix? YES -> Human `nuinui exact-fix`
 -> eligible deterministic conflict-free merge-only Integration checkpoint? YES -> Human `nuinui integrate-clean`
 -> simple deterministic local operation? YES -> Human terminal assistance
--> NO / source-code implementation work -> Luna xhigh
+-> NO / source-code implementation work -> implementation Coding Agent
 ```
 
-Humanがterminal commandを実行したことを理由にsource-code implementation ownershipをHumanへ移さない。source-code implementation contract、lane、Base checkpoint、Luna ownershipはそのまま維持する。
+Humanがterminal commandを実行したことを理由にsource-code implementation ownershipをHumanへ移さない。source-code implementation contract、lane、Base checkpoint、implementation Coding Agent ownershipはそのまま維持する。
 
 ## Declared execution lanes
 
@@ -161,19 +161,19 @@ Documentation / policy direct execution exceptionとnarrow CI/tooling direct exe
 
 ### Codex project / initial cwd is not lane ownership
 
-CodexのProject root、Luna processのinitial working directory、またはsession開始時の`pwd`はimplementation laneを定義しない。
+Coding Agent workspace / project root、implementation-agent processのinitial working directory、またはsession開始時の`pwd`はimplementation laneを定義しない。
 
 implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLinear checkpointへ記録したmanifest-declared checkout pathである。
 
 具体的なlane nameとpathはcurrent `LANES.conf`から読む。lane nameからpathやroleを推測しない。
 
-Lunaは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushの対象としてassigned declared checkoutを明示的にtargetする。nuinuiCAD startupでは、pathをtargetした後の最初のauthority operationはexactな`nuinui handoff <SAY-N> <expected-main-sha>`であり、その前にhelper-ownedなrepository identity、branch、HEAD、clean state、remote stateを手作業で再構成・検証しない。
+implementation Coding Agentは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushの対象としてassigned declared checkoutを明示的にtargetする。nuinuiCAD startupでは、pathをtargetした後の最初のauthority operationはexactな`nuinui handoff <SAY-N> <expected-main-sha>`であり、その前にhelper-ownedなrepository identity、branch、HEAD、clean state、remote stateを手作業で再構成・検証しない。
 
 session開始時の`pwd`がassigned laneと違うことだけを理由に`LANE_MISMATCH`として停止してはならない。`LANE_MISMATCH`はassigned checkoutをtargetした後のcanonical handoffまたは後続operationがrequired lane conditionの不一致を報告した場合だけ使う。
 
 declared laneを使うために別Codex Project、別VS Code window、extra checkout/worktreeを作る必要はない。同じCodex Projectからmanifest-declared checkoutをtargetしてよい。
 
-ChatGPTがLuna promptを生成するときは、initial `pwd`一致をpreconditionにせず、prompt-visibleなassigned checkout pathをrouting targetとして保持し、`assigned checkoutをtargetする -> exactな nuinui handoff <SAY-N> <expected-main-sha>を最初に実行する`順序で書く。pathはsecond identity proofにしない。
+ChatGPTがimplementation-agent promptを生成するときは、initial `pwd`一致をpreconditionにせず、prompt-visibleなassigned checkout pathをrouting targetとして保持し、`assigned checkoutをtargetする -> exactな nuinui handoff <SAY-N> <expected-main-sha>を最初に実行する`順序で書く。pathはsecond identity proofにしない。
 
 ## Base checkpoint semantics
 
@@ -205,7 +205,7 @@ remote advanceを理由にactive slice途中でbaseをrefreshしない。
 
 current source-code sliceの実装とfocused verificationが完了し、remoteへ保存された時点でlatest remote `main`を再確認する。
 
-ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditした結果、conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使う。その他のintegration、またはconflict / source edit / integration fix / debuggingを必要とする場合はそのlaneのLunaが担当する。
+ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditした結果、conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使う。その他のintegration、またはconflict / source edit / integration fix / debuggingを必要とする場合はそのlaneのimplementation Coding Agentが担当する。
 
 ```text
 slice implementation complete
@@ -213,7 +213,7 @@ slice implementation complete
 -> inspect latest main
 -> ChatGPT drift / contract audit
 -> eligible deterministic merge-only? YES -> Human `nuinui integrate-clean`
--> otherwise Luna integration reasoning / conflict resolution / integration fix
+-> otherwise implementation-agent integration reasoning / conflict resolution / integration fix
 -> required verification
 -> Integration Watermark
 -> blocking review
@@ -222,9 +222,9 @@ slice implementation complete
 
 相手implementation laneのunfinished branchを直接取り込まない。必要なdependencyは先にintended baseへmergeされること。
 
-## Before Luna run — ChatGPT preparation
+## Before implementation-agent run — ChatGPT preparation
 
-Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repository stateを使って次を確定する。
+implementation Coding Agentへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repository stateを使って次を確定する。
 
 - current Issue / current slice;
 - selected lane;
@@ -239,9 +239,9 @@ Lunaへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repositor
 
 nuinuiCAD implementation promptでは、freshなauthoritative `main` SHAをexpected remote stateとして示し、実装Issueとともに`nuinui handoff <SAY-N> <expected-main-sha>`を渡す。handoff façadeはmanifestとdurable implementation slotからlane、claim、branch、Base、current HEADを導出するため、これらをtransport artifactとしてpromptへ重複転記しない。
 
-Lunaへrepository全体のarchitecture探索やscope決定を依頼しない。
+implementation Coding Agentへrepository全体のarchitecture探索やscope決定を依頼しない。
 
-## Luna prompt contract
+## implementation-agent prompt contract
 
 Promptにはcurrent executable source-code sliceだけを書く。nuinuiCADでは、prompt publication checkerやexpected-context fileを作成せず、semantic completeness、scope、verification、Git safety、prompt styleをこのdocumentとshared Coding Agent Workflowのauthorityに従って確認する。
 
@@ -257,17 +257,17 @@ Promptにはcurrent executable source-code sliceだけを書く。nuinuiCADで�
 - no-mid-slice-main-sync rule
 - blocking conditions
 
-Luna start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
+Implementation-agent start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
 
-Promptのstartup sequenceでは、Luna processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <SAY-N> <expected-main-sha>`を最初に実行する。repository identity、実行identity、branch、HEAD、clean state、remote stateはhandoff façadeとstandalone proofが検証するため、Lunaはhandoff前に独立したhelper-owned precheckを再構成しない。
+Promptのstartup sequenceでは、implementation-agent processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <SAY-N> <expected-main-sha>`を最初に実行する。repository identity、実行identity、branch、HEAD、clean state、remote stateはhandoff façadeとstandalone proofが検証するため、implementation Coding Agentはhandoff前に独立したhelper-owned precheckを再構成しない。
 
-Expected lane state、dirty work、ownership、Base checkpointとの差異は、下記 `Luna startup handoff gate` のhelper-owned proof結果として扱う。handoffが失敗した場合は、変更せず停止して報告させる。
+Expected lane state、dirty work、ownership、Base checkpointとの差異は、下記 `implementation-agent startup handoff gate` のhelper-owned proof結果として扱う。handoffが失敗した場合は、変更せず停止して報告させる。
 
 Project-specific canonical `nuinui handoff` is the terminal startup façade for its helper-owned facts when it returns `HANDOFF VERIFIED`. It delegates proof to `nuinui-handoff-check`. Do not append another lane / topic / main verification after that success merely to re-prove those facts; a later fetch required for genuinely new implementation work is allowed, but it must not override the successful handoff evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
 
-### Luna startup handoff gate
+### implementation-agent startup handoff gate
 
-Repository operation前に、Lunaはassigned checkout pathをtargetした後、promptにあるexact `nuinui handoff <SAY-N> <expected-main-sha>` commandをargument変更なしで最初に実行する。
+Repository operation前に、implementation Coding Agentはassigned checkout pathをtargetした後、promptにあるexact `nuinui handoff <SAY-N> <expected-main-sha>` commandをargument変更なしで最初に実行する。
 
 ```text
 handoff succeeds
@@ -277,11 +277,11 @@ anything else
 -> stop
 ```
 
-The façade obtains Issue from the public command and lane, Claim, Branch, Base, and current checkpoint from the unique matching durable implementation generation. It derives remote topic mode from exact authoritative remote state and passes the resolved values to the retained standalone proof. Luna must not infer or regenerate identity from retained session context or repository history. Any identity or safety failure is a hard-stop with no resume, retry, repair, push, or recovery decision tree; return control to the orchestrator.
+The façade obtains Issue from the public command and lane, Claim, Branch, Base, and current checkpoint from the unique matching durable implementation generation. It derives remote topic mode from exact authoritative remote state and passes the resolved values to the retained standalone proof. The implementation agent must not infer or regenerate identity from retained session context or repository history. Any identity or safety failure is a hard-stop with no resume, retry, repair, push, or recovery decision tree; return control to the orchestrator.
 
 ## Scope control
 
-Lunaが次に当たったら広域探索・redesignへ進ませない。
+implementation Coding Agentが次に当たったら広域探索・redesignへ進ませない。
 
 - settled contractから一意に決められないproduct / architecture decision;
 - current slice外のsemantic owner変更が必要;
@@ -295,17 +295,19 @@ Lunaが次に当たったら広域探索・redesignへ進ませない。
 
 失敗runを同じ曖昧promptで繰り返さない。
 
-1. ChatGPTがLuna result / failure evidenceを読む。
+1. ChatGPTがimplementation-agent result / failure evidenceを読む。
 2. failure classとownerを特定する。
 3. contract / slice / verificationを必要範囲だけ更新する。
 4. same active sliceのnarrow blocking fixなら同lane / same session reuseを検討する。
-5. new slice / checkpoint後なら原則new Luna session。
+5. new slice / checkpoint後なら原則new implementation-agent session。
 
-## Luna session selection
+## Implementation-agent selection and session recommendation
 
-Default: **New session**。
+Coding Agent product / model / effortと実際のUI上のexecutor選択はHuman-owned orchestrationであり、implementation prompt / handoff contractには含めない。ChatGPTはprompt外で推奨を示してよいが、特定product / model / effortをrequired identityとして指定・検証しない。implementation agentは内部のmodel identifierやself-reported model familyだけを理由に実行を拒否しない。
 
-Reuse current sessionは次をすべて満たすときだけ。
+Default session recommendation: **New session**。実際のsession選択はHumanが行う。
+
+Reuse current sessionを推奨するのは次をすべて満たすときだけ。
 
 - same lane;
 - same current executable slice;
@@ -322,20 +324,20 @@ New sessionを使う典型:
 - major remote drift後;
 - previous sessionにstale / broad explorationが多い。
 
-ユーザーへLuna promptを提示するとき、prompt外側に次を明示する。
+ユーザーへimplementation-agent promptを提示するとき、必要ならprompt外側に次だけを示す。
 
 ```text
-Luna lane: <manifest-declared implementation lane>
-Luna session: New session | Reuse current session
+Implementation lane: <manifest-declared implementation lane>
+Session recommendation: New session | Reuse current session
 ```
 
-Reuse時だけ短い理由を添える。
+product / model / effortはpromptへ転記しない。HumanがUI上で選択する。Reuse推奨時だけ短い理由を添える。
 
 ## E2E failure fix
 
 Manual E2Eでconfirmed implementation failureが出たら、Human-test checkoutでは修正しない。
 
-ChatGPTがfailureをclassify / sliceし、`FREE`なmanifest-declared implementation laneへfixを割り当て、Lunaが実装する。fix merge後、new exact tested commitでselected Human-test laneへ戻す。
+ChatGPTがfailureをclassify / sliceし、`FREE`なmanifest-declared implementation laneへfixを割り当て、implementation Coding Agentが実装する。fix merge後、new exact tested commitでselected Human-test laneへ戻す。
 
 ## Cross-chat continuity
 
