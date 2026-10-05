@@ -56,7 +56,7 @@ replacement for the normal Luna route.
 | Luna implementation-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | Luna implementation handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
 | implementation / blocking-fix Luna workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
-| open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Astra Evaluator Audit Policy](./ASTRA-AUDIT.md) |
+| open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Linear overview / routing | [Linear policy router](./LINEAR.md) |
@@ -141,7 +141,7 @@ implementation lanesは互いの途中変更を取り込まない。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
-6. **Astra evaluator exploration:** `ASTRA-AUDIT.md`. Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; Work tracking follows `LINEAR.md` and `LINEAR-ISSUES.md`.
+6. **Evaluator semantic-conformance exploration:** `ASTRA-AUDIT.md` (GPT-6.1 Sol High first pass; GPT-6 Astra only under the documented escalation conditions). Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; Work tracking follows `LINEAR.md` and `LINEAR-ISSUES.md`.
 7. **Luna implementation-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`.
 8. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`. Read Shared / nuinuiCAD Agent Skills when applicable.
 9. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`.
