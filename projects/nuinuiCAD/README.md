@@ -12,15 +12,16 @@ Current taskのSHA、branch、進捗、個別implementation planはここに書�
 Human asks ChatGPT to implement
 -> ChatGPT performs current-state / contract work
 -> Human runs one short local startup mutation only when genuinely required
--> ChatGPT outputs the complete Luna implementation-agent prompt directly in chat
--> Human copies it to the Luna implementation agent
--> Luna runs canonical nuinui handoff
+-> ChatGPT outputs the complete implementation-agent prompt directly in chat
+-> Human selects the implementation-agent product / model / effort outside the prompt
+-> Human copies the prompt to the selected implementation agent
+-> implementation agent runs canonical nuinui handoff
 -> HANDOFF VERIFIED
 -> implementation / test / commit / push
 -> result returns to ChatGPT
 ```
 
-The Human does not run Luna implementation-agent handoff verification or manage
+The Human does not run implementation-agent handoff verification or manage
 prompt files, expected-context files, ticket refs, ticket tokens, claims, or
 checkpoints as transport artifacts.
 
@@ -28,7 +29,7 @@ For a single self-contained textual repair, ChatGPT may explicitly authorize the
 one-shot Human exact-fix exception defined in CHECKOUTS.md and routed by
 CODING-AGENT.md. The helper resolves the active generation itself and records
 recovery evidence through the existing last-result surface; it is not a
-replacement for the normal Luna route.
+replacement for the normal implementation-agent route.
 
 ## Always load for development work
 
@@ -52,10 +53,10 @@ replacement for the normal Luna route.
 | E2E chat lifecycle | [E2E chat](./CHAT-E2E.md) |
 | declared execution lanes / checkout occupancy / checkpoint isolation | [Execution lane policy](./CHECKOUTS.md) + [Declared-lane Execution Model](../../shared/DECLARED-LANE-EXECUTION.md) |
 | local versioned helper / local dev-context sync / tool promotion | [Local tools](./LOCAL-TOOLS.md) |
-| Luna implementation-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
-| Luna implementation-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
-| Luna implementation handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
-| implementation / blocking-fix Luna workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
+| implementation-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
+| implementation-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
+| implementation-agent handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
+| implementation / blocking-fix Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
@@ -91,7 +92,7 @@ Hard rule:
 
 - implementation capacity is the count of declared `role=implementation` lanes;
 - Human-test capacity is the count of declared `role=human-test` lanes;
-- Manual E2EのExecutorはHumanのみ。LunaをE2E executionに使わない;
+- Manual E2EのExecutorはHumanのみ。implementation Coding AgentをE2E executionに使わない;
 - Human-authorized forensic worktreeは[`CHECKOUTS.md`](./CHECKOUTS.md)の明示的なone-shot inventory exceptionで認識される場合に限り1つだけ存在でき、lane capacityを追加しない;
 - active implementation sliceはBase checkpoint SHAを固定し、integration checkpointまで他lane / remote mainの変更を取り込まない;
 - E2Eでimplementation failureが出たらFREEなdeclared implementation laneへfixを戻し、Human-test checkoutでは修正しない。
@@ -128,7 +129,7 @@ each declared Human-test lane    -> at most one current Manual E2E Issue
 
 implementation lanesは互いの途中変更を取り込まない。
 
-一方のPRが先にmainへmergeされても、もう一方はactive slice途中でmerge-main / rebase-mainしない。Integration checkpointの実行は[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) / [`CODING-AGENT.md`](./CODING-AGENT.md)に従い、eligibleなdeterministic merge-only workはHuman `nuinui integrate-clean`を使い、integration reasoning / conflict / fixが必要な場合はLunaが担当する。
+一方のPRが先にmainへmergeされても、もう一方はactive slice途中でmerge-main / rebase-mainしない。Integration checkpointの実行は[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) / [`CODING-AGENT.md`](./CODING-AGENT.md)に従い、eligibleなdeterministic merge-only workはHuman `nuinui integrate-clean`を使い、integration reasoning / conflict / fixが必要な場合はimplementation Coding Agentが担当する。
 
 同じlaneで次Taskへ進むときは、前Taskをmergeまたはremote保存済みsafe checkpointでreleaseした後、新Task startとしてlatest remote stateからnew Base checkpointを固定する。
 
@@ -142,7 +143,7 @@ implementation lanesは互いの途中変更を取り込まない。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
 6. **Evaluator semantic-conformance exploration:** `ASTRA-AUDIT.md` (GPT-6.1 Sol High first pass; GPT-6 Astra only under the documented escalation conditions). Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; Work tracking follows `LINEAR.md` and `LINEAR-ISSUES.md`.
-7. **Luna implementation-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`.
+7. **Implementation-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`.
 8. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`. Read Shared / nuinuiCAD Agent Skills when applicable.
 9. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`.
 10. **Linear operations or references, or implementation contract work:** `LINEAR.md`, `CONTRACT-DECISIONS.md`, `LINEAR-CAPACITY.md`, `GITHUB-ISSUES-SYNC.md`; follow `LINEAR.md` for detailed routing.
