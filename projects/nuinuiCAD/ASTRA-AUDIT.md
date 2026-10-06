@@ -39,6 +39,39 @@ TypeScript/Rust agreement does not exonerate a shared compiler/lowering defect.
 
 When Sol retains an independent defect family that meets this threshold, return it directly to ChatGPT for semantic/product triage. Do not insert Astra merely because the Work is exploratory. After ChatGPT confirms the finding, concrete implementation and deterministic regression coverage return to Luna under the normal implementation workflow.
 
+## Audit session continuity
+
+A fixed audit revision defines one execution run. A change of fixed revision after a retained defect is repaired starts a new run, but does not by itself require a new Sol chat/session.
+
+Optimize for the smallest useful active context rather than mechanically maximizing or minimizing session lifetime.
+
+For the same evaluator-audit Work:
+
+- reuse the existing Sol High session across nearby repair -> resume cycles while its accumulated context remains compact and materially relevant to the remaining audit;
+- when accumulated history becomes materially larger than the context needed for the remaining work, rotate to a new Sol session using a compact checkpoint reconstructed from current external authority;
+- on every resumed run, explicitly re-anchor to the new exact fixed revision and re-verify the checkout/read-only boundary;
+- create a fresh temporary evidence directory for each run;
+- do not treat runtime evidence from an earlier revision as current-revision evidence;
+- carry prior final dispositions forward only as Work history or targeted smoke-control context, not as substitute evidence for newly changed behavior.
+
+Do not create a new Sol session merely because:
+
+- a concrete Bug was repaired and merged;
+- the fixed audit revision changed;
+- the same bounded Work is resuming after a normal repair cycle.
+
+Prefer a new session when:
+
+- prior audit reports, reproducers, or abandoned search paths now dominate the context while only a small residual remains;
+- the current session has become confused, long, or context-degraded;
+- the Human or ChatGPT deliberately chooses rotation;
+- the executor model or role changes;
+- an independent second pass is itself part of the assurance objective.
+
+An Astra independent second pass should normally use a separate session so that the pass remains meaningfully independent.
+
+Session reuse and rotation are efficiency choices only. They do not weaken fixed-revision isolation, evidence thresholds, stop rules, or checkout safety.
+
 ## Astra escalation
 
 Use GPT-6 Astra only when at least one of the following explicit conditions exists after a Sol pass:
