@@ -27,6 +27,10 @@ When Git state, checkout, branch, commit, push, or review is involved, load:
 
 - [Shared Git Workflow](../../shared/GIT-WORKFLOW.md)
 
+When PR CI, merge gating, GitHub Auto-merge, or Discord PR lifecycle notifications are involved, also load:
+
+- [GitHub PR / CI lifecycle](./GITHUB.md)
+
 ## Execution-agent prompt generation
 
 When generating an implementation or blocking-fix agent prompt for this project, also load:
