@@ -37,7 +37,24 @@ Sol uses the same evidence threshold previously required for evaluator audits:
 
 TypeScript/Rust agreement does not exonerate a shared compiler/lowering defect.
 
-When Sol retains an independent defect family that meets this threshold, return it directly to ChatGPT for semantic/product triage. Do not insert Astra merely because the Work is exploratory. After ChatGPT confirms the finding, concrete implementation and deterministic regression coverage return to Luna under the normal implementation workflow.
+The default Sol run is a bounded multi-family run. Unless the Human or current Work contract explicitly chooses a tighter bound, stop when any one of these limits is reached:
+
+- **3 independently retained defect families**;
+- **40 distinct compiler-accepted programs**;
+- **80 production persistent-Rust requests**;
+- an environment, platform, checkout, or other execution-boundary restriction.
+
+Each retained family must independently meet the full evidence threshold above before it counts toward the family cap.
+
+After retaining a family, Sol does not automatically return. It classifies the remaining owned matrix by contamination from the known defect:
+
+- **uncontaminated** — continue exploring normally;
+- **possibly contaminated** — defer the cell and record why its result would not be trustworthy;
+- **blocked by the retained family** — defer the cell and record the dependency on that family.
+
+Continue only where evidence remains trustworthy at the same fixed revision. Return immediately before the normal cap when family isolation fails, the finding exposes a semantic/product-contract ambiguity that requires ChatGPT or Human judgment, the retained defect broadly contaminates the remaining owned domain, or the execution boundary itself becomes invalid.
+
+At the normal run stop, return all retained families together with explicit residual dispositions to ChatGPT for semantic/product triage. Do not insert Astra merely because the Work is exploratory. After ChatGPT confirms the findings, concrete implementation and deterministic regression coverage return to Luna under the normal implementation workflow.
 
 ## Audit session continuity
 
@@ -96,8 +113,8 @@ Shape each evaluator-audit run so its actual purpose and boundary are explicit f
 - State the owned local target and correctness purpose explicitly, for example local nuinuiCAD compiler/evaluator/language-service behavior at one fixed audit revision.
 - Express the exploration in terms of semantic or behavioral invariants to verify, such as source-order invariance, equivalent-program consistency, cross-feature consistency, revision isolation, or reference/identity preservation.
 - Constrain execution to the Human-authorized local checkout or forensic-worktree path, nuinuiCAD compiler/evaluator/test runners, and temporary local artifacts allowed by [`CHECKOUTS.md`](./CHECKOUTS.md). External targets, network scanning, credentials, privilege escalation, exploit development, and other security objectives are out of scope.
-- Define a bounded stopping condition before each run, such as completion of a selected feature-family matrix, a maximum accepted-program/request budget, or a fixed number of independent retained findings.
-- For each retained mismatch, stop at reproducible evidence, nearby controls, reduction, and the first useful incorrect boundary needed for ChatGPT triage. A Work with explicit residual rows may resume after the concrete Bug is repaired.
+- Define a bounded stopping condition before each run. The default Sol bound is completion of the selected feature-family matrix or the first of: 3 independently retained families, 40 distinct compiler-accepted programs, 80 production persistent-Rust requests, or an execution-boundary restriction. A Work may explicitly choose a tighter bound.
+- For each retained mismatch, stop investigation of that family at reproducible evidence, nearby controls, reduction, and the first useful incorrect boundary needed for ChatGPT triage. Then classify the remaining matrix as uncontaminated, possibly contaminated, or blocked by the retained family. Continue only uncontaminated cells; defer and record the others. Return early if the family cannot be isolated, a contract decision is required, contamination is broad enough to undermine the remaining domain, or the execution boundary fails.
 - Use terminology that accurately describes the task, such as semantic conformance, property/metamorphic correctness, cross-feature consistency, or regression exploration when those are the real goals. Do not cosmetically rename a security task or add wording whose purpose is to evade classification.
 - If a platform restriction blocks a run, stop and report it rather than weakening or obscuring the task boundary.
 
@@ -107,10 +124,13 @@ Track evaluator exploration as explicit Research/Improvement Work with a bounded
 
 For a Sol first pass:
 
-- a retained qualifying defect returns directly to ChatGPT;
-- ChatGPT decides whether it is a concrete Bug, a contract/spec ambiguity, an existing family, or non-actionable evidence;
+- a retained qualifying defect is recorded as one family and consumes one slot of the default 3-family cap; it does not by itself force an immediate return;
+- after each retained family, Sol performs the contamination classification above and continues only with uncontaminated owned cells;
+- Sol returns all retained families together when the selected matrix closes, the 3-family cap is reached, the 40-program or 80-request budget is reached, or an immediate-return condition applies;
+- ChatGPT decides whether each returned family is a concrete Bug, a contract/spec ambiguity, an existing family, or non-actionable evidence;
 - confirmed Bugs are implemented by Luna;
 - unresolved residuals remain explicit rather than disappearing when the run budget ends;
+- after repair, resume on a fresh fixed authoritative-main revision with fresh runtime evidence; a multi-family run never continues on the old revision after a fix is merged;
 - a family-count or administrative stop while Sol is still converging normally leads to repair -> fresh-revision Sol continuation or a Sol successor residual Work item;
 - Astra is invoked only under one of the three escalation conditions above.
 
