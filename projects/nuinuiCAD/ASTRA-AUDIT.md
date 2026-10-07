@@ -74,15 +74,19 @@ Session reuse and rotation are efficiency choices only. They do not weaken fixed
 
 ## Astra escalation
 
-Use GPT-6 Astra only when at least one of the following explicit conditions exists after a Sol pass:
+Use GPT-6 Astra only when at least one of the following explicit conditions exists after a substantive Sol pass:
 
-1. **High-assurance independent second pass** — Sol found no defect in a high-value domain and closing the audit warrants an independent stronger pass.
-2. **Budget exhaustion or unresolved residuals** — Sol reaches the bounded run limit with high-value rows still untested, unresolved, or inconclusive.
+1. **Deliberate high-assurance independent second pass** — Sol has cleanly disposed the selected high-value domain, but ChatGPT explicitly decides that the domain's risk or value justifies paying for an independent stronger pass. This is optional assurance, not a default audit-closure requirement.
+2. **Substantive Sol exhaustion with unresolved residuals** — Sol has consumed the intended semantic exploration budget for the run, such as the accepted-program/request budget or an equivalent substantive bounded effort, and high-value rows remain untested, unresolved, or inconclusive because Sol could not close them within that effort.
 3. **Finding isolation failure** — Sol has a plausible or reproducible observation but cannot converge on reduction, discriminating controls, family grouping, or the first useful compiler/evaluator/transport boundary.
+
+A retained-family / finding-count stop, repair -> resume checkpoint, or Work-level administrative cap is **not** by itself condition 2. If Sol is still converging — retaining independent families with useful reductions, controls, semantic authority, and first incorrect boundaries — repair the retained Bug, re-anchor to a fresh fixed revision, and continue with Sol. Use a successor residual Work item when tracking boundaries require it; do not use Astra merely because the preceding Sol Work reached its authored family-count stop.
+
+After Sol cleanly disposes every owned residual as pass, retained Bug, or bounded non-actionable/inconclusive evidence, closure normally proceeds without Astra. Use condition 1 only when independent second-pass assurance is itself justified; do not make Astra a ceremonial final pass.
 
 Astra receives the bounded residual or escalation scope, not an automatic full restart of the entire campaign. A full independent replay is appropriate only when ChatGPT explicitly decides that whole-domain second-pass assurance is itself the objective.
 
-Do not select Astra up front merely because a matrix is large, combinatorial, or historically associated with Astra. Those properties shape the Sol budget and possible escalation; they do not bypass the Sol-first rule.
+Do not select Astra up front merely because a matrix is large, combinatorial, historically associated with Astra, or inherited from an earlier Astra campaign. Those properties shape the Sol budget and possible escalation; they do not bypass the Sol-first rule.
 
 ## Work shaping for benign correctness exploration
 
@@ -107,6 +111,7 @@ For a Sol first pass:
 - ChatGPT decides whether it is a concrete Bug, a contract/spec ambiguity, an existing family, or non-actionable evidence;
 - confirmed Bugs are implemented by Luna;
 - unresolved residuals remain explicit rather than disappearing when the run budget ends;
+- a family-count or administrative stop while Sol is still converging normally leads to repair -> fresh-revision Sol continuation or a Sol successor residual Work item;
 - Astra is invoked only under one of the three escalation conditions above.
 
 For an Astra escalation:
