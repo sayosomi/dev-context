@@ -163,10 +163,8 @@ dev-contextのpersistent worktreeはnuinuiCADのproduct laneではない。
 resource modelを混ぜない。
 
 ```text
-sayosomi/nuinuiCAD product manifest-declared lanes (current example):
-  /Users/yosomi/Code/nuinuiCAD
-  /Users/yosomi/Code/nuinuiCAD-sub
-  /Users/yosomi/Code/nuinuiCAD-e2e
+sayosomi/nuinuiCAD product manifest-declared lanes (current configuration):
+  /Users/yosomi/Code/nuinuiCAD  implementation (main); no Human-test lanes
 
 sayosomi/dev-context repository:
   /Users/yosomi/Code/dev-context        production/cache/toolbox clone
