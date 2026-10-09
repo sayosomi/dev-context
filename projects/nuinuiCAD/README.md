@@ -81,17 +81,15 @@ replacement for the normal implementation-agent route.
 
 nuinuiCADのlocal executionはversioned [`LANES.conf`](./LANES.conf)に宣言されたlaneだけを使う。generic execution semanticsは [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md)、project-specific checkout policyは [`CHECKOUTS.md`](./CHECKOUTS.md) がownerする。
 
-The checked-in manifest currently provides this example topology; lane names and paths are data and do not define capacity.
+The checked-in manifest currently declares one implementation lane and no Human-test lanes; lane names and paths are data and do not define capacity.
 
 - `main` implementation lane: `/Users/yosomi/Code/nuinuiCAD`
-- `sub` implementation lane: `/Users/yosomi/Code/nuinuiCAD-sub`
-- `e2e` Manual E2E lane: `/Users/yosomi/Code/nuinuiCAD-e2e`
-- `e2e2` Manual E2E lane: `/Users/yosomi/Code/nuinuiCAD-e2e2`
 
 Hard rule:
 
 - implementation capacity is the count of declared `role=implementation` lanes;
 - Human-test capacity is the count of declared `role=human-test` lanes;
+- Human-test capacityが0の間はManual E2Eを開始できない。Manual E2EがRequiredのIssueは検証を省略・PASS扱いせず、実行前に専用Human-test laneをmanifestへ再宣言し、安全確認する;
 - Manual E2EのExecutorはHumanのみ。implementation Coding AgentをE2E executionに使わない;
 - Human-authorized forensic worktreeは[`CHECKOUTS.md`](./CHECKOUTS.md)の明示的なone-shot inventory exceptionで認識される場合に限り1つだけ存在でき、lane capacityを追加しない;
 - active implementation sliceはBase checkpoint SHAを固定し、integration checkpointまで他lane / remote mainの変更を取り込まない;
