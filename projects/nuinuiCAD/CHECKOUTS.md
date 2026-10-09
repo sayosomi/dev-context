@@ -12,14 +12,11 @@ Evaluator auditのexecutor selection、finding threshold、Sol-first / Astra-esc
 
 ## Declared lanes
 
-The checked-in manifest currently declares these example lanes; the names and paths are data, not the capacity model.
+The checked-in manifest currently declares one implementation lane and zero Human-test lanes; the names and paths are data, not the capacity model.
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
 | `main` | `/Users/yosomi/Code/nuinuiCAD` | Luna implementation / blocking fix / implementation-side diagnosis |
-| `sub` | `/Users/yosomi/Code/nuinuiCAD-sub` | Luna implementation / blocking fix / implementation-side diagnosis |
-| `e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Manual E2E only |
-| `e2e2` | `/Users/yosomi/Code/nuinuiCAD-e2e2` | Manual E2E only |
 
 Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
 
@@ -27,13 +24,14 @@ Capacity and routing rules:
 
 - implementation capacity is the number of declared `role=implementation` lanes.
 - Human-test capacity is the number of declared `role=human-test` lanes.
+- With zero declared Human-test lanes, Manual E2E startup is unavailable. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done; explicitly reintroduce and verify a dedicated `role=human-test` lane before execution.
 - a lane is never reassigned across roles, and declared paths are not inferred from lane names.
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
 
 ## Human-authorized forensic worktree exception
 
-通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の4 laneは上記manifestの例であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
+通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の1 implementation lane / 0 Human-test laneはmanifestの現行構成であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
 
 forensic checkoutの作成・利用には、事前の明示的なHuman authorizationが必要である。`--forensic-worktree <absolute-path>` flagは、既にHumanがauthorizedしたcheckoutをcurrent invocationのinventory exceptionとして認識するだけであり、作成・利用をauthorizeしない。
 
