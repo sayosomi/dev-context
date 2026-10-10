@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.13.3
-K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover pr-auto-merge integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
+V=1.14.0
+K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -721,11 +721,6 @@ case "$1" in
     [ "$#" = 3 ] || { echo 'Usage: nuinui recover <implementation-lane> <expected-claim>'; exit 2; }
     nuinui_require_runtime_manifest || exit 1
     nuinui_run_tracked recover "$#" "$@" nuinui_lane_dispatch recover "$2" "$3"
-    exit $?
-    ;;
-  pr-auto-merge)
-    [ "$#" = 4 ] || { echo 'Usage: nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>'; exit 2; }
-    nuinui_run_tracked pr-auto-merge "$#" "$@" pam "$2" "$3" "$4"
     exit $?
     ;;
   integrate-clean)
