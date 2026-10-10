@@ -1,0 +1,291 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HELPER=${1:-$SCRIPT_DIR/nuinui}
+ROOT=$(CDPATH= cd -- "$(mktemp -d "${TMPDIR:-/tmp}/nuinui-audit-lifecycle.XXXXXX")" && pwd -P)
+AUDIT_PID=
+
+cleanup() {
+  if [ -n "$AUDIT_PID" ]; then
+    kill "$AUDIT_PID" >/dev/null 2>&1 || true
+    wait "$AUDIT_PID" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$ROOT"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() { echo "AUDIT LIFECYCLE TEST FAIL: $*" >&2; exit 1; }
+assert_contains() {
+  if ! printf '%s\n' "$1" | grep -Fq -- "$2"; then
+    printf '%s\n' "$1" >&2
+    fail "$3"
+  fi
+}
+
+expect_blocked() {
+  blocked_name=$1
+  shift
+  if blocked_output=$("$HELPER" "$@" 2>&1); then
+    printf '%s\n' "$blocked_output"
+    fail "$blocked_name unexpectedly succeeded"
+  fi
+  assert_contains "$blocked_output" 'BLOCKED:' "$blocked_name did not fail closed"
+}
+
+expect_cli_error() {
+  cli_error_name=$1
+  cli_error_pattern=$2
+  shift 2
+  if cli_error_output=$("$HELPER" "$@" 2>&1); then
+    printf '%s\n' "$cli_error_output"
+    fail "$cli_error_name unexpectedly succeeded"
+  fi
+  assert_contains "$cli_error_output" "$cli_error_pattern" "$cli_error_name was not rejected precisely"
+}
+
+new_fixture() {
+  fixture_name=$1
+  FIXTURE=$ROOT/$fixture_name
+  REMOTE=$FIXTURE/sayosomi/nuinuiCAD.git
+  SEED=$FIXTURE/seed
+  LANE=$FIXTURE/lane
+  RESULT=$FIXTURE/result
+  MANIFEST=$FIXTURE/LANES.conf
+  mkdir -p "$FIXTURE/sayosomi"
+  git init -q --bare "$REMOTE"
+  git init -q -b main "$SEED"
+  git -C "$SEED" config user.name 'Audit Fixture'
+  git -C "$SEED" config user.email audit-fixture@example.invalid
+  printf 'base\n' > "$SEED/base.txt"
+  git -C "$SEED" add base.txt
+  git -C "$SEED" commit -qm 'fixture base'
+  git -C "$SEED" remote add origin "$REMOTE"
+  git -C "$SEED" push -qu origin main
+  git clone -q "$REMOTE" "$LANE"
+  git -C "$LANE" config user.name 'Audit Fixture'
+  git -C "$LANE" config user.email audit-fixture@example.invalid
+  printf '%s\n' \
+    'version=1' \
+    'repository=sayosomi/nuinuiCAD' \
+    'default_branch=main' \
+    '' \
+    '[lane main]' \
+    'role=implementation' \
+    "path=$LANE" \
+    'idle=branch' > "$MANIFEST"
+  mkdir -p "$RESULT"
+  export NUINUI_SELFTEST=1
+  export NUINUI_SELFTEST_MANIFEST=$MANIFEST
+  export NUINUI_SELFTEST_RESULT_REPO=$RESULT
+  export NUINUI_DEV_CONTEXT_WT=$FIXTURE/dev-context
+  export NUINUI_DEV_CONTEXT_DEV_WT=$FIXTURE/dev-context-dev
+  export NUINUI_E2E_TEMP_PARENT=$ROOT
+  lane_init_output=$("$HELPER" lane-init main 2>&1) || {
+    printf '%s\n' "$lane_init_output"
+    fail "$fixture_name could not initialize its isolated lane"
+  }
+  BASE=$(git -C "$LANE" rev-parse HEAD)
+}
+
+release_exact() {
+  release_issue=${1:-SAY-472}
+  release_output=$("$HELPER" audit-release --issue "$release_issue" \
+    --revision "$BASE" 2>&1) || {
+    printf '%s\n' "$release_output"
+    fail 'exact audit release failed'
+  }
+  assert_contains "$release_output" 'AUDIT RELEASED' 'release envelope is missing'
+  assert_contains "$release_output" 'state=FREE' 'release did not prove FREE state'
+}
+
+sha=$(printf x | git hash-object --stdin)
+expect_cli_error duplicate-begin-option 'duplicate named option --issue' \
+  audit-begin --issue SAY-472 --issue SAY-472 --lane main --revision "$sha"
+expect_cli_error unknown-begin-option 'unknown option --unknown' \
+  audit-begin --issue SAY-472 --lane main --revision "$sha" --unknown x
+expect_cli_error missing-begin-value 'requires a non-empty value' \
+  audit-begin --issue SAY-472 --revision "$sha" --lane
+expect_cli_error malformed-begin-revision 'full 40-character SHA' \
+  audit-begin --issue SAY-472 --lane main --revision abc
+expect_cli_error duplicate-release-option 'duplicate named option --revision' \
+  audit-release --issue SAY-472 --revision "$sha" --revision "$sha"
+
+new_fixture clean
+BASE=$(git -C "$LANE" rev-parse HEAD)
+begin_output=$("$HELPER" audit-begin --issue SAY-472 --lane main \
+  --revision "$BASE" 2>&1) || { printf '%s\n' "$begin_output"; fail 'clean begin failed'; }
+assert_contains "$begin_output" 'AUDIT RESERVATION READY' 'begin envelope is missing'
+assert_contains "$begin_output" "revision=$BASE" 'begin did not report the fixed revision'
+assert_contains "$begin_output" 'admission=BLOCKED reason=audit-reservation' 'begin did not prove non-FREE admission'
+generation=$(printf '%s\n' "$begin_output" | sed -n 's/^generation=//p')
+[ -n "$generation" ] || fail 'begin did not report its generation'
+[ "$(git -C "$LANE" symbolic-ref --quiet --short HEAD || true)" = '' ] || fail 'begin did not detach the lane'
+[ "$(git -C "$LANE" rev-parse HEAD)" = "$BASE" ] || fail 'begin detached at the wrong revision'
+preflight_output=$("$HELPER" preflight 2>&1 || true)
+assert_contains "$preflight_output" 'reason=audit-reservation' 'preflight did not identify audit occupancy'
+
+duplicate_begin=$("$HELPER" audit-begin --issue SAY-472 --lane main \
+  --revision "$BASE" 2>&1) || { printf '%s\n' "$duplicate_begin"; fail 'exact active begin duplicate failed'; }
+assert_contains "$duplicate_begin" 'mutation=no-op' 'duplicate begin was not a no-op'
+assert_contains "$duplicate_begin" "generation=$generation" 'duplicate begin changed generation'
+last_result=$("$HELPER" last-result 2>&1) || fail 'last-result could not read audit result'
+assert_contains "$last_result" 'command=audit-begin' 'last-result lost the audit command identity'
+assert_contains "$last_result" "claim=$generation" 'last-result lost the audit generation'
+
+expect_blocked implementation-start-race start main SAY-901 "$BASE" audit/SAY-901
+expect_blocked implementation-begin-race begin main SAY-902 "$BASE" audit/SAY-902 main=FREE
+sentinel=$(git -C "$LANE" rev-parse --absolute-git-dir)/unrelated-fixture-state
+printf 'keep this file\n' > "$sentinel"
+release_exact
+[ "$(git -C "$LANE" symbolic-ref --quiet --short HEAD)" = main ] || fail 'release did not restore the canonical branch'
+[ "$(git -C "$LANE" rev-parse HEAD)" = "$BASE" ] || fail 'release restored the wrong base'
+[ -f "$sentinel" ] || fail 'release removed unrelated Git-dir state'
+grep -Fq 'keep this file' "$sentinel" || fail 'unrelated state content changed'
+duplicate_release=$("$HELPER" audit-release --issue SAY-472 --revision "$BASE" 2>&1) || {
+  printf '%s\n' "$duplicate_release"
+  fail 'exact release duplicate failed'
+}
+assert_contains "$duplicate_release" 'AUDIT ALREADY RELEASED' 'release duplicate was not recognized'
+assert_contains "$duplicate_release" 'mutation=no-op' 'release duplicate mutated state'
+released_begin=$("$HELPER" audit-begin --issue SAY-472 --lane main \
+  --revision "$BASE" 2>&1) || { printf '%s\n' "$released_begin"; fail 'exact completed begin duplicate failed'; }
+assert_contains "$released_begin" 'AUDIT ALREADY RELEASED' 'completed begin duplicate reopened the audit reservation'
+assert_contains "$released_begin" 'mutation=no-op' 'completed begin duplicate was not a no-op'
+assert_contains "$released_begin" "generation=$generation" 'completed begin duplicate changed generation'
+preflight_output=$("$HELPER" preflight 2>&1)
+assert_contains "$preflight_output" 'state=FREE' 'released lane did not return to FREE'
+
+new_fixture fast-forward
+initial_base=$BASE
+printf 'advanced\n' >> "$SEED/base.txt"
+git -C "$SEED" add base.txt
+git -C "$SEED" commit -qm 'fixture fast-forward'
+git -C "$SEED" push -qu origin main
+BASE=$(git -C "$SEED" rev-parse HEAD)
+ff_begin=$("$HELPER" audit-begin --issue SAY-473 --lane main \
+  --revision "$BASE" 2>&1) || { printf '%s\n' "$ff_begin"; fail 'safe fast-forward begin failed'; }
+assert_contains "$ff_begin" "pre_ff_head=$initial_base" 'begin lost pre-fast-forward HEAD'
+assert_contains "$ff_begin" "post_ff_base=$BASE" 'begin lost post-fast-forward base'
+[ "$(git -C "$LANE" rev-parse refs/heads/main)" = "$BASE" ] || fail 'begin did not fast-forward the canonical branch exactly'
+release_output=$("$HELPER" audit-release --issue SAY-473 --revision "$BASE" 2>&1) || {
+  printf '%s\n' "$release_output"
+  fail 'fast-forward audit release failed'
+}
+[ "$(git -C "$LANE" rev-parse HEAD)" = "$BASE" ] || fail 'release rewound the safe fast-forward base'
+assert_contains "$release_output" 'state=FREE' 'fast-forward release did not prove FREE'
+
+new_fixture remote-drift
+BASE=$(git -C "$LANE" rev-parse HEAD)
+drift_begin=$("$HELPER" audit-begin --issue SAY-474 --lane main \
+  --revision "$BASE" 2>&1) || { printf '%s\n' "$drift_begin"; fail 'remote-drift begin failed'; }
+printf 'remote advance\n' >> "$SEED/base.txt"
+git -C "$SEED" add base.txt
+git -C "$SEED" commit -qm 'fixture remote drift'
+git -C "$SEED" push -qu origin main
+drift_release=$("$HELPER" audit-release --issue SAY-474 --revision "$BASE" 2>&1) || {
+  printf '%s\n' "$drift_release"
+  fail 'release failed after remote main advanced'
+}
+assert_contains "$drift_release" 'freshness=STALE' 'remote drift was not reported as FREE/STALE'
+[ "$(git -C "$LANE" rev-parse HEAD)" = "$BASE" ] || fail 'release incorporated newer remote main'
+[ "$(git -C "$LANE" rev-parse refs/heads/main)" = "$BASE" ] || fail 'release moved the recorded base branch'
+
+new_fixture conflicting
+BASE=$(git -C "$LANE" rev-parse HEAD)
+"$HELPER" audit-begin --issue SAY-475 --lane main --revision "$BASE" >/dev/null 2>&1 || fail 'conflict fixture begin failed'
+other_revision=$(printf 'not-a-commit\n' | git hash-object --stdin)
+expect_blocked conflicting-begin-issue audit-begin --issue SAY-476 --lane main --revision "$BASE"
+expect_blocked conflicting-begin-revision audit-begin --issue SAY-475 --lane main --revision "$other_revision"
+expect_blocked conflicting-release-issue audit-release --issue SAY-476 --revision "$BASE"
+expect_blocked conflicting-release-revision audit-release --issue SAY-475 --revision "$other_revision"
+[ -f "$(git -C "$LANE" rev-parse --absolute-git-dir)/nuinui-audit-reservation-v1" ] ||
+  fail 'conflicting requests removed the active reservation'
+release_exact SAY-475
+
+new_fixture dirty
+BASE=$(git -C "$LANE" rev-parse HEAD)
+"$HELPER" audit-begin --issue SAY-477 --lane main --revision "$BASE" >/dev/null 2>&1 || fail 'dirty fixture begin failed'
+printf 'dirty\n' > "$LANE/untracked-audit-fixture.txt"
+expect_blocked dirty-release audit-release --issue SAY-477 --revision "$BASE"
+[ -f "$(git -C "$LANE" rev-parse --absolute-git-dir)/nuinui-audit-reservation-v1" ] ||
+  fail 'dirty release discarded its reservation'
+rm "$LANE/untracked-audit-fixture.txt"
+release_output=$("$HELPER" audit-release --issue SAY-477 --revision "$BASE" 2>&1) || {
+  printf '%s\n' "$release_output"
+  fail 'clean retry after fixture-only dirty file removal failed'
+}
+
+new_fixture malformed
+BASE=$(git -C "$LANE" rev-parse HEAD)
+"$HELPER" audit-begin --issue SAY-478 --lane main --revision "$BASE" >/dev/null 2>&1 || fail 'malformed fixture begin failed'
+reservation=$(git -C "$LANE" rev-parse --absolute-git-dir)/nuinui-audit-reservation-v1
+printf 'version=1\nissue=SAY-478\nunknown=untrusted\n' > "$reservation"
+cp "$reservation" "$FIXTURE/reservation.malformed"
+malformed_preflight=$("$HELPER" preflight 2>&1 || true)
+assert_contains "$malformed_preflight" 'reason=invalid-audit-reservation' 'malformed metadata was not classified BLOCKED'
+expect_blocked malformed-reservation-start start main SAY-903 "$BASE" audit/SAY-903
+cmp -s "$reservation" "$FIXTURE/reservation.malformed" || {
+  diff -u "$FIXTURE/reservation.malformed" "$reservation" >&2 || true
+  fail 'implementation start rewrote malformed reservation'
+}
+
+new_fixture interrupted
+BASE=$(git -C "$LANE" rev-parse HEAD)
+if interrupt_output=$(NUINUI_SELFTEST_CRASH_AT=audit-after-reservation \
+  "$HELPER" audit-begin --issue SAY-479 --lane main --revision "$BASE" 2>&1); then
+  printf '%s\n' "$interrupt_output"
+  fail 'injected begin interruption unexpectedly succeeded'
+fi
+assert_contains "$interrupt_output" 'injected interruption after durable audit reservation' 'interruption evidence is missing'
+preflight_output=$("$HELPER" preflight 2>&1 || true)
+assert_contains "$preflight_output" 'reason=audit-reservation' 'interrupted begin was misclassified as FREE'
+expect_blocked interrupted-release audit-release --issue SAY-479 --revision "$BASE"
+expect_blocked interrupted-start start main SAY-904 "$BASE" audit/SAY-904
+[ -f "$(git -C "$LANE" rev-parse --absolute-git-dir)/nuinui-audit-reservation-v1" ] ||
+  fail 'interruption removed the durable audit reservation'
+
+new_fixture admission-race
+BASE=$(git -C "$LANE" rev-parse HEAD)
+AUDIT_READY=$FIXTURE/audit-ready
+AUDIT_RESUME=$FIXTURE/audit-resume
+AUDIT_OUTPUT=$FIXTURE/audit-output
+NUINUI_SELFTEST_RESULT_REPO=$FIXTURE/result-audit
+export NUINUI_SELFTEST_RESULT_REPO
+NUINUI_SELFTEST_PAUSE_AT=audit-after-reservation
+NUINUI_SELFTEST_PAUSE_READY=$AUDIT_READY
+NUINUI_SELFTEST_PAUSE_RESUME=$AUDIT_RESUME
+export NUINUI_SELFTEST_PAUSE_AT NUINUI_SELFTEST_PAUSE_READY NUINUI_SELFTEST_PAUSE_RESUME
+"$HELPER" audit-begin --issue SAY-480 --lane main --revision "$BASE" >"$AUDIT_OUTPUT" 2>&1 &
+AUDIT_PID=$!
+race_wait=0
+while [ ! -e "$AUDIT_READY" ] && [ "$race_wait" -lt 250 ]; do
+  kill -0 "$AUDIT_PID" >/dev/null 2>&1 || break
+  sleep 0.02
+  race_wait=$((race_wait + 1))
+done
+[ -e "$AUDIT_READY" ] || {
+  cat "$AUDIT_OUTPUT"
+  fail 'audit begin did not pause after reservation acquisition'
+}
+NUINUI_SELFTEST_RESULT_REPO=$FIXTURE/result-admission
+export NUINUI_SELFTEST_RESULT_REPO
+expect_blocked raced-implementation-start start main SAY-905 "$BASE" audit/SAY-905
+expect_blocked raced-implementation-begin begin main SAY-906 "$BASE" audit/SAY-906 main=FREE
+: > "$AUDIT_RESUME"
+if wait "$AUDIT_PID"; then :; else
+  race_rc=$?
+  cat "$AUDIT_OUTPUT"
+  AUDIT_PID=
+  fail "audit begin failed after race window was released: exit=$race_rc"
+fi
+AUDIT_PID=
+unset NUINUI_SELFTEST_PAUSE_AT NUINUI_SELFTEST_PAUSE_READY NUINUI_SELFTEST_PAUSE_RESUME
+assert_contains "$(cat "$AUDIT_OUTPUT")" 'AUDIT RESERVATION READY' 'raced audit begin did not finish safely'
+release_output=$("$HELPER" audit-release --issue SAY-480 --revision "$BASE" 2>&1) || {
+  printf '%s\n' "$release_output"
+  fail 'raced audit reservation could not be released'
+}
+assert_contains "$release_output" 'state=FREE' 'raced audit release did not prove FREE'
+
+echo 'PASS: audit begin/release lifecycle, fast-forward, duplicates, conflicts, drift, dirty state, races, interruption, and metadata integrity'

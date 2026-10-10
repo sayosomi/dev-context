@@ -1,8 +1,4 @@
-# Public command membership, usage, validation, routing, and dispatch.
-# K is consumed by both usage and the existing context-check implementation.
-V=1.14.0
-K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
-
+# Public command argument validation, routing, and dispatch.
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
   local nuinui_request_occurrence nuinui_request_identifier nuinui_request_identifiers
@@ -408,17 +404,6 @@ nuinui_context_dev_next_parse_args() {
   }
 }
 
-nuinui_usage() {
-  echo "nuinui $V"
-  echo "Commands: $K"
-  echo 'Usage: nuinui handoff <SAY-N> <expected-main-sha>'
-  echo 'Usage: nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...]'
-  echo 'Usage: nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]'
-  echo 'Usage: nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>'
-  echo 'Usage: nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]'
-  echo 'Usage: nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]'
-  echo 'Usage: nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>'
-}
 
 nuinui_render_human_output() {
   nuinui_human_command=$1
@@ -463,6 +448,12 @@ nuinui_render_human_output() {
         line = "🏁 IMPLEMENTATION RELEASED"
       } else if (line == "IMPLEMENTATION ALREADY RELEASED") {
         line = "♻️ IMPLEMENTATION ALREADY RELEASED"
+      } else if (line == "AUDIT RESERVATION READY") {
+        line = "🔎 AUDIT RESERVATION READY"
+      } else if (line == "AUDIT ALREADY RELEASED") {
+        line = "♻️ AUDIT ALREADY RELEASED"
+      } else if (line == "AUDIT RELEASED") {
+        line = "🏁 AUDIT RELEASED"
       } else if (line ~ /^RECOVERED operation=/) {
         sub(/^RECOVERED operation=/, "🛟 RECOVERED operation=", line)
       } else if (line == "AUTO-MERGE RESERVED") {
@@ -732,6 +723,10 @@ case "$1" in
   integrate-clean-command)
     shift
     nuinui_run_public integrate-clean-command nuinui_integrate_clean_command "$@"
+    exit $?
+    ;;
+  audit-begin|audit-release)
+    nuinui_audit_cli_dispatch "$@"
     exit $?
     ;;
   e2e-start)

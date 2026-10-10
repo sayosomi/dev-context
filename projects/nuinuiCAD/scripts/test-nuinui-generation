@@ -29,6 +29,10 @@ nuinui_command_result_source=$script_dir/nuinui-src/command-result.sh
 nuinui_handoff_source=$script_dir/nuinui-src/handoff.sh
 nuinui_exact_fix_source=$script_dir/nuinui-src/exact-fix.sh
 nuinui_self_test_source=$script_dir/nuinui-src/self-test.sh
+nuinui_audit_lifecycle_source=$script_dir/nuinui-src/audit-lifecycle.sh
+nuinui_audit_release_source=$script_dir/nuinui-src/audit-release.sh
+nuinui_audit_cli_source=$script_dir/nuinui-src/audit-cli.sh
+nuinui_cli_usage_source=$script_dir/nuinui-src/cli-usage.sh
 nuinui_dispatch_source=$script_dir/nuinui-src/cli-dispatch.sh
 handoff_body_source=$script_dir/nuinui-handoff-check-src/handoff-body.sh
 e2e_prepare_generator=$script_dir/generate-nuinui-e2e-prepare
@@ -71,6 +75,10 @@ done
 [ -f "$nuinui_handoff_source" ] || fail 'nuinui handoff source is missing'
 [ -f "$nuinui_exact_fix_source" ] || fail 'nuinui exact-fix source is missing'
 [ -f "$nuinui_self_test_source" ] || fail 'nuinui self-test source is missing'
+[ -f "$nuinui_audit_lifecycle_source" ] || fail 'nuinui audit lifecycle source is missing'
+[ -f "$nuinui_audit_release_source" ] || fail 'nuinui audit release source is missing'
+[ -f "$nuinui_audit_cli_source" ] || fail 'nuinui audit CLI source is missing'
+[ -f "$nuinui_cli_usage_source" ] || fail 'nuinui CLI usage source is missing'
 [ -f "$nuinui_dispatch_source" ] || fail 'nuinui CLI dispatch source is missing'
 [ -f "$nuinui_release_command_source" ] || fail 'nuinui release-command source is missing'
 [ -f "$handoff_body_source" ] || fail 'handoff body source is missing'
@@ -110,6 +118,19 @@ test_generator() {
         fail "$name candidate contains obsolete production topology marker: $obsolete_marker"
       fi
     done
+    audit_lifecycle_line=$(grep -nF '# Fixed-revision evaluator audit reservation lifecycle.' "$candidate_a" | cut -d: -f1)
+    audit_release_line=$(grep -nF '# Fixed-revision evaluator audit release lifecycle.' "$candidate_a" | cut -d: -f1)
+    cli_usage_line=$(grep -nF '# Public CLI version, command membership, and usage output.' "$candidate_a" | cut -d: -f1)
+    audit_cli_line=$(grep -nF '# Public audit CLI argument parsing and tracked-command dispatch.' "$candidate_a" | cut -d: -f1)
+    cli_dispatch_line=$(grep -nF '# Public command argument validation, routing, and dispatch.' "$candidate_a" | cut -d: -f1)
+    [ -n "$audit_lifecycle_line" ] && [ -n "$audit_release_line" ] &&
+      [ -n "$cli_usage_line" ] && [ -n "$audit_cli_line" ] &&
+      [ -n "$cli_dispatch_line" ] || fail 'nuinui candidate is missing a source-layout marker'
+    [ "$audit_lifecycle_line" -lt "$audit_release_line" ] &&
+      [ "$audit_release_line" -lt "$cli_usage_line" ] &&
+      [ "$cli_usage_line" -lt "$audit_cli_line" ] &&
+      [ "$audit_cli_line" -lt "$cli_dispatch_line" ] ||
+      fail 'nuinui candidate has an invalid audit and CLI source assembly order'
   fi
   if grep -Eq '^[[:space:]]*\.[[:space:]]+.*\.(sh|zsh)' "$candidate_a"; then
     fail "$name candidate contains runtime source loading"
@@ -124,7 +145,7 @@ test_generator() {
 
   protected_paths="$artifact_path"
   if [ "$name" = nuinui ]; then
-    protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_release_command_source $nuinui_body_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_e2e_start_command_source $nuinui_integrate_clean_command_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_handoff_source $nuinui_exact_fix_source $nuinui_self_test_source $nuinui_dispatch_source"
+    protected_paths="$protected_paths $nuinui_project_policy_source $nuinui_e2e_policy_source $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_preflight_source $nuinui_inventory_source $nuinui_lifecycle_source $nuinui_human_test_source $nuinui_cli_source $nuinui_render_source $nuinui_implementation_operations_source $nuinui_release_safety_source $nuinui_release_command_source $nuinui_body_source $nuinui_integration_clean_source $nuinui_e2e_source $nuinui_e2e_start_command_source $nuinui_integrate_clean_command_source $nuinui_context_sync_source $nuinui_diagnostics_source $nuinui_command_result_source $nuinui_handoff_source $nuinui_exact_fix_source $nuinui_self_test_source $nuinui_audit_lifecycle_source $nuinui_audit_release_source $nuinui_cli_usage_source $nuinui_audit_cli_source $nuinui_dispatch_source"
   elif [ "$name" = nuinui-handoff-check ]; then
     protected_paths="$protected_paths $nuinui_ownership_source $nuinui_manifest_source $nuinui_standalone_context_source $nuinui_runtime_source $nuinui_project_policy_source $handoff_body_source"
   else
@@ -151,7 +172,7 @@ test_generator() {
   echo "PASS: $name generation candidate_sha256=$candidate_sha256 candidate_git_blob=$candidate_git_blob"
 }
 
-test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.14.0
+test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.15.0
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.1.1
 test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.8.2
 

@@ -22,7 +22,7 @@ Backlog -> Todo -> In Progress -> Done
 
 - `Backlog`: contract / plan / prerequisiteが未ready。
 - `Todo`: Ready Queue。実装可能だがimplementation lane未割当、またはsafe checkpointで再開待ち。
-- `In Progress`: manifest-declared implementation laneでimplementation / fixを現在実行中。
+- `In Progress`: manifest-declared implementation laneでimplementation / fixを現在実行中、または有効なaudit reservationを持つResearch/Improvement auditが実行中。
 - `In Review`: implementation merge済みでrequired Manual E2Eだけが残る。
 - `Done`: implementation / required E2E / Done freshness完了。
 
@@ -32,12 +32,18 @@ Research / Review等、PRを伴わないIssueはWork自体が完了した時点�
 
 1. completion gateを満たす → `Done`。
 2. implementation merge済みでrequired Manual E2Eのみ残る → `In Review`。
-3. declared implementation laneでcurrent implementation / fixを実行中 → `In Progress`。
+3. declared implementation laneでcurrent implementation / fixを実行中、または有効なaudit reservation下でResearch/Improvement auditを実行中 → `In Progress`。
 4. それ以外のunstarted / checkpoint-pause / next-slice待ち → readinessにより`Todo`または`Backlog`。
 
 Readyだけを理由にIn Progressへしない。actual durable lane assignmentとexecution開始が必要。
 
 [`CHECKOUTS.md`](./CHECKOUTS.md)の`RELEASE-PENDING`はphysical cleanup stateでありcurrent implementation executionではない。cleanupだけを理由にIssueをIn Progressへ保持しない。
+
+## Evaluator audit reservation status
+
+`nuinui audit-begin`が作るgeneration-bound `audit-reservation`は、manifest-declared implementation laneを物理的に占有するが、implementation slot / generationではない。有効なreservationのread-backがある間は、その予約に対応するResearch/Improvement audit Issueを`In Progress`として同期してよい。reservationがない、malformed、interrupted、またはambiguousな場合、checkout shapeやdetached HEADだけからaudit execution/statusを推定しない。
+
+このaudit statusはcurrent implementation `In Progress`集合とimplementation occupancy reconciliationから分離する。Bug implementationは別途canonical `nuinui begin`でimplementation generationを取得しない限り`In Progress`にならない。`audit-release`がsuccessful `FREE` / `FREE / STALE` evidenceを返したらaudit reservationは終了するが、Research/Improvement Work statusは実際の残作業とcompletion gateに従って同期する。
 
 ## #129 release-before-E2E barrier
 
@@ -118,6 +124,8 @@ new implementation IssueをIn Progressへ進める前に、fresh manifest-derive
 が一致する。
 
 件数<=2だけでは不十分。orphaned / stale In ProgressやBUSY laneに対応するstatus欠落があればnew start/resume前にcurrent remote / checkpoint / lane evidenceから同期する。既存authorityだけで安全に解消できない不一致はBLOCKED / UNKNOWNとしnew implementationを開始しない。
+
+このimplementation-only照合ではaudit-reservationをBUSY implementation laneやimplementation `In Progress` Issueとして数えない。ただしphysical laneは`audit-reservation`が終了するまでimplementation admissionに利用できない。
 
 RELEASE-PENDING、FREE、Issue AuthoringだけのWorkはcurrent implementation In Progress集合へ含めない。
 

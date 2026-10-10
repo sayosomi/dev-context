@@ -142,18 +142,117 @@ nuinui_ownership_parse_release_receipt() {
   printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7"
 }
 
+nuinui_ownership_validate_audit_reservation() {
+  nuinui_ownership_audit_file=$1
+  nuinui_ownership_validate_exact_file "$nuinui_ownership_audit_file" \
+    version,issue,lane,revision,generation,checkout,git_dir,repository,default_branch,idle_policy,original_branch,pre_ff_head,post_ff_base,state || return 1
+  nuinui_ownership_audit_version=$(nuinui_ownership_field "$nuinui_ownership_audit_file" version) || return 1
+  nuinui_ownership_audit_issue=$(nuinui_ownership_field "$nuinui_ownership_audit_file" issue) || return 1
+  nuinui_ownership_audit_lane=$(nuinui_ownership_field "$nuinui_ownership_audit_file" lane) || return 1
+  nuinui_ownership_audit_revision=$(nuinui_ownership_field "$nuinui_ownership_audit_file" revision) || return 1
+  nuinui_ownership_audit_generation=$(nuinui_ownership_field "$nuinui_ownership_audit_file" generation) || return 1
+  nuinui_ownership_audit_checkout=$(nuinui_ownership_field "$nuinui_ownership_audit_file" checkout) || return 1
+  nuinui_ownership_audit_git_dir=$(nuinui_ownership_field "$nuinui_ownership_audit_file" git_dir) || return 1
+  nuinui_ownership_audit_repository=$(nuinui_ownership_field "$nuinui_ownership_audit_file" repository) || return 1
+  nuinui_ownership_audit_default=$(nuinui_ownership_field "$nuinui_ownership_audit_file" default_branch) || return 1
+  nuinui_ownership_audit_idle=$(nuinui_ownership_field "$nuinui_ownership_audit_file" idle_policy) || return 1
+  nuinui_ownership_audit_branch=$(nuinui_ownership_field "$nuinui_ownership_audit_file" original_branch) || return 1
+  nuinui_ownership_audit_pre_ff=$(nuinui_ownership_field "$nuinui_ownership_audit_file" pre_ff_head) || return 1
+  nuinui_ownership_audit_base=$(nuinui_ownership_field "$nuinui_ownership_audit_file" post_ff_base) || return 1
+  nuinui_ownership_audit_state=$(nuinui_ownership_field "$nuinui_ownership_audit_file" state) || return 1
+  [ "$nuinui_ownership_audit_version" = 1 ] || return 1
+  nuinui_ownership_valid_issue "$nuinui_ownership_audit_issue" || return 1
+  nuinui_ownership_valid_lane_name "$nuinui_ownership_audit_lane" || return 1
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_revision" || return 1
+  nuinui_ownership_valid_claim "$nuinui_ownership_audit_generation" || return 1
+  case "$nuinui_ownership_audit_checkout:$nuinui_ownership_audit_git_dir" in
+    /*:/*) ;;
+    *) return 1 ;;
+  esac
+  case "$nuinui_ownership_audit_repository" in
+    ''|*[!A-Za-z0-9._/-]*) return 1 ;;
+  esac
+  nuinui_ownership_valid_branch "$nuinui_ownership_audit_default" || return 1
+  case "$nuinui_ownership_audit_idle" in
+    branch)
+      [ "$nuinui_ownership_audit_branch" = "$nuinui_ownership_audit_default" ] || return 1
+      ;;
+    detached)
+      [ "$nuinui_ownership_audit_branch" = - ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_pre_ff" || return 1
+  [ "$nuinui_ownership_audit_base" = "$nuinui_ownership_audit_revision" ] || return 1
+  case "$nuinui_ownership_audit_state" in
+    PREPARING|ACTIVE|RELEASING) ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_ownership_validate_audit_receipt() {
+  nuinui_ownership_audit_receipt=$1
+  nuinui_ownership_validate_exact_file "$nuinui_ownership_audit_receipt" \
+    version,issue,lane,revision,generation,checkout,git_dir,repository,default_branch,idle_policy,original_branch,pre_ff_head,post_ff_base,released_at || return 1
+  nuinui_ownership_audit_receipt_version=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" version) || return 1
+  nuinui_ownership_audit_receipt_issue=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" issue) || return 1
+  nuinui_ownership_audit_receipt_lane=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" lane) || return 1
+  nuinui_ownership_audit_receipt_revision=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" revision) || return 1
+  nuinui_ownership_audit_receipt_generation=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" generation) || return 1
+  nuinui_ownership_audit_receipt_checkout=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" checkout) || return 1
+  nuinui_ownership_audit_receipt_git_dir=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" git_dir) || return 1
+  nuinui_ownership_audit_receipt_repository=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" repository) || return 1
+  nuinui_ownership_audit_receipt_default=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" default_branch) || return 1
+  nuinui_ownership_audit_receipt_idle=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" idle_policy) || return 1
+  nuinui_ownership_audit_receipt_branch=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" original_branch) || return 1
+  nuinui_ownership_audit_receipt_pre_ff=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" pre_ff_head) || return 1
+  nuinui_ownership_audit_receipt_base=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" post_ff_base) || return 1
+  nuinui_ownership_audit_receipt_time=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" released_at) || return 1
+  [ "$nuinui_ownership_audit_receipt_version" = 1 ] || return 1
+  nuinui_ownership_valid_issue "$nuinui_ownership_audit_receipt_issue" || return 1
+  nuinui_ownership_valid_lane_name "$nuinui_ownership_audit_receipt_lane" || return 1
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_receipt_revision" || return 1
+  nuinui_ownership_valid_claim "$nuinui_ownership_audit_receipt_generation" || return 1
+  case "$nuinui_ownership_audit_receipt_checkout:$nuinui_ownership_audit_receipt_git_dir" in
+    /*:/*) ;;
+    *) return 1 ;;
+  esac
+  case "$nuinui_ownership_audit_receipt_repository" in
+    ''|*[!A-Za-z0-9._/-]*) return 1 ;;
+  esac
+  nuinui_ownership_valid_branch "$nuinui_ownership_audit_receipt_default" || return 1
+  case "$nuinui_ownership_audit_receipt_idle" in
+    branch)
+      [ "$nuinui_ownership_audit_receipt_branch" = "$nuinui_ownership_audit_receipt_default" ] || return 1
+      ;;
+    detached)
+      [ "$nuinui_ownership_audit_receipt_branch" = - ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_receipt_pre_ff" || return 1
+  [ "$nuinui_ownership_audit_receipt_base" = "$nuinui_ownership_audit_receipt_revision" ] || return 1
+  printf '%s\n' "$nuinui_ownership_audit_receipt_time" |
+    grep -Eq '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$'
+}
+
 nuinui_ownership_parse_lock() {
   set -- $(nuinui_ownership_read_fields "$1" version,operation,issue,branch,base,checkpoint,claim) || return 1
   [ "$#" = 7 ] || return 1
   [ "$1" = 1 ] || return 1
   case "$2" in
-    init|start|resume|release) ;;
+    init|start|resume|release|audit-begin|audit-release) ;;
     *) return 1 ;;
   esac
   case "$3:$4" in
     -:-) ;;
     -:*|*:-) return 1 ;;
-    *) nuinui_ownership_validate_issue_branch "$3" "$4" || return 1 ;;
+    *)
+      case "$2" in
+        audit-begin|audit-release) return 1 ;;
+        *) nuinui_ownership_validate_issue_branch "$3" "$4" || return 1 ;;
+      esac
+      ;;
   esac
   [ "$5" = - ] || nuinui_ownership_valid_sha "$5" || return 1
   [ "$6" = - ] || nuinui_ownership_valid_sha "$6" || return 1

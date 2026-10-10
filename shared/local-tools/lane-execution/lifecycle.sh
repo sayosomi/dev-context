@@ -122,16 +122,22 @@ lane_execution__unlock() {
 }
 
 lane_execution__lock() {
+  [ "$#" = 5 ] || [ "$#" = 6 ] || return 2
   lane_execution_lock_repo=$1
   lane_execution_lock_claim=$2
   lane_execution_lock_issue=$3
   lane_execution_lock_branch=$4
   lane_execution_lock_base=$5
+  lane_execution_lock_operation=${6:-start}
+  case "$lane_execution_lock_operation" in
+    start|audit-begin|audit-release) ;;
+    *) return 2 ;;
+  esac
   lane_execution_lock_dir=$(lane_execution__metadata_path "$lane_execution_lock_repo" \
     nuinui-implementation-lock)
   mkdir "$lane_execution_lock_dir" 2>/dev/null || return 1
   lane_execution__atomic_write "$lane_execution_lock_dir/state" \
-    "version=1\noperation=start\nissue=$lane_execution_lock_issue\nbranch=$lane_execution_lock_branch\nbase=$lane_execution_lock_base\ncheckpoint=-\nclaim=$lane_execution_lock_claim\n"
+    "version=1\noperation=$lane_execution_lock_operation\nissue=$lane_execution_lock_issue\nbranch=$lane_execution_lock_branch\nbase=$lane_execution_lock_base\ncheckpoint=-\nclaim=$lane_execution_lock_claim\n"
 }
 
 lane_execution__remote_branch() {
@@ -165,6 +171,7 @@ lane_execution__start_mutation() {
   lane_execution_mutation_git_dir=$(lane_execution__git_dir "$lane_execution_mutation_repo") || return 1
   lane_execution_mutation_slot=$lane_execution_mutation_git_dir/nuinui-implementation-slot
   lane_execution_mutation_lock=$lane_execution_mutation_git_dir/nuinui-implementation-lock
+  lane_execution_mutation_audit=$lane_execution_mutation_git_dir/nuinui-audit-reservation-v1
   lane_execution_mutation_initialization=$lane_execution_mutation_git_dir/nuinui-implementation-v1
   lane_execution_validate_work_id "$lane_execution_mutation_issue" || return 2
   lane_execution_validate_issue_branch "$lane_execution_mutation_issue" \
@@ -174,7 +181,9 @@ lane_execution__start_mutation() {
   lane_execution__repository_matches "$lane_execution_mutation_repo" \
     "$lane_execution_target_repository" || return 1
   nuinui_ownership_validate_initialization "$lane_execution_mutation_initialization" || return 1
-  [ ! -e "$lane_execution_mutation_slot" ] && [ ! -e "$lane_execution_mutation_lock" ] || return 1
+  [ ! -e "$lane_execution_mutation_slot" ] && [ ! -L "$lane_execution_mutation_slot" ] &&
+    [ ! -e "$lane_execution_mutation_lock" ] && [ ! -L "$lane_execution_mutation_lock" ] &&
+    [ ! -e "$lane_execution_mutation_audit" ] && [ ! -L "$lane_execution_mutation_audit" ] || return 1
   [ -z "$(lane_execution__release_dirs "$lane_execution_mutation_git_dir")" ] || return 1
   git -C "$lane_execution_mutation_repo" fetch origin \
     "$lane_execution_target_default" >/dev/null 2>&1 || return 1

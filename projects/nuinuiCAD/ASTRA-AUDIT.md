@@ -89,6 +89,19 @@ An Astra independent second pass should normally use a separate session so that 
 
 Session reuse and rotation are efficiency choices only. They do not weaken fixed-revision isolation, evidence thresholds, stop rules, or checkout safety.
 
+## Fixed-revision reservation commands
+
+After selecting the current Research/Improvement Issue, declared implementation lane, exact authoritative `main` revision, and bounded semantic scope, ChatGPT supplies these two complete Human commands:
+
+```text
+nuinui audit-begin --issue SAY-N --lane <declared-lane> --revision <40-character-main-sha>
+nuinui audit-release --issue SAY-N --revision <same-40-character-sha>
+```
+
+Start Sol, or an explicitly justified Astra escalation, only after `audit-begin` returns `AUDIT RESERVATION READY` with the same Issue, lane, revision, generation, clean detached checkout, and `admission=BLOCKED reason=audit-reservation`. This durable physical reservation keeps implementation admission closed for the run. It does not change the executor role, evidence threshold, run budgets, or read-only source boundary.
+
+After the executor stops, release with the exact same Issue and revision. A successful release restores the recorded canonical idle form at the recorded post-fast-forward base; a newer remote `main` may leave the lane `FREE / STALE`. Exact repeated commands are read-back no-ops. If a command is interrupted, dirty, mismatched, or ambiguous, read `nuinui last-result`, preserve the reservation, and return the blocker for review. Do not infer reservation ownership from a detached checkout or attempt cleanup, reset, stash, or force recovery.
+
 ## Astra escalation
 
 Use GPT-6 Astra only when at least one of the following explicit conditions exists after a substantive Sol pass:
