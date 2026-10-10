@@ -24,6 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config --global init.defaultBranch main
           /bin/sh -n projects/nuinuiCAD/scripts/generate-nuinui
           /bin/sh -n projects/nuinuiCAD/scripts/nuinui
           /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-generation
