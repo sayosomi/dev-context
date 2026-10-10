@@ -3,7 +3,7 @@
 
 nuinui_command_result_tracked() {
   case "$1" in
-    lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix) return 0 ;;
+    lane-init|begin|start|resume|release|recover|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix) return 0 ;;
     *) return 1 ;;
   esac
 }
