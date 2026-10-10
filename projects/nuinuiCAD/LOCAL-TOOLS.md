@@ -229,7 +229,7 @@ current commands:
 | `nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>` | current active generationまたはexact completed-release receiptをread-onlyで証明し、既存positional release commandのcanonical Human handoffを生成 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
-| `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | reviewed exact headへrequired CI pending時だけGitHub Auto-mergeを予約 |
+| `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | **旧方式・移行期間のみ保持**。required CI pending時のexact-head予約helper。新規通常PRではowner-comment GitHub Actions方式（[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)）を使い、このcommandは新規運用に使用しない |
 | `nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | eligible Integration checkpointでChatGPTがauthorizeしたdeterministic conflict-free merge-only integrationをselected manifest laneで実行し、verify後にnormal push |
 | `nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]` | settledなcaller intentをread-onlyでcanonicalなshell-safe positional `integrate-clean` commandへ変換。semantic eligibility authorization、verification-plan selection、mutationは行わない |
 | `nuinui e2e-start [<human-test-lane>] <SAY-123> <tested-ref>` | unique Human-test laneのshort form、またはexplicit manifest laneをexact tested refへ固定しmarker作成 |
@@ -461,6 +461,8 @@ clean=yes
 ### Standalone non-lane mechanics
 
 `pr-auto-merge`, E2E, context-audit / context-sync / context-dev-audit / context-dev-transition / context-dev-next, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
+
+`nuinui pr-auto-merge`は**旧方式の実装仕様を記録する互換commandであり通常運用では使用しない**。新規のPRは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のGitHub Actions owner-comment方式を使う。旧helperの廃止は生成source / assembled `nuinui` / focused regressions / command-result互換の同時更新と検証後にのみ行う。
 
 `nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。`expected-main`はcallerがfreshに確認したauthoritative remote `main` SHAであり、helperはGitHubから`main` tipを独立取得して一致を確認する。PRの`baseRefOid`はauthoritative current-main freshnessのevidenceとして扱わない。PRがOPEN / non-draft / base=`main` / exact reviewed headで、reviewed headがそのauthoritative current `main`をintegration済みであり、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。current main mismatchは`BLOCKED: expected main mismatch`、behind PRは`BLOCKED: PR is behind current main; integration required`としてfail-closedする。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
 
