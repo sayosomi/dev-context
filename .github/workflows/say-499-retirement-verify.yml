@@ -38,8 +38,8 @@ jobs:
           set -euo pipefail
           /bin/sh projects/nuinuiCAD/scripts/test-nuinui-generation
           /bin/sh projects/nuinuiCAD/scripts/test-nuinui-command-result projects/nuinuiCAD/scripts/nuinui
-          helper=projects/nuinuiCAD/scripts/nuinui
-          scripts=projects/nuinuiCAD/scripts
+          helper="$GITHUB_WORKSPACE/projects/nuinuiCAD/scripts/nuinui"
+          scripts="$GITHUB_WORKSPACE/projects/nuinuiCAD/scripts"
           /bin/sh "$scripts/test-nuinui-runtime" "$helper"
           /bin/sh "$scripts/test-nuinui-handoff-check"
           /bin/sh "$scripts/test-nuinui-handoff" "$helper"
