@@ -84,15 +84,20 @@ Luna implementation / integration result後、残作業がChatGPTから直接扱
 典型:
 
 ```text
-Luna result
+implementation agent result
 -> pushed HEAD / latest main freshness
--> blocking review
--> [Auto-merge: exact-head reservation -> task ends without CI wait]
-   or
-   [manual merge: fresh CI -> merge -> merged-state verification -> release-command handoff -> generated release -> Linear synchronization]
+-> ChatGPT blocking review of exact pushed HEAD
+-> required CI pending? YES -> owner issue comment /auto-merge-reviewed (head/base/review=PASS)
+   -> Actions exact-head reservation + remote read-back -> track ends without CI wait
+   -> GitHub bot merge + Discord notification -> Human explicit resume -> merged-state verification
+   -> release-command handoff -> generated release -> Linear synchronization
+-> required CI already success? YES -> independent fresh merge-gate review
+   -> ordinary merge -> merged-state verification -> release-command handoff
+   -> generated release -> Linear synchronization
+-> CI failure / HEAD or main drift / ambiguous checks? -> BLOCKED; no bypass
 ```
 
-Auto-mergeのprecondition / CI failure terminal stop / manual merge continuationは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)をauthorityとする。Humanに何もする必要がないremote-only intermediate stateをhandoff boundaryにしない。
+Auto-mergeのowner-comment syntax、reservation verification / CI race、CI failure terminal stop、CI-complete ordinary merge、Human resumeの境界は[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)を唯一のauthorityとする。旧`nuinui pr-auto-merge`をnormal pathでHumanに実行させない。Humanに何もする必要がないremote-only intermediate stateをhandoff boundaryにしない。
 
 Humanへ戻してよいのはproduct / UX / scope decision、unsafe local state、destructive operation、Human-only observation、required approval boundary、またはcurrent toolsで解消できないconcrete blocker等、Human actionが実際に必要な場合だけ。
 
