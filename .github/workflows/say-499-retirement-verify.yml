@@ -1,0 +1,40 @@
+name: Temporary SAY-499 retirement verification
+
+on:
+  pull_request:
+    paths:
+      - 'projects/nuinuiCAD/scripts/**'
+      - 'projects/nuinuiCAD/LOCAL-TOOLS.md'
+      - '.github/workflows/say-499-retirement-verify.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-regression:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout reviewed PR contents
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify shell syntax and retirement guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/sh -n projects/nuinuiCAD/scripts/generate-nuinui
+          /bin/sh -n projects/nuinuiCAD/scripts/nuinui
+          /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-generation
+          /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge-retired
+          /bin/sh -n projects/nuinuiCAD/scripts/test-nuinui-command-result
+          /bin/sh projects/nuinuiCAD/scripts/test-nuinui-pr-auto-merge-retired projects/nuinuiCAD/scripts/nuinui
+
+      - name: Verify deterministic generation and current helper behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          /bin/sh projects/nuinuiCAD/scripts/test-nuinui-generation
+          /bin/sh projects/nuinuiCAD/scripts/test-nuinui-command-result projects/nuinuiCAD/scripts/nuinui
+          projects/nuinuiCAD/scripts/nuinui self-test
