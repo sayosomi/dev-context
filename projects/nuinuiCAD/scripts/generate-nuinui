@@ -38,6 +38,7 @@ command_result_source=$script_dir/nuinui-src/command-result.sh
 handoff_source=$script_dir/nuinui-src/handoff.sh
 exact_fix_source=$script_dir/nuinui-src/exact-fix.sh
 self_test_source=$script_dir/nuinui-src/self-test.sh
+audit_lifecycle_source=$script_dir/nuinui-src/audit-lifecycle.sh
 dispatch_source=$script_dir/nuinui-src/cli-dispatch.sh
 artifact_path=$script_dir/nuinui
 
@@ -92,6 +93,10 @@ done
   echo "generate-nuinui: self-test source is missing: $self_test_source" >&2
   exit 1
 }
+[ -f "$audit_lifecycle_source" ] || {
+  echo "generate-nuinui: audit lifecycle source is missing: $audit_lifecycle_source" >&2
+  exit 1
+}
 [ -f "$release_command_source" ] || {
   echo "generate-nuinui: release-command source is missing: $release_command_source" >&2
   exit 1
@@ -108,7 +113,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$release_command_source"|"$body_source"|"$integration_clean_source"|"$e2e_source"|"$e2e_start_command_source"|"$integrate_clean_command_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$handoff_source"|"$exact_fix_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
+  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$release_command_source"|"$body_source"|"$integration_clean_source"|"$e2e_source"|"$e2e_start_command_source"|"$integrate_clean_command_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$handoff_source"|"$exact_fix_source"|"$self_test_source"|"$audit_lifecycle_source"|"$dispatch_source"|"$artifact_path")
     echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -173,6 +178,7 @@ assemble_source "$command_result_source"
 assemble_source "$handoff_source"
 assemble_source "$exact_fix_source"
 assemble_source "$self_test_source"
+assemble_source "$audit_lifecycle_source"
 assemble_source "$dispatch_source"
 } > "$temporary_path"
 chmod 755 "$temporary_path"

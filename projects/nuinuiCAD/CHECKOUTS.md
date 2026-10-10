@@ -41,19 +41,29 @@ exceptionを使う場合も、supplied pathはcanonical absolute directoryであ
 
 ## Temporary evaluator-audit execution use of an implementation lane
 
-Evaluator auditのexecutor selectionとfindingsの扱いは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)に従う。このtemporary useはGPT-6.1 Sol first passまたはGPT-6 Astra escalationのための既存declared laneに対するexecution-only予約であり、lane roleは`implementation`のまま変えず、新しいimplementation generation、capacity、permanent audit checkoutを作らない。
+Evaluator auditのexecutor selection、evidence threshold、Sol-first / Astra-escalation handoffは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)がownerする。監査は既存のmanifest-declared `role=implementation` laneを一時的に占有するが、role、implementation generation、capacity、declared lane countを変更しない。別worktreeや監査専用laneを作らない。
 
-- An evaluator-audit executor may start in a declared `role=implementation` lane only after a Human authorizes the exact lane, fixed audit revision, and bounded exploration scope, and the existing read-only lane classifier proves that lane is initially `FREE` and clean.
-- Before moving it, record the exact repository/worktree identity, path, original branch or detached state, original `HEAD`, and clean status.
-- The temporary reservation recorded in the current Work context under [`LINEAR.md`](./LINEAR.md) and [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) is coordination evidence only; it is not a physical mutex and does not affect the local classifier or `nuinui begin`. Move the lane by an ordinary safe checkout operation to a clean, read-only checkout at the fixed audit revision, then run the existing `nuinui preflight` classifier again. Start the evaluator-audit executor only if that exact lane is classified `BLOCKED` because it no longer matches its declared idle form, with no ownership slot, mutation lock, or release tombstone. `FREE`, `BUSY`, `RELEASE-PENDING`, any other `BLOCKED` reason, or an ambiguous result does not authorize the run.
-- For a declared `idle=branch` lane, a clean detached checkout at the fixed audit revision is a valid non-`FREE` audit state. For an `idle=detached` lane, do not assume that detaching makes it unavailable: it may still satisfy the declared `FREE` form. Use a declared lane only if its idle policy can safely produce a read-only state that the existing classifier proves is non-`FREE`; otherwise use the separately Human-authorized forensic-worktree path below.
-- Keep that exact classifier-proven idle-form `BLOCKED` state for the entire evaluator-audit execution session. Do not switch or restore the lane while the audit executor is running. If the checkout drifts or no longer has that clean, ownership-free classification, stop the run and fail closed.
-- Do not create an implementation branch, marker, helper, claim, checkpoint, or implementation generation for an evaluator audit.
-- All tracked files, including product source, are read-only. Sol and Astra must not edit, stage, commit, or push tracked files. Keep temporary generators, harnesses, reducers, logs, evidence, generated output, and caches outside the checkout. If a tool cannot do that, use only explicitly recorded new paths and remove them only when their audit ownership and absence from the original state are proven; never overwrite or remove pre-existing ignored or untracked data.
-- After exploration, restore the exact original checkout state and verify the same repository/worktree identity, path, branch or detached state, `HEAD`, and clean tracked/untracked status. Then run the existing `nuinui preflight` classifier and release the temporary reservation only after it proves the lane is back in its canonical `FREE` form. If the audit executor cannot start because the expected non-`FREE` proof fails, restore and prove that same canonical `FREE` form before releasing the reservation; otherwise fail closed and retain the reservation.
-- If a tracked file changes, the checkout becomes dirty, or any other local change prevents proving the original state, stop and fail closed. Do not use reset, stash, clean, force operations, or destructive cleanup to make the lane appear available. Preserve the state and report the blocker; do not start Luna on that lane.
+開始前に、ChatGPTがHuman-approved Issue、declared lane、authoritative remote `main`と一致する固定revision、bounded semantic scopeを確定する。Humanは次の1コマンドで開始する。
 
-This temporary reservation makes one existing implementation lane unavailable during the evaluator-audit run; it adds no implementation capacity and changes no declared lane count. If isolation is needed, the audit may use an already registered forensic worktree only after separate explicit Human authorization and under the exception's inventory rules above. The same fixed-revision, read-only, and safe-restoration requirements apply. A forensic worktree remains an inventory exception, not an implementation lane or permanent evaluator-audit workspace; `--forensic-worktree` only identifies a preauthorized worktree in supported inventory operations and does not itself authorize creation or use.
+```text
+nuinui audit-begin --issue SAY-N --lane <declared-lane> --revision <40-character-main-sha>
+```
+
+`audit-begin`は`LANES.conf`、完全なregistered-worktree inventory、cleanなcanonical idle form、durable implementation ownership、live remote `main`を検証する。cleanなidle branchが固定revisionより遅れている場合だけ、同revisionへの証明済みfast-forwardを許可する。detachmentより先にGit-dirへgeneration-bound reservationを永続化し、既存のlane mutation lockとcanonical preflight classifierを通してimplementation admissionを閉じる。成功時は`AUDIT RESERVATION READY`とexact Issue/lane/revision/generationを返す。
+
+有効なreservationはpreflightで`BLOCKED reason=audit-reservation`と表示される。これは監査固有のphysical occupancyであり、detached HEADだけから推定しない。`nuinui begin`と`nuinui start`はreservation取得中、監査中、release中のどの時点でもそのlaneをclaimできない。Research/Improvement Issue statusの扱いは[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従い、監査reservationをimplementation generationとして扱わない。
+
+Sol / Astraは固定revisionで実行し、tracked product sourceをread-onlyに保つ。harness、reducers、logs、evidence、outputs、cachesはcheckout外に置く。dirty checkout、malformed metadata、identity drift、interrupted transitionはreservationを保持してfail closedし、reset、stash、clean、force、destructive recoveryを行わない。
+
+executor終了後、Humanは同じIssue / revisionで次の1コマンドを実行する。
+
+```text
+nuinui audit-release --issue SAY-N --revision <same-40-character-sha>
+```
+
+`audit-release`はactiveなexact reservationを照合し、記録済みのcanonical idle branch/formとpost-fast-forward baseへ戻し、release receiptを保存してからreservationを解放する。監査中にremote `main`が進んでいても、新しいcommitを取り込まず安全にreleaseでき、結果は`FREE / STALE`になり得る。exactなduplicate begin/releaseはauthoritative read-backに基づくno-opである。mismatchまたはambiguousなreleaseはreservationを保持する。
+
+forensic worktree exceptionを使う場合は、上記とは独立した明示的Human authorizationとinventory ruleに従う。`--forensic-worktree`は既にauthorizedされたworktreeのinventory認識だけを行い、作成・利用をauthorizeしない。
 
 ## Human terminal operations
 

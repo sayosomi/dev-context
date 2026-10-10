@@ -52,6 +52,8 @@ gd() { git -C "$1" rev-parse --absolute-git-dir 2>/dev/null; }
 ip() { printf '%s/nuinui-implementation-v1\n' "$(gd "$1")"; }
 sp() { printf '%s/nuinui-implementation-slot\n' "$(gd "$1")"; }
 kp() { printf '%s/nuinui-implementation-lock\n' "$(gd "$1")"; }
+ap() { printf '%s/nuinui-audit-reservation-v1\n' "$(gd "$1")"; }
+arp() { printf '%s/nuinui-audit-release-receipt-v1\n' "$(gd "$1")"; }
 rp() { printf '%s/nuinui-implementation-slot.releasing.%s\n' "$(gd "$1")" "$2"; }
 rds() {
   runtime_releasing_git_dir=$(gd "$1") || return 1

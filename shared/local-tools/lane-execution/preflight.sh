@@ -21,6 +21,11 @@ if ! command -v nuinui_ownership_read_fields >/dev/null 2>&1 && [ -n "$lane_exec
 fi
 # END DEVELOPMENT-ONLY SOURCE LOADING
 
+# Internal, one-call projection used only while the matching audit mutation
+# lock is held. Public preflight entrypoints clear these values before use.
+lane_execution_audit_projection_operation=
+lane_execution_audit_projection_generation=
+
 # Reuse the established v1 field reader and generic scalar validators.  The
 # generic parser below supplies the lane-independent slot/lock checks while
 # keeping project Work-ID / branch policy in an explicit callback.
@@ -135,13 +140,18 @@ lane_execution__parse_lock() {
   [ "$#" = 7 ] || return 1
   [ "$1" = 1 ] || return 1
   case "$2" in
-    init|start|resume|release) ;;
+    init|start|resume|release|audit-begin|audit-release) ;;
     *) return 1 ;;
   esac
   case "$3:$4" in
     -:-) ;;
     -:*|*:-) return 1 ;;
-    *) lane_execution__parse_issue_branch "$3" "$4" || return 1 ;;
+    *)
+      case "$2" in
+        audit-begin|audit-release) return 1 ;;
+        *) lane_execution__parse_issue_branch "$3" "$4" || return 1 ;;
+      esac
+      ;;
   esac
   [ "$5" = - ] || lane_execution__valid_sha "$5" || return 1
   [ "$6" = - ] || lane_execution__valid_sha "$6" || return 1
@@ -210,6 +220,7 @@ lane_execution__classify_implementation() {
   lane_execution_slot=$lane_execution_git_dir/nuinui-implementation-slot
   lane_execution_lock=$lane_execution_git_dir/nuinui-implementation-lock
   lane_execution_initialization=$lane_execution_git_dir/nuinui-implementation-v1
+  lane_execution_audit_file=$lane_execution_git_dir/nuinui-audit-reservation-v1
   lane_execution_branch=$(git -C "$lane_execution_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   lane_execution_head=$(git -C "$lane_execution_repo" rev-parse HEAD 2>/dev/null || true)
   lane_execution_dirty=$(git -C "$lane_execution_repo" status --porcelain 2>/dev/null)
@@ -219,7 +230,114 @@ lane_execution__classify_implementation() {
   printf '  head=%s\n' "$lane_execution_head"
   printf '  clean=%s\n' "$([ -z "$lane_execution_dirty" ] && echo yes || echo no)"
 
-  if [ -e "$lane_execution_lock" ] || [ -L "$lane_execution_lock" ]; then
+  lane_execution_skip_lock=0
+  lane_execution_skip_audit=0
+  lane_execution_projection_operation=${lane_execution_audit_projection_operation:-}
+  lane_execution_projection_generation=${lane_execution_audit_projection_generation:-}
+  if [ -n "$lane_execution_projection_operation" ]; then
+    case "$lane_execution_projection_operation" in
+      audit-begin|audit-release) ;;
+      *)
+        echo '  state=BLOCKED reason=invalid-audit-projection'
+        return 1
+        ;;
+    esac
+    nuinui_ownership_valid_claim "$lane_execution_projection_generation" || {
+      echo '  state=BLOCKED reason=invalid-audit-projection'
+      return 1
+    }
+  fi
+
+  if [ -e "$lane_execution_audit_file" ] || [ -L "$lane_execution_audit_file" ]; then
+    [ -f "$lane_execution_audit_file" ] && [ ! -L "$lane_execution_audit_file" ] &&
+      nuinui_ownership_validate_audit_reservation "$lane_execution_audit_file" || {
+      echo '  state=BLOCKED reason=invalid-audit-reservation'
+      return 1
+    }
+    lane_execution_audit_issue=$(nuinui_ownership_field "$lane_execution_audit_file" issue) || return 1
+    lane_execution_audit_lane=$(nuinui_ownership_field "$lane_execution_audit_file" lane) || return 1
+    lane_execution_audit_revision=$(nuinui_ownership_field "$lane_execution_audit_file" revision) || return 1
+    lane_execution_audit_generation=$(nuinui_ownership_field "$lane_execution_audit_file" generation) || return 1
+    lane_execution_audit_checkout=$(nuinui_ownership_field "$lane_execution_audit_file" checkout) || return 1
+    lane_execution_audit_stored_git_dir=$(nuinui_ownership_field "$lane_execution_audit_file" git_dir) || return 1
+    lane_execution_audit_repository=$(nuinui_ownership_field "$lane_execution_audit_file" repository) || return 1
+    lane_execution_audit_default=$(nuinui_ownership_field "$lane_execution_audit_file" default_branch) || return 1
+    lane_execution_audit_idle=$(nuinui_ownership_field "$lane_execution_audit_file" idle_policy) || return 1
+    lane_execution_audit_state=$(nuinui_ownership_field "$lane_execution_audit_file" state) || return 1
+    lane_execution_repo_canonical=$(lane_execution__canonical_path "$lane_execution_repo" || true)
+    lane_execution_repo_identity=$(lane_manifest_repository_identity \
+      "$lane_execution_classification_manifest" 2>/dev/null || true)
+    [ "$lane_execution_audit_lane" = "$lane_execution_lane" ] &&
+      [ "$lane_execution_audit_checkout" = "$lane_execution_repo_canonical" ] &&
+      [ "$lane_execution_audit_stored_git_dir" = "$lane_execution_git_dir" ] &&
+      [ "$lane_execution_audit_repository" = "$lane_execution_repo_identity" ] &&
+      [ "$lane_execution_audit_default" = "$lane_execution_default_branch" ] &&
+      [ "$lane_execution_audit_idle" = "$lane_execution_idle_policy" ] || {
+      echo '  state=BLOCKED reason=invalid-audit-reservation-identity'
+      return 1
+    }
+    if [ -e "$lane_execution_slot" ] || [ -L "$lane_execution_slot" ] ||
+      [ "$lane_execution_releasing_count" != 0 ]; then
+      echo '  state=BLOCKED reason=audit-reservation-implementation-conflict'
+      return 1
+    fi
+    if [ "$lane_execution_projection_operation" = audit-release ] &&
+      [ "$lane_execution_projection_generation" = "$lane_execution_audit_generation" ] &&
+      [ "$lane_execution_audit_state" = RELEASING ] &&
+      [ -d "$lane_execution_lock" ] && [ ! -L "$lane_execution_lock" ]; then
+      set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+      if [ "$#" = 6 ] && [ "$1" = audit-release ] && [ "$6" = "$lane_execution_audit_generation" ]; then
+        lane_execution_skip_audit=1
+        lane_execution_skip_lock=1
+      fi
+    fi
+    if [ "$lane_execution_skip_audit" != 1 ]; then
+      if [ -e "$lane_execution_lock" ] || [ -L "$lane_execution_lock" ]; then
+        set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+        case "$1" in
+          audit-begin|audit-release) lane_execution_audit_operation_valid=1 ;;
+          *) lane_execution_audit_operation_valid=0 ;;
+        esac
+        if [ "$#" = 6 ] && [ "$6" = "$lane_execution_audit_generation" ] &&
+          [ "$lane_execution_audit_operation_valid" = 1 ]; then
+          lane_execution_audit_lock="owned:$1"
+        else
+          lane_execution_audit_lock=conflict
+        fi
+      else
+        lane_execution_audit_lock=none
+      fi
+      [ "$lane_execution_audit_lock" != conflict ] || {
+        echo '  state=BLOCKED reason=audit-reservation-lock-conflict'
+        return 1
+      }
+      printf '  audit_issue=%s audit_revision=%s audit_generation=%s audit_phase=%s audit_lock=%s\n' \
+        "$lane_execution_audit_issue" "$lane_execution_audit_revision" \
+        "$lane_execution_audit_generation" "$lane_execution_audit_state" \
+        "$lane_execution_audit_lock"
+      echo '  state=BLOCKED reason=audit-reservation'
+      return 1
+    fi
+  elif [ "$lane_execution_projection_operation" = audit-release ]; then
+    echo '  state=BLOCKED reason=audit-reservation-missing-for-release-proof'
+    return 1
+  fi
+
+  if [ "$lane_execution_projection_operation" = audit-begin ]; then
+    if [ -d "$lane_execution_lock" ] && [ ! -L "$lane_execution_lock" ]; then
+      set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+      if [ "$#" = 6 ] && [ "$1" = audit-begin ] && [ "$6" = "$lane_execution_projection_generation" ]; then
+        lane_execution_skip_lock=1
+      fi
+    fi
+    [ "$lane_execution_skip_lock" = 1 ] || {
+      echo '  state=BLOCKED reason=audit-begin-lock-mismatch'
+      return 1
+    }
+  fi
+
+  if { [ -e "$lane_execution_lock" ] || [ -L "$lane_execution_lock" ]; } &&
+    [ "$lane_execution_skip_lock" != 1 ]; then
     set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
     if [ "$#" = 6 ]; then
       printf '  state=BLOCKED reason=mutation-in-progress operation=%s claim=%s\n' "$1" "$6"
@@ -396,6 +514,7 @@ lane_execution__preflight_audit() {
   shift
   [ "$#" = 1 ] || [ "$#" = 3 ] || return 2
   lane_execution_manifest=$1
+  lane_execution_classification_manifest=$lane_execution_manifest
   lane_execution_forensic=
   if [ "$#" = 3 ]; then
     [ "$2" = --forensic-worktree ] || return 2
@@ -493,11 +612,27 @@ EOF
 }
 
 lane_execution_preflight() {
+  lane_execution_audit_projection_operation=
+  lane_execution_audit_projection_generation=
   lane_execution__preflight_audit full "$@"
 }
 
 lane_execution_implementation_preflight() {
+  lane_execution_audit_projection_operation=
+  lane_execution_audit_projection_generation=
   lane_execution__preflight_audit implementation "$@"
+}
+
+lane_execution__preflight_with_audit_lock() {
+  [ "$#" = 3 ] || return 2
+  lane_execution_projection_manifest=$1
+  lane_execution_audit_projection_operation=$2
+  lane_execution_audit_projection_generation=$3
+  lane_execution__preflight_audit implementation "$lane_execution_projection_manifest"
+  lane_execution_projection_rc=$?
+  lane_execution_audit_projection_operation=
+  lane_execution_audit_projection_generation=
+  return "$lane_execution_projection_rc"
 }
 
 lane_execution_preflight_command() {

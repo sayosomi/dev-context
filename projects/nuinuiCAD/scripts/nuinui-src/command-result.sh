@@ -3,7 +3,7 @@
 
 nuinui_command_result_tracked() {
   case "$1" in
-    lane-init|begin|start|resume|release|recover|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix) return 0 ;;
+    lane-init|begin|start|resume|release|recover|integrate-clean|audit-begin|audit-release|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -148,6 +148,15 @@ nuinui_command_result_request_metadata() {
       nuinui_command_result_meta_issue=$3
       nuinui_command_result_meta_claim=$4
       ;;
+    audit-begin|audit-release)
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --issue) [ "$#" -gt 1 ] && nuinui_command_result_meta_issue=$2; shift 2 ;;
+          --lane) [ "$#" -gt 1 ] && nuinui_command_result_meta_lane=$2; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      ;;
     e2e-start|e2e-start-local-main|e2e-release)
       nuinui_command_result_meta_lane=${NUINUI_COMMAND_RESULT_LANE:--}
       if [ "$#" = 4 ]; then
@@ -198,7 +207,7 @@ nuinui_command_result_state_valid() {
       if (values["version"] != "1") invalid=1
       if (values["operation_id"] !~ /^[0-9a-f]{40}$/) invalid=1
       if (values["timestamp"] !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/) invalid=1
-      if (values["command"] !~ /^(lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix)$/) invalid=1
+      if (values["command"] !~ /^(lane-init|begin|start|resume|release|recover|pr-auto-merge|integrate-clean|audit-begin|audit-release|e2e-start|e2e-start-local-main|e2e-release|context-sync|context-dev-transition|exact-fix)$/) invalid=1
       if (values["phase"] !~ /^(STARTED|TERMINAL)$/) invalid=1
       if (values["result"] !~ /^(INCOMPLETE|SUCCESS|BLOCKED|ERROR)$/) invalid=1
       if (values["lane"] !~ /^([A-Za-z0-9._-]+|dev-context|-)$/) invalid=1
@@ -219,6 +228,7 @@ nuinui_command_result_state_valid() {
         if (values["command"] ~ /^(release|recover)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] != "-" || values["claim"] == "-")) invalid=1
         if (values["command"] == "pr-auto-merge" && (values["lane"] != "-" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
         if (values["command"] == "integrate-clean" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
+        if (values["command"] ~ /^(audit-begin|audit-release)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
         if (values["command"] ~ /^(e2e-start|e2e-start-local-main|e2e-release)$/ && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] != "-")) invalid=1
         if (values["command"] ~ /^(context-sync|context-dev-transition)$/ && (values["lane"] != "dev-context" || values["issue"] != "-" || values["claim"] != "-")) invalid=1
         if (values["command"] == "exact-fix" && (values["lane"] !~ /^[A-Za-z0-9._-]+$/ || values["lane"] == "-" || values["issue"] !~ /^SAY-[0-9]+$/ || values["claim"] == "-")) invalid=1
@@ -295,6 +305,18 @@ nuinui_command_result_run() {
   }
   nuinui_command_result_underlying_rc=0
   "$@" >"$nuinui_command_result_capture" 2>&1 || nuinui_command_result_underlying_rc=$?
+  if [ "$nuinui_command_result_command" = audit-begin ] ||
+    [ "$nuinui_command_result_command" = audit-release ]; then
+    if [ -n "${NUINUI_AUDIT_RESOLVED_LANE:-}" ]; then
+      nuinui_command_result_meta_lane=$NUINUI_AUDIT_RESOLVED_LANE
+    fi
+    if [ -n "${NUINUI_AUDIT_RESOLVED_ISSUE:-}" ]; then
+      nuinui_command_result_meta_issue=$NUINUI_AUDIT_RESOLVED_ISSUE
+    fi
+    if nuinui_ownership_valid_claim "${NUINUI_AUDIT_RESOLVED_GENERATION:-}"; then
+      nuinui_command_result_meta_claim=$NUINUI_AUDIT_RESOLVED_GENERATION
+    fi
+  fi
   if [ "$nuinui_command_result_command" = exact-fix ] &&
     [ -n "${NUINUI_EXACT_FIX_RESOLVED_LANE:-}" ]; then
     nuinui_command_result_meta_lane=$NUINUI_EXACT_FIX_RESOLVED_LANE
@@ -339,7 +361,7 @@ nuinui_command_result_run() {
     nuinui_command_result_mutation=yes
   elif nuinui_command_result_canonical_blocked "$nuinui_command_result_capture"; then
     case "$nuinui_command_result_command" in
-      begin|integrate-clean|context-sync|context-dev-transition) nuinui_command_result_mutation=no ;;
+      begin|audit-begin|audit-release|integrate-clean|context-sync|context-dev-transition) nuinui_command_result_mutation=no ;;
       *) nuinui_command_result_mutation=unknown ;;
     esac
   else

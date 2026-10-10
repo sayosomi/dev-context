@@ -62,7 +62,9 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.14.0`。
+current standalone helper version: `1.15.0`。
+
+`1.15.0` adds the fixed-revision evaluator-audit lifecycle. Human runs `nuinui audit-begin --issue <SAY-N> --lane <declared-lane> --revision <full-sha>` once to acquire a durable generation-bound reservation and detach at the exact authoritative `main` revision, then `nuinui audit-release --issue <SAY-N> --revision <full-sha>` once to restore the recorded idle form and post-fast-forward base. Both commands use the existing per-lane mutation lock and canonical preflight classifier. A valid reservation is reported as `BLOCKED reason=audit-reservation`, so implementation `begin` / `start` cannot claim it. Exact duplicate requests are read-back no-ops; dirty, malformed, interrupted, or ambiguous state retains the reservation and fails closed. `nuinui last-result` records command outcome and audit generation for terminal recovery. Read-only source scope, fixed-revision evidence, Sol-first / Astra-escalation policy, and audit budgets remain owned by [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md).
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -128,6 +130,9 @@ shared/local-tools/lane-execution/implementation-operations.sh
 
 shared/local-tools/lane-execution/release-safety.sh
   generic read-only duplicate-release proof preserving the v1 safety envelope
+
+projects/nuinuiCAD/scripts/nuinui-src/audit-lifecycle.sh
+  fixed-revision audit reservation and release adapter using the existing lane lock and canonical classifier
 
 projects/nuinuiCAD/scripts/nuinui-src/lane-execution-profile.sh
   nuinuiCAD's Work-ID / branch policy; Human-test preflight delegates to the reusable project classifier rather than owning a competing predicate

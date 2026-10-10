@@ -1,7 +1,7 @@
 # Public command membership, usage, validation, routing, and dispatch.
 # K is consumed by both usage and the existing context-check implementation.
-V=1.14.0
-K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover integrate-clean integrate-clean-command e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
+V=1.15.0
+K='preflight verify lane-init begin begin-command start resume handoff exact-fix release release-command recover integrate-clean integrate-clean-command audit-begin audit-release e2e-start e2e-start-command e2e-start-local-main e2e-release context-audit context-sync context-dev-audit context-dev-transition context-dev-next doctor transition-audit context-check self-test last-result'
 
 nuinui_validate_public_issue_branch() {
   local nuinui_request_issue nuinui_request_branch nuinui_request_occurrences
@@ -83,6 +83,94 @@ nuinui_validate_public_issue_branch_human() {
 nuinui_shell_quote() {
   nuinui_shell_quote_value=$(printf '%s' "$1" | sed "s/'/'\\\\''/g")
   printf "'%s'" "$nuinui_shell_quote_value"
+}
+
+nuinui_audit_begin_parse_args() {
+  nuinui_audit_cli_issue=
+  nuinui_audit_cli_lane=
+  nuinui_audit_cli_revision=
+  nuinui_audit_cli_issue_seen=0
+  nuinui_audit_cli_lane_seen=0
+  nuinui_audit_cli_revision_seen=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --issue)
+        [ "$nuinui_audit_cli_issue_seen" = 0 ] || { echo 'ERROR: duplicate named option --issue'; return 2; }
+        nuinui_audit_cli_issue_seen=1
+        nuinui_audit_cli_option=--issue
+        ;;
+      --lane)
+        [ "$nuinui_audit_cli_lane_seen" = 0 ] || { echo 'ERROR: duplicate named option --lane'; return 2; }
+        nuinui_audit_cli_lane_seen=1
+        nuinui_audit_cli_option=--lane
+        ;;
+      --revision)
+        [ "$nuinui_audit_cli_revision_seen" = 0 ] || { echo 'ERROR: duplicate named option --revision'; return 2; }
+        nuinui_audit_cli_revision_seen=1
+        nuinui_audit_cli_option=--revision
+        ;;
+      --*|-*) echo "ERROR: unknown option $1"; return 2 ;;
+      *) echo "ERROR: unexpected positional argument $1"; return 2 ;;
+    esac
+    [ "$#" -ge 2 ] && [ -n "$2" ] || {
+      printf 'ERROR: named option %s requires a non-empty value\n' "$nuinui_audit_cli_option"
+      return 2
+    }
+    case "$2" in
+      --*) printf 'ERROR: named option %s is missing its value before %s\n' "$nuinui_audit_cli_option" "$2"; return 2 ;;
+    esac
+    case "$nuinui_audit_cli_option" in
+      --issue) nuinui_audit_cli_issue=$2 ;;
+      --lane) nuinui_audit_cli_lane=$2 ;;
+      --revision) nuinui_audit_cli_revision=$2 ;;
+    esac
+    shift 2
+  done
+  [ "$nuinui_audit_cli_issue_seen" = 1 ] || { echo 'ERROR: missing required named option --issue'; return 2; }
+  [ "$nuinui_audit_cli_lane_seen" = 1 ] || { echo 'ERROR: missing required named option --lane'; return 2; }
+  [ "$nuinui_audit_cli_revision_seen" = 1 ] || { echo 'ERROR: missing required named option --revision'; return 2; }
+  printf '%s\n' "$nuinui_audit_cli_issue" | grep -Eq '^SAY-[0-9]+$' || { echo 'ERROR: --issue must be SAY-<digits>'; return 2; }
+  printf '%s\n' "$nuinui_audit_cli_lane" | grep -Eq '^[A-Za-z0-9._-]+$' || { echo 'ERROR: --lane is malformed'; return 2; }
+  printf '%s\n' "$nuinui_audit_cli_revision" | grep -Eq '^[[:xdigit:]]{40}$' || { echo 'ERROR: --revision must be a full 40-character SHA'; return 2; }
+}
+
+nuinui_audit_release_parse_args() {
+  nuinui_audit_cli_issue=
+  nuinui_audit_cli_revision=
+  nuinui_audit_cli_issue_seen=0
+  nuinui_audit_cli_revision_seen=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --issue)
+        [ "$nuinui_audit_cli_issue_seen" = 0 ] || { echo 'ERROR: duplicate named option --issue'; return 2; }
+        nuinui_audit_cli_issue_seen=1
+        nuinui_audit_cli_option=--issue
+        ;;
+      --revision)
+        [ "$nuinui_audit_cli_revision_seen" = 0 ] || { echo 'ERROR: duplicate named option --revision'; return 2; }
+        nuinui_audit_cli_revision_seen=1
+        nuinui_audit_cli_option=--revision
+        ;;
+      --*|-*) echo "ERROR: unknown option $1"; return 2 ;;
+      *) echo "ERROR: unexpected positional argument $1"; return 2 ;;
+    esac
+    [ "$#" -ge 2 ] && [ -n "$2" ] || {
+      printf 'ERROR: named option %s requires a non-empty value\n' "$nuinui_audit_cli_option"
+      return 2
+    }
+    case "$2" in
+      --*) printf 'ERROR: named option %s is missing its value before %s\n' "$nuinui_audit_cli_option" "$2"; return 2 ;;
+    esac
+    case "$nuinui_audit_cli_option" in
+      --issue) nuinui_audit_cli_issue=$2 ;;
+      --revision) nuinui_audit_cli_revision=$2 ;;
+    esac
+    shift 2
+  done
+  [ "$nuinui_audit_cli_issue_seen" = 1 ] || { echo 'ERROR: missing required named option --issue'; return 2; }
+  [ "$nuinui_audit_cli_revision_seen" = 1 ] || { echo 'ERROR: missing required named option --revision'; return 2; }
+  printf '%s\n' "$nuinui_audit_cli_issue" | grep -Eq '^SAY-[0-9]+$' || { echo 'ERROR: --issue must be SAY-<digits>'; return 2; }
+  printf '%s\n' "$nuinui_audit_cli_revision" | grep -Eq '^[[:xdigit:]]{40}$' || { echo 'ERROR: --revision must be a full 40-character SHA'; return 2; }
 }
 
 nuinui_begin_command_parse_args() {
@@ -418,6 +506,8 @@ nuinui_usage() {
   echo 'Usage: nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor <human|luna> --fixture <absolute-fixture-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]'
   echo 'Usage: nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]'
   echo 'Usage: nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>'
+  echo 'Usage: nuinui audit-begin --issue <SAY-N> --lane <declared-lane> --revision <full-sha>'
+  echo 'Usage: nuinui audit-release --issue <SAY-N> --revision <full-sha>'
 }
 
 nuinui_render_human_output() {
@@ -463,6 +553,12 @@ nuinui_render_human_output() {
         line = "🏁 IMPLEMENTATION RELEASED"
       } else if (line == "IMPLEMENTATION ALREADY RELEASED") {
         line = "♻️ IMPLEMENTATION ALREADY RELEASED"
+      } else if (line == "AUDIT RESERVATION READY") {
+        line = "🔎 AUDIT RESERVATION READY"
+      } else if (line == "AUDIT ALREADY RELEASED") {
+        line = "♻️ AUDIT ALREADY RELEASED"
+      } else if (line == "AUDIT RELEASED") {
+        line = "🏁 AUDIT RELEASED"
       } else if (line ~ /^RECOVERED operation=/) {
         sub(/^RECOVERED operation=/, "🛟 RECOVERED operation=", line)
       } else if (line == "AUTO-MERGE RESERVED") {
@@ -732,6 +828,26 @@ case "$1" in
   integrate-clean-command)
     shift
     nuinui_run_public integrate-clean-command nuinui_integrate_clean_command "$@"
+    exit $?
+    ;;
+  audit-begin)
+    nuinui_audit_request_count=$(($# - 1))
+    shift
+    nuinui_audit_begin_parse_args "$@" || exit $?
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked audit-begin "$nuinui_audit_request_count" "$@" \
+      nuinui_audit_begin "$NUINUI_RUNTIME_MANIFEST" \
+      "$nuinui_audit_cli_issue" "$nuinui_audit_cli_lane" "$nuinui_audit_cli_revision"
+    exit $?
+    ;;
+  audit-release)
+    nuinui_audit_request_count=$(($# - 1))
+    shift
+    nuinui_audit_release_parse_args "$@" || exit $?
+    nuinui_require_runtime_manifest || exit 1
+    nuinui_run_tracked audit-release "$nuinui_audit_request_count" "$@" \
+      nuinui_audit_release "$NUINUI_RUNTIME_MANIFEST" \
+      "$nuinui_audit_cli_issue" "$nuinui_audit_cli_revision"
     exit $?
     ;;
   e2e-start)
