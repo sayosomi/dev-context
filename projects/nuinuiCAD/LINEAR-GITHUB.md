@@ -71,7 +71,7 @@ review=PASS
 - 予約成功後、ChatGPT/実装AgentはCI完了をchatでwait / pollせずexecution trackを終了する。GitHubがrequired CI green後にmergeし、`.github/workflows/discord-bot-automerge-reconcile.yml`がbot mergeを検出・Discord通知し、GitHubにdurable receiptを保存する。通知漏れの再照合には同workflowのbounded scheduleがある。Discord通知だけを根拠に自動resume、CI rerun、修正、merge、Linear更新を行わない。
 - CI non-success通知後はHumanの明示resumeがある場合だけfresh PR/head/base/Actions/contract evidenceで診断する。単なるflaky / retry-onlyを推測してCIを繰り返さない。既存のCI incident / blocking-fix safety ruleを維持する。
 
-`nuinui pr-auto-merge`は旧ローカル予約helperとして一時的に残るが、**新規の通常PRでは使用しない**。退役は新経路の実装PR実証後、`LOCAL-TOOLS.md`でownerする生成元・runtime・テスト/ABIを整合させる独立した検証付き変更で行う。新方式への移行を理由に旧helperのcode / testsを無検証で削除しない。
+旧`nuinui pr-auto-merge`ローカル予約helperは、実PRで新方式を実証し、生成元・runtime・テスト・過去の`last-result`読取互換を検証したうえで、dev-context PR #264により廃止済み。新規PRの予約は上記GitHub Actions owner-comment経路のみを使用する。
 
 Auto-merge後のLinear syncはDiscord merge通知だけを根拠に実行しない。Humanがその通知をもとに明示resumeした後、authoritative merge commit / remaining acceptance / Manual E2E stateをfresh確認する。final implementation mergeならexact generationをreleaseし、Lane release checkpointをrecord / read-backした後、このdocumentのstatus ruleで同期する。release失敗 / interruptedではphysical laneをavailableと見なさず、既存のcleanup / status exceptionに従う。
 
