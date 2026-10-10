@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
+ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-retired-automerge.XXXXXX") || exit 1
+trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
+
+fail() {
+  echo "RETIRED AUTO-MERGE TEST FAIL: $*" >&2
+  exit 1
+}
+
+cat > "$ROOT/gh" <<'FAKE_GH'
+#!/bin/sh
+printf 'invoked\n' >> "$FAKE_GH_CALLS"
+exit 99
+FAKE_GH
+chmod 755 "$ROOT/gh"
+: > "$ROOT/calls"
+
+for variant in valid missing_arguments; do
+  case "$variant" in
+    valid)
+      set -- pr-auto-merge 417 \
+        1111111111111111111111111111111111111111 \
+        2222222222222222222222222222222222222222 ;;
+    missing_arguments) set -- pr-auto-merge ;;
+  esac
+  rc=0
+  output=$(NUINUI_GH_BIN="$ROOT/gh" FAKE_GH_CALLS="$ROOT/calls" \
+    NUINUI_SELFTEST=1 NUINUI_SELFTEST_RESULT_REPO="$ROOT/context" \
+    "$HELPER" "$@" 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || fail "$variant: removed command returned unexpected status $rc"
+  [ ! -s "$ROOT/calls" ] || fail "$variant: removed command invoked GitHub"
+  if printf '%s\n' "$output" | grep -Fq 'pr-auto-merge'; then
+    fail "$variant: removed command still appears in public usage"
+  fi
+done
+
+version=$("$HELPER" version)
+[ "$version" = 1.14.0 ] || fail "unexpected helper version: $version"
+[ ! -s "$ROOT/calls" ] || fail 'version invoked GitHub'
+echo 'RETIRED AUTO-MERGE TEST PASS'
