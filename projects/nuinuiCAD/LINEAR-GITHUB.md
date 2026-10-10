@@ -50,24 +50,30 @@ GitHub integration上のlink不足を避けるためだけにintermediate PRへ�
 - intermediate PRでは`Fixes` / `Closes`等のclosing magic wordを付けず、merge後にimplementation checkpointをLinearへ記録する。
 - final completion PRではremaining implementation acceptanceが本当に完了することを確認し、standard closing magic wordを使う。
 
-### GitHub Auto-merge reservation
+### GitHub Actions Auto-merge reservation（通常経路）
 
-repository settingでrequired `CI`とGitHub Auto-mergeが有効な場合、blocking review PASS後に次の条件をすべてfresh remote evidenceで確認して、`nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>`でreservationしてよい。helperはGitHub GraphQLの`enablePullRequestAutoMerge` mutationを直接使い、`expectedHeadOid`へblocking-review済みexact headを渡す。reservation pathでは`gh pr merge --auto`、`mergePullRequest`、`--admin`、force、bypass等、即時mergeへ分岐し得るoperationを使わない。
+repositoryのrequired `CI`とGitHub Auto-mergeが有効な場合、ChatGPTは**実装Agentの自己申告だけに依存せず**、pushed exact HEADのblocking reviewを行う。以下をfreshなGitHub evidenceで確認し、CIがqueued / in_progressなら、repository所有者のPR Conversation commentに次の**完全一致**requestを1回だけ投稿して予約する。PR番号はcommentを投稿するPRから解決される。
 
-- PRがopenかつnon-draftで、intended baseとexpected head SHAがcurrent contractに一致する。
-- PR identity、head、base、remote drift、mergeability、GitHub authorizationにambiguityがない。
-- required check `CI`がPRをgateする設定であり、現在のrequired failureがなく、少なくとも1件がqueued / in_progressである。required checksがすべて完了済みならreservation helperは`BLOCKED:`で停止し、即時mergeへ切り替えない。
-- current sliceのautomated verificationとblocking reviewがPASSし、product / UX / scope / architecture owner / acceptanceの未解決decisionがない。
-- reservation直前にhead / base / expected main / required CI stateを再確認し、`expectedHeadOid`でheadを固定する。GitHub上でauto-mergeが有効になったことをread-backする。
-- precondition確認後にCIが完了したraceでは、`enablePullRequestAutoMerge`の`clean status` rejectionをsafe stopとして扱い、direct mergeへfallbackしない。
+```text
+/auto-merge-reviewed
+head=<reviewed 40-character lowercase SHA>
+base=<fresh authoritative main 40-character lowercase SHA>
+review=PASS
+```
 
-reservation helperが`BLOCKED: all required checks are already complete`で停止したことは、reservation-only pathが成立しなかったことだけを意味し、CI failure、implementation pause、lane release、Issueの`Todo` transitionを意味しない。helper自身からdirect mergeへfallbackしてはならないが、Humanがその`BLOCKED`結果を返してcurrent executionを明示resumeした場合は、それを新しいcontinuation boundaryとしてPR / head / base / main / CI / mergeabilityをfreshに確認する。required CIがsuccessで通常のmerge gateを満たすなら、既存のmerge authorizationに基づきordinary manual merge pathを継続し、追加のmerge確認を要求しない。local lane releaseの依頼または成功だけからIssue statusを`Todo`へ変更せず、statusはmerge state / remaining acceptance / Manual E2E stateから独立に決定する。
+- `review=PASS`はChatGPTが**そのexact HEADのblocking reviewを実施しPASSと判断した**旨のattestationであり、文字列自体がreviewの代替になるわけではない。commentは`sayosomi`本人のowner権限から投稿する。実装Agentや未検証のPR投稿者へこのcommentを委譲しない。
+- 対象は`sayosomi/nuinuiCAD`のopen / non-draft、base=`main`、head / baseがsame repositoryのPR。current authoritative `main`が`base`にexact一致し、reviewed HEADがcurrent `main`をancestorとして取り込んでいること、mergeabilityがunambiguous、既存reservationがないことを確認する。単なるPRの`baseRefOid`はcurrent-main freshness proofとみなさない。
+- required protectionはGitHub Actions Appの`CI`であり、reviewed HEADに対応するpull_request CI runがqueued / in_progressかつfailureなし、required aggregatorも未完了であることを確認する。CI runの多重性、check / job状態、head、main、GitHub API、permissionに曖昧さがあればfail closedする。
+- owner commentで`.github/workflows/auto-merge-reviewed.yml`が動く。workflowがmutation直前にも上記identity・main・required CIを再検証し、`enablePullRequestAutoMerge(expectedHeadOid, mergeMethod: MERGE)`で**予約だけ**を行う。workflowは`mergePullRequest`、`gh pr merge --auto`、admin / force / bypassや直接mergeへのfallbackを使わない。
+- Actionsの成功outputとfreshなPR read-backの両方で`auto_merge.merge_method=merge`および`enabled_by=github-actions[bot]`を証明できた場合だけ「予約完了」とする。comment投稿やworkflow開始だけでは予約成功と呼ばない。失敗・途中state・予期しないreservationは原因を確認するまで再投稿/取消/置換しない。
+- **blocking review時点でrequired CIがすべてsuccess**なら予約commentを投稿せず、PR / exact HEAD / fresh main / drift / required CI / mergeability / authorizationを改めて確認し、ordinary merge routeで進める。CI失敗・unresolved / canceled / skippedならmergeしない。必要なcheckが未証明なら停止する。
+- reservation request後にCIが先に完了するraceはworkflowのfail-closedとして扱い、workflow内部からdirect mergeしない。ChatGPTがその状態を知って継続可能な場合だけ、fresh remote evidenceと元のmerge authorizationを独立に確認し、既存のordinary merge条件に従う。head / main drift、CI failure、identity ambiguity等は単なるCI完了raceとして扱わない。
+- 予約成功後、ChatGPT/実装AgentはCI完了をchatでwait / pollせずexecution trackを終了する。GitHubがrequired CI green後にmergeし、`.github/workflows/discord-bot-automerge-reconcile.yml`がbot mergeを検出・Discord通知し、GitHubにdurable receiptを保存する。通知漏れの再照合には同workflowのbounded scheduleがある。Discord通知だけを根拠に自動resume、CI rerun、修正、merge、Linear更新を行わない。
+- CI non-success通知後はHumanの明示resumeがある場合だけfresh PR/head/base/Actions/contract evidenceで診断する。単なるflaky / retry-onlyを推測してCIを繰り返さない。既存のCI incident / blocking-fix safety ruleを維持する。
 
-予約後、agentはCI完了・mergeをwait / pollせずexecution trackを終了する。GitHubのrequired CIがgreenならmergeし、merge Discord通知をexisting routeで送る。CI non-successなら同じDiscord routeのfailure通知が送られ、Humanが必要なら明示的にCodexをresumeする。Discord通知は自動resume、CI rerun、cancel、failure diagnosis、repair、merge、Linear updateを許可しない。
+`nuinui pr-auto-merge`は旧ローカル予約helperとして一時的に残るが、**新規の通常PRでは使用しない**。退役は新経路の実装PR実証後、`LOCAL-TOOLS.md`でownerする生成元・runtime・テスト/ABIを整合させる独立した検証付き変更で行う。新方式への移行を理由に旧helperのcode / testsを無検証で削除しない。
 
-Humanがfailure後に明示resumeした時だけ、fresh PR/head/base/Actions/contract evidenceから再開する。failure evidenceによりapproved contract・scope・current architecture内の次の修正が一意なら継続してよい。複数の妥当なimplementation案、product / UX / contract判断、scope拡大、authority conflict、architecture owner変更、acceptance変更、Manual E2E judgment、destructive / external-state riskではHumanへ再承認を求める。同一failureの反復やflaky / retry-onlyは根拠なくgreenまでretryせず、まずCI incident routeとmodel escalationを使う。PR/head/base identity ambiguity、auth / permission、GitHub outageは実装判断ではなく`BLOCKED`として停止・報告する。
-
-Auto-merge後のLinear syncは、Discord merge通知だけを根拠に実行しない。Humanの明示resume後、authoritative merged commit、remaining acceptance、Manual E2E stateを再確認する。final implementation mergeならcompleted implementation generationをreleaseしてLane release checkpointをrecord / read-backした後、このdocumentのstatus ruleに従う。最初のrelease attemptがfail / interruptedなら、physical laneをunavailableのまま扱い、authoritative merged stateに基づくstatus synchronizationへ進んでから既存release / recovery routeを継続する。
+Auto-merge後のLinear syncはDiscord merge通知だけを根拠に実行しない。Humanがその通知をもとに明示resumeした後、authoritative merge commit / remaining acceptance / Manual E2E stateをfresh確認する。final implementation mergeならexact generationをreleaseし、Lane release checkpointをrecord / read-backした後、このdocumentのstatus ruleで同期する。release失敗 / interruptedではphysical laneをavailableと見なさず、既存のcleanup / status exceptionに従う。
 
 PR前の包括承認は、少なくとも次を値埋めして記録する。
 
@@ -75,7 +81,7 @@ PR前の包括承認は、少なくとも次を値埋めして記録する。
 Issue / objective: <key and authority reference>
 Approved contract and non-goals: <references>
 PR target: <repository>, base <base>, expected head <SHA>
-Permission: create/push this PR; after blocking review PASS, reserve GitHub Auto-merge for this exact head through the reservation-only helper with expectedHeadOid. Do not use a direct merge path.
+Permission: create/push this PR; after independent ChatGPT blocking review PASS, use the owner-authored exact-head /auto-merge-reviewed GitHub Actions reservation only while required CI is pending, with expectedHeadOid. If required CI is already successful, use a separately fresh-reviewed ordinary merge. No direct merge fallback from the reservation workflow.
 CI failure: Discord notification stops the track. No automatic resume, rerun, cancel, repair, merge, or Linear update; resume only on my explicit instruction.
 Repair after explicit resume: continue only when the evidence makes one contract/scope/current-architecture fix unique; otherwise return for my decision.
 Stop immediately: PR/head/base/auth/GitHub ambiguity, scope or acceptance change, owner/architecture conflict, Manual E2E judgment, destructive/external-state risk.
