@@ -62,7 +62,7 @@ local cloneがdirty、`main`以外、またはfast-forward不可能ならreset /
 
 ## Versioned `nuinui` helper
 
-current standalone helper version: `1.13.3`。
+current standalone helper version: `1.14.0`。
 
 verify、direct public start、およびbeginは、既存のlifecycle ownerを呼ぶ前に新規requestのIssue / branch pairをstrictに検証する。branch全体からcase-insensitiveなSAY-Nを抽出して重複を除き、distinctなidentifierが1つだけでcaller Issueと一致する場合だけ通過する。複数のdistinct identifier、別Issueのみ、identifierなし、または不正なGit ref syntaxはactionableなERROR:で拒否する。このrequest境界は既存のdurable ownership parserとは分離され、保存済みslot / lock / release receiptの互換性を変更しない。
 
@@ -147,15 +147,6 @@ projects/nuinuiCAD/scripts/nuinui-src/exact-fix.sh
 nuinui-body.sh
   narrow nuinuiCAD runtime remainder: forensic inventory, project variables, and adapter hooks; it does not own the standalone public version
 
-github-pr.sh
-  GitHub PR transport boundary
-
-required-checks.sh
-  required-check evidence correlation/classification
-
-pr-auto-merge.sh
-  reservation state machine
-
 integration-clean.sh
   ChatGPT-authorized deterministic conflict-free merge-only Human integration
 
@@ -229,7 +220,6 @@ current commands:
 | `nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <claim>` | current active generationまたはexact completed-release receiptをread-onlyで証明し、既存positional release commandのcanonical Human handoffを生成 |
 | `nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>` | exact claimを照合しclaim-specific tombstone経由でmerged laneをrelease |
 | `nuinui recover <implementation-lane> <expected-claim>` | known interrupted init/start/resume/release stateだけをexact claimでexplicit recovery |
-| `nuinui pr-auto-merge <pr-number> <expected-head-sha> <expected-main-sha>` | **旧方式・移行期間のみ保持**。required CI pending時のexact-head予約helper。新規通常PRではowner-comment GitHub Actions方式（[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)）を使い、このcommandは新規運用に使用しない |
 | `nuinui integrate-clean <implementation-lane> <SAY-123> <expected-claim> <expected-topic-head> <expected-main> <verification-script> <expected-files-manifest\|->` | eligible Integration checkpointでChatGPTがauthorizeしたdeterministic conflict-free merge-only integrationをselected manifest laneで実行し、verify後にnormal push |
 | `nuinui integrate-clean-command --lane <implementation-lane> --issue <SAY-123> --claim <claim> --topic-head <full-sha> --main <full-sha> --verification-script <absolute-executable-path> [--manifest <absolute-readable-file-path>]` | settledなcaller intentをread-onlyでcanonicalなshell-safe positional `integrate-clean` commandへ変換。semantic eligibility authorization、verification-plan selection、mutationは行わない |
 | `nuinui e2e-start [<human-test-lane>] <SAY-123> <tested-ref>` | unique Human-test laneのshort form、またはexplicit manifest laneをexact tested refへ固定しmarker作成 |
@@ -362,7 +352,7 @@ This command is available only for the explicit exception owned by CHECKOUTS.md.
 
 ### Recoverable Human mutation results
 
-Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `exact-fix`, `pr-auto-merge`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `integrate-clean-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
+Tracked Human mutation commands are exactly `lane-init`, `begin`, `start`, `resume`, `release`, `recover`, `exact-fix`, `integrate-clean`, `e2e-start`, `e2e-start-local-main`, `e2e-release`, `context-sync`、and `context-dev-transition`。The canonical `context-dev-next` façade is invoked as a tracked Human mutation command but reuses the existing `context-dev-transition` result identity and store; it does not create a second command-result schema or result store. Therefore `nuinui last-result` remains the same strict recovery surface and returns the façade's canonical transition output / duplicate envelope. Read-only commands, including `preflight`, `verify`, `begin-command`, `integrate-clean-command`, `context-audit`, `context-dev-audit`, `doctor`, `transition-audit`, `context-check`, `self-test`, and `last-result`, never replace the latest mutation result. Version and help behavior is outside this result contract.
 
 The latest result store is kept at `$(git -C /Users/yosomi/Code/dev-context rev-parse --absolute-git-dir)/nuinui-command-result-v1/` in the standard dev-context Git directory and contains only `state` and `output`。 It is recovery evidence only; lane ownership, claims, locks, release receipts, E2E markers/sessions, and other authorities remain authoritative. The production helper uses the canonical standard clone represented by `C`; isolated `NUINUI_SELFTEST` runs use an isolated dev-context repository and never the production store.
 
@@ -408,7 +398,7 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 `recover`は一般repairではない。lock/tombstone age expiry、自動削除、reset、stash、force-switch、broad branch cleanupを行わない。metadata malformed、multiple tombstones、claim mismatch、dirty、不一致stateはfail-closed。
 
-`nuinui self-test`はmanifest-driven isolated runtime regressionでcomplete inventory admission、renamed lanes、wrong-role rejection、Human-test short/explicit selection、manifest resolution/security、uncertain mutation recovery、release receipt、topology-only helper byte identityを検証し、`scripts/test-nuinui-command-result`、`scripts/test-nuinui-integration-clean`、`scripts/test-nuinui-pr-auto-merge`、`scripts/test-nuinui-context-sync`、およびsource-budget regressionを集約する。
+`nuinui self-test`はmanifest-driven isolated runtime regressionでcomplete inventory admission、renamed lanes、wrong-role rejection、Human-test short/explicit selection、manifest resolution/security、uncertain mutation recovery、release receipt、topology-only helper byte identityを検証し、`scripts/test-nuinui-command-result`、`scripts/test-nuinui-integration-clean`、`scripts/test-nuinui-pr-auto-merge-retired`、`scripts/test-nuinui-context-sync`、およびsource-budget regressionを集約する。
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / manifest-derived complete inventory fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。通常の`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative default / `clean=yes` / `state=FREE`を返し、exact duplicateは`IMPLEMENTATION ALREADY RELEASED`とlane / Issue / Base / saved checkpoint / released claim / released branch / authoritative default / `clean=yes` / `mutation=no-op` / `state=FREE`を返す。
 
@@ -460,40 +450,9 @@ clean=yes
 
 ### Standalone non-lane mechanics
 
-`pr-auto-merge`, E2E, context-audit / context-sync / context-dev-audit / context-dev-transition / context-dev-next, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
+E2E, context-audit / context-sync / context-dev-audit / context-dev-transition / context-dev-next, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
 
-`nuinui pr-auto-merge`は**旧方式の実装仕様を記録する互換commandであり通常運用では使用しない**。新規のPRは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のGitHub Actions owner-comment方式を使う。旧helperの廃止は生成source / assembled `nuinui` / focused regressions / command-result互換の同時更新と検証後にのみ行う。
-
-`nuinui pr-auto-merge`は`sayosomi/nuinuiCAD`だけを対象とするreservation-only command。`expected-main`はcallerがfreshに確認したauthoritative remote `main` SHAであり、helperはGitHubから`main` tipを独立取得して一致を確認する。PRの`baseRefOid`はauthoritative current-main freshnessのevidenceとして扱わない。PRがOPEN / non-draft / base=`main` / exact reviewed headで、reviewed headがそのauthoritative current `main`をintegration済みであり、mergeabilityがunambiguous、required checksがfailure/cancel/skip/unknownなしで少なくとも1件pendingの場合だけ予約へ進む。current main mismatchは`BLOCKED: expected main mismatch`、behind PRは`BLOCKED: PR is behind current main; integration required`としてfail-closedする。check discoveryは`pass` / `pending` / `fail` / `none-required` / `required-checks-unresolved` / `api-error`の明示stateを使い、visible required checksがすべて成功しpendingがない場合は、exact first line `BLOCKED: all required checks are already complete`でfail-closedし、Auto-merge予約もdirect mergeも行わない。
-
-initial current PR snapshotに既存のAuto-merge reservationがある場合、`pr-auto-merge`はPR number / OPEN state / non-draft / base=`main` / exact expected head / acceptableでunambiguousなmergeability / authoritative current main / #60 integration / `autoMergeRequest.mergeMethod=MERGE`をfreshに独立証明できたときだけ、read-only terminal successとして認識する。これは既存reservationをcancel / replace / recreateせず、GraphQL mutationを行わない。required checksはreservation後にpassへ進んでもよく、exact already-reserved recognitionではpendingのままであることを要求しない。
-
-exact already-reserved successのcanonical envelopeは次のとおりである。
-
-```text
-AUTO-MERGE ALREADY RESERVED
-pr=<number>
-head=<expected-head>
-main=<expected-main>
-merge_method=MERGE
-mutation=no-op
-```
-
-このsuccess envelopeはChatGPTがそのままnormal CI / PR workflowへ進むための十分なterminal evidenceである。exact proofが成功した場合、追加のPR-state paste、head/main recheck、同じ`pr-auto-merge`の再実行、最初のreservation確認、またはgeneric duplicate-only diagnosisをHumanへ求めない。near-match、non-MERGE、closed / merged、draft、non-main base、ambiguous mergeability / integration、current-main drift、lookup failureはfail-closedする。
-
-visible required checksは`gh pr checks --required`のmachine-readable stdoutだけをparseし、stderrの`no required checks reported`等のhuman proseをcheck rowとして扱わない。required check viewが空の場合はbranch protectionのrequired status metadata、ruleset metadata、exact-head pull_request workflow run、check suite、check runを相関する。exact-head Actions runがqueued / in_progressならpending、関連executionがすべてsuccessならpass、evidenceがない場合はnone-required、相関が不完全 / 矛盾 / truncatedならrequired-checks-unresolved、GitHub/API/tool failureならapi-errorとしてfail-closedする。commit-statusのdefault pendingだけではpendingと判定しない。
-
-operationalなnonzero exitはHuman-visibleに分類する。証明できたfail-closed state / precondition mismatchは`BLOCKED:`、GitHub / API / auth / tool execution failureやreservation stateを判定できない場合は`ERROR:`で返す。mutation直前にpreconditionを再確認し、GraphQL `enablePullRequestAutoMerge`へ`mergeMethod=MERGE`と`expectedHeadOid`を渡す。initial check通過後のpre-mutation state transitionは`BLOCKED: Auto-merge reservation precondition changed before mutation`と具体的な現在理由を返してfail-closedし、mutationしない。GraphQL mutation raceはmutationをretryせず、fresh read-only diagnosisを最大1回だけ行い、direct mergeへfallbackしない。mutation後はsame PR / head / expected main / OPEN / `autoMergeRequest.mergeMethod=MERGE`をread-backして成功扱いする。
-
-成功時のstable output contractは次の5行である。これは既存のpost-mutation read-backがexact reservation identityを証明した後だけemitする。
-
-```text
-AUTO-MERGE RESERVED
-pr=<number>
-head=<exact reviewed head>
-main=<expected/current authoritative main>
-merge_method=MERGE
-```
+旧`nuinui pr-auto-merge` CLIは1.14.0で廃止した。新規PRは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のowner-comment GitHub Actions方式を使う。旧予約の専用runtime・GitHub PR補助・required-check判定・生成入力・CLI dispatchと旧専用回帰テストは削除済み。過去のvalidな`nuinui last-result` version=1 recordsはread-onlyで保持し、廃止済みCLIの再実行は拒否する。`test-nuinui-pr-auto-merge-retired`がCLI拒否・GitHub呼出し不在を確認する。
 
 `nuinui doctor --full`、`transition-audit`、`context-check`、`context-audit`、`context-dev-audit`はread-only。`context-sync`はexpected-main tree artifactを検証したff-only mutation、`context-dev-transition`と`context-dev-next`はexact old-stateを再検証したordinary detach/switch + create/switchだけを行う。これらはcleanup、process stop、Issue selection、GitHub update、merge判断を行わず、one-time worktree migrationやgeneric worktree cleanupもcommand surfaceに含めない。
 

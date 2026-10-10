@@ -28,9 +28,6 @@ implementation_operations_source=$repo_root/shared/local-tools/lane-execution/im
 release_safety_source=$repo_root/shared/local-tools/lane-execution/release-safety.sh
 release_command_source=$script_dir/nuinui-src/release-command.sh
 body_source=$script_dir/nuinui-src/nuinui-body.sh
-github_pr_source=$script_dir/nuinui-src/github-pr.sh
-required_checks_source=$script_dir/nuinui-src/required-checks.sh
-pr_auto_merge_source=$script_dir/nuinui-src/pr-auto-merge.sh
 integration_clean_source=$script_dir/nuinui-src/integration-clean.sh
 e2e_source=$script_dir/nuinui-src/e2e.sh
 e2e_start_command_source=$script_dir/nuinui-src/e2e-start-command.sh
@@ -53,18 +50,6 @@ for generic_source in "$ownership_source" "$manifest_source" "$standalone_contex
 done
 [ -f "$body_source" ] || {
   echo "generate-nuinui: body source is missing: $body_source" >&2
-  exit 1
-}
-[ -f "$github_pr_source" ] || {
-  echo "generate-nuinui: GitHub PR source is missing: $github_pr_source" >&2
-  exit 1
-}
-[ -f "$required_checks_source" ] || {
-  echo "generate-nuinui: required-checks source is missing: $required_checks_source" >&2
-  exit 1
-}
-[ -f "$pr_auto_merge_source" ] || {
-  echo "generate-nuinui: pr-auto-merge source is missing: $pr_auto_merge_source" >&2
   exit 1
 }
 [ -f "$integration_clean_source" ] || {
@@ -123,7 +108,7 @@ output_dir=$(CDPATH= cd -- "$(dirname "$output")" && pwd -P) || {
 output_path=$output_dir/$(basename "$output")
 
 case "$output_path" in
-  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$release_command_source"|"$body_source"|"$github_pr_source"|"$required_checks_source"|"$pr_auto_merge_source"|"$integration_clean_source"|"$e2e_source"|"$e2e_start_command_source"|"$integrate_clean_command_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$handoff_source"|"$exact_fix_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
+  "$project_policy_source"|"$e2e_policy_source"|"$ownership_source"|"$manifest_source"|"$standalone_context_source"|"$runtime_source"|"$preflight_source"|"$inventory_source"|"$lifecycle_source"|"$human_test_source"|"$cli_source"|"$render_source"|"$implementation_operations_source"|"$release_safety_source"|"$release_command_source"|"$body_source"|"$integration_clean_source"|"$e2e_source"|"$e2e_start_command_source"|"$integrate_clean_command_source"|"$context_sync_source"|"$diagnostics_source"|"$command_result_source"|"$handoff_source"|"$exact_fix_source"|"$self_test_source"|"$dispatch_source"|"$artifact_path")
     echo 'generate-nuinui: refusing to overwrite a checked-in source or production artifact' >&2
     exit 1
     ;;
@@ -179,9 +164,6 @@ assemble_source "$release_safety_source"
 assemble_source "$implementation_operations_source"
 assemble_source "$release_command_source"
 assemble_source "$body_source"
-assemble_source "$github_pr_source"
-assemble_source "$required_checks_source"
-assemble_source "$pr_auto_merge_source"
 assemble_source "$integration_clean_source"
 assemble_source "$e2e_source"
 assemble_source "$integrate_clean_command_source"

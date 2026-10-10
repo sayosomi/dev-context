@@ -375,4 +375,14 @@ assert_contains "$last_output" 'mutation=yes' 'recovered integration mutation ev
 assert_contains "$last_output" "head=" 'recovered integration output lost local head evidence'
 assert_not_contains "$last_output" '===== NUINUI COMMAND RESULT =====' 'integration recovery exposed the command footer'
 
+# The retired PR reservation command is no longer dispatched, but its durable
+# version=1 result must remain readable by last-result.
+setup_case historical-pr-auto-merge
+mkdir -p "$(result_dir)"
+printf 'AUTO-MERGE RESERVED\npr=417\n' > "$(output_path)"
+historical_sha=$(shasum -a 256 "$(output_path)" | awk 'NR == 1 {print $1}')
+printf 'version=1\noperation_id=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\ntimestamp=2026-10-10T00:00:00Z\ncommand=pr-auto-merge\nphase=TERMINAL\nresult=SUCCESS\nlane=-\nissue=-\nclaim=-\nrequest_sha256=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\nmutation=yes\nexit=0\noutput_sha256=%s\n' "$historical_sha" > "$(state_path)"
+assert_last_ready retired-pr-auto-merge-history
+assert_contains "$last_output" 'command=pr-auto-merge' 'historical reservation result was lost'
+
 echo 'COMMAND RESULT TEST PASS'

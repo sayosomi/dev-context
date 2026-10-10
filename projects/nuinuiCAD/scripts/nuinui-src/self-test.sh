@@ -103,8 +103,8 @@ nuinui_self_test() {
     echo 'SELFTEST BLOCKED: exact-fix test is missing or not executable'
     return 1
   }
-  [ -x "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" ] || {
-    echo 'SELFTEST BLOCKED: pr-auto-merge test is missing or not executable'
+  [ -x "$nuinui_selftest_dir/test-nuinui-pr-auto-merge-retired" ] || {
+    echo 'SELFTEST BLOCKED: retired auto-merge regression is missing or not executable'
     return 1
   }
   [ -x "$nuinui_selftest_dir/test-nuinui-integration-clean" ] || {
@@ -127,7 +127,7 @@ nuinui_self_test() {
   /bin/sh "$nuinui_selftest_dir/test-nuinui-command-result" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-exact-fix" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-lifecycle" "$P" || return $?
-  /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge" "$P" || return $?
+  /bin/sh "$nuinui_selftest_dir/test-nuinui-pr-auto-merge-retired" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-integration-clean" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-context-sync" "$P" || return $?
   /bin/sh "$nuinui_selftest_dir/test-nuinui-source-budget"
