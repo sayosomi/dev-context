@@ -22,6 +22,16 @@ Fixes SAY-38
 
 branch名へLinear Issue identifierを入れることは必須にしない。
 
+### Transitional Cloudflare mirror shutdown PR — #268 only
+
+`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker shutdown sliceとfocused tests / configurationのPRは、descriptionに次のcross-repository referenceを使う。
+
+```text
+Refs sayosomi/dev-context#268
+```
+
+このPRに`Fixes` / `Closes`等のclosing magic wordを付けず、parent migration Issueを自動closeしない。新しいSAY Linear Issueを作成せず、存在しないLinear Issueのstatus / checkpoint synchronizationも行わない。このlinking exceptionだけが通常ruleから変わり、required GitHub CI、pushed exact-head independent blocking review、protected PR checks、reviewed auto-merge reservationおよびsafe merge gateはそのまま維持する。他のnuinuiCAD PRは既存のLinear linking / lifecycleを使う。
+
 ### Multiple sequential PRs for one Issue
 
 1つのLinear Issueを複数のsequential implementation PRへ分ける場合は [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) に従う。

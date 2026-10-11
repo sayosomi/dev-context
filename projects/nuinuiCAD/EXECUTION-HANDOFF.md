@@ -17,6 +17,26 @@ This handoff validates durable repository execution identity and startup safety
 only: Issue, lane, claim, branch, Base, checkpoint, checkout state, and
 authoritative remote state. It does not validate model identity.
 
+## Transitional Cloudflare mirror shutdown exception — #268 only
+
+The normal public handoff contract below remains required for ordinary
+nuinuiCAD implementation. For only the Phase B Worker write-barrier shutdown
+implementation and its focused tests / configuration authorized by
+`sayosomi/dev-context#268`, do not require a new SAY Linear Issue or
+`nuinui begin`, this `nuinui handoff`, or `nuinui release`.
+
+Before any edit, the implementation agent uses the existing product checkout
+and performs a read-only Git / durable-state proof required by
+[`CHECKOUTS.md`](./CHECKOUTS.md): exact repository and registered checkout,
+fresh authoritative remote `main`, clean and understood branch / HEAD, no
+active implementation claim or audit reservation, no unrelated changes, and
+no concurrent product implementation or evaluator audit. If any fact is
+missing or ambiguous, stop without mutation. Do not create, delete, initialize,
+or rewrite durable metadata for this exception. Continue only with ordinary
+sequential Git branch, commit, push, CI, independent blocking review, and safe
+PR / merge rules. All other implementation runs use the canonical handoff
+below.
+
 ## Public contract
 
 ```text
