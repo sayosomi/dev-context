@@ -27,6 +27,20 @@ Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)
 
 ## Implementation start / resume completion rule
 
+### Transitional Cloudflare mirror shutdown startup exception — #268 only
+
+For only the Phase B write-barrier shutdown implementation of the existing
+Cloudflare Linear-to-GitHub mirror Worker and its focused tests / configuration,
+use `sayosomi/dev-context#268` as the approved task contract. Follow the
+admission proof in [`CHECKOUTS.md`](./CHECKOUTS.md) and the Git-only startup
+boundary in [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md): do not create a
+SAY Linear Issue or require `nuinui begin`, `nuinui handoff`, or
+`nuinui release`. This is still source-code work for the implementation Coding
+Agent, not a ChatGPT direct-execution exception. Do not record Linear status or
+checkpoint for this slice, and do not alter durable lane metadata. All other
+implementation starts follow the normal rules below; the exception does not
+transfer general Work authority from Linear.
+
 Humanがimplementation Issueについて開始 / 再開 / 続行を指示した場合、remote / Linear / policyの再確認やblocker説明だけで停止しない。
 
 その応答は次のどちらかへ到達して完了する。

@@ -54,6 +54,14 @@ write直前にlatest remote SHAとtarget file freshnessを再確認する。fres
 
 このexceptionは旧 `only_chatgpt` execution model全体を復活させるものではない。
 
+### Transitional Cloudflare mirror shutdown implementation exception — #268 only
+
+`sayosomi/dev-context#268` のPhase Bで承認された、既存Cloudflare Linear-to-GitHub mirror Workerのwrite-barrier shutdown実装と、それを証明するfocused tests / configurationに限り、new SAY Linear Issueを作らずGitHub Issue `sayosomi/dev-context#268` をtask contractとして実装Coding Agentへ渡せる。これはdocumentation direct-editやChatGPT source-code implementationの許可ではない。source / test implementationのexecutorは引き続きimplementation Coding Agentである。
+
+開始前に[`CHECKOUTS.md`](./CHECKOUTS.md)のtransitional exception admission proofを満たし、既存product checkoutがcleanで、active implementation claim / audit reservationがなく、unrelated workがないことを確認する。exceptional sliceでは`nuinui begin`、`nuinui handoff`、`nuinui release`を要求せず、Linear checkpoint/statusやdurable claim/checkpoint metadataを作らない。既存metadataを変更・削除せず、別implementation / auditとの並行実行も認めない。実装AgentのGit-only startup境界は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)がownerする。
+
+PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。他のnuinuiCAD Workは既存のLinear / declared-lane workflowを継続する。
+
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
 ### Human-authorized exact source-fix exception

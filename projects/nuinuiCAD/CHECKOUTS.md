@@ -29,6 +29,21 @@ Capacity and routing rules:
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
 
+## Transitional Cloudflare mirror shutdown exception — #268 only
+
+通常のsource-code implementationは、declared laneのLinear ownershipと`nuinui begin` / implementation-agent `nuinui handoff` / `nuinui release`を使う。例外として、`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker shutdown実装と、そのfocused tests / configurationだけは、既存のnuinuiCAD checkoutを使うsequential Git workflowで実施してよい。新しいlane、worktree、clone、SAY Issue、またはdurable implementation generationは作らない。
+
+このexceptional workflowへ入る前に、read-onlyなcheckout auditで次をすべて確認する。
+
+- 対象は既存manifest-declared nuinuiCAD checkoutであり、repository / registered-worktree identityとfresh remote `main`が明確である。
+- active implementation claim、audit reservation、mutation lock、release-pending / tombstone、または未解決のdurable ownership stateがない。
+- checkoutがcleanで、current branch / HEADが説明可能であり、unrelated tracked / untracked workがない。
+- 他のimplementationまたはevaluator auditが同じproduct checkoutを使用中でなく、このsliceを別作業と並行させない。
+
+1つでも確認できない、またはstateがambiguousなら開始しない。existing durable metadataを削除、書換え、初期化、またはexceptionのために解放しない。既存claim / reservationがある場合はそのownerの通常lifecycleが結論するまで待つ。
+
+この一sliceでは上記auditの後、fresh verified `main`からordinary topic branchを使い、`nuinui begin` / `nuinui handoff` / `nuinui release`を要求しない。durable claim/checkpoint metadataを作成・変更しない。既存のGitHub CI、pushed-head independent blocking review、PR protection、safe merge gateは維持する。これはPhase B限りのadmission例外であり、その他のimplementation / audit / Manual E2Eでは既存lane lifecycleが引き続き必須である。
+
 ## Human-authorized forensic worktree exception
 
 通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の1 implementation lane / 0 Human-test laneはmanifestの現行構成であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
