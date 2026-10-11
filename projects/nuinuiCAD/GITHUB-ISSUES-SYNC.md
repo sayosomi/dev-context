@@ -2,13 +2,13 @@
 
 ## Purpose
 
-LinearをnuinuiCADの正式なWork管理・仕様管理のsource of truthとして維持しつつ、`sayosomi/nuinuiCAD` のGitHub Issuesを公開mirror / public discussion surfaceとして使う。
+通常のnuinuiCAD Work / specificationではLinearを正式なsource of truthとして維持しつつ、`sayosomi/nuinuiCAD` のGitHub Issuesを公開mirror / public discussion surfaceとして使う。
 
 この文書はGitHub Issues mirrorの**入口 / router**。mapping / fields / comments / Documentsのreconciliation contractと、Cloudflare Workerの運用ruleは専用ownerへ分離する。
 
 ## Authority
 
-- Work / specificationのauthorityはLinear。
+- 通常のnuinuiCAD product Work / specificationのauthorityはLinear。唯一のPhase B Worker shutdown exceptionは下記に限る。
 - GitHub Issuesはpublic mirror / public discussion surface。
 - GitHub IssuesからLinearへfield / status / commentを逆同期しない。
 - repository implementation factsはlatest repositoryがauthority。
