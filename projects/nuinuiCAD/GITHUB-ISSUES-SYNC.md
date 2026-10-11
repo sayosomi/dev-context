@@ -8,7 +8,7 @@
 
 ## Authority
 
-- 通常のnuinuiCAD product Work / specificationのauthorityはLinear。唯一のPhase B Worker shutdown exceptionは下記に限る。
+- 通常のnuinuiCAD product Work / specificationのauthorityはLinear。唯一のPhase B Worker shutdown / lossless mirror repair exceptionは下記に限る。
 - GitHub Issuesはpublic mirror / public discussion surface。
 - GitHub IssuesからLinearへfield / status / commentを逆同期しない。
 - repository implementation factsはlatest repositoryがauthority。
