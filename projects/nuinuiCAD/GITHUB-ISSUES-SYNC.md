@@ -15,13 +15,13 @@
 - Linear公式GitHub Issues repo↔team two-way sync mappingはOFFのまま維持する。
 - GitHub PR integration / PR workflow automationはGitHub Issues mirrorとは別物。PR integrationは [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) を参照する。
 
-## Transitional Cloudflare mirror shutdown exception — Phase B only
+## Transitional Cloudflare mirror shutdown and lossless repair exception — Phase B only
 
-`sayosomi/dev-context#268` が認める例外は、既存Cloudflare WorkerのLinear-to-GitHub mirror write barrier実装と、その実装を証明するfocused test / configurationだけに限る。この一sliceでは新しいSAY Linear Issueを作らず、GitHub Issue `sayosomi/dev-context#268` をscope / acceptanceを含むapproved task contractとして使う。
+`sayosomi/dev-context#268` が認める例外は、既存Cloudflare WorkerのLinear-to-GitHub mirror write barrier実装と、その実装を証明するfocused test / configurationに加え、production write disable前に必要な既存mirror history / reconciliationのlossless repair（Linear-to-GitHub identity mapping、status drift、Issue / Document comments、Linear Document reconciliation）に限る。このrepairは既存recordとGitHub Issue identity / historyを保ち、Issueのdelete / recreate、reverse sync、または一般的なnuinuiCAD implementationを許可しない。この一sliceでは新しいSAY Linear Issueを作らず、GitHub Issue `sayosomi/dev-context#268` をscope / acceptanceを含むapproved task contractとして使う。
 
-本番CloudflareでHTTP / webhook、Queue、Cronを通るGitHub writeが止まるbarrierをdeployし、production stateをread-backして検証するまでは、Linearがこのmigration slice以外のnuinuiCAD Workと既存mirror内容のauthorityであり続ける。source変更、PR merge、test成功だけではauthorityを移さない。Linear公式two-way syncはOFFのままにする。
+本番Cloudflareでdisabled modeのwrite barrierをdeployし、HTTP / webhook、Queue、Cronを通るGitHub writeが止まったことを独立に検証してread-backするまでは、Linearがこのmigration slice以外のnuinuiCAD Workと既存mirror内容のauthorityであり続ける。source変更、PR merge、test成功、または未検証のmode設定だけではauthorityを移さない。Linear公式two-way syncはOFFのままにする。
 
-この例外はGitHub IssuesをnuinuiCAD全体のWork authorityにせず、Phase C以降のmigrationも開始しない。このpolicy bridge自体はlive Workerを変更・disable・deployしない。production deployment / verification gateは別に満たす。その他すべてのnuinuiCAD Work、Linear Issue / Document、mirror運用は既存ruleのまま扱う。checkoutのread-only admission proofと`nuinui begin` / `handoff` / `release`を省略できる境界は[`CHECKOUTS.md`](./CHECKOUTS.md)、実装Agentの例外は[`CODING-AGENT.md`](./CODING-AGENT.md)と[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)、PR traceabilityは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)がownerする。
+この例外はGitHub IssuesをnuinuiCAD全体のWork authorityにせず、Phase C以降のmigration、GitHub-native Work authorityへの移行、reverse sync、または早期cutoverも開始しない。このpolicy bridge自体はlive Workerを変更・disable・deployしない。production deployment / independent verification gateは別に満たす。その他すべてのnuinuiCAD Work、Linear Issue / Document、mirror運用は既存ruleのまま扱う。checkoutのread-only admission proofと`nuinui begin` / `handoff` / `release`を省略できる境界は[`CHECKOUTS.md`](./CHECKOUTS.md)、実装Agentの例外は[`CODING-AGENT.md`](./CODING-AGENT.md)と[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)、PR traceabilityは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)がownerする。
 
 ## Public-information boundary
 

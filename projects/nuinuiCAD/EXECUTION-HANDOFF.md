@@ -17,11 +17,14 @@ This handoff validates durable repository execution identity and startup safety
 only: Issue, lane, claim, branch, Base, checkpoint, checkout state, and
 authoritative remote state. It does not validate model identity.
 
-## Transitional Cloudflare mirror shutdown exception — #268 only
+## Transitional Cloudflare mirror shutdown and repair exception — #268 only
 
 The normal public handoff contract below remains required for ordinary
-nuinuiCAD implementation. For only the Phase B Worker write-barrier shutdown
-implementation and its focused tests / configuration authorized by
+nuinuiCAD implementation. For only the Phase B Worker write-barrier / shutdown
+implementation and the approved lossless repair of existing mirror history
+and reconciliation required before cutover (Linear-to-GitHub identity mapping,
+status drift, Issue / Document comments, and Linear Document reconciliation),
+plus corresponding focused tests / configuration authorized by
 `sayosomi/dev-context#268`, do not require a new SAY Linear Issue or
 `nuinui begin`, this `nuinui handoff`, or `nuinui release`.
 

@@ -29,9 +29,9 @@ Capacity and routing rules:
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
 
-## Transitional Cloudflare mirror shutdown exception — #268 only
+## Transitional Cloudflare mirror shutdown and repair exception — #268 only
 
-通常のsource-code implementationは、declared laneのLinear ownershipと`nuinui begin` / implementation-agent `nuinui handoff` / `nuinui release`を使う。例外として、`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker shutdown実装と、そのfocused tests / configurationだけは、既存のnuinuiCAD checkoutを使うsequential Git workflowで実施してよい。新しいlane、worktree、clone、SAY Issue、またはdurable implementation generationは作らない。
+通常のsource-code implementationは、declared laneのLinear ownershipと`nuinui begin` / implementation-agent `nuinui handoff` / `nuinui release`を使う。例外として、`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker write-barrier / shutdown実装、ならびにcutover前に必要な既存Linear→GitHub mirrorのlossless reconciliation / history repair（Linear-to-GitHub identity mapping、status drift、Issue / Document comments、Linear Document reconciliation）と、その範囲を証明するfocused tests / configurationだけは、既存のnuinuiCAD checkoutを使うsequential Git workflowで実施してよい。repairは既存mirror recordに限り、GitHub Issueのidentityや既存historyを保持する。Issueのdelete / recreate、historyの欠落・重複、reverse sync、または一般的なnuinuiCAD implementationを許可しない。新しいlane、worktree、clone、SAY Issue、またはdurable implementation generationは作らない。
 
 このexceptional workflowへ入る前に、read-onlyなcheckout auditで次をすべて確認する。
 
