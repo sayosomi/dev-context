@@ -22,9 +22,9 @@ Fixes SAY-38
 
 branch名へLinear Issue identifierを入れることは必須にしない。
 
-### Transitional Cloudflare mirror shutdown PR — #268 only
+### Transitional Cloudflare mirror shutdown and repair PR — #268 only
 
-`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker shutdown sliceとfocused tests / configurationのPRは、descriptionに次のcross-repository referenceを使う。
+`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker shutdown slice、lossless pre-cutover repair of existing mirror history / reconciliation、およびfocused tests / configurationの製品repository PRは、descriptionに次のcross-repository referenceを正確に使う。
 
 ```text
 Refs sayosomi/dev-context#268
