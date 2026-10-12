@@ -14,6 +14,45 @@ Project-specific ruleとして、nuinuiCADの**source-code implementation / bloc
 
 GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割は、本書が定める通常のimplementation Coding Agent ownershipを弱めず、競合もしない。
 
+### Proposed GitHub-native Work agent contract — inactive pending proof
+
+This section is a future proposal and does not change the active C1 startup
+prohibition. A GitHub-native implementation agent may use this route only after
+separate proof and authoritative activation. The first controlled proof also
+requires bounded Human approval and C1 policy reconciliation in advance.
+
+Agent responsibilities:
+
+- Fetch and verify current GitHub remote state, including authoritative main
+  and the assigned topic ref where applicable.
+- Validate the assigned existing nuinuiCAD product checkout and its registered
+  worktree identity. Do not create a worktree or another checkout.
+- Match the exact expected new-Task start checkpoint or explicitly authorized
+  same-Task pushed continuation checkpoint.
+- Re-read the current Issue contract and material comments, and stop if the
+  approved scope, acceptance, verification, or non-goals changed.
+- Work only on the authorized topic branch and preserve unrelated local
+  branches and user data.
+- Run only the authorized focused tests and verification, commit only
+  intended Task changes, and use ordinary non-force push.
+- Return the exact branch, base SHA, pushed HEAD SHA, changed files,
+  verification commands and results, acceptance coverage, deviations, and
+  blockers or residual risks.
+
+An unexpected dirty or untracked checkout, remote mismatch, unexpected active
+branch, legacy claim, audit reservation, unresolved lock, release-pending
+state, conflicting implementation, evaluator audit, or policy ambiguity is a
+stop condition. Preserve state and report it. Never silently repair it with
+reset, stash, rebase, force, branch overwrite, cleanup, a new worktree, or
+durable legacy metadata mutation.
+
+The agent does not choose product behavior, architecture, slice boundaries,
+or new dependencies. ChatGPT owns those decisions. Shared requirements for
+prompt completeness, freshness, exact-head review, direct English style, and
+completion reporting continue to apply.
+
+This GitHub-native route is proposed and is not yet generally executable.
+
 ### Documentation / policy direct execution exception
 
 Repository-owned documentation / specification / policy workはsource-code implementationとは別のexecution classとする。

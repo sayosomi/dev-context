@@ -44,6 +44,150 @@ Capacity and routing rules:
 
 この一sliceでは上記auditの後、fresh verified `main`からordinary topic branchを使い、`nuinui begin` / `nuinui handoff` / `nuinui release`を要求しない。durable claim/checkpoint metadataを作成・変更しない。既存のGitHub CI、pushed-head independent blocking review、PR protection、safe merge gateは維持する。これはPhase B限りのadmission例外であり、その他のimplementation / audit / Manual E2Eでは既存lane lifecycleが引き続き必須である。
 
+## Proposed GitHub-native single-checkout Git workflow — inactive until proof
+
+This is the proposed D1 policy for GitHub-native nuinuiCAD Work. C1 GitHub
+Issues authority is active, but its prohibition on ordinary GitHub-native
+implementation startup remains active. This documentation does not authorize a
+native implementation, pilot, evaluator audit, product checkout transition, or
+legacy helper retirement.
+
+The proposed route uses only the existing product checkout at
+/Users/yosomi/Code/nuinuiCAD. It does not change the manifest, declared-lane
+classification, or the existing claim, lock, reservation, initialization, or
+release algorithms. Until a separate controlled proof and later activation
+checkpoint succeed, use the current compatible SAY execution lifecycle for
+Work already admitted to it.
+
+### Proposed startup admission
+
+Before a new GitHub-native Task, ChatGPT and the implementation agent must
+independently re-establish the following from current GitHub and local state:
+
+- Resolve the canonical nuinuiCAD Issue URL or repository-qualified issue
+  number. Read the current Issue body and material comments, latest product
+  main, applicable current policy owners, and relevant normative specifications.
+  Confirm the Issue remains open and its approved scope, acceptance,
+  verification, and non-goals remain executable.
+- Prove the repository identity and exact registered product worktree at
+  /Users/yosomi/Code/nuinuiCAD. Inspect the complete registered-worktree
+  inventory, current branch and HEAD, and tracked and untracked status.
+- Confirm there is no other active product implementation or evaluator audit.
+  GitHub branches or PRs alone do not prove local execution is idle; if current
+  execution occupancy cannot be established, stop.
+- Use the existing read-only nuinui preflight and legacy ownership/audit
+  inventory to prove there is no active implementation claim, audit
+  reservation, unresolved mutation lock, release-pending state, or ambiguous
+  durable metadata. If the existing evidence cannot establish that fact, stop.
+  This read-only inventory does not require a SAY identifier or begin, handoff,
+  or release command. Do not create, initialize, release, rewrite, or replace
+  legacy metadata for the proposed route.
+- Fetch origin with prune and verify the authoritative GitHub main SHA and
+  target branch state. The expected repository, remote, branch, and exact
+  checkpoint must match the approved startup contract.
+- Require a clean checkout before a new Task. For a new Task, the current
+  branch must be local main at the exact fresh intended base or at a clean
+  ancestor eligible for the ordinary fast-forward below. After synchronization,
+  main must equal that exact base. For a same-Task continuation, branch and
+  HEAD must equal the exact pushed checkpoint named by the current Issue.
+- After all admission checks pass, a clean local main that is behind current
+  origin/main may be advanced only by ordinary fast-forward. Recheck remote
+  main and ancestry immediately before the operation. If fast-forward is not
+  possible, stop.
+- For a new Task, re-read remote main immediately before creating a fresh topic
+  branch from the verified intended base. If main advanced, re-audit and
+  establish the new exact base first. Use the existing product checkout only.
+  Do not create another worktree, dynamic lane, SAY-number requirement, or new
+  durable nuinui claim.
+- Use ordinary commits and non-force pushes. Do not reset, stash, force-switch,
+  force-push, clean, overwrite, or destructively remove checkout or branch data.
+
+### Defined state handling
+
+A. Clean but stale local main: complete every admission and legacy-ownership
+check first, fetch and verify current origin/main, then use fast-forward only.
+If local main is not an ancestor of origin/main, stop without rewriting it.
+
+B. Dirty tracked files or unexpected untracked files: stop and preserve them.
+Do not begin, resume, switch branches, stash, clean, or overwrite. A dirty
+checkout is not an ordinary interrupted-run continuation.
+
+C. Unexpected topic branch or unrelated active work: stop and preserve the
+branch and checkout. Do not switch away, repurpose the branch, or treat a
+remote PR as proof that local work is concluded. Resume only after the owner
+and exact Task state are established.
+
+D. Active legacy claim, audit reservation, lock, release-pending state, or
+ambiguous durable metadata blocks native admission even when Git is clean. Leave
+that state to its existing legacy owner and lifecycle; do not release or repair
+it for Git-only startup.
+
+E. A new Task requires an unused topic-branch name. If the requested local or
+remote target branch already exists, choose another unused name without
+deleting or rewriting the existing branch. Same-Task continuation may reuse a
+branch only when the current Issue checkpoint names that exact branch and
+checkpoint, the remote topic ref equals the expected pushed SHA, and the local
+branch is clean at the same SHA. If the local branch is absent but the remote
+checkpoint is exact, create only a local tracking branch from that remote ref.
+Any local/remote mismatch, unexpected existing target, or missing expected
+remote checkpoint is a stop condition.
+
+F. Recover an interrupted implementation only from a freshly verified pushed
+checkpoint recorded for the same Issue and slice. Re-read the exact remote
+topic SHA and local branch/HEAD/status, then re-audit the current Issue and
+relevant policy before continuing. Lost terminal output alone is not evidence
+that a commit, push, merge, or other mutation failed; inspect authoritative
+state and never replay a mutation from that assumption. Preserve and report
+uncommitted or mismatched state.
+
+G. If remote main advances before startup, refresh the Issue and owner audit and
+establish a new exact intended base before creating a branch. If it advances
+during an active slice, do not routinely merge or rebase main into the slice.
+Save a verified pushed checkpoint and assess the drift at the integration
+checkpoint under IMPLEMENTATION-SLICING.md. Relevant or ambiguous drift stops
+for contract and slice re-evaluation.
+
+H. After a PR is confirmed merged, read back the authoritative merge and latest
+main. Deletion of the remote topic branch after merge is expected and is not a
+missing-checkpoint error. Do not recreate it. Preserve unfinished acceptance
+and required Manual E2E; merge alone does not close the Issue.
+
+I. To return safely to updated main, first verify the checkout is clean, fetch
+and read back origin/main, then use ordinary git switch to the existing local
+main and fast-forward it only when its current HEAD is an ancestor of
+origin/main. If switching or fast-forwarding is unsafe, stop. Keep the merged
+topic branch and unrelated local branches; do not reset main or delete local
+branches as cleanup.
+
+### Controlled proof and activation boundary
+
+The first full controlled proof is a separate future operation. It requires
+fresh physical checkout and legacy-ownership evidence plus explicit Human
+approval for a one-run exception to the active startup prohibition. Approval
+must name the single proof Issue, exact checkout, expected base, topic branch,
+approved contract, acceptance, verification, non-goals, and bounded run; an
+ordinary request to implement and this D1 documentation change are not that
+approval.
+
+Before the run, ChatGPT must re-audit and coherently reconcile every active
+owner that currently blocks native startup. This includes project ISSUES.md,
+CHAT-WORKFLOW.md, CHAT-COORDINATOR.md, CHAT-AUTHORING.md,
+CONTRACT-DECISIONS.md, CONTRACT-REAUDIT.md, LINEAR.md, and
+LINEAR-GITHUB.md, plus any current README, implementation-chat, agent, or
+handoff route that carries the same gate. The coordinated policy must permit
+only the named proof run and keep general native startup inactive. Re-read the
+updated authoritative owners before starting. If this narrow exception cannot
+be made coherent, do not run the proof.
+
+The proof must demonstrate one full GitHub-native Issue implementation through
+startup admission, sequential branch implementation, focused verification,
+commit and push, independent blocking review of the exact pushed HEAD, required
+CI, PR merge, authoritative main read-back, and a safe reset-free checkout
+transition. General GitHub-native startup remains inactive until a distinct
+authoritative activation checkpoint
+records that the complete proof passed. Evaluator-audit migration and runtime
+helper retirement are later, separate Phase D proof gates.
+
 ## Human-authorized forensic worktree exception
 
 通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の1 implementation lane / 0 Human-test laneはmanifestの現行構成であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。

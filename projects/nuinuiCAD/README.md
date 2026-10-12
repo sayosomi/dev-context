@@ -62,6 +62,7 @@ replacement for the normal implementation-agent route.
 | implementation-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation-agent handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
+| proposed GitHub-native startup, recovery, slicing, and safe return — inactive | [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md), [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md), [CODING-AGENT.md](./CODING-AGENT.md), [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md) |
 | implementation / blocking-fix Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
@@ -137,6 +138,13 @@ a new Work or specification owner.
 For existing SAY execution only, inspect the applicable historical Linear
 checkpoint and the latest repository state. Do not treat Linear as the source
 for new Work, current GitHub Issue contracts, or implemented behavior.
+
+C1 GitHub Issues Work authority is active. The Git-only route in the D1 owner
+documents is proposed only and does not lift the current startup prohibition.
+The compatible SAY route remains active for its existing Work. A separately
+authorized controlled proof and a later, distinct general activation
+checkpoint are required; evaluator-audit migration and legacy runtime-helper
+retirement remain separate later proof gates.
 
 ## Parallel execution rule
 

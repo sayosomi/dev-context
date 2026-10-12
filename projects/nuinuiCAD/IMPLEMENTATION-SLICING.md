@@ -2,7 +2,7 @@
 
 ## Purpose
 
-1つのWork / Linear Issueを、implementation slice、Pull Request、safe checkpointとしてどこで区切るかを定義する。
+1つのWorkを、implementation slice、Pull Request、safe checkpointとしてどこで区切るかを定義する。GitHub-native Workとcompatible pre-existing SAY WorkはIssue identityとcheckpoint storeを分ける。
 
 Work decompositionとimplementation slicingを混同しない。
 
@@ -11,6 +11,8 @@ Work decompositionとimplementation slicingを混同しない。
 - Execution lane: current implementation sliceをどのmanifest-declared implementation laneで実行するか。
 
 Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、lane capacity / checkout isolationは [`CHECKOUTS.md`](./CHECKOUTS.md)、implementation executorは [`CODING-AGENT.md`](./CODING-AGENT.md) がauthority。
+
+以下のlane assignmentとLinear checkpoint recordはcompatible pre-existing SAY executionにだけ適用する。GitHub-native slicingの提案は末尾の独立したsectionに記し、proofと別個のactivation checkpointまではinactiveとする。
 
 same Issueであることはsame branch、same PR、same Luna session、same uninterrupted execution trackを意味しない。
 
@@ -183,7 +185,7 @@ first / routine checkpointではexact implementation checkpoint、same durable g
 
 shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration testをTask末尾まで延期しない。
 
-## Lane assignment
+## Compatible legacy SAY lane assignment
 
 implementation slice開始時は、ChatGPTがfresh remote state、Linear current implementation occupancy、parallel-admission decisionからdeclared lane、Base、branch、complete inventory expectationを決め、known-Issueの通常startupではHumanへ [`nuinui begin`](./LOCAL-TOOLS.md) を1つ渡す。`begin`が [`CHECKOUTS.md`](./CHECKOUTS.md) のfull declared-lane auditを内部実行し、target FREEとcomplete inventoryを再検証するため、別Human preflightを先行させない。
 
@@ -274,7 +276,7 @@ current workをremoteへ保存しsafe checkpointで停止する。slicingで未�
 - previous unmerged implementationへの依存があるなら先にmerge checkpointを完了する;
 - accidental stacked PRを作らない。
 
-## Linear checkpoint record
+## Compatible legacy SAY checkpoint record
 
 implementation lane開始 / pause / next PRでは少なくとも:
 
@@ -319,3 +321,38 @@ previously passed unaffected unitsはshared owner / premiseが変わらない限
 各implementation sliceのexecutorはLuna xhigh。
 
 ChatGPTがcurrent sliceのcontract / lane / Base checkpoint / safe checkpointを決め、Lunaにはそのnarrow implementationだけを渡す。詳細は [`CODING-AGENT.md`](./CODING-AGENT.md)。
+
+## Proposed GitHub-native slicing and checkpoints — inactive
+
+This proposed section applies only after the Git-only route has passed its
+separate controlled proof and received a later authoritative activation
+checkpoint. Until then, the active C1 prohibition on native implementation
+startup remains in force. Do not import the compatible SAY lane claims or
+Linear checkpoints below into a native Issue.
+
+Keep Work decomposition separate from implementation slicing. Keep one
+product implementation active at a time. Choose slice boundaries by independent
+acceptance, semantic-owner boundaries, dependencies, verifiable outcomes, and
+whether each intermediate merge leaves the repository coherent. Do not split
+only to reduce PR size, and do not merge an intermediate slice that leaves a
+broken or owner-ambiguous state.
+
+For each GitHub-native slice, record its repository-qualified Issue identity,
+slice boundary, intended base SHA, topic branch, exact pushed checkpoint,
+completed and remaining acceptance, verification results, and next safe
+checkpoint in GitHub Issue comments. Re-read the latest Issue contract and
+latest main before starting the next slice. A next slice after an intermediate
+merge starts from a fresh topic branch at the newly verified main; do not
+continue from stale main or silently reuse the previous branch.
+
+For interrupted work, resume only after rechecking the Issue, exact remote
+topic SHA, local branch/HEAD/status, and the recorded pushed checkpoint.
+Never infer a completed push from lost terminal output or replay a mutation
+without first reading back its authoritative state.
+
+Intermediate PRs use Refs #N and do not close the Issue. Use Closes #N only
+when the merge satisfies all remaining acceptance, including required Human
+Manual E2E, under [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) and
+[MANUAL-E2E.md](./MANUAL-E2E.md). Keep unfinished
+acceptance and required Human E2E explicit in the Issue. Do not create Linear
+checkpoint/status changes, SAY identifiers, or lane claims for native Work.
