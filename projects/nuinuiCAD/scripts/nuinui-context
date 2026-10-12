@@ -9,8 +9,8 @@ if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
   CD=${NUINUI_DEV_CONTEXT_DEV_WT:-$C}
   CT=${NUINUI_SELFTEST_EXPECTED_ORIGIN:?NUINUI_SELFTEST_EXPECTED_ORIGIN is required for fixture runs}
 else
-  C=${NUINUI_DEV_CONTEXT_WT:-/Users/yosomi/Code/dev-context}
-  CD=${NUINUI_DEV_CONTEXT_DEV_WT:-/Users/yosomi/Code/dev-context-dev}
+  C=/Users/yosomi/Code/dev-context
+  CD=/Users/yosomi/Code/dev-context-dev
   CT=https://github.com/sayosomi/dev-context.git
 fi
 CONTEXT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui
@@ -573,7 +573,51 @@ nuinui_candidate_result_dir() {
 }
 
 nuinui_candidate_sha256() {
-  shasum -a 256 "$1" 2>/dev/null | awk 'NR==1 {print $1}'
+  nuinui_candidate_hash_capture=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-hash.XXXXXX") || return 1
+  if ! shasum -a 256 "$1" >"$nuinui_candidate_hash_capture" 2>/dev/null; then
+    rm -f "$nuinui_candidate_hash_capture"
+    return 1
+  fi
+  nuinui_candidate_hash_value=$(awk 'NR==1 {print $1}' "$nuinui_candidate_hash_capture")
+  rm -f "$nuinui_candidate_hash_capture"
+  printf '%s\n' "$nuinui_candidate_hash_value" | grep -Eq '^[0-9a-f]{64}$' || return 1
+  printf '%s\n' "$nuinui_candidate_hash_value"
+}
+
+nuinui_candidate_operation_id() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    case "${NUINUI_SELFTEST_OPERATION_ID_FAILURE:-}" in
+      fail) return 1 ;;
+      malformed) printf '%s\n' malformed; return 0 ;;
+    esac
+  fi
+  nuinui_candidate_operation_input=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-operation.XXXXXX") || return 1
+  nuinui_candidate_operation_output=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-operation-id.XXXXXX") || {
+    rm -f "$nuinui_candidate_operation_input"
+    return 1
+  }
+  if ! (umask 077; printf '%s:%s:%s:%s:%s\n' "$$" "${PPID:-0}" "$(date +%s)" "${RANDOM:-0}" "$(od -An -N16 -tx1 /dev/urandom 2>/dev/null)") >"$nuinui_candidate_operation_input"; then
+    rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+    return 1
+  fi
+  if ! git hash-object --stdin <"$nuinui_candidate_operation_input" >"$nuinui_candidate_operation_output" 2>/dev/null; then
+    rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+    return 1
+  fi
+  nuinui_candidate_operation_value=$(cat "$nuinui_candidate_operation_output")
+  rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+  printf '%s\n' "$nuinui_candidate_operation_value" | grep -Eq '^[0-9a-f]{40}$' || return 1
+  printf '%s\n' "$nuinui_candidate_operation_value"
+}
+
+nuinui_candidate_timestamp() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    case "${NUINUI_SELFTEST_TIMESTAMP_FAILURE:-}" in
+      fail) return 1 ;;
+      malformed) printf '%s\n' malformed; return 0 ;;
+    esac
+  fi
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
 }
 
 nuinui_candidate_last_result() {
@@ -609,28 +653,55 @@ nuinui_candidate_run_tracked() {
   shift
   nuinui_candidate_display=$1
   shift
+  nuinui_candidate_request_count=$1
+  case "$nuinui_candidate_request_count" in ''|*[!0-9]*|0) echo 'ERROR: invalid command request arity; mutation was not started'; return 1 ;; esac
+  shift
+  nuinui_candidate_request_file=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-request.XXXXXX") || { echo 'ERROR: unable to capture command request identity; mutation was not started'; return 1; }
+  nuinui_candidate_remaining=$nuinui_candidate_request_count
+  while [ "$nuinui_candidate_remaining" -gt 0 ]; do
+    [ "$#" -gt 0 ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command request arity; mutation was not started'; return 1; }
+    printf '%s\0' "$1" >>"$nuinui_candidate_request_file" || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to capture command request identity; mutation was not started'; return 1; }
+    shift
+    nuinui_candidate_remaining=$((nuinui_candidate_remaining - 1))
+  done
+  [ "${1:-}" = --backend-- ] && [ "$#" -ge 2 ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid tracked command backend boundary; mutation was not started'; return 1; }
+  shift
+  nuinui_candidate_backend=$1
+  shift
   nuinui_candidate_repo=$(nuinui_candidate_result_repo)
-  gr "$nuinui_candidate_repo" || { echo 'ERROR: result repository is unavailable'; return 1; }
-  nuinui_candidate_gitdir=$(gd "$nuinui_candidate_repo") || { echo 'ERROR: unable to resolve result storage'; return 1; }
+  gr "$nuinui_candidate_repo" || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: result repository is unavailable'; return 1; }
+  nuinui_candidate_gitdir=$(gd "$nuinui_candidate_repo") || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to resolve result storage'; return 1; }
   nuinui_candidate_store=$nuinui_candidate_gitdir/nuinui-context-command-result-v1
   if [ -e "$nuinui_candidate_store" ] || [ -L "$nuinui_candidate_store" ]; then
-    [ -d "$nuinui_candidate_store" ] && [ ! -L "$nuinui_candidate_store" ] || { echo 'ERROR: result store path is unsafe'; return 1; }
-  else
-    (umask 077; mkdir "$nuinui_candidate_store") || { echo 'ERROR: unable to create result store'; return 1; }
+    [ -d "$nuinui_candidate_store" ] && [ ! -L "$nuinui_candidate_store" ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: result store path is unsafe'; return 1; }
   fi
   for nuinui_candidate_file in state output; do
     if [ -e "$nuinui_candidate_store/$nuinui_candidate_file" ] || [ -L "$nuinui_candidate_store/$nuinui_candidate_file" ]; then
-      [ -f "$nuinui_candidate_store/$nuinui_candidate_file" ] && [ ! -L "$nuinui_candidate_store/$nuinui_candidate_file" ] || { echo 'ERROR: result store file is unsafe'; return 1; }
+      [ -f "$nuinui_candidate_store/$nuinui_candidate_file" ] && [ ! -L "$nuinui_candidate_store/$nuinui_candidate_file" ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: result store file is unsafe'; return 1; }
     fi
   done
-  nuinui_candidate_request=$(printf '%s\n' "$nuinui_candidate_command" "$@" | nuinui_candidate_sha_stdin)
-  nuinui_candidate_operation=$(printf '%s:%s:%s:%s\n' "$$" "$(date +%s)" "${RANDOM:-0}" "$nuinui_candidate_request" | git hash-object --stdin)
-  nuinui_candidate_timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ] && [ -n "${NUINUI_SELFTEST_REQUEST_HASH_FAILURE:-}" ]; then
+    case "$NUINUI_SELFTEST_REQUEST_HASH_FAILURE" in
+      fail) rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate request SHA-256; mutation was not started'; return 1 ;;
+      malformed) nuinui_candidate_request=malformed ;;
+    esac
+  else
+    nuinui_candidate_request=$(nuinui_candidate_sha256 "$nuinui_candidate_request_file") || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate request SHA-256; mutation was not started'; return 1; }
+  fi
+  printf '%s\n' "$nuinui_candidate_request" | grep -Eq '^[0-9a-f]{64}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid request SHA-256; mutation was not started'; return 1; }
+  nuinui_candidate_operation=$(nuinui_candidate_operation_id) || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate command operation ID; mutation was not started'; return 1; }
+  printf '%s\n' "$nuinui_candidate_operation" | grep -Eq '^[0-9a-f]{40}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command operation ID; mutation was not started'; return 1; }
+  nuinui_candidate_timestamp=$(nuinui_candidate_timestamp) || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate command timestamp; mutation was not started'; return 1; }
+  printf '%s\n' "$nuinui_candidate_timestamp" | grep -Eq '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command timestamp; mutation was not started'; return 1; }
+  rm -f "$nuinui_candidate_request_file"
+  if [ ! -e "$nuinui_candidate_store" ]; then
+    (umask 077; mkdir "$nuinui_candidate_store") || { echo 'ERROR: unable to create result store; mutation was not started'; return 1; }
+  fi
   nuinui_candidate_started=$(mktemp "$nuinui_candidate_store/.state.XXXXXX") || return 1
   (umask 077; printf 'version=1\noperation_id=%s\ntimestamp=%s\ncommand=%s\nphase=STARTED\nresult=INCOMPLETE\nlane=dev-context\nissue=-\nclaim=-\nrequest_sha256=%s\nmutation=unknown\nexit=-\noutput_sha256=-\n' "$nuinui_candidate_operation" "$nuinui_candidate_timestamp" "$nuinui_candidate_command" "$nuinui_candidate_request" >"$nuinui_candidate_started") || { rm -f "$nuinui_candidate_started"; return 1; }
   mv -f "$nuinui_candidate_started" "$nuinui_candidate_store/state" || return 1
   nuinui_candidate_capture=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-result.XXXXXX") || return 1
-  "$@" >"$nuinui_candidate_capture" 2>&1 || nuinui_candidate_rc=$?
+  "$nuinui_candidate_backend" "$@" >"$nuinui_candidate_capture" 2>&1 || nuinui_candidate_rc=$?
   nuinui_candidate_rc=${nuinui_candidate_rc:-0}
   nuinui_candidate_mutation=yes
   grep -Fqx 'mutation=no-op' "$nuinui_candidate_capture" && nuinui_candidate_mutation=no
@@ -667,8 +738,6 @@ nuinui_candidate_run_tracked() {
   return "$nuinui_candidate_rc"
 }
 
-nuinui_candidate_sha_stdin() { shasum -a 256 | awk 'NR==1 {print $1}'; }
-
 nuinui_candidate_run_readonly() {
   nuinui_candidate_heading=$1
   shift
@@ -702,10 +771,10 @@ set -- "$@"
 case "${1:-}" in
   ''|-h|--help|help) nuinui_candidate_usage; exit 0 ;;
   context-audit) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-audit <expected-main> <expected-artifact-blob>'; exit 2; }; nuinui_candidate_run_readonly '🔎 AUDIT COMPLETE' context_audit_command "$2" "$3"; exit $? ;;
-  context-sync) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-sync <expected-main> <expected-artifact-blob>'; exit 2; }; nuinui_candidate_run_tracked context-sync '🔄 CONTEXT SYNCED' sy "$2" "$3"; exit $? ;;
+  context-sync) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-sync <expected-main> <expected-artifact-blob>'; exit 2; }; nuinui_candidate_run_tracked context-sync '🔄 CONTEXT SYNCED' 3 context-sync "$2" "$3" --backend-- sy "$2" "$3"; exit $? ;;
   context-dev-audit) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-dev-audit <expected-branch> <expected-head>'; exit 2; }; nuinui_candidate_run_readonly '🔎 DEV-CONTEXT AUDIT COMPLETE' context_dev_audit_command "$2" "$3"; exit $? ;;
-  context-dev-transition) [ "$#" = 5 ] || { echo 'Usage: nuinui-context context-dev-transition <old-branch> <old-head> <main> <new-branch>'; exit 2; }; nuinui_candidate_run_tracked context-dev-transition '🔀 DEV-CONTEXT TRANSITIONED' context_dev_transition_command "$2" "$3" "$4" "$5"; exit $? ;;
-  context-dev-next) shift; nuinui_context_dev_next_parse "$@" || exit $?; nuinui_candidate_run_tracked context-dev-transition '🔀 DEV-CONTEXT TRANSITIONED' context_dev_next_command "$context_next_old_branch" "$context_next_old_head" "$context_next_main" "$context_next_new_branch"; exit $? ;;
+  context-dev-transition) [ "$#" = 5 ] || { echo 'Usage: nuinui-context context-dev-transition <old-branch> <old-head> <main> <new-branch>'; exit 2; }; nuinui_candidate_run_tracked context-dev-transition '🔀 DEV-CONTEXT TRANSITIONED' 5 context-dev-transition "$2" "$3" "$4" "$5" --backend-- context_dev_transition_command "$2" "$3" "$4" "$5"; exit $? ;;
+  context-dev-next) shift; nuinui_context_dev_next_parse "$@" || exit $?; nuinui_candidate_run_tracked context-dev-transition '🔀 DEV-CONTEXT TRANSITIONED' "$(( $# + 1 ))" context-dev-transition "$@" --backend-- context_dev_next_command "$context_next_old_branch" "$context_next_old_head" "$context_next_main" "$context_next_new_branch"; exit $? ;;
   context-check) [ "$#" = 1 ] || { nuinui_candidate_usage; exit 2; }; context_check_command; exit $? ;;
   last-result) [ "$#" = 1 ] || { echo 'Usage: nuinui-context last-result'; exit 2; }; nuinui_candidate_last_result; exit $? ;;
   *) echo "ERROR: unknown command: $1"; nuinui_candidate_usage; exit 2 ;;

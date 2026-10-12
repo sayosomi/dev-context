@@ -19,6 +19,14 @@ generated_mode=$(stat -f '%Lp' "$generated_candidate")
 [ "$candidate_mode" = 755 ] && [ "$generated_mode" = "$candidate_mode" ] || \
   fail "generated executable mode mismatch expected=755 actual=$candidate_mode generated=$generated_mode"
 
+runtime_source=$SCRIPT_DIR/nuinui-context-src/runtime.sh
+normal_paths=$(NUINUI_SELFTEST=0 NUINUI_DEV_CONTEXT_WT="$ROOT/not-the-standard-clone" \
+  NUINUI_DEV_CONTEXT_DEV_WT="$ROOT/not-the-dev-worktree" \
+  sh -c '. "$1"; printf "%s\n%s\n" "$C" "$CD"' sh "$runtime_source")
+[ "$normal_paths" = "/Users/yosomi/Code/dev-context
+/Users/yosomi/Code/dev-context-dev" ] || \
+  fail "normal runtime accepted path overrides: $normal_paths"
+
 make_fixture() {
   name=$1
   kind=$2
@@ -78,6 +86,59 @@ if output=$($CANDIDATE last-result 2>&1); then fail 'interrupted command result 
 assert_contains "$output" 'result=INCOMPLETE' 'interrupted result evidence'
 assert_contains "$output" 'recovery=BLOCKED' 'interrupted result recovery'
 assert_contains "$output" 'tracked mutation did not reach terminal finalization' 'interrupted result diagnostic'
+
+make_fixture identities valid
+result_gitdir=$(git -C "$TEST_PROD" rev-parse --absolute-git-dir)
+identity_main=$(git -C "$TEST_PROD" rev-parse HEAD)
+identity_head=$(git -C "$TEST_DEV" rev-parse HEAD)
+output=$($CANDIDATE context-dev-next --old-branch fixture/dev --old-head "$identity_head" \
+  --main "$identity_main" --new-branch fixture/next 2>&1) || fail "initial identity transition failed: $output"
+identity_state=$result_gitdir/nuinui-context-command-result-v1/state
+identity_output=$result_gitdir/nuinui-context-command-result-v1/output
+first_request_sha=$(awk -F= '$1=="request_sha256" {print $2}' "$identity_state")
+output=$($CANDIDATE context-dev-next --new-branch fixture/next --main "$identity_main" \
+  --old-head "$identity_head" --old-branch fixture/dev 2>&1) || fail "reordered duplicate identity request failed: $output"
+second_request_sha=$(awk -F= '$1=="request_sha256" {print $2}' "$identity_state")
+[ "$first_request_sha" != "$second_request_sha" ] || fail 'reordered context-dev-next options shared a request identity'
+assert_contains "$output" 'DEV-CONTEXT ALREADY TRANSITIONED' 'reordered duplicate transition'
+output=$($CANDIDATE last-result 2>&1) || fail "canonical last-result was not recoverable: $output"
+assert_contains "$output" 'command=context-dev-transition' 'canonical tracked command identity'
+assert_contains "$output" "request_sha256=$second_request_sha" 'canonical request recovery'
+
+collision_main=$(git -C "$TEST_PROD" rev-parse HEAD)
+if collision_one=$($CANDIDATE context-dev-transition 'alpha
+beta' gamma "$collision_main" fixture/invalid 2>&1); then fail 'newline collision request one unexpectedly succeeded'; fi
+collision_sha_one=$(awk -F= '$1=="request_sha256" {print $2}' "$identity_state")
+if collision_two=$($CANDIDATE context-dev-transition alpha 'beta
+gamma' "$collision_main" fixture/invalid 2>&1); then fail 'newline collision request two unexpectedly succeeded'; fi
+collision_sha_two=$(awk -F= '$1=="request_sha256" {print $2}' "$identity_state")
+[ "$collision_sha_one" != "$collision_sha_two" ] || fail 'argument-boundary collision shared a request identity'
+
+assert_allocation_failure_preserves_state() {
+  allocation_case=$1
+  allocation_variable=$2
+  allocation_value=$3
+  allocation_head=$(git -C "$TEST_DEV" rev-parse HEAD)
+  allocation_branch=$(git -C "$TEST_DEV" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  cp "$identity_state" "$ROOT/state.before"
+  cp "$identity_output" "$ROOT/output.before"
+  if allocation_output=$(env "$allocation_variable=$allocation_value" "$CANDIDATE" \
+    context-dev-transition fixture/next "$allocation_head" "$identity_main" fixture/should-not-exist 2>&1); then
+    fail "$allocation_case unexpectedly succeeded"
+  fi
+  assert_contains "$allocation_output" 'mutation was not started' "$allocation_case diagnostic"
+  case "$allocation_output" in *'⭕ result=SUCCESS'*) fail "$allocation_case emitted success result" ;; esac
+  [ "$(git -C "$TEST_DEV" rev-parse HEAD)" = "$allocation_head" ] || fail "$allocation_case changed dev HEAD"
+  [ "$(git -C "$TEST_DEV" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = "$allocation_branch" ] || fail "$allocation_case changed dev branch"
+  cmp -s "$ROOT/state.before" "$identity_state" || fail "$allocation_case changed prior recovery state"
+  cmp -s "$ROOT/output.before" "$identity_output" || fail "$allocation_case changed prior recovery output"
+}
+assert_allocation_failure_preserves_state request-hash-failure NUINUI_SELFTEST_REQUEST_HASH_FAILURE fail
+assert_allocation_failure_preserves_state request-hash-malformed NUINUI_SELFTEST_REQUEST_HASH_FAILURE malformed
+assert_allocation_failure_preserves_state operation-id-failure NUINUI_SELFTEST_OPERATION_ID_FAILURE fail
+assert_allocation_failure_preserves_state operation-id-malformed NUINUI_SELFTEST_OPERATION_ID_FAILURE malformed
+assert_allocation_failure_preserves_state timestamp-failure NUINUI_SELFTEST_TIMESTAMP_FAILURE fail
+assert_allocation_failure_preserves_state timestamp-malformed NUINUI_SELFTEST_TIMESTAMP_FAILURE malformed
 
 make_fixture partial-transition partial-transition
 wrapper_dir=$ROOT/wrappers

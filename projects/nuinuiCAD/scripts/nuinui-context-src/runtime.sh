@@ -8,8 +8,8 @@ if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
   CD=${NUINUI_DEV_CONTEXT_DEV_WT:-$C}
   CT=${NUINUI_SELFTEST_EXPECTED_ORIGIN:?NUINUI_SELFTEST_EXPECTED_ORIGIN is required for fixture runs}
 else
-  C=${NUINUI_DEV_CONTEXT_WT:-/Users/yosomi/Code/dev-context}
-  CD=${NUINUI_DEV_CONTEXT_DEV_WT:-/Users/yosomi/Code/dev-context-dev}
+  C=/Users/yosomi/Code/dev-context
+  CD=/Users/yosomi/Code/dev-context-dev
   CT=https://github.com/sayosomi/dev-context.git
 fi
 CONTEXT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui
