@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+usage() { echo 'Usage: generate-nuinui-context <output-path>' >&2; exit 2; }
+[ "$#" = 1 ] && [ -n "$1" ] || usage
+output=$1
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+source_dir=$script_dir/nuinui-context-src
+cli_source=$source_dir/cli.sh
+runtime_source=$source_dir/runtime.sh
+[ -f "$cli_source" ] && [ ! -L "$cli_source" ] || { echo "generator: missing safe source: $cli_source" >&2; exit 1; }
+[ -f "$runtime_source" ] && [ ! -L "$runtime_source" ] || { echo "generator: missing safe source: $runtime_source" >&2; exit 1; }
+output_dir=$(CDPATH= cd -- "$(dirname -- "$output")" && pwd -P) || { echo 'generator: output directory does not exist' >&2; exit 1; }
+output_path=$output_dir/$(basename -- "$output")
+case "$output_path" in "$cli_source"|"$runtime_source"|"$script_dir/nuinui") echo 'generator: refusing to overwrite source or legacy artifact' >&2; exit 1 ;; esac
+[ ! -d "$output_path" ] && [ ! -L "$output_path" ] || { echo 'generator: output is a directory or symbolic link' >&2; exit 1; }
+temporary=$(mktemp "$output_dir/.nuinui-context.XXXXXX") || { echo 'generator: unable to create temporary output' >&2; exit 1; }
+cleanup() { result=$?; trap - EXIT HUP INT TERM; rm -f "$temporary"; exit "$result"; }
+trap cleanup EXIT HUP INT TERM
+(umask 077; { printf '#!/bin/sh\n'; cat "$runtime_source"; printf '\n'; cat "$cli_source"; } >"$temporary") || exit 1
+chmod 755 "$temporary"
+mv -f "$temporary" "$output_path"
+trap - EXIT HUP INT TERM

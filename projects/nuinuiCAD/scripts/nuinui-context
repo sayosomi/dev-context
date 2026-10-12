@@ -1,0 +1,786 @@
+#!/bin/sh
+# Standalone context-only runtime. This candidate deliberately carries no
+# product lifecycle, lane ownership, reservation, or E2E helpers.
+P=$0
+case "$P" in */*) ;; *) P=$(command -v "$P" 2>/dev/null || printf '%s' "$P");; esac
+D=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P)
+if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+  C=${NUINUI_DEV_CONTEXT_WT:?NUINUI_DEV_CONTEXT_WT is required for fixture runs}
+  CD=${NUINUI_DEV_CONTEXT_DEV_WT:-$C}
+  CT=${NUINUI_SELFTEST_EXPECTED_ORIGIN:?NUINUI_SELFTEST_EXPECTED_ORIGIN is required for fixture runs}
+else
+  C=/Users/yosomi/Code/dev-context
+  CD=/Users/yosomi/Code/dev-context-dev
+  CT=https://github.com/sayosomi/dev-context.git
+fi
+CONTEXT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui
+context_sha_is_valid() { printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'; }
+gr() { [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+cn() { [ -z "$(git -C "$1" status --porcelain --untracked-files=all 2>/dev/null)" ]; }
+bn() { git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true; }
+hh() { git -C "$1" rev-parse HEAD 2>/dev/null; }
+om() { git -C "$1" rev-parse origin/main 2>/dev/null; }
+fm() { git -C "$1" fetch origin main >/dev/null 2>&1; }
+an() { git -C "$1" merge-base --is-ancestor "$2" "$3"; }
+gd() { git -C "$1" rev-parse --absolute-git-dir 2>/dev/null; }
+
+
+context_valid_sha() {
+  context_sha_is_valid "$1"
+}
+
+context_origin_exact() {
+  context_origin_actual=$(git -C "$C" remote get-url origin 2>/dev/null) || return 1
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    [ -n "$CT" ] && [ "$context_origin_actual" = "$CT" ]
+    return $?
+  fi
+  case "$context_origin_actual" in
+    https://github.com/sayosomi/dev-context|https://github.com/sayosomi/dev-context.git|git@github.com:sayosomi/dev-context|git@github.com:sayosomi/dev-context.git|ssh://git@github.com/sayosomi/dev-context|ssh://git@github.com/sayosomi/dev-context.git)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+context_repo_ready() {
+  [ -n "$C" ] && gr "$C" && context_origin_exact
+}
+
+context_artifact_blob() {
+  context_artifact_repo=$1
+  context_artifact_ref=$2
+  context_artifact_sha=$(git -C "$context_artifact_repo" rev-parse "$context_artifact_ref:$CONTEXT_ARTIFACT" 2>/dev/null) || return 1
+  context_valid_sha "$context_artifact_sha" || return 1
+  [ "$(git -C "$context_artifact_repo" cat-file -t "$context_artifact_sha" 2>/dev/null)" = blob ] || return 1
+  printf '%s\n' "$context_artifact_sha"
+}
+
+context_authoritative_main() {
+  context_remote_line=$(git -C "$C" ls-remote --exit-code origin refs/heads/main 2>/dev/null) || {
+    context_remote_rc=$?
+    return "$context_remote_rc"
+  }
+  set -- $context_remote_line
+  [ "$#" = 2 ] || return 1
+  context_valid_sha "$1" || return 1
+  [ "$2" = refs/heads/main ] || return 1
+  context_remote_main=$1
+  printf '%s\n' "$context_remote_main"
+}
+
+context_remote_branch() {
+  context_remote_branch_name=$1
+  context_remote_line=$(git -C "$C" ls-remote --exit-code --heads origin "refs/heads/$context_remote_branch_name" 2>/dev/null)
+  context_remote_rc=$?
+  if [ "$context_remote_rc" = 2 ] && [ -z "$context_remote_line" ]; then
+    context_remote_branch_state=absent
+    context_remote_branch_sha=
+    return 0
+  fi
+  [ "$context_remote_rc" = 0 ] || return 1
+  set -- $context_remote_line
+  [ "$#" = 2 ] || return 1
+  context_valid_sha "$1" || return 1
+  [ "$2" = "refs/heads/$context_remote_branch_name" ] || return 1
+  context_remote_branch_state=present
+  context_remote_branch_sha=$1
+}
+
+context_git_common_abs() {
+  context_common_repo=$1
+  context_common_dir=$(git -C "$context_common_repo" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$context_common_dir" in
+    /*) CDPATH= cd -- "$context_common_dir" 2>/dev/null && pwd -P;;
+    *) CDPATH= cd -- "$context_common_repo/$context_common_dir" 2>/dev/null && pwd -P;;
+  esac
+}
+
+context_worktree_registry() {
+  context_worktree_listing=$(git -C "$C" worktree list --porcelain 2>/dev/null) || return 1
+  context_worktree_standard=$(git -C "$C" rev-parse --show-toplevel 2>/dev/null) || return 1
+  context_worktree_dev=$(git -C "$CD" rev-parse --show-toplevel 2>/dev/null) || return 1
+  [ "$context_worktree_standard" != "$context_worktree_dev" ] || return 1
+  printf '%s\n' "$context_worktree_listing" | awk -v standard="$context_worktree_standard" -v dev="$context_worktree_dev" '
+    BEGIN { valid=1 }
+    function finish_record() {
+      if (!in_record) return
+      if (!have_head || (!have_branch && !is_detached) || is_bare || locked || prunable) valid=0
+      if (path == standard) standard_count++
+      else if (path == dev) dev_count++
+      else valid=0
+      records++
+    }
+    /^worktree / { finish_record(); in_record=1; path=substr($0,10); if (path=="" || seen[path]++) valid=0; have_head=have_branch=is_detached=is_bare=locked=prunable=0; next }
+    /^HEAD / { if (!in_record || have_head || $2 !~ /^[0-9a-fA-F]+$/ || length($2)!=40) valid=0; have_head=1; next }
+    /^branch / { if (!in_record || have_branch || is_detached || $2 !~ /^refs\/heads\/.+/) valid=0; have_branch=1; next }
+    /^detached$/ { if (!in_record || have_branch || is_detached) valid=0; is_detached=1; next }
+    /^bare$/ { is_bare=1; next }
+    /^locked( |$)/ { locked=1; next }
+    /^prunable( |$)/ { prunable=1; next }
+    /^$/ { next }
+    { valid=0 }
+    END { finish_record(); if (!valid || records!=2 || standard_count!=1 || dev_count!=1) exit 1 }
+  '
+}
+
+context_dev_ready() {
+  [ -n "$CD" ] && [ -d "$CD" ] && gr "$CD" || return 1
+  context_worktree_registry || return 1
+  context_common_standard=$(context_git_common_abs "$C") || return 1
+  context_common_dev=$(context_git_common_abs "$CD") || return 1
+  [ "$context_common_standard" = "$context_common_dev" ]
+}
+
+context_check_command() {
+  context_repo_ready || { echo "BLOCKED: context-check repository/origin mismatch path=$C"; return 1; }
+  context_worktree_registry || { echo "BLOCKED: context-check worktree inventory is invalid or unexpected path=$C"; return 1; }
+  cn "$C" && cn "$CD" || { echo 'BLOCKED: context-check requires clean standard and dev worktrees'; return 1; }
+  context_docs=$C/projects/nuinuiCAD/LOCAL-TOOLS.md
+  [ -f "$context_docs" ] && [ ! -L "$context_docs" ] || { echo "ERROR: candidate command documentation is missing: $context_docs"; return 1; }
+  context_markdown_files=$(find "$C" -type f -name '*.md' -not -path '*/.git/*' -print 2>/dev/null) || { echo 'ERROR: unable to enumerate Markdown files'; return 1; }
+  [ -n "$context_markdown_files" ] || { echo 'ERROR: no Markdown files found'; return 1; }
+  context_link_error=
+  while IFS= read -r context_file; do
+    [ -n "$context_file" ] || continue
+    while IFS= read -r context_link; do
+      case "$context_link" in ''|'#'*|http://*|https://*|mailto:*|tel:*) continue ;; esac
+      case "$context_link" in /*) context_target=$C$context_link ;; *) context_target=$(dirname "$context_file")/$context_link ;; esac
+      context_target=${context_target%%#*}; context_target=${context_target%%\?*}
+      [ -e "$context_target" ] || { context_link_error="$context_file -> $context_link"; break; }
+    done <<EOF
+$(grep -oE '\]\([^)]+\)' "$context_file" 2>/dev/null | sed -E 's/^\]\(([^)]+)\).*$/\1/' || true)
+EOF
+    [ -z "$context_link_error" ] || break
+    if grep -q 'ONLY-CHATGPT\.md' "$context_file"; then context_link_error="$context_file contains retired ONLY-CHATGPT reference"; break; fi
+  done <<EOF
+$context_markdown_files
+EOF
+  [ -z "$context_link_error" ] || { echo "BLOCKED: invalid Markdown link or retired reference: $context_link_error"; return 1; }
+  for context_command in context-audit context-sync context-dev-audit context-dev-transition context-dev-next context-check last-result; do
+    grep -Fq "nuinui-context $context_command" "$context_docs" || { echo "BLOCKED: candidate command is undocumented: $context_command"; return 1; }
+  done
+  echo 'nuinui-context 0.1.0'
+  echo 'CONTEXT CHECK PASS'
+}
+
+context_valid_branch() {
+  git -C "$C" check-ref-format --branch "$1" >/dev/null 2>&1
+}
+
+context_local_branch_exists() {
+  git -C "$C" show-ref --verify --quiet "refs/heads/$1"
+}
+
+context_audit_prove() {
+  context_expected_main=$1
+  context_expected_artifact=$2
+  context_valid_sha "$context_expected_main" || {
+    context_audit_error="ERROR: invalid expected main SHA: $context_expected_main"
+    return 2
+  }
+  context_valid_sha "$context_expected_artifact" || {
+    context_audit_error="ERROR: invalid expected artifact blob SHA: $context_expected_artifact"
+    return 2
+  }
+  context_repo_ready || {
+    context_audit_error="BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"
+    return 1
+  }
+  context_audit_branch=$(bn "$C")
+  [ "$context_audit_branch" = main ] || {
+    context_audit_error="BLOCKED: standard clone branch mismatch expected=main actual=${context_audit_branch:-detached}"
+    return 1
+  }
+  cn "$C" || {
+    context_audit_error="BLOCKED: standard clone is dirty path=$C"
+    return 1
+  }
+  context_audit_head=$(hh "$C") || {
+    context_audit_error='ERROR: unable to read standard clone HEAD'
+    return 1
+  }
+  context_valid_sha "$context_audit_head" || {
+    context_audit_error="ERROR: standard clone HEAD is not a valid SHA: $context_audit_head"
+    return 1
+  }
+  context_audit_artifact=$(context_artifact_blob "$C" HEAD) || {
+    context_audit_error="ERROR: unable to read local artifact blob at $CONTEXT_ARTIFACT"
+    return 1
+  }
+  context_audit_remote=$(context_authoritative_main) || {
+    context_audit_error="ERROR: authoritative remote main query failed origin=$CT"
+    return 1
+  }
+  [ "$context_audit_remote" = "$context_expected_main" ] || {
+    context_audit_error="BLOCKED: authoritative main mismatch expected=$context_expected_main actual=$context_audit_remote"
+    return 1
+  }
+}
+
+context_audit_command() {
+  context_audit_prove "$1" "$2" || {
+    printf '%s\n' "$context_audit_error"
+    return 1
+  }
+  printf 'AUDIT COMPLETE\nhead=%s\norigin_main=%s\nartifact_blob=%s\nclean=yes\n' "$context_audit_head" "$context_audit_remote" "$context_audit_artifact"
+}
+
+context_sync_command() {
+  context_sync_expected_main=$1
+  context_sync_expected_artifact=$2
+  context_audit_prove "$context_sync_expected_main" "$context_sync_expected_artifact" || {
+    printf '%s\n' "$context_audit_error"
+    return 1
+  }
+  context_sync_old_head=$context_audit_head
+  fm "$C" || {
+    echo "ERROR: fetch of origin/main failed expected=$context_sync_expected_main"
+    return 1
+  }
+  [ "$(om "$C")" = "$context_sync_expected_main" ] || {
+    echo "BLOCKED: fetched origin/main mismatch expected=$context_sync_expected_main actual=$(om "$C")"
+    return 1
+  }
+  [ "$(bn "$C")" = main ] && cn "$C" && [ "$(hh "$C")" = "$context_sync_old_head" ] || {
+    echo 'BLOCKED: standard clone changed during guarded fetch'
+    return 1
+  }
+  context_authoritative_main >/dev/null || {
+    echo 'ERROR: authoritative remote main query failed after fetch'
+    return 1
+  }
+  [ "$context_remote_main" = "$context_sync_expected_main" ] || {
+    echo "BLOCKED: authoritative main raced during sync expected=$context_sync_expected_main actual=$context_remote_main"
+    return 1
+  }
+  an "$C" "$context_sync_old_head" "$context_sync_expected_main" || {
+    echo "BLOCKED: local main history diverges expected_ancestor=$context_sync_old_head target=$context_sync_expected_main"
+    return 1
+  }
+  context_sync_target_artifact=$(context_artifact_blob "$C" "$context_sync_expected_main") || {
+    echo "ERROR: unable to read target artifact blob at $CONTEXT_ARTIFACT for expected-main=$context_sync_expected_main"
+    return 1
+  }
+  [ "$context_sync_target_artifact" = "$context_sync_expected_artifact" ] || {
+    echo "BLOCKED: target artifact blob mismatch expected=$context_sync_expected_artifact actual=$context_sync_target_artifact"
+    return 1
+  }
+  git -C "$C" merge --ff-only origin/main >/dev/null 2>&1 || {
+    echo "ERROR: fast-forward sync failed expected=$context_sync_expected_main"
+    return 1
+  }
+  [ "$(hh "$C")" = "$context_sync_expected_main" ] || {
+    echo "ERROR: post-sync HEAD mismatch expected=$context_sync_expected_main actual=$(hh "$C")"
+    return 1
+  }
+  cn "$C" || {
+    echo 'ERROR: standard clone is dirty after sync'
+    return 1
+  }
+  context_sync_post_artifact=$(context_artifact_blob "$C" HEAD) || {
+    echo 'ERROR: unable to read post-sync artifact blob'
+    return 1
+  }
+  [ "$context_sync_post_artifact" = "$context_sync_expected_artifact" ] || {
+    echo "ERROR: post-sync artifact blob mismatch expected=$context_sync_expected_artifact actual=$context_sync_post_artifact"
+    return 1
+  }
+  printf 'CONTEXT SYNCED\nhead=%s\nartifact_blob=%s\nclean=yes\n' "$context_sync_expected_main" "$context_sync_post_artifact"
+}
+
+context_dev_audit_prove() {
+  context_dev_expected_branch=$1
+  context_dev_expected_head=$2
+  context_valid_branch "$context_dev_expected_branch" || {
+    context_dev_audit_error="ERROR: invalid expected dev branch: $context_dev_expected_branch"
+    return 2
+  }
+  context_valid_sha "$context_dev_expected_head" || {
+    context_dev_audit_error="ERROR: invalid expected dev HEAD SHA: $context_dev_expected_head"
+    return 2
+  }
+  context_repo_ready || {
+    context_dev_audit_error="BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"
+    return 1
+  }
+  context_dev_ready || {
+    context_dev_audit_error="BLOCKED: canonical dev worktree registration is missing, duplicate, malformed, or belongs to another repository path=$CD"
+    return 1
+  }
+  context_dev_audit_branch=$(bn "$CD")
+  [ "$context_dev_audit_branch" = "$context_dev_expected_branch" ] || {
+    context_dev_audit_error="BLOCKED: dev branch mismatch expected=$context_dev_expected_branch actual=${context_dev_audit_branch:-detached}"
+    return 1
+  }
+  cn "$CD" || {
+    context_dev_audit_error="BLOCKED: canonical dev worktree is dirty path=$CD"
+    return 1
+  }
+  context_dev_audit_head=$(hh "$CD") || {
+    context_dev_audit_error='ERROR: unable to read canonical dev worktree HEAD'
+    return 1
+  }
+  [ "$context_dev_audit_head" = "$context_dev_expected_head" ] || {
+    context_dev_audit_error="BLOCKED: dev HEAD mismatch expected=$context_dev_expected_head actual=$context_dev_audit_head"
+    return 1
+  }
+}
+
+context_dev_audit_command() {
+  context_dev_audit_prove "$1" "$2" || {
+    printf '%s\n' "$context_dev_audit_error"
+    return 1
+  }
+  printf 'DEV-CONTEXT AUDIT COMPLETE\nworktree=%s\nbranch=%s\nhead=%s\nclean=yes\n' "$CD" "$context_dev_audit_branch" "$context_dev_audit_head"
+}
+
+context_dev_next_command() {
+  context_dev_next_old_branch=$1
+  context_dev_next_old_head=$2
+  context_dev_next_expected_main=$3
+  context_dev_next_new_branch=$4
+  context_valid_branch "$context_dev_next_old_branch" || {
+    echo "ERROR: invalid expected old branch: $context_dev_next_old_branch"
+    return 2
+  }
+  context_valid_branch "$context_dev_next_new_branch" || {
+    echo "ERROR: invalid new branch: $context_dev_next_new_branch"
+    return 2
+  }
+  context_valid_sha "$context_dev_next_old_head" || {
+    echo "ERROR: invalid expected old HEAD SHA: $context_dev_next_old_head"
+    return 2
+  }
+  context_valid_sha "$context_dev_next_expected_main" || {
+    echo "ERROR: invalid expected main SHA: $context_dev_next_expected_main"
+    return 2
+  }
+
+  if context_dev_audit_prove "$context_dev_next_old_branch" "$context_dev_next_old_head"; then
+    context_dev_transition_command \
+      "$context_dev_next_old_branch" "$context_dev_next_old_head" \
+      "$context_dev_next_expected_main" "$context_dev_next_new_branch"
+    return $?
+  fi
+
+  # The audit rejects a post-transition branch by design. Only the exact
+  # caller-supplied new-branch candidate may continue to the existing
+  # transition owner for strict duplicate proof; every other audit failure
+  # remains a read-only fail-closed result.
+  case "$context_dev_audit_error" in
+    "BLOCKED: dev branch mismatch expected=$context_dev_next_old_branch actual=$context_dev_next_new_branch")
+      context_dev_transition_command \
+        "$context_dev_next_old_branch" "$context_dev_next_old_head" \
+        "$context_dev_next_expected_main" "$context_dev_next_new_branch"
+      ;;
+    *)
+      printf '%s\n' "$context_dev_audit_error"
+      return 1
+      ;;
+  esac
+}
+
+context_dev_stable_patch_id() {
+  context_patch_id_left=$1
+  context_patch_id_right=$2
+  context_patch_id_file=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-patch.XXXXXX") || return 1
+  if ! git -C "$C" diff --no-ext-diff --binary \
+    "$context_patch_id_left" "$context_patch_id_right" -- >"$context_patch_id_file" 2>/dev/null; then
+    rm -f "$context_patch_id_file"
+    return 1
+  fi
+  context_patch_id_output=$(git -C "$C" patch-id --stable <"$context_patch_id_file" 2>/dev/null) || {
+    rm -f "$context_patch_id_file"
+    return 1
+  }
+  rm -f "$context_patch_id_file" || return 1
+  context_dev_patch_id=
+  [ -n "$context_patch_id_output" ] || return 0
+  context_dev_patch_id=$(printf '%s\n' "$context_patch_id_output" | awk '
+    NF == 2 && $1 ~ /^[0-9a-fA-F]{40}$/ && $2 ~ /^[0-9a-fA-F]{40}$/ {
+      print $1
+      count++
+    }
+    END { if (count != 1) exit 1 }
+  ') || {
+    context_dev_patch_id=
+    return 1
+  }
+  context_valid_sha "$context_dev_patch_id" || {
+    context_dev_patch_id=
+    return 1
+  }
+}
+
+context_dev_transition_conclusion_prove() {
+  context_conclusion_old_head=$1
+  context_conclusion_expected_main=$2
+  an "$C" "$context_conclusion_old_head" "$context_conclusion_expected_main" && return 0
+
+  context_conclusion_merge_base=$(git -C "$C" merge-base \
+    "$context_conclusion_old_head" "$context_conclusion_expected_main" 2>/dev/null) || return 1
+  context_valid_sha "$context_conclusion_merge_base" || return 1
+
+  context_conclusion_pull_heads=$(git -C "$C" ls-remote --exit-code origin \
+    'refs/pull/*/head' 2>/dev/null) || return 1
+  [ -n "$context_conclusion_pull_heads" ] || return 1
+  printf '%s\n' "$context_conclusion_pull_heads" | awk -v wanted="$context_conclusion_old_head" '
+    BEGIN { valid = 1; found = 0 }
+    {
+      if (NF != 2 || $1 !~ /^[0-9a-fA-F]{40}$/ || $2 !~ /^refs\/pull\/[0-9][0-9]*\/head$/) {
+        valid = 0
+        next
+      }
+      if ($1 == wanted) found = 1
+    }
+    END { if (!valid || !found) exit 1 }
+  ' || return 1
+
+  context_dev_stable_patch_id "$context_conclusion_merge_base" "$context_conclusion_old_head" || return 1
+  [ -n "$context_dev_patch_id" ] || return 1
+  context_conclusion_topic_patch_id=$context_dev_patch_id
+
+  context_conclusion_main_commits=$(git -C "$C" rev-list --first-parent \
+    "$context_conclusion_merge_base..$context_conclusion_expected_main" 2>/dev/null) || return 1
+  [ -n "$context_conclusion_main_commits" ] || return 1
+  for context_conclusion_commit in $context_conclusion_main_commits; do
+    context_dev_stable_patch_id "$context_conclusion_commit^1" "$context_conclusion_commit" || return 1
+    [ -n "$context_dev_patch_id" ] || continue
+    [ "$context_dev_patch_id" = "$context_conclusion_topic_patch_id" ] && return 0
+  done
+  return 1
+}
+
+context_dev_transition_command() {
+  context_transition_old_branch=$1
+  context_transition_old_head=$2
+  context_transition_expected_main=$3
+  context_transition_new_branch=$4
+  context_valid_branch "$context_transition_old_branch" || { echo "ERROR: invalid expected old branch: $context_transition_old_branch"; return 2; }
+  context_valid_branch "$context_transition_new_branch" || { echo "ERROR: invalid new branch: $context_transition_new_branch"; return 2; }
+  context_valid_sha "$context_transition_old_head" || { echo "ERROR: invalid expected old HEAD SHA: $context_transition_old_head"; return 2; }
+  context_valid_sha "$context_transition_expected_main" || { echo "ERROR: invalid expected main SHA: $context_transition_expected_main"; return 2; }
+  context_repo_ready || { echo "BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"; return 1; }
+  context_dev_ready || { echo "BLOCKED: canonical dev worktree registration is missing, duplicate, malformed, or belongs to another repository path=$CD"; return 1; }
+  context_transition_current_branch=$(bn "$CD")
+  if [ "$context_transition_current_branch" != "$context_transition_old_branch" ]; then
+    [ "$context_transition_current_branch" = "$context_transition_new_branch" ] || {
+      echo "BLOCKED: dev branch mismatch expected_old=$context_transition_old_branch expected_new=$context_transition_new_branch actual=${context_transition_current_branch:-detached}"
+      return 1
+    }
+    context_transition_current_head=$(hh "$CD") || {
+      echo 'ERROR: unable to read canonical dev worktree HEAD'
+      return 1
+    }
+    [ "$context_transition_current_head" = "$context_transition_expected_main" ] || {
+      echo "BLOCKED: already-transitioned HEAD mismatch expected=$context_transition_expected_main actual=$context_transition_current_head"
+      return 1
+    }
+    cn "$CD" || { echo "BLOCKED: canonical dev worktree is dirty path=$CD"; return 1; }
+    context_authoritative_main >/dev/null || { echo 'ERROR: authoritative remote main query failed'; return 1; }
+    [ "$context_remote_main" = "$context_transition_expected_main" ] || {
+      echo "BLOCKED: authoritative main mismatch expected=$context_transition_expected_main actual=$context_remote_main"
+      return 1
+    }
+    context_local_branch_exists "$context_transition_old_branch" || {
+      echo "BLOCKED: old local branch is missing: $context_transition_old_branch"
+      return 1
+    }
+    context_transition_old_local_head=$(git -C "$C" rev-parse --verify --quiet "refs/heads/$context_transition_old_branch^{commit}") || {
+      echo "ERROR: unable to read old local branch: $context_transition_old_branch"
+      return 1
+    }
+    [ "$context_transition_old_local_head" = "$context_transition_old_head" ] || {
+      echo "BLOCKED: old local branch HEAD mismatch expected=$context_transition_old_head actual=$context_transition_old_local_head"
+      return 1
+    }
+    context_dev_transition_conclusion_prove \
+      "$context_transition_old_head" "$context_transition_expected_main" || {
+      echo "BLOCKED: old HEAD is not contained in expected main old=$context_transition_old_head expected_main=$context_transition_expected_main"
+      return 1
+    }
+    context_remote_branch "$context_transition_new_branch" || {
+      echo "ERROR: unable to query remote new branch: $context_transition_new_branch"
+      return 1
+    }
+    [ "$context_remote_branch_state" = absent ] || {
+      echo "BLOCKED: remote new branch already exists: $context_transition_new_branch"
+      return 1
+    }
+    printf 'DEV-CONTEXT ALREADY TRANSITIONED\nworktree=%s\nbranch=%s\nbase=%s\nhead=%s\nmutation=no-op\nclean=yes\n' \
+      "$CD" "$context_transition_new_branch" "$context_transition_expected_main" "$context_transition_expected_main"
+    return 0
+  fi
+  [ "$(bn "$CD")" = "$context_transition_old_branch" ] || { echo "BLOCKED: old dev branch mismatch expected=$context_transition_old_branch actual=$(bn "$CD")"; return 1; }
+  cn "$CD" || { echo "BLOCKED: canonical dev worktree is dirty path=$CD"; return 1; }
+  [ "$(hh "$CD")" = "$context_transition_old_head" ] || { echo "BLOCKED: old dev HEAD mismatch expected=$context_transition_old_head actual=$(hh "$CD")"; return 1; }
+  context_authoritative_main >/dev/null || { echo 'ERROR: authoritative remote main query failed'; return 1; }
+  [ "$context_remote_main" = "$context_transition_expected_main" ] || { echo "BLOCKED: authoritative main mismatch expected=$context_transition_expected_main actual=$context_remote_main"; return 1; }
+  context_dev_transition_conclusion_prove \
+    "$context_transition_old_head" "$context_transition_expected_main" || { echo "BLOCKED: old HEAD is not contained in expected main old=$context_transition_old_head expected_main=$context_transition_expected_main"; return 1; }
+  context_local_branch_exists "$context_transition_new_branch" && { echo "BLOCKED: local new branch already exists: $context_transition_new_branch"; return 1; }
+  context_remote_branch "$context_transition_new_branch" || { echo "ERROR: unable to query remote new branch: $context_transition_new_branch"; return 1; }
+  [ "$context_remote_branch_state" = absent ] || { echo "BLOCKED: remote new branch already exists: $context_transition_new_branch"; return 1; }
+  fm "$C" || { echo "ERROR: fetch of origin/main failed expected=$context_transition_expected_main"; return 1; }
+  [ "$(om "$C")" = "$context_transition_expected_main" ] || { echo "BLOCKED: fetched origin/main mismatch expected=$context_transition_expected_main actual=$(om "$C")"; return 1; }
+  [ "$(bn "$CD")" = "$context_transition_old_branch" ] && cn "$CD" && [ "$(hh "$CD")" = "$context_transition_old_head" ] || { echo 'BLOCKED: old dev checkout changed during guarded fetch'; return 1; }
+  context_local_branch_exists "$context_transition_new_branch" && { echo "BLOCKED: local new branch appeared during guarded fetch: $context_transition_new_branch"; return 1; }
+  context_authoritative_main >/dev/null || { echo 'ERROR: authoritative remote main query failed after fetch'; return 1; }
+  [ "$context_remote_main" = "$context_transition_expected_main" ] || { echo "BLOCKED: authoritative main raced before transition expected=$context_transition_expected_main actual=$context_remote_main"; return 1; }
+  context_remote_branch "$context_transition_new_branch" || { echo "ERROR: unable to query remote new branch after fetch: $context_transition_new_branch"; return 1; }
+  [ "$context_remote_branch_state" = absent ] || { echo "BLOCKED: remote new branch appeared before transition: $context_transition_new_branch"; return 1; }
+  context_dev_transition_conclusion_prove \
+    "$context_transition_old_head" "$context_transition_expected_main" || { echo "BLOCKED: old HEAD is not contained in expected main after fetch old=$context_transition_old_head expected_main=$context_transition_expected_main"; return 1; }
+  git -C "$CD" switch --detach "$context_transition_expected_main" >/dev/null 2>&1 || { echo "ERROR: ordinary detach to expected main failed: $context_transition_expected_main"; return 1; }
+  git -C "$CD" switch -c "$context_transition_new_branch" "$context_transition_expected_main" >/dev/null 2>&1 || { echo "ERROR: ordinary create/switch of new branch failed: $context_transition_new_branch"; return 1; }
+  context_worktree_registry || { echo 'ERROR: canonical dev worktree registration changed after transition'; return 1; }
+  [ "$(bn "$CD")" = "$context_transition_new_branch" ] || { echo "ERROR: post-transition branch mismatch expected=$context_transition_new_branch actual=$(bn "$CD")"; return 1; }
+  [ "$(hh "$CD")" = "$context_transition_expected_main" ] || { echo "ERROR: post-transition HEAD mismatch expected=$context_transition_expected_main actual=$(hh "$CD")"; return 1; }
+  cn "$CD" || { echo 'ERROR: canonical dev worktree is dirty after transition'; return 1; }
+  context_local_branch_exists "$context_transition_old_branch" || { echo "ERROR: old branch was not retained: $context_transition_old_branch"; return 1; }
+  printf 'DEV-CONTEXT TRANSITIONED\nworktree=%s\nbranch=%s\nbase=%s\nhead=%s\nclean=yes\n' "$CD" "$context_transition_new_branch" "$context_transition_expected_main" "$context_transition_expected_main"
+}
+
+sy() { context_sync_command "$@"; }
+dc() { [ -d "$C" ] || { echo 'dev-context=not-installed'; return; }; gr "$C" || return 1; echo "dev-context=$C branch=$(bn "$C") head=$(hh "$C") clean=$([ cn "$C" ]&&echo yes||echo no)"; cn "$C"; }
+
+# Context-only public command and durable result boundary.
+nuinui_candidate_usage() {
+  echo 'nuinui-context 0.1.0'
+  echo 'Commands: context-audit context-sync context-dev-audit context-dev-transition context-dev-next context-check last-result'
+  echo 'Usage: nuinui-context context-audit <expected-main> <expected-artifact-blob>'
+  echo 'Usage: nuinui-context context-sync <expected-main> <expected-artifact-blob>'
+  echo 'Usage: nuinui-context context-dev-audit <expected-branch> <expected-head>'
+  echo 'Usage: nuinui-context context-dev-transition <old-branch> <old-head> <main> <new-branch>'
+  echo 'Usage: nuinui-context context-dev-next --old-branch <branch> --old-head <sha> --main <sha> --new-branch <branch>'
+  echo 'Usage: nuinui-context context-check | last-result'
+}
+
+nuinui_candidate_result_repo() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ] && [ -n "${NUINUI_SELFTEST_RESULT_REPO:-}" ]; then
+    printf '%s\n' "$NUINUI_SELFTEST_RESULT_REPO"
+  else
+    printf '%s\n' "$C"
+  fi
+}
+
+nuinui_candidate_result_dir() {
+  nuinui_candidate_result_path=$(nuinui_candidate_result_repo)
+  gr "$nuinui_candidate_result_path" || return 1
+  nuinui_candidate_result_gitdir=$(gd "$nuinui_candidate_result_path") || return 1
+  printf '%s/nuinui-context-command-result-v1\n' "$nuinui_candidate_result_gitdir"
+}
+
+nuinui_candidate_sha256() {
+  nuinui_candidate_hash_capture=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-hash.XXXXXX") || return 1
+  if ! shasum -a 256 "$1" >"$nuinui_candidate_hash_capture" 2>/dev/null; then
+    rm -f "$nuinui_candidate_hash_capture"
+    return 1
+  fi
+  nuinui_candidate_hash_value=$(awk 'NR==1 {print $1}' "$nuinui_candidate_hash_capture")
+  rm -f "$nuinui_candidate_hash_capture"
+  [ "${#nuinui_candidate_hash_value}" -eq 64 ] || return 1
+  printf '%s\n' "$nuinui_candidate_hash_value" | grep -Eq '^[0-9a-f]{64}$' || return 1
+  printf '%s\n' "$nuinui_candidate_hash_value"
+}
+
+nuinui_candidate_operation_id() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    case "${NUINUI_SELFTEST_OPERATION_ID_FAILURE:-}" in
+      fail) return 1 ;;
+      malformed) printf '%s\n' malformed; return 0 ;;
+      multiline) printf '%040d\njunk\n' 0; return 0 ;;
+    esac
+  fi
+  nuinui_candidate_operation_input=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-operation.XXXXXX") || return 1
+  nuinui_candidate_operation_output=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-operation-id.XXXXXX") || {
+    rm -f "$nuinui_candidate_operation_input"
+    return 1
+  }
+  if ! (umask 077; printf '%s:%s:%s:%s:%s\n' "$$" "${PPID:-0}" "$(date +%s)" "${RANDOM:-0}" "$(od -An -N16 -tx1 /dev/urandom 2>/dev/null)") >"$nuinui_candidate_operation_input"; then
+    rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+    return 1
+  fi
+  if ! git hash-object --stdin <"$nuinui_candidate_operation_input" >"$nuinui_candidate_operation_output" 2>/dev/null; then
+    rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+    return 1
+  fi
+  nuinui_candidate_operation_value=$(cat "$nuinui_candidate_operation_output")
+  rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+  [ "${#nuinui_candidate_operation_value}" -eq 40 ] || return 1
+  printf '%s\n' "$nuinui_candidate_operation_value" | grep -Eq '^[0-9a-f]{40}$' || return 1
+  printf '%s\n' "$nuinui_candidate_operation_value"
+}
+
+nuinui_candidate_timestamp() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    case "${NUINUI_SELFTEST_TIMESTAMP_FAILURE:-}" in
+      fail) return 1 ;;
+      malformed) printf '%s\n' malformed; return 0 ;;
+      multiline) printf '%s\n%s\n' '2026-10-13T00:00:00Z' junk; return 0 ;;
+    esac
+  fi
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+nuinui_candidate_last_result() {
+  nuinui_candidate_store=$(nuinui_candidate_result_dir) || { echo 'ERROR: result repository unavailable'; return 1; }
+  nuinui_candidate_state=$nuinui_candidate_store/state
+  nuinui_candidate_output=$nuinui_candidate_store/output
+  [ -d "$nuinui_candidate_store" ] && [ ! -L "$nuinui_candidate_store" ] || { echo 'ERROR: no command result is stored'; return 1; }
+  [ -f "$nuinui_candidate_state" ] && [ ! -L "$nuinui_candidate_state" ] || { echo 'ERROR: result state is missing or unsafe'; return 1; }
+  awk -F= '
+    BEGIN { split("version operation_id timestamp command phase result lane issue claim request_sha256 mutation exit output_sha256", k, " "); for(i=1;i<=13;i++) ok[k[i]]=1 }
+    { p=index($0,"="); if(!p) bad=1; key=substr($0,1,p-1); value=substr($0,p+1); if(!(key in ok)||key in seen||value=="") bad=1; seen[key]=1; v[key]=value }
+    END { if(NR!=13||bad||v["version"]!="1"||v["operation_id"]!~/^[0-9a-f]{40}$/||v["timestamp"]!~/^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$/||v["command"]!~/^(context-sync|context-dev-transition)$/||v["lane"]!="dev-context"||v["issue"]!="-"||v["claim"]!="-"||v["mutation"]!~/^(yes|no|unknown)$/||v["request_sha256"]!~/^[0-9a-f]{64}$/) exit 1; if(v["phase"]=="STARTED") {if(v["result"]!="INCOMPLETE"||v["mutation"]!="unknown"||v["exit"]!="-"||v["output_sha256"]!="-") exit 1} else if(v["phase"]=="TERMINAL") {if(v["result"]!~/^(SUCCESS|BLOCKED|ERROR)$/||v["exit"]!~/^[0-9]+$/||v["output_sha256"]!~/^[0-9a-f]{64}$/) exit 1} else exit 1 }
+  ' "$nuinui_candidate_state" || { echo 'ERROR: stored result state is malformed'; return 1; }
+  nuinui_candidate_phase=$(awk -F= '$1=="phase" {print $2}' "$nuinui_candidate_state")
+  if [ "$nuinui_candidate_phase" = STARTED ]; then
+    printf '🧾 NUINUI LAST RESULT\n'
+    awk -F= '$1=="operation_id"||$1=="timestamp"||$1=="command"||$1=="request_sha256" {print}' "$nuinui_candidate_state"
+    printf '⭕ result=INCOMPLETE\nmutation=unknown\n⛔ recovery=BLOCKED\ndiagnostic=tracked mutation did not reach terminal finalization\n'
+    return 1
+  fi
+  [ -f "$nuinui_candidate_output" ] && [ ! -L "$nuinui_candidate_output" ] || { echo 'ERROR: terminal result output is missing or unsafe'; return 1; }
+  nuinui_candidate_expected_output=$(awk -F= '$1=="output_sha256" {print $2}' "$nuinui_candidate_state")
+  [ "$(nuinui_candidate_sha256 "$nuinui_candidate_output")" = "$nuinui_candidate_expected_output" ] || { echo 'ERROR: stored result output hash mismatch'; return 1; }
+  echo '🧾 NUINUI LAST RESULT'
+  awk -F= '$1=="operation_id"||$1=="timestamp"||$1=="command"||$1=="lane"||$1=="issue"||$1=="claim"||$1=="request_sha256"||$1=="exit"||$1=="output_sha256" {print} $1=="result" {print "⭕ result=" $2} $1=="mutation" {print "mutation=" $2}' "$nuinui_candidate_state"
+  printf 'recovery=READY\noutput_begin\n'
+  cat "$nuinui_candidate_output"
+  printf 'output_end\n'
+}
+
+nuinui_candidate_run_tracked() {
+  nuinui_candidate_command=$1
+  shift
+  nuinui_candidate_display=$1
+  shift
+  nuinui_candidate_request_count=$1
+  case "$nuinui_candidate_request_count" in ''|*[!0-9]*|0) echo 'ERROR: invalid command request arity; mutation was not started'; return 1 ;; esac
+  shift
+  nuinui_candidate_request_file=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-request.XXXXXX") || { echo 'ERROR: unable to capture command request identity; mutation was not started'; return 1; }
+  nuinui_candidate_remaining=$nuinui_candidate_request_count
+  while [ "$nuinui_candidate_remaining" -gt 0 ]; do
+    [ "$#" -gt 0 ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command request arity; mutation was not started'; return 1; }
+    printf '%s\0' "$1" >>"$nuinui_candidate_request_file" || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to capture command request identity; mutation was not started'; return 1; }
+    shift
+    nuinui_candidate_remaining=$((nuinui_candidate_remaining - 1))
+  done
+  [ "${1:-}" = --backend-- ] && [ "$#" -ge 2 ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid tracked command backend boundary; mutation was not started'; return 1; }
+  shift
+  nuinui_candidate_backend=$1
+  shift
+  nuinui_candidate_repo=$(nuinui_candidate_result_repo)
+  gr "$nuinui_candidate_repo" || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: result repository is unavailable'; return 1; }
+  nuinui_candidate_gitdir=$(gd "$nuinui_candidate_repo") || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to resolve result storage'; return 1; }
+  nuinui_candidate_store=$nuinui_candidate_gitdir/nuinui-context-command-result-v1
+  if [ -e "$nuinui_candidate_store" ] || [ -L "$nuinui_candidate_store" ]; then
+    [ -d "$nuinui_candidate_store" ] && [ ! -L "$nuinui_candidate_store" ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: result store path is unsafe'; return 1; }
+  fi
+  for nuinui_candidate_file in state output; do
+    if [ -e "$nuinui_candidate_store/$nuinui_candidate_file" ] || [ -L "$nuinui_candidate_store/$nuinui_candidate_file" ]; then
+      [ -f "$nuinui_candidate_store/$nuinui_candidate_file" ] && [ ! -L "$nuinui_candidate_store/$nuinui_candidate_file" ] || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: result store file is unsafe'; return 1; }
+    fi
+  done
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ] && [ -n "${NUINUI_SELFTEST_REQUEST_HASH_FAILURE:-}" ]; then
+    case "$NUINUI_SELFTEST_REQUEST_HASH_FAILURE" in
+      fail) rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate request SHA-256; mutation was not started'; return 1 ;;
+      malformed) nuinui_candidate_request=malformed ;;
+      multiline) nuinui_candidate_request=$(printf '%064d\njunk' 0) ;;
+    esac
+  else
+    nuinui_candidate_request=$(nuinui_candidate_sha256 "$nuinui_candidate_request_file") || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate request SHA-256; mutation was not started'; return 1; }
+  fi
+  [ "${#nuinui_candidate_request}" -eq 64 ] && printf '%s\n' "$nuinui_candidate_request" | grep -Eq '^[0-9a-f]{64}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid request SHA-256; mutation was not started'; return 1; }
+  nuinui_candidate_operation=$(nuinui_candidate_operation_id) || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate command operation ID; mutation was not started'; return 1; }
+  [ "${#nuinui_candidate_operation}" -eq 40 ] && printf '%s\n' "$nuinui_candidate_operation" | grep -Eq '^[0-9a-f]{40}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command operation ID; mutation was not started'; return 1; }
+  nuinui_candidate_timestamp=$(nuinui_candidate_timestamp) || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate command timestamp; mutation was not started'; return 1; }
+  [ "${#nuinui_candidate_timestamp}" -eq 20 ] && printf '%s\n' "$nuinui_candidate_timestamp" | grep -Eq '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command timestamp; mutation was not started'; return 1; }
+  rm -f "$nuinui_candidate_request_file"
+  if [ ! -e "$nuinui_candidate_store" ]; then
+    (umask 077; mkdir "$nuinui_candidate_store") || { echo 'ERROR: unable to create result store; mutation was not started'; return 1; }
+  fi
+  nuinui_candidate_started=$(mktemp "$nuinui_candidate_store/.state.XXXXXX") || return 1
+  (umask 077; printf 'version=1\noperation_id=%s\ntimestamp=%s\ncommand=%s\nphase=STARTED\nresult=INCOMPLETE\nlane=dev-context\nissue=-\nclaim=-\nrequest_sha256=%s\nmutation=unknown\nexit=-\noutput_sha256=-\n' "$nuinui_candidate_operation" "$nuinui_candidate_timestamp" "$nuinui_candidate_command" "$nuinui_candidate_request" >"$nuinui_candidate_started") || { rm -f "$nuinui_candidate_started"; return 1; }
+  mv -f "$nuinui_candidate_started" "$nuinui_candidate_store/state" || return 1
+  nuinui_candidate_capture=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-result.XXXXXX") || return 1
+  "$nuinui_candidate_backend" "$@" >"$nuinui_candidate_capture" 2>&1 || nuinui_candidate_rc=$?
+  nuinui_candidate_rc=${nuinui_candidate_rc:-0}
+  nuinui_candidate_mutation=yes
+  grep -Fqx 'mutation=no-op' "$nuinui_candidate_capture" && nuinui_candidate_mutation=no
+  nuinui_candidate_result=SUCCESS
+  if [ "$nuinui_candidate_rc" -ne 0 ]; then
+    if grep -qE '^(BLOCKED:|ERROR:)' "$nuinui_candidate_capture"; then
+      if grep -q '^BLOCKED:' "$nuinui_candidate_capture"; then nuinui_candidate_result=BLOCKED; else nuinui_candidate_result=ERROR; fi
+      if [ "$nuinui_candidate_result" = BLOCKED ]; then
+        nuinui_candidate_mutation=no
+      else
+        nuinui_candidate_mutation=unknown
+      fi
+    else nuinui_candidate_result=ERROR; nuinui_candidate_mutation=unknown
+    fi
+  fi
+  nuinui_candidate_first_line=$(sed -n '1p' "$nuinui_candidate_capture")
+  case "$nuinui_candidate_first_line" in
+    'DEV-CONTEXT ALREADY TRANSITIONED') nuinui_candidate_display='♻️ DEV-CONTEXT ALREADY TRANSITIONED' ;;
+    'DEV-CONTEXT TRANSITIONED') nuinui_candidate_display='🔀 DEV-CONTEXT TRANSITIONED' ;;
+    'CONTEXT SYNCED') nuinui_candidate_display='🔄 CONTEXT SYNCED' ;;
+    *) nuinui_candidate_display="⛔ $nuinui_candidate_command $nuinui_candidate_result" ;;
+  esac
+  nuinui_candidate_decorated=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-result.XXXXXX") || { rm -f "$nuinui_candidate_capture"; return 1; }
+  { printf '%s\n' "$nuinui_candidate_display"; cat "$nuinui_candidate_capture"; } >"$nuinui_candidate_decorated" || { rm -f "$nuinui_candidate_capture" "$nuinui_candidate_decorated"; return 1; }
+  mv -f "$nuinui_candidate_decorated" "$nuinui_candidate_capture" || { rm -f "$nuinui_candidate_capture"; return 1; }
+  nuinui_candidate_output_sha=$(nuinui_candidate_sha256 "$nuinui_candidate_capture") || { rm -f "$nuinui_candidate_capture"; return 1; }
+  nuinui_candidate_final=$(mktemp "$nuinui_candidate_store/.state.XXXXXX") || { rm -f "$nuinui_candidate_capture"; return 1; }
+  nuinui_candidate_output_temp=$(mktemp "$nuinui_candidate_store/.output.XXXXXX") || { rm -f "$nuinui_candidate_capture" "$nuinui_candidate_final"; return 1; }
+  (umask 077; cat "$nuinui_candidate_capture" >"$nuinui_candidate_output_temp" && printf 'version=1\noperation_id=%s\ntimestamp=%s\ncommand=%s\nphase=TERMINAL\nresult=%s\nlane=dev-context\nissue=-\nclaim=-\nrequest_sha256=%s\nmutation=%s\nexit=%s\noutput_sha256=%s\n' "$nuinui_candidate_operation" "$nuinui_candidate_timestamp" "$nuinui_candidate_command" "$nuinui_candidate_result" "$nuinui_candidate_request" "$nuinui_candidate_mutation" "$nuinui_candidate_rc" "$nuinui_candidate_output_sha" >"$nuinui_candidate_final") || { rm -f "$nuinui_candidate_capture" "$nuinui_candidate_final" "$nuinui_candidate_output_temp"; return 1; }
+  mv -f "$nuinui_candidate_output_temp" "$nuinui_candidate_store/output" && mv -f "$nuinui_candidate_final" "$nuinui_candidate_store/state" || { rm -f "$nuinui_candidate_capture" "$nuinui_candidate_final" "$nuinui_candidate_output_temp"; return 1; }
+  cat "$nuinui_candidate_capture"
+  printf '🧾 NUINUI COMMAND RESULT\n⭕ result=%s\nmutation=%s\nexit=%s\n' "$nuinui_candidate_result" "$nuinui_candidate_mutation" "$nuinui_candidate_rc"
+  rm -f "$nuinui_candidate_capture"
+  return "$nuinui_candidate_rc"
+}
+
+nuinui_candidate_run_readonly() {
+  nuinui_candidate_heading=$1
+  shift
+  nuinui_candidate_capture=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-readonly.XXXXXX") || { echo 'ERROR: unable to capture command output'; return 1; }
+  nuinui_candidate_rc=0
+  "$@" >"$nuinui_candidate_capture" 2>&1 || nuinui_candidate_rc=$?
+  [ "$nuinui_candidate_rc" = 0 ] && printf '%s\n' "$nuinui_candidate_heading"
+  cat "$nuinui_candidate_capture"
+  rm -f "$nuinui_candidate_capture"
+  return "$nuinui_candidate_rc"
+}
+
+nuinui_context_dev_next_parse() {
+  context_next_seen=''
+  context_next_old_branch= context_next_old_head= context_next_main= context_next_new_branch=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in --old-branch) context_next_key=old_branch ;; --old-head) context_next_key=old_head ;; --main) context_next_key=main ;; --new-branch) context_next_key=new_branch ;; *) echo "ERROR: unknown option $1"; echo 'expected named options: --old-branch --old-head --main --new-branch'; return 2 ;; esac
+    case " $context_next_seen " in *" $context_next_key "*) echo "ERROR: duplicate named option --$context_next_key"; return 2 ;; esac
+    context_next_seen="$context_next_seen $context_next_key"
+    [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "ERROR: named option --$context_next_key requires a non-empty value"; return 2; }
+    case "$2" in --*) echo "ERROR: named option --$context_next_key is missing its value before $2"; return 2 ;; esac
+    case "$context_next_key" in old_branch) context_next_old_branch=$2 ;; old_head) context_next_old_head=$2 ;; main) context_next_main=$2 ;; new_branch) context_next_new_branch=$2 ;; esac
+    shift 2
+  done
+  for context_next_key in old_branch old_head main new_branch; do
+    case " $context_next_seen " in *" $context_next_key "*) ;; *) echo "ERROR: missing required named option --$context_next_key"; return 2 ;; esac
+  done
+}
+
+set -- "$@"
+case "${1:-}" in
+  ''|-h|--help|help) nuinui_candidate_usage; exit 0 ;;
+  context-audit) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-audit <expected-main> <expected-artifact-blob>'; exit 2; }; nuinui_candidate_run_readonly '🔎 AUDIT COMPLETE' context_audit_command "$2" "$3"; exit $? ;;
+  context-sync) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-sync <expected-main> <expected-artifact-blob>'; exit 2; }; nuinui_candidate_run_tracked context-sync '🔄 CONTEXT SYNCED' 3 context-sync "$2" "$3" --backend-- sy "$2" "$3"; exit $? ;;
+  context-dev-audit) [ "$#" = 3 ] || { echo 'Usage: nuinui-context context-dev-audit <expected-branch> <expected-head>'; exit 2; }; nuinui_candidate_run_readonly '🔎 DEV-CONTEXT AUDIT COMPLETE' context_dev_audit_command "$2" "$3"; exit $? ;;
+  context-dev-transition) [ "$#" = 5 ] || { echo 'Usage: nuinui-context context-dev-transition <old-branch> <old-head> <main> <new-branch>'; exit 2; }; nuinui_candidate_run_tracked context-dev-transition '🔀 DEV-CONTEXT TRANSITIONED' 5 context-dev-transition "$2" "$3" "$4" "$5" --backend-- context_dev_transition_command "$2" "$3" "$4" "$5"; exit $? ;;
+  context-dev-next) shift; nuinui_context_dev_next_parse "$@" || exit $?; nuinui_candidate_run_tracked context-dev-transition '🔀 DEV-CONTEXT TRANSITIONED' "$(( $# + 1 ))" context-dev-transition "$@" --backend-- context_dev_next_command "$context_next_old_branch" "$context_next_old_head" "$context_next_main" "$context_next_new_branch"; exit $? ;;
+  context-check) [ "$#" = 1 ] || { nuinui_candidate_usage; exit 2; }; context_check_command; exit $? ;;
+  last-result) [ "$#" = 1 ] || { echo 'Usage: nuinui-context last-result'; exit 2; }; nuinui_candidate_last_result; exit $? ;;
+  *) echo "ERROR: unknown command: $1"; nuinui_candidate_usage; exit 2 ;;
+esac
