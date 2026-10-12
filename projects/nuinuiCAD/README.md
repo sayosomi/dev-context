@@ -61,6 +61,7 @@ replacement for the normal implementation-agent route.
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Linear overview / routing | [Linear policy router](./LINEAR.md) |
+| GitHub-native Issue authoring / contract — Phase C prepared, inactive | [GitHub Issues policy (prepared)](./ISSUES.md) |
 | Linear Issue status / Ready Queue / lane checkpoint / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
 | Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
 | Linear ↔ GitHub PR integration | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
@@ -108,6 +109,8 @@ Hard rule:
 ## Work / specification management
 
 現在のWork / specification管理はLinearを正式な管理先とする。
+
+Phase C用の[GitHub Issues運用ルール準備版](./ISSUES.md)は**未適用**。正式なauthority切替まではこのLinear運用を継続する。
 
 - 作業予定・進捗・調査結果・lane checkpoint: Linear Issue / Comment
 - 長期的に参照する仕様・設計: Linear Document
