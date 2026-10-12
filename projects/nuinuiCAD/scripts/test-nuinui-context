@@ -11,6 +11,14 @@ trap cleanup EXIT HUP INT TERM
 fail() { echo "CONTEXT CANDIDATE TEST FAIL: $*" >&2; exit 1; }
 assert_contains() { case "$1" in *"$2"*) ;; *) fail "$3 missing=$2 output=$1" ;; esac; }
 
+generated_candidate=$ROOT/generated-nuinui-context
+"$SCRIPT_DIR/generate-nuinui-context" "$generated_candidate"
+cmp -s "$CANDIDATE" "$generated_candidate" || fail 'generated candidate differs from checked-in artifact'
+candidate_mode=$(stat -f '%Lp' "$CANDIDATE")
+generated_mode=$(stat -f '%Lp' "$generated_candidate")
+[ "$candidate_mode" = 755 ] && [ "$generated_mode" = "$candidate_mode" ] || \
+  fail "generated executable mode mismatch expected=755 actual=$candidate_mode generated=$generated_mode"
+
 make_fixture() {
   name=$1
   kind=$2
@@ -70,6 +78,31 @@ if output=$($CANDIDATE last-result 2>&1); then fail 'interrupted command result 
 assert_contains "$output" 'result=INCOMPLETE' 'interrupted result evidence'
 assert_contains "$output" 'recovery=BLOCKED' 'interrupted result recovery'
 assert_contains "$output" 'tracked mutation did not reach terminal finalization' 'interrupted result diagnostic'
+
+make_fixture partial-transition partial-transition
+wrapper_dir=$ROOT/wrappers
+mkdir -p "$wrapper_dir"
+real_git=$(command -v git)
+cat >"$wrapper_dir/git" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = -C ] && [ "${3:-}" = switch ] && [ "${4:-}" = -c ]; then
+  exit 73
+fi
+exec "$REAL_GIT" "$@"
+EOF
+chmod 700 "$wrapper_dir/git"
+transition_main=$(git -C "$TEST_PROD" rev-parse HEAD)
+if output=$(env REAL_GIT="$real_git" PATH="$wrapper_dir:$PATH" "$CANDIDATE" context-dev-transition \
+  fixture/dev "$transition_main" "$transition_main" fixture/next 2>&1); then
+  fail 'injected branch creation failure unexpectedly succeeded'
+fi
+assert_contains "$output" 'ERROR: ordinary create/switch of new branch failed: fixture/next' 'post-detach transition error'
+assert_contains "$output" 'mutation=unknown' 'post-detach mutation classification'
+[ -z "$(git -C "$TEST_DEV" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'injected transition did not remain detached after first switch'
+if output=$(env REAL_GIT="$real_git" PATH="$wrapper_dir:$PATH" "$CANDIDATE" last-result 2>&1); then :; else fail "terminal error result was not recoverable: $output"; fi
+assert_contains "$output" 'result=ERROR' 'terminal transition result'
+assert_contains "$output" 'mutation=unknown' 'recovered post-detach mutation classification'
+assert_contains "$output" 'ERROR: ordinary create/switch of new branch failed: fixture/next' 'recovered terminal error output'
 
 make_fixture broken broken-link
 if output=$($CANDIDATE context-check 2>&1); then fail 'broken Markdown link was accepted'; fi

@@ -638,7 +638,11 @@ nuinui_candidate_run_tracked() {
   if [ "$nuinui_candidate_rc" -ne 0 ]; then
     if grep -qE '^(BLOCKED:|ERROR:)' "$nuinui_candidate_capture"; then
       if grep -q '^BLOCKED:' "$nuinui_candidate_capture"; then nuinui_candidate_result=BLOCKED; else nuinui_candidate_result=ERROR; fi
-      nuinui_candidate_mutation=no
+      if [ "$nuinui_candidate_result" = BLOCKED ]; then
+        nuinui_candidate_mutation=no
+      else
+        nuinui_candidate_mutation=unknown
+      fi
     else nuinui_candidate_result=ERROR; nuinui_candidate_mutation=unknown
     fi
   fi
