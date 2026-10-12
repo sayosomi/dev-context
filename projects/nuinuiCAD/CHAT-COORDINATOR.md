@@ -20,7 +20,7 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 新しいWorkの候補はcurrent GitHub Issuesとlatest repositoriesから選び、Issue bodyのscope / acceptanceとcurrent code / specを読む。Linear Ready Queueを使わない。過去chatや古いsummaryだけでcurrent候補を決めない。
 
-GitHub-native IssueはC1後にauthoringできるが、implementation startupはD1でGit-only safety workflowが証明されるまで禁止する。Ready contractや空きlaneだけで実装へroutingしない。
+GitHub-native IssueはC1後にauthoringできる。一般D1 activation checkpoint後はGit-only routeへroutingする。checkpoint前はstartupを止める。Ready contractや空きlaneだけでstartupせず、current Issueとcheckout safetyをfreshに確認する。
 
 ### Implementation occupancy reconciliation before routing
 
@@ -40,7 +40,7 @@ GitHub-native IssueはC1後にauthoringできるが、implementation startupはD
 
 Humanが特定Issueのlane移動・再配置を明示せず、fresh lane stateとともにimplementation laneが`FREE`になったことを報告した場合、その報告を既存`BUSY` Issueのlane migration要求として解釈しない。既存`BUSY` laneのownershipを維持したまま、このsectionのparallel admission gateに従って`FREE` laneへ開始可能な別Issueを評価する。
 
-あるimplementation laneが`BUSY`で、別のlaneが`FREE`なとき、CoordinatorはGitHub Issue readinessやLinear Ready Queueの順番だけでWorkを開始しない。既存legacy executionにおいて並行開始が許可されるときだけ先に**parallel interference risk**を評価し、相手laneと独立して進められる候補を扱う。C1はdeclared capacityを追加せず、native GitHub Issueのimplementationを許可しない。
+あるimplementation laneが`BUSY`で、別のlaneが`FREE`なとき、CoordinatorはGitHub Issue readinessやLinear Ready Queueの順番だけでWorkを開始しない。compatible pre-existing SAY executionで並行開始が許可される場合だけ、先に**parallel interference risk**を評価し、相手laneと独立して進められる候補を扱う。C1はWork authorityを切り替えただけでdeclared capacityを追加していない。一般D1 activation checkpoint後のGitHub-native implementationは、[`CHECKOUTS.md`](./CHECKOUTS.md)の単一product checkout / sequential Git-only routeを使い、空きlaneを根拠にparallel startしない。
 
 `FREE` laneはcapacityでありutilization targetではない。安全なparallel candidateがなければ、laneを`FREE`のまま残すことを正常な選択肢とする。
 
@@ -104,7 +104,8 @@ HumanへWork候補やroutingを提案するときは、候補ごとに、適切�
 Coordinator chatはroutingとstatus整理をownerするが、role-specific executionは各ownerへ渡す。
 
 - GitHub Issue作成 / 調査 / contract策定 → [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md)
-- compatible pre-existing SAY implementation / blocking fix / integration → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md)
+- GitHub-native implementation after the general D1 activation checkpoint → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) Git-only route
+- compatible pre-existing SAY implementation / blocking fix / integration → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) legacy route
 - required Manual E2E → [`CHAT-E2E.md`](./CHAT-E2E.md)
 
 Coordinatorで候補を選んだだけではIssue statusやlane occupancyを変更しない。実際のrole startup gateを省略しない。

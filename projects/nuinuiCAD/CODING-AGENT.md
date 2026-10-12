@@ -4,9 +4,24 @@
 
 nuinuiCADのimplementation / blocking-fix executionを定義する。
 
-### C1 transition boundary
+### GitHub-native and legacy startup boundary
 
-C1後も、このdocumentと下記`SAY-N` / `nuinui handoff` startup proceduresはcompatible pre-existing SAY tasksにだけ適用する。新しいGitHub-native IssueをSAY identifierへ変換したり、このhelperに渡したりしない。GitHub-native implementation startupはD1でGit-only safety workflowが証明されるまで待つ。
+このdocument内の`SAY-N` / `nuinui handoff` startup proceduresは、すでに
+そのlifecycleへ入ったcompatible pre-existing SAY taskにだけ適用する。新しい
+GitHub-native IssueをSAY identifierへ変換したり、legacy helperへ渡したり
+しない。普通のnative implementationは、D1一般activation checkpointが
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268)に記録
+された後、[EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)と
+[CHECKOUTS.md](./CHECKOUTS.md)のGit-only routeを使う。checkpoint前はstartupを
+止め、checkpoint後にper-Task approvalを追加しない。
+
+以下にあるlane / Base / Linear checkpointと`nuinui handoff`のstartup手順は、
+すべて上記legacy SAY route専用である。native GitHub Workは、開始・続行ともに
+[`CHECKOUTS.md`](./CHECKOUTS.md)と[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)
+のindependent read-only safety checksを通す。native Taskで`nuinui begin`、
+`nuinui handoff`、`nuinui release`を実行したり、Linear checkpointを書いたり
+しない。current contractとmaterial checkpointはGitHub Issue body/commentsへ、
+execution evidenceはGitHub commits / PRs / checksから確認する。
 
 Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従い、prompt publicationのmachine-checkable gateは [`../../shared/AGENT-PROMPT-PREFLIGHT.md`](../../shared/AGENT-PROMPT-PREFLIGHT.md) に従う。
 
@@ -14,12 +29,17 @@ Project-specific ruleとして、nuinuiCADの**source-code implementation / bloc
 
 GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割は、本書が定める通常のimplementation Coding Agent ownershipを弱めず、競合もしない。
 
-### Proposed GitHub-native Work agent contract — inactive pending proof
+### GitHub-native Work agent contract — after general activation
 
-This section is a future proposal and does not change the active C1 startup
-prohibition. A GitHub-native implementation agent may use this route only after
-separate proof and authoritative activation. The first controlled proof also
-requires bounded Human approval and C1 policy reconciliation in advance.
+This route applies to ordinary future GitHub-native implementation after the
+coordinated policy PR is independently reviewed, merged, read back on
+authoritative dev-context `main`, and the activation checkpoint is recorded in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). Until
+then, native startup is blocked. The completed #1374 pilot was successful
+one-off operational proof under the separately recorded Human waiver of its
+policy-amendment prerequisite; it was not strict compliance with the unchanged
+pre-activation policy and did not itself activate general startup. After the
+checkpoint, no separate per-Task approval or activation mechanism applies.
 
 Agent responsibilities:
 
@@ -51,7 +71,7 @@ or new dependencies. ChatGPT owns those decisions. Shared requirements for
 prompt completeness, freshness, exact-head review, direct English style, and
 completion reporting continue to apply.
 
-This GitHub-native route is proposed and is not yet generally executable.
+Once the global activation checkpoint above is recorded, this is the normal GitHub-native implementation-agent route.
 
 ### Documentation / policy direct execution exception
 
@@ -67,7 +87,7 @@ Repository-owned documentation / specification / policy workはsource-code imple
 - verificationがdocumentation/policy consistencyを確認するread-only / focused checkで足り、source-code implementation-side test-debug loopを必要としない;
 - scopeがdocumentation / specification / policy workからsource-code implementationへmaterially拡大しない。
 
-この例外ではimplementation lane、Base checkpoint、implementation-agent sessionを要求しない。ChatGPTが編集、必要なfocused verification、blocking review、commit / push / merge、Linear synchronizationまで担当してよい。
+この例外ではimplementation lane、Base checkpoint、implementation-agent sessionを要求しない。ChatGPTが編集、必要なfocused verification、blocking review、commit / push / mergeまで担当してよい。Native GitHub Workのcontract / material checkpointはGitHub Issue body/commentsへ、execution evidenceはGitHub commits / PRs / checksから確認する。Linearへ記録できるのは、compatible pre-existing SAY taskがすでにadmittedされたlifecycle自身から要求するminimum checkpointだけである。
 
 ユーザーの許可なしに新しいrepository policy / product ruleをChatGPT判断だけで直接commitしてはならない。許可済みplanの意味上のscopeを越える場合はwrite前にplanを更新して再承認を得る。
 
@@ -89,7 +109,7 @@ CI / repository tooling / automation workのうち、product implementationか�
 
 典型例は、既存CI jobへrepository内にすでに存在するcheck commandを1 step追加するだけで、上記条件をすべて満たす変更である。
 
-この例外ではdeclared execution lane、Base checkpoint、implementation-agent sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、merge、relevant work-management synchronizationまで担当してよい。
+この例外ではdeclared execution lane、Base checkpoint、implementation-agent sessionをclaimしない。ChatGPTがbranch、edit、focused verification、blocking review、commit / push、PR、mergeを担当してよい。Work記録はcurrent authorityに従い、native GitHub WorkではGitHub Issue / repository evidenceを使う。minimum Linear compatibility checkpointはcompatible pre-existing SAY taskに限る。
 
 write直前にlatest remote SHAとtarget file freshnessを再確認する。freshness driftによってintended change、scope、またはverification routeが一意でなくなった場合はwriteせず再評価する。
 
@@ -103,7 +123,7 @@ write直前にlatest remote SHAとtarget file freshnessを再確認する。fres
 
 開始前に[`CHECKOUTS.md`](./CHECKOUTS.md)のtransitional exception admission proofを満たし、既存product checkoutがcleanで、active implementation claim / audit reservationがなく、unrelated workがないことを確認する。exceptional sliceでは`nuinui begin`、`nuinui handoff`、`nuinui release`を要求せず、Linear checkpoint/statusやdurable claim/checkpoint metadataを作らない。既存metadataを変更・削除せず、別implementation / auditとの並行実行も認めない。実装AgentのGit-only startup境界は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)がownerする。
 
-PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。このPhase B exceptionはhistoricalである。C1後はGitHub Issue bodyがcurrent Work contractをownerするが、新しいnative Issueの実装はD1まで開始しない。既存SAY tasksだけがC1 bridgeに沿ってcurrent lifecycleを継続できる。
+PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。このPhase B exceptionはhistoricalである。C1後はGitHub Issue bodyがcurrent Work contractをownerする。compatible pre-existing SAY tasksだけがlegacy lifecycleを継続し、一般activation checkpoint後の新しいnative IssueはGit-only routeを使う。
 
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
@@ -119,15 +139,15 @@ exact-fixが適用できない場合、source implementation ownershipはHuman�
 
 ChatGPT owns:
 
-- latest Project Context / remote repository / Linear stateの取得;
+- latest Project Context / remote repository / current Work authorityの取得（native GitHub WorkではIssue body/comments、compatible pre-existing SAY taskでは必要な既存Linear checkpointも確認）;
 - repository / architecture / semantic owner調査;
 - product / architecture / implementation contract決定;
-- implementation slicingとsafe checkpoint決定;
+- implementation slicingとrouteごとのsafe checkpoint決定;
 - execution lane選択;
 - Human terminal assistanceとimplementation-agent handoffの使い分け;
 - implementation-agent prompt生成;
 - blocking review / merge判断;
-- Linear / GitHub management;
+- GitHub management、およびcompatible pre-existing SAY taskでlifecycleが要求するminimum Linear compatibility checkpointの記録 / read-back;
 - documentation / specification / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionのplan策定、承認取得、remote edit、focused verification、review、merge判断。
 
 Implementation Coding Agent owns:
@@ -214,21 +234,23 @@ Documentation / policy direct execution exceptionとnarrow CI/tooling direct exe
 
 Coding Agent workspace / project root、implementation-agent processのinitial working directory、またはsession開始時の`pwd`はimplementation laneを定義しない。
 
-implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLinear checkpointへ記録したmanifest-declared checkout pathである。
+compatible pre-existing SAY taskでは、implementation laneのauthorityはChatGPTがcurrent sliceへ割り当て、legacy Linear checkpointへ記録したmanifest-declared checkout pathである。GitHub-native Workはlegacy lane claim / Linear checkpointを使わず、[CHECKOUTS.md](./CHECKOUTS.md)と[EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)が定める単一checkout Git-only admissionを使う。
 
 具体的なlane nameとpathはcurrent `LANES.conf`から読む。lane nameからpathやroleを推測しない。
 
-implementation Coding Agentは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushの対象としてassigned declared checkoutを明示的にtargetする。nuinuiCAD startupでは、pathをtargetした後の最初のauthority operationはexactな`nuinui handoff <SAY-N> <expected-main-sha>`であり、その前にhelper-ownedなrepository identity、branch、HEAD、clean state、remote stateを手作業で再構成・検証しない。
+compatible pre-existing SAY taskのimplementation Coding Agentは別のcwdから開始してよい。Git safety check、repository file read、test、edit、commit、pushの対象としてassigned declared checkoutを明示的にtargetする。そのlegacy startupでは、pathをtargetした後の最初のauthority operationはexactな`nuinui handoff <SAY-N> <expected-main-sha>`であり、その前にhelper-ownedなrepository identity、branch、HEAD、clean state、remote stateを手作業で再構成・検証しない。Native GitHub Workは上記Git-only routeを使う。
 
 session開始時の`pwd`がassigned laneと違うことだけを理由に`LANE_MISMATCH`として停止してはならない。`LANE_MISMATCH`はassigned checkoutをtargetした後のcanonical handoffまたは後続operationがrequired lane conditionの不一致を報告した場合だけ使う。
 
 declared laneを使うために別Codex Project、別VS Code window、extra checkout/worktreeを作る必要はない。同じCodex Projectからmanifest-declared checkoutをtargetしてよい。
 
-ChatGPTがimplementation-agent promptを生成するときは、initial `pwd`一致をpreconditionにせず、prompt-visibleなassigned checkout pathをrouting targetとして保持し、`assigned checkoutをtargetする -> exactな nuinui handoff <SAY-N> <expected-main-sha>を最初に実行する`順序で書く。pathはsecond identity proofにしない。
+compatible pre-existing SAY taskのimplementation-agent promptを生成するときは、initial `pwd`一致をpreconditionにせず、prompt-visibleなassigned checkout pathをrouting targetとして保持し、`assigned checkoutをtargetする -> exactな nuinui handoff <SAY-N> <expected-main-sha>を最初に実行する`順序で書く。pathはsecond identity proofにしない。Native GitHub Workのpromptにはlegacy handoff commandを含めない。
 
 ## Base checkpoint semantics
 
-新しいsource-code implementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
+この節のlane / Base checkpoint / Linear checkpoint手順は、compatible pre-existing SAY taskのlegacy executionにだけ適用する。Native GitHub WorkはlaneやLinear checkpointを作らず、ordinary startup / continuationの独立したGit-only proofとIssue記録について[`CHECKOUTS.md`](./CHECKOUTS.md)および[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)に従う。
+
+新しいlegacy source-code implementation sliceをlaneへ載せる直前にChatGPTがlatest remote stateを確認し、**Base checkpoint SHA**を固定する。
 
 Documentation / policy direct execution exceptionとnarrow CI/tooling direct execution exceptionには、このBase checkpoint requirementを適用しない。ただしwrite直前にlatest remote SHA、対象fileのfreshness、許可済みplanとのscope一致を確認する。
 
@@ -239,7 +261,7 @@ Shared Coding Agent Workflowのpre-prompt freshness gateは、nuinuiCADでは次
 - prompt生成直前にlatest remote `main`を確認する;
 - relevant driftを判断する;
 - current sliceのbaseを確定する;
-- Linearへlane / Base checkpoint / branchをrecordする。
+- compatible pre-existing SAY taskに限り、既存lifecycleが要求するminimum Linear checkpointとしてlane / Base checkpoint / branchをrecordする。
 
 ### Same active slice continuation
 
@@ -252,11 +274,11 @@ ChatGPTはremote advanceを観測し、次だけ判断する。
 
 remote advanceを理由にactive slice途中でbaseをrefreshしない。
 
-### Integration checkpoint
+### Legacy SAY integration checkpoint
 
 current source-code sliceの実装とfocused verificationが完了し、remoteへ保存された時点でlatest remote `main`を再確認する。
 
-ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditした結果、conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使う。その他のintegration、またはconflict / source edit / integration fix / debuggingを必要とする場合はそのlaneのimplementation Coding Agentが担当する。
+compatible pre-existing SAY executionでChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditした結果、conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使う。その他のintegration、またはconflict / source edit / integration fix / debuggingを必要とする場合はそのlaneのimplementation Coding Agentが担当する。Native GitHub Workのintegration / continuationはGit-only routeのordinary Git operationsを使い、このlegacy helperやLinear checkpointへrouteしない。
 
 ```text
 slice implementation complete
@@ -273,9 +295,11 @@ slice implementation complete
 
 相手implementation laneのunfinished branchを直接取り込まない。必要なdependencyは先にintended baseへmergeされること。
 
-## Before implementation-agent run — ChatGPT preparation
+## Legacy SAY implementation-agent run — ChatGPT preparation
 
-implementation Coding Agentへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repository stateを使って次を確定する。
+以下のlane / Base / handoff prompt preparationはcompatible pre-existing SAY taskにだけ適用する。Native GitHub implementation promptはcurrent GitHub Issue contractと[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) / [`CHECKOUTS.md`](./CHECKOUTS.md)のGit-only admission routeから作り、SAY identity、legacy lane、Linear checkpoint、`nuinui handoff`を含めない。
+
+compatible pre-existing SAY taskをimplementation Coding Agentへ渡す前にChatGPTがcurrent Project Contextとlatest relevant repository stateを使って次を確定する。
 
 - current Issue / current slice;
 - selected lane;
@@ -288,11 +312,13 @@ implementation Coding Agentへ渡す前にChatGPTがcurrent Project Contextとla
 - explicit non-goals;
 - blocking / stop conditions。
 
-nuinuiCAD implementation promptでは、freshなauthoritative `main` SHAをexpected remote stateとして示し、実装Issueとともに`nuinui handoff <SAY-N> <expected-main-sha>`を渡す。handoff façadeはmanifestとdurable implementation slotからlane、claim、branch、Base、current HEADを導出するため、これらをtransport artifactとしてpromptへ重複転記しない。
+compatible pre-existing SAY taskのimplementation promptでは、freshなauthoritative `main` SHAをexpected remote stateとして示し、実装Issueとともに`nuinui handoff <SAY-N> <expected-main-sha>`を渡す。handoff façadeはmanifestとdurable implementation slotからlane、claim、branch、Base、current HEADを導出するため、これらをtransport artifactとしてpromptへ重複転記しない。
 
 implementation Coding Agentへrepository全体のarchitecture探索やscope決定を依頼しない。
 
-## implementation-agent prompt contract
+## Compatible pre-existing SAY implementation-agent prompt contract
+
+このprompt contractのlane / handoff要件はcompatible pre-existing SAY task専用である。Native GitHub Workではcurrent Issue body/commentsからscopeとacceptanceを取り込み、Git-only admission/safety routeを[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)と[`CHECKOUTS.md`](./CHECKOUTS.md)に従って実施する。native promptからSAY identifier、Linear checkpoint、`nuinui handoff`を除く。
 
 Promptにはcurrent executable source-code sliceだけを書く。nuinuiCADでは、prompt publication checkerやexpected-context fileを作成せず、semantic completeness、scope、verification、Git safety、prompt styleをこのdocumentとshared Coding Agent Workflowのauthorityに従って確認する。
 
@@ -310,15 +336,15 @@ Promptにはcurrent executable source-code sliceだけを書く。nuinuiCADで�
 
 Implementation-agent start時の`git fetch origin --prune`はrace検出に使ってよいが、active sliceのbaseを自動更新する指示にはしない。
 
-Promptのstartup sequenceでは、implementation-agent processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <SAY-N> <expected-main-sha>`を最初に実行する。repository identity、実行identity、branch、HEAD、clean state、remote stateはhandoff façadeとstandalone proofが検証するため、implementation Coding Agentはhandoff前に独立したhelper-owned precheckを再構成しない。
+compatible pre-existing SAY taskのPrompt startup sequenceでは、implementation-agent processのinitial cwdをauthorityに使わない。assigned lane checkout pathをtargetした後、exactな`nuinui handoff <SAY-N> <expected-main-sha>`を最初に実行する。repository identity、実行identity、branch、HEAD、clean state、remote stateはhandoff façadeとstandalone proofが検証するため、implementation Coding Agentはhandoff前に独立したhelper-owned precheckを再構成しない。
 
 Expected lane state、dirty work、ownership、Base checkpointとの差異は、下記 `implementation-agent startup handoff gate` のhelper-owned proof結果として扱う。handoffが失敗した場合は、変更せず停止して報告させる。
 
-Project-specific canonical `nuinui handoff` is the terminal startup façade for its helper-owned facts when it returns `HANDOFF VERIFIED`. It delegates proof to `nuinui-handoff-check`. Do not append another lane / topic / main verification after that success merely to re-prove those facts; a later fetch required for genuinely new implementation work is allowed, but it must not override the successful handoff evidence. For the ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
+For compatible pre-existing SAY startup, project-specific canonical `nuinui handoff` is the terminal startup façade for its helper-owned facts when it returns `HANDOFF VERIFIED`. It delegates proof to `nuinui-handoff-check`. Do not append another lane / topic / main verification after that success merely to re-prove those facts; a later fetch required for genuinely new implementation work is allowed, but it must not override the successful handoff evidence. For the legacy ownership contract and exact race-sensitive topic authority, route to [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
 
 ### implementation-agent startup handoff gate
 
-Repository operation前に、implementation Coding Agentはassigned checkout pathをtargetした後、promptにあるexact `nuinui handoff <SAY-N> <expected-main-sha>` commandをargument変更なしで最初に実行する。
+compatible pre-existing SAY taskでは、repository operation前にimplementation Coding Agentがassigned checkout pathをtargetした後、promptにあるexact `nuinui handoff <SAY-N> <expected-main-sha>` commandをargument変更なしで最初に実行する。
 
 ```text
 handoff succeeds
@@ -390,11 +416,13 @@ Manual E2Eでconfirmed implementation failureが出たら、Human-test checkout�
 
 ChatGPTがfailureをclassify / sliceし、`FREE`なmanifest-declared implementation laneへfixを割り当て、implementation Coding Agentが実装する。fix merge後、new exact tested commitでselected Human-test laneへ戻す。
 
-## Cross-chat continuity
+## Cross-chat continuity and task records
 
 別ChatGPT conversationへ継続するために長いhandoff proseを標準化しない。
 
-current Linear Issueへ最低限記録する。
+Native GitHub Workではcurrent contractをIssue bodyに保ち、material decisionsとexact pushed continuation checkpointをIssue commentsに記録する。実行結果はGitHub commits / PRs / checksから確認し、LinearへWork stateやcheckpointを複製しない。
+
+compatible pre-existing SAY taskが旧lifecycle上にある場合だけ、そのcurrent Linear Issueへ既存flowが要求するminimum checkpointを記録する。
 
 - lane;
 - Base checkpoint;
@@ -404,6 +432,6 @@ current Linear Issueへ最低限記録する。
 - current verification / blocker;
 - next safe checkpoint。
 
-Documentation / policy direct execution exceptionではlane / Base checkpointは記録せず、代わりに対象file、latest remote file SHA、commit SHA、verification outcome、remaining acceptanceをLinearへ記録する。
+Native GitHub documentation / policy direct execution exceptionではlane / Base checkpointを作らず、対象file、latest remote file SHA、commit SHA、verification outcome、remaining acceptanceをcurrent GitHub Issue commentへ記録する。Compatible pre-existing SAY taskで既存lifecycleが必要とする場合に限り、対応するminimum Linear checkpointも残す。
 
-次conversationはlatest Project Context、remote repository、Linearから再構成する。
+次conversationはlatest Project Contextとremote repository、およびnative Workならcurrent GitHub Issueから再構成する。Legacy SAY continuationだけは、これに既存Linear checkpointのread-backを加える。

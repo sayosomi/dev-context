@@ -40,87 +40,84 @@ sequential Git branch, commit, push, CI, independent blocking review, and safe
 PR / merge rules. All other implementation runs use the canonical handoff
 below.
 
-## Proposed GitHub-native startup proof — inactive until safety proof
+## GitHub-native Git-only startup and continuation
 
-This proposed proof is separate from the active SAY-only handoff below. C1
-still prohibits ordinary GitHub-native implementation startup. This section
-does not enable that route, change the existing handoff contract, or authorize
-the controlled proof run.
+This route governs ordinary future GitHub-native implementation Tasks after the
+general D1 activation checkpoint in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). That
+checkpoint is recorded only after the coordinated policy PR is independently
+reviewed, merged, and read back on authoritative dev-context `main`. Until it
+is recorded, stop native implementation startup. Once recorded, no separate
+per-Task approval or activation mechanism is required. The completed #1374
+pilot was one-off operational proof under its expressly waived policy-amendment
+prerequisite, not strict pre-activation policy compliance or general
+activation.
 
-The proposed inputs are:
+This Git-only route is separate from the SAY-only public handoff below. It does
+not send a new GitHub Issue to the legacy helper and does not require a SAY
+identifier, `nuinui begin`, `nuinui handoff`, `nuinui release`, or a new durable
+slot.
 
-- The canonical GitHub Issue URL or repository-qualified Issue number.
-- A freshly verified expected remote main SHA for a new Task, or the exact
-  expected remote topic checkpoint for a same-Task continuation.
-- The expected topic branch and exact starting checkpoint where relevant.
-- The approved contract, acceptance, required verification, and non-goals.
+Before any repository mutation, ChatGPT and the implementation agent must
+re-establish from the current GitHub Issue, current policy owners, and local Git
+state:
 
-Before any repository mutation, the implementation agent must prove:
-
-- The checkout is the existing /Users/yosomi/Code/nuinuiCAD checkout for
-  sayosomi/nuinuiCAD, and its registered-worktree identity is exact.
-- The current branch, HEAD, full tracked/untracked status, and remote refs
-  match the expected new-Task start or explicitly authorized continuation.
-- The agent has freshly fetched and verified authoritative GitHub main and, for
-  a continuation, the exact remote topic checkpoint.
-- The current GitHub Issue body and material comments still express the
-  approved contract. The latest relevant repository policy and normative
-  specifications have been re-audited; dependencies and implementation
+- Resolve the canonical GitHub Issue URL or repository-qualified Issue number.
+  Read its current body and material comments, latest product `main`, relevant
+  repository policies and normative specifications. Confirm its approved
+  scope, acceptance, verification, non-goals, dependencies, and implementation
   readiness remain valid.
-- A new Task starts clean, or a same-Task continuation starts clean at the
-  exact pushed checkpoint named by the Issue evidence. Dirty state is not
-  accepted as a normal recovery checkpoint.
-- For a new Task on the declared idle `main` checkout, the existing read-only
-  nuinui preflight must report `FREE` / `preflight=PASS` before the controlled
-  route starts. For a same-Task native continuation on its expected topic
-  branch, do not require the legacy preflight to report `FREE` or `PASS`; a
-  clean topic branch without a legacy slot may be `BLOCKED` under that
-  classifier. This known classification difference is neither capacity proof
-  nor authorization. Instead, apply the independent read-only Git-directory
-  metadata and execution-occupancy proof defined in
-  [CHECKOUTS.md](./CHECKOUTS.md). Any active legacy claim, mutation lock,
-  release-pending tombstone, audit reservation, competing implementation or
-  evaluator audit, or missing / malformed / symlinked / inconsistent /
-  ambiguous required record remains a hard stop. Do not infer permission from a
-  generic `BLOCKED` result, add a second ownership state machine, or change the
-  legacy classifier.
-- A new Task's exact ChatGPT-approved topic branch is unused and can be
-  created from the exact approved base. If the requested local or remote branch
-  already exists, stop; ChatGPT must establish and authorize a new exact branch
-  before the agent proceeds, and the implementation agent must not choose a
-  replacement. A continuation's current Issue checkpoint must name the exact
-  Issue, slice, branch, and pushed SHA; the local branch and HEAD and remote
-  topic ref must all match that SHA, with clean status. If the local branch is
-  absent but the remote checkpoint is exact, create only a local tracking
-  branch from that remote ref.
+- Prove the exact existing `/Users/yosomi/Code/nuinuiCAD` repository and
+  registered-worktree identity. Inspect all registered worktrees, current
+  branch and HEAD, full tracked/untracked status, origin, and relevant local
+  and remote branch state.
+- Confirm there is no competing implementation or evaluator audit on the
+  product checkout. GitHub branches or PRs alone do not prove local execution
+  is idle; if current occupancy cannot be established, stop.
+- For a new Task, require the declared idle `main` form and run the existing
+  read-only `nuinui preflight`; it must report `FREE` / `preflight=PASS` before
+  new-Task admission is granted. For same-Task continuation, preserve the
+  separate exact pushed-checkpoint proof below; do not require the legacy
+  preflight to classify a clean native topic as `FREE` or `PASS`.
+- Inspect the exact Git directory and all existing legacy ownership and audit
+  metadata read-only. Validate present and required records under their current
+  schemas and reject symlinks. Missing required records, malformed, symlinked,
+  inconsistent, or ambiguous state, active legacy claims, locks,
+  release-pending states, reservations, or a competing audit/implementation
+  block startup. Do not infer capacity from absence of a record or a generic
+  `BLOCKED` preflight. Do not create, initialize, release, rewrite, or replace
+  legacy metadata.
+- Fetch `origin` with prune and verify authoritative product `main` and the
+  exact approved topic-branch state. A new Task uses the exact freshly approved
+  base and unused branch. A same-Task continuation uses the exact pushed
+  checkpoint recorded in the current Issue.
+- Require a clean checkout. After all admission checks pass, advance a clean
+  stale local `main` only by ordinary fast-forward after rechecking origin and
+  ancestry. Re-read `main` before creating a fresh topic branch; if it advanced,
+  re-audit and establish the exact new base first.
+- Use the existing product checkout, ordinary Git operations, ordinary commits,
+  and non-force pushes. Do not introduce a replacement runtime helper as a
+  prerequisite. Never reset, stash, force-switch, force-push, clean,
+  overwrite, destructively remove checkout/branch data, or create another
+  worktree.
 
-For a new Task, after all checks pass, use the existing checkout, fast-forward
-a clean stale main only when ordinary ancestry proves it safe, and create a
-fresh topic branch from the verified base. For a continuation, resume only from
-the verified pushed topic checkpoint. Do not require a SAY identifier,
-nuinui begin, nuinui handoff, nuinui release, or a new durable slot. Do not
-introduce a replacement runtime helper as a prerequisite.
+For same-Task continuation, the current GitHub Issue checkpoint must name the
+exact Issue and slice, topic branch, and pushed SHA. The local branch and HEAD
+and freshly fetched remote topic ref must all equal that SHA, with clean status.
+If the local branch is absent but the remote checkpoint is exact, create only a
+local tracking branch from that remote ref. Any mismatch, missing remote
+checkpoint, or uncertain execution state is a hard stop.
 
-Any dirty or untracked checkout, repository or branch mismatch, changed main
-or topic checkpoint, active legacy ownership, audit reservation, conflicting
-execution, or unresolved policy / contract drift is a hard stop. The agent
-preserves state and returns the blocker; it does not retry, repair, reset,
-stash, rebase, force-switch, force-push, create another worktree, or infer a
-checkpoint from branch naming.
+Unexpected dirty or untracked state, repository or branch mismatch, changed
+main or topic checkpoint, active legacy ownership, an audit reservation,
+conflicting execution, or unresolved policy/contract drift is a hard stop.
+Preserve state and report the blocker. Lost terminal output does not authorize
+replaying a mutation. Do not retry, repair, rebase, force-switch, force-push, or
+infer a checkpoint from branch naming.
 
-Before the first controlled proof run, the Human must separately approve a
-one-run exception naming the proof Issue, exact checkout / base / topic,
-approved contract, verification, non-goals, and bounded scope. ChatGPT must
-re-audit and reconcile all current startup-blocking owners as enumerated in
-[CHECKOUTS.md](./CHECKOUTS.md), not silently override project ISSUES.md,
-CHAT-WORKFLOW.md, or
-another active owner. This approval cannot be inferred from an ordinary
-implementation request or this D1 documentation change. Passing the proof also
-does not authorize arbitrary Issues; a separate authoritative activation
-checkpoint is required for general use.
-
-The active SAY-only public contract, durable identity resolution, retained
-startup proof, and failure behavior below remain unchanged.
+The active legacy SAY public contract, durable identity resolution, retained
+startup proof, and failure behavior below remain unchanged for compatible
+pre-existing SAY Tasks only.
 
 ## Public contract
 

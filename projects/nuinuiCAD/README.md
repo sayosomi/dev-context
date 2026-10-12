@@ -6,13 +6,31 @@ Repository: `sayosomi/nuinuiCAD`
 
 Current taskのSHA、branch、進捗、個別implementation planはここに書かない。詳細policyはowner documentへ置き、このREADMEは「何をいつ読むか」を中心に保つ。
 
+## Normal GitHub-native Git-only implementation route
+
+Ordinary future GitHub-native implementation Tasks use the existing single-checkout Git-only route in [`CHECKOUTS.md`](./CHECKOUTS.md) and
+[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md). General activation becomes
+effective only after the coordinated D1 policy PR is independently reviewed,
+merged, read back on authoritative dev-context `main`, and recorded as the
+activation checkpoint in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268).
+Until all four conditions are met, do not start a GitHub-native implementation.
+Afterward, no separate per-Task approval or activation mechanism is required.
+
+The completed [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
+proved one operational Git-only implementation cycle. The Human waived the
+pilot's policy-amendment prerequisite for that run only
+([#268 comment](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6125057400));
+it was not strict compliance with the unchanged pre-activation policy and did
+not generally activate startup. The policy PR and activation checkpoint are a
+separate step, with the checkpoint recorded under
+[#268](https://github.com/sayosomi/dev-context/issues/268).
+
 ## Compatible legacy SAY implementation flow
 
-The flow below applies only to pre-existing SAY tasks that are already using the
-current `nuinui begin` / `handoff` / `release` lifecycle. It does not admit a
-GitHub-native Issue to the SAY-only helper. GitHub-native Work may be authored
-after the C1 policy cutover, but implementation startup for that Work must wait
-until the Git-only safety workflow is proven in D1.
+The flow below applies only to pre-existing SAY tasks already admitted to the
+current `nuinui begin` / `handoff` / `release` lifecycle. Keep it for those
+compatible tasks until a separate retirement checkpoint. Never route a new
+GitHub-native Issue through the SAY-only helper.
 
 ```text
 Human asks ChatGPT to implement
@@ -62,7 +80,7 @@ replacement for the normal implementation-agent route.
 | implementation-agent prompt language / formatting | [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation-agent prompt completeness / style | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [Shared Agent Prompt Style](../../shared/AGENT-PROMPT-STYLE.md) |
 | implementation-agent handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
-| proposed GitHub-native startup, recovery, slicing, and safe return — inactive | [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md), [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md), [CODING-AGENT.md](./CODING-AGENT.md), [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md) |
+| GitHub-native Git-only startup, recovery, slicing, and safe return | [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md), [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md), [CODING-AGENT.md](./CODING-AGENT.md), [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md) |
 | implementation / blocking-fix Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
 | open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
@@ -122,13 +140,14 @@ current scope and acceptance, comments retain material decisions and evidence,
 and GitHub branches, commits, PRs, and checks establish execution facts. See
 [`ISSUES.md`](./ISSUES.md) for authoring, readiness, freshness, and completion.
 
-New GitHub-native Work may be authored after that cutover. Do not start its
-implementation until D1 has proven the Git-only safety workflow. Pre-existing
-SAY tasks already using the current `nuinui` lifecycle may retain only the
-minimum Linear execution/status checkpoints that lifecycle requires until D1
-replaces it. These checkpoints do not change the GitHub Issue contract or
-execution evidence. No new Linear Work or Documents, bulk Linear updates, or
-reverse sync are part of the normal route.
+New GitHub-native Work may be authored after the C1 cutover. Its implementation
+uses the Git-only route only after the separate general D1 activation checkpoint
+described above. Pre-existing SAY tasks already admitted to the current
+`nuinui` lifecycle may retain only the minimum Linear execution/status
+checkpoints that lifecycle requires until a separate retirement checkpoint.
+These checkpoints do not change the GitHub Issue contract or execution evidence.
+No new Linear Work or Documents, bulk Linear updates, or reverse sync are part of
+the normal route.
 
 Existing Linear Documents and Linear/GitHub mirrors remain historical evidence;
 their identity and links are retained. Repository-owned normative
@@ -139,12 +158,15 @@ For existing SAY execution only, inspect the applicable historical Linear
 checkpoint and the latest repository state. Do not treat Linear as the source
 for new Work, current GitHub Issue contracts, or implemented behavior.
 
-C1 GitHub Issues Work authority is active. The Git-only route in the D1 owner
-documents is proposed only and does not lift the current startup prohibition.
-The compatible SAY route remains active for its existing Work. A separately
-authorized controlled proof and a later, distinct general activation
-checkpoint are required; evaluator-audit migration and legacy runtime-helper
-retirement remain separate later proof gates.
+C1 GitHub Issues Work authority is active. The completed #1374 pilot is a
+one-off operational proof under its expressly waived policy-amendment
+prerequisite, not general activation. The general Git-only route becomes active
+only after the coordinated D1 policy PR is independently reviewed, merged, read
+back on authoritative dev-context `main`, and recorded as an activation
+checkpoint in #268. This is one global policy checkpoint, not a per-Task
+approval step. Compatible pre-existing SAY work keeps its legacy lifecycle;
+evaluator-audit migration, Human Manual E2E policy, and legacy runtime-helper
+retirement remain separate.
 
 ## Parallel execution rule
 

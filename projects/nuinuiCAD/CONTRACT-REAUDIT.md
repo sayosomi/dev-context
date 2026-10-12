@@ -17,7 +17,7 @@ Current Issue body / comments / freshness / completionは[`ISSUES.md`](./ISSUES.
 - recently merged foundationやrelated workによって実装済み・一部実装済み・duplicate・superseded・不要となったscope;
 - dependency / blocker / parent-child / same-Issue decomposition boundary;
 - Manual E2Eの必要性、oracle、fixture、Human executor;
-- current executable sliceとexecution route。ただしGitHub-native implementation startupはD1実証完了まで行わない。
+- current executable sliceとexecution route。ordinary GitHub-native startupは一般D1 activation checkpoint後にGit-only routeを使う。それ以前のstartupは保留する。
 
 古いcontractを正当化するためではなく、current authorityから新たに判断する。旧decisionが整合する箇所は維持し、stale / contradictory / over-specified / under-specifiedな箇所を明示する。current authorityが複数の合理的な選択を残す場合は`contract:pending`にし、durable product decisionをChatGPTが代わりに決めない。必須prerequisiteが欠ける場合は`contract:blocked`にする。
 
@@ -36,7 +36,7 @@ Independentな追記はreconcileする。scope、acceptance、またはdurable d
 1. Issue bodyをcurrent valid contractへ更新し、必要なevidence / rationaleをcommentへ残す。
 2. readiness labelをすでに運用している場合だけ、`contract:ready` / `contract:pending` / `contract:blocked`のうち正しい状態へ合わせる。C1はlabel作成またはbulk updateを要求しない。
 3. Manual E2E、dependency、Issue boundaryを再評価する。
-4. current executable sliceがあり、かつ実装startupが許可されたWorkである場合だけimplementation slicing / execution routeを判定する。New native GitHub IssueのstartupはD1まで保留する。
+4. current executable sliceがある場合はimplementation slicing / execution routeを確認する。GitHub-native Workのstartupは一般D1 activation checkpoint前なら保留し、checkpoint後はGit-only policyに従う。
 5. Close前にはlatest repository `main`、Issue body / comments、required review / verification、全acceptance、Required Human Manual E2Eを独立に確認する。mergeだけで未完了Issueをcloseしない。
 6. write後のIssue read-backを確認する。
 

@@ -17,7 +17,7 @@ Issue Authoringはrepository implementationではない。
 - Authoring chat数にimplementation capacity上限を適用しない。
 - execution laneをclaimしない。
 - contractをReadyにしただけではimplementationを開始しない。各Workのstartup gateはcurrent policyとIssue identityに応じて適用する。
-- compatible pre-existing SAY taskのrepository implementation / blocking fixは、Ready後にmanifest-declared implementation laneへ割り当て、既存lifecycleのCoding Agent ruleに従って実行する。GitHub-native WorkはD1でGit-only safety workflowが証明されるまでimplementation startupを行わない。
+- compatible pre-existing SAY taskのrepository implementation / blocking fixは、Ready後にmanifest-declared implementation laneへ割り当て、既存lifecycleのCoding Agent ruleに従って実行する。一般D1 activation checkpoint後のGitHub-native Workはsingle-checkout Git-only routeに従う。checkpoint前はstartupしない。
 
 複数Authoring chatが同じIssueを扱う場合、GitHub Issue write前にcurrent body / material commentsを再取得し、別chatのcurrent decisionを失わない。競合するproduct decisionをlast-write-winsで上書きしない。
 
@@ -150,12 +150,13 @@ Issue boundary、chat、execution laneは別判断。
 ```text
 new leaf Issue
   -> Authoring / GitHub Issue contract ready
-  -> native GitHub Issue: implementation startup waits until D1 proves the Git-only workflow
+  -> native GitHub Issue: after the general D1 activation checkpoint, implementation uses the Git-only workflow
   -> compatible pre-existing SAY task: existing lifecycle checkpoint and declared-lane startup rules
 
 same Issue next slice
-  -> current laneで継続、またはsafe checkpointでrelease / later restart
-  -> implementationはLuna xhigh
+  -> GitHub-native Work: fresh topic branch from the latest verified main under IMPLEMENTATION-SLICING.md
+  -> compatible pre-existing SAY Work: current legacy lane or safe checkpoint / later restart
+  -> implementation Coding AgentはLuna xhigh
 ```
 
 execution capacity / laneは`LANES.conf` + `CHECKOUTS.md`、implementation executorは`CODING-AGENT.md`、slice / checkpointは`IMPLEMENTATION-SLICING.md`をauthorityとする。

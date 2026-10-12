@@ -20,7 +20,7 @@ Refs #38
 
 Issue body / commentsとlatest repositoryをfreshに読み、Issue # numberをSAY identifierと混同しない。branch名へIssue identifierを入れることは必須にしない。
 
-GitHub-native Issueのimplementation startupはD1でGit-only safety workflowが証明されるまで許可しない。このdocumentはD1実証済みとは主張しない。
+一般D1 activation checkpoint後のGitHub-native Issueは、[`CHECKOUTS.md`](./CHECKOUTS.md) / [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)のGit-only startup routeを使う。checkpoint前はstartupしない。
 
 ### Historical Linear PR integration — compatible pre-existing SAY tasks only
 
@@ -57,7 +57,7 @@ GitHub integration上のlink不足を避けるためだけにintermediate PRへ�
 
 ## Merge authorization
 
-Implementation startupが他のpolicyで許可された後、ユーザーがWorkの開始またはcurrent execution trackの継続を明示的に許可した時点で、そのexecution trackに必要な**safe implementation work / PR operations / merge / completion record**まで許可されたものとする。intermediate PRだけでなくfinal implementation PRについても、追加のmerge確認を要求しない。GitHub-native IssueのstartupをD1実証より前に許可する意味ではない。
+GitHub-native startupは一般D1 activation checkpoint後にこのpolicyで許可され、追加のper-Task activationやmerge approvalは求めない。ユーザーがWorkの開始またはcurrent execution trackの継続を依頼したら、そのexecution trackに必要な**safe implementation work / PR operations / merge / completion record**まで許可されたものとする。intermediate PRだけでなくfinal implementation PRも通常の保護されたmerge条件を満たして進める。
 
 この開始 / 継続許可は、他policyにある`merge when explicitly authorized`や`PR operations when explicitly authorized`等の表現についても、current Issueを安全に実装完了まで進めるためのexplicit authorizationとして扱う。
 
