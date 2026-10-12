@@ -33,6 +33,7 @@ nuinui_candidate_sha256() {
   fi
   nuinui_candidate_hash_value=$(awk 'NR==1 {print $1}' "$nuinui_candidate_hash_capture")
   rm -f "$nuinui_candidate_hash_capture"
+  [ "${#nuinui_candidate_hash_value}" -eq 64 ] || return 1
   printf '%s\n' "$nuinui_candidate_hash_value" | grep -Eq '^[0-9a-f]{64}$' || return 1
   printf '%s\n' "$nuinui_candidate_hash_value"
 }
@@ -42,6 +43,7 @@ nuinui_candidate_operation_id() {
     case "${NUINUI_SELFTEST_OPERATION_ID_FAILURE:-}" in
       fail) return 1 ;;
       malformed) printf '%s\n' malformed; return 0 ;;
+      multiline) printf '%040d\njunk\n' 0; return 0 ;;
     esac
   fi
   nuinui_candidate_operation_input=$(mktemp "${TMPDIR:-/tmp}/nuinui-context-operation.XXXXXX") || return 1
@@ -59,6 +61,7 @@ nuinui_candidate_operation_id() {
   fi
   nuinui_candidate_operation_value=$(cat "$nuinui_candidate_operation_output")
   rm -f "$nuinui_candidate_operation_input" "$nuinui_candidate_operation_output"
+  [ "${#nuinui_candidate_operation_value}" -eq 40 ] || return 1
   printf '%s\n' "$nuinui_candidate_operation_value" | grep -Eq '^[0-9a-f]{40}$' || return 1
   printf '%s\n' "$nuinui_candidate_operation_value"
 }
@@ -68,6 +71,7 @@ nuinui_candidate_timestamp() {
     case "${NUINUI_SELFTEST_TIMESTAMP_FAILURE:-}" in
       fail) return 1 ;;
       malformed) printf '%s\n' malformed; return 0 ;;
+      multiline) printf '%s\n%s\n' '2026-10-13T00:00:00Z' junk; return 0 ;;
     esac
   fi
   date -u '+%Y-%m-%dT%H:%M:%SZ'
@@ -137,15 +141,16 @@ nuinui_candidate_run_tracked() {
     case "$NUINUI_SELFTEST_REQUEST_HASH_FAILURE" in
       fail) rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate request SHA-256; mutation was not started'; return 1 ;;
       malformed) nuinui_candidate_request=malformed ;;
+      multiline) nuinui_candidate_request=$(printf '%064d\njunk' 0) ;;
     esac
   else
     nuinui_candidate_request=$(nuinui_candidate_sha256 "$nuinui_candidate_request_file") || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate request SHA-256; mutation was not started'; return 1; }
   fi
-  printf '%s\n' "$nuinui_candidate_request" | grep -Eq '^[0-9a-f]{64}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid request SHA-256; mutation was not started'; return 1; }
+  [ "${#nuinui_candidate_request}" -eq 64 ] && printf '%s\n' "$nuinui_candidate_request" | grep -Eq '^[0-9a-f]{64}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid request SHA-256; mutation was not started'; return 1; }
   nuinui_candidate_operation=$(nuinui_candidate_operation_id) || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate command operation ID; mutation was not started'; return 1; }
-  printf '%s\n' "$nuinui_candidate_operation" | grep -Eq '^[0-9a-f]{40}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command operation ID; mutation was not started'; return 1; }
+  [ "${#nuinui_candidate_operation}" -eq 40 ] && printf '%s\n' "$nuinui_candidate_operation" | grep -Eq '^[0-9a-f]{40}$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command operation ID; mutation was not started'; return 1; }
   nuinui_candidate_timestamp=$(nuinui_candidate_timestamp) || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: unable to allocate command timestamp; mutation was not started'; return 1; }
-  printf '%s\n' "$nuinui_candidate_timestamp" | grep -Eq '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command timestamp; mutation was not started'; return 1; }
+  [ "${#nuinui_candidate_timestamp}" -eq 20 ] && printf '%s\n' "$nuinui_candidate_timestamp" | grep -Eq '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$' || { rm -f "$nuinui_candidate_request_file"; echo 'ERROR: invalid command timestamp; mutation was not started'; return 1; }
   rm -f "$nuinui_candidate_request_file"
   if [ ! -e "$nuinui_candidate_store" ]; then
     (umask 077; mkdir "$nuinui_candidate_store") || { echo 'ERROR: unable to create result store; mutation was not started'; return 1; }
