@@ -18,6 +18,12 @@ pre-activation policy and not general activation. Until the general checkpoint
 is recorded, do not start ordinary GitHub-native implementation. After it, use
 the Git-only route without a separate per-Task approval or activation step.
 
+The D2-A policy preparation separately defines one fixed-SHA reservation-free
+Sol audit pilot. It does not itself start or prove the D2-B pilot, and D1
+activation does not activate reservation-free audits generally. General audit
+use requires real pilot evidence, independent verification, and a separate
+explicit checkpoint in #268.
+
 ## Authority and identity
 
 - **Current Work scope / acceptance / implementation contract:** `sayosomi/nuinuiCAD#N` のGitHub Issue body。
@@ -28,6 +34,37 @@ the Git-only route without a separate per-Task approval or activation step.
 - **Linear Issues / Documents:** identity、URL、provenanceを保持する歴史的参照。例外として、既存のSAY taskが従来の `nuinui` lifecycleを実行中の場合だけ、既存flowが要求する最低限のLinear execution/status checkpointを記録できる。
 
 GitHub Issue numberとSAY identifierは別のidentityであり、相互に置き換えない。dev-context自身のIssueは [root ISSUES.md](../../ISSUES.md) がownerする。このproject policyへdev-contextのpersistent worktree routingを持ち込まない。
+
+## Evaluator audit checkpoints
+
+Current evaluator Research/Improvement Work is tracked in a canonical GitHub
+Issue. The Issue body owns its current bounded semantic scope, acceptance, and
+non-goals. Comments retain material decisions, fixed-revision evidence,
+residual dispositions, and operational checkpoints.
+
+Use explicit comment headings and record:
+
+- `Evaluator audit start`: canonical Issue, existing checkout identity,
+  branch, exact fixed SHA, bounded scope, absolute evidence location outside the
+  checkout, executor, and explicit confirmation that the checkout is
+  available with no unfinished implementation or competing audit.
+- `Evaluator audit progress`: fixed SHA, current scope, absolute evidence location,
+  retained findings, residual dispositions, and any remote-main drift. The
+  audit SHA and scope remain fixed for that run; a required change stops it and
+  requires a new admission.
+- `Evaluator audit stop`: stop reason/outcome, confirmation that all audit
+  execution using the checkout has stopped, and retained evidence/residuals.
+- `Evaluator audit final checkout proof`: unchanged repository/worktree
+  identity, branch `main`, HEAD equal to the original fixed SHA, clean tracked
+  and untracked state, unchanged legacy ownership metadata, and retained
+  evidence/residuals. Record remote-main drift without incorporating it.
+
+These comments are operational checkpoints, not an atomic or machine-enforced
+lock. An unmatched audit-start comment, missing final proof, or ambiguous
+execution state blocks implementation, another audit, and checkout transition
+until explicit investigation and complete post-audit proof resolve it. A stop
+comment alone is not proof that the checkout is safe to reuse. Detailed
+physical admission and recovery remain owned by [`CHECKOUTS.md`](./CHECKOUTS.md).
 
 ## Native Issue authoring
 

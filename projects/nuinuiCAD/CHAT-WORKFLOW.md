@@ -11,7 +11,7 @@ current stateのauthorityは次の通り。
 - actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
 - current Work scope / contract: GitHub Issue body; material decisions and evidence: GitHub Issue comments
 - execution / review / merge facts: GitHub branch, commit, PR, checks, and authoritative read-back
-- local execution occupancy: actual declared-lane checkout state + GitHub Issue; applicable legacy SAY checkpoint only for existing `nuinui` execution
+- local execution occupancy: actual declared-lane checkout state + current GitHub Issue; evaluator-audit start/stop/final-proof comments are operational checkpoints that must reconcile with checkout proof, not a machine lock. Applicable legacy SAY checkpoints remain limited to existing `nuinui` execution.
 - durable project policy: latest `sayosomi/dev-context` owner documents
 
 過去chat、chat summary、project conversation historyはcurrent stateのauthorityにしない。
