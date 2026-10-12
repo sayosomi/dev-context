@@ -1,84 +1,38 @@
-# nuinuiCAD Linear Document policy
+# nuinuiCAD historical Linear Documents
 
-## Purpose
+## Purpose and status
 
-Linear Documentsを長期仕様・設計の正式な保存先として使うためのruleを定義する。
+Existing Linear Documents are historical evidence and provenance records. They are not the default current normative-specification owner, and C1 does not create new Linear Documents or bulk migrate / rewrite the old ones. Preserve each document's identity, original URL, comments, attachments, and GitHub mirror relationship.
 
-Notion migration / legacy browsingの詳細は [`NOTION-LEGACY.md`](./NOTION-LEGACY.md) を参照する。
+Current Work scope / acceptance belongs in a GitHub Issue body; material decision history and evidence belong in Issue comments. A current normative language, architecture, or engineering decision belongs in its appropriate repository-owned specification / policy. Actual implemented behavior belongs to the latest product repository.
 
-## What belongs in a Linear Document
+## Reviewing a historical document
 
-Linear Documentは、Issueを閉じた後もcurrent authorityとして残す必要があり、複数のfuture Issue / Taskから再利用される長期仕様・設計に使う。
+When a historical Linear Document appears relevant:
 
-長い文章だから、調査に時間がかかったから、またはIssue本文が大きくなったからという理由だけでDocumentへ昇格しない。
+1. Read the existing document and preserve its identity and links.
+2. Check the latest `sayosomi/nuinuiCAD` repository and relevant current GitHub Issue / comments.
+3. Determine whether its decision remains current, has been superseded, or conflicts with implemented behavior. Do not silently rewrite normative meaning as a freshness refresh.
+4. If a still-relevant normative decision has no repository owner, review it for currentness and obtain an explicit decision to promote it into the appropriate repository-owned specification before using it as current normative authority.
+5. Keep task-specific scope and acceptance in its GitHub Issue, not in a new or rewritten Linear Document.
 
-一時的なimplementation contract、調査ログ、Manual E2E plan、完了済みTask plan、単一Issueだけで消費される実装メモを長期SpecとしてDocument化しない。
+If the intended decision cannot be established from current authority, return the real choice to the Human. A historical record's `Ready`, `Current`, or similar text alone does not prove that it remains current.
 
-Task固有のcurrent contractや進捗はIssue / Commentへ置く。
+## Existing record references
 
-### Promotion check
+Previously, Linear Documents were used for decisions intended to survive a task and inform multiple future tasks when no repository owner existed. The existing records and provenance remain available for historical investigation. Repository owner examples include:
 
-Issue内の決定を長期保存するときは順に確認する。
+- normative language semantics: the relevant `docs/*/spec.md`;
+- current architecture / navigation: `ARCHITECTURE.md`;
+- durable repository engineering / product policy: `AGENTS.md`;
+- implemented user-facing DSL guide: `docs/dsl.md`.
 
-1. **Issueを閉じた後もcurrent authorityとして残す必要があるか？**
-   - NO → Issue / Comment内で完結させる。
-2. **複数のfuture Issue / Taskがその決定を再利用するか？**
-   - NO → 原則Issue / Comment内で完結させる。
-3. **repositoryに既存の正式ownerがあるか？**
-   - YES → repository ownerを更新し、同内容のLinear Documentを重複作成しない。
-   - NO → Linear Documentを長期仕様・設計のowner候補とする。
+These examples route a reviewed decision to an existing owner; they do not authorize copying or bulk migration. Update a repository owner only after freshness review and the required explicit promotion decision.
 
-repository ownerの例:
+## Notion references
 
-- normative nui4 language semantics → `docs/nui4/spec.md`
-- current architecture / navigation → `ARCHITECTURE.md`
-- durable repository engineering / product policy → `AGENTS.md`
-- implemented user-facing DSL documentation → `docs/dsl.md`
+Notion remains a legacy archive. Do not use a new Linear Document as its automatic replacement. If an old Notion item is relevant to a current decision, review it against the latest repository and current GitHub Issue before considering explicit promotion into a repository-owned specification.
 
-Linear Documentはrepositoryに既にあるnormative ownerを複製するためのmirrorではない。
+## Maintenance boundary
 
-## Spec metadata
-
-必要に応じてDocument冒頭へmetadataをテキストで持たせる。
-
-例:
-
-```text
-Status: Ready
-Area: Typed Expression / Evaluation / Module
-Category: DSL
-Source: ...
-```
-
-Spec statusとして必要に応じて次を使う。
-
-- `Draft`
-- `Ready`
-- `Current`
-- `Superseded`
-
-## Source-of-truth boundary
-
-- actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
-- repository-owned normative contract: repositoryの該当spec / policy owner
-- work plan / progress / research result: Linear Issue / Project
-- repositoryにownerがない長期specification / design: Linear Document
-- pre-migration history: Notion legacy archive
-
-actual codeは「現在どう実装されているか」のauthority。normative spec / designは「本来どうあるべきか」のauthorityとして扱う。
-
-Linear Documentとactual implementationが食い違っただけで、Documentをcodeへ自動的に合わせない。まず新しいauthoritative decisionがDocumentをsupersedeしたのか、implementation bugなのかを確認する。一意に決まらない場合は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従いproduct decisionへ戻す。
-
-actual implementation factだけが古い場合はDocument内のfact referenceをcurrent repositoryへrefreshしてよいが、既決定のnormative semanticsをfreshness更新として変更しない。
-
-## Notion legacy migration
-
-Notionは新規Work / Specの管理先にしない。
-
-新しいTaskでNotionを通常のSpec検索先として使わない。
-
-必要なSpecがLinearに見つからずlegacy Notionにのみ存在する場合は、内容とcurrent repositoryに対する現在性を確認し、必要ならrepositoryの既存ownerまたはLinear Documentへ移行してから正式参照先にする。
-
-例外として、移行前から進行中のTaskが特定の未移行Notion Specを明示的source of truthとして開始済みの場合だけ、そのTaskの次の明確なcheckpointまでは参照を継続してよい。checkpoint後に正式ownerへ移行し、Issue側の参照先も更新する。
-
-legacy参照・移行作業自体は [`NOTION-LEGACY.md`](./NOTION-LEGACY.md) のruleに従う。
+This document preserves how to inspect legacy Linear Documents and route a deliberately refreshed decision. It does not own current normative specifications, new Work authoring, or a Linear Document migration process.

@@ -9,15 +9,16 @@ chatは作業UIでありsource of truthではない。chatが長大化、遅延�
 current stateのauthorityは次の通り。
 
 - actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
-- Work / contract / progress / checkpoint: Linear Issue / Comment / Document
-- local execution occupancy: actual declared-lane checkout state + current Issue checkpoint
+- current Work scope / contract: GitHub Issue body; material decisions and evidence: GitHub Issue comments
+- execution / review / merge facts: GitHub branch, commit, PR, checks, and authoritative read-back
+- local execution occupancy: actual declared-lane checkout state + GitHub Issue; applicable legacy SAY checkpoint only for existing `nuinui` execution
 - durable project policy: latest `sayosomi/dev-context` owner documents
 
 過去chat、chat summary、project conversation historyはcurrent stateのauthorityにしない。
 
-## Human terminal-loss recovery
+## Applicable legacy SAY terminal-loss recovery
 
-Lost Human terminal output is an external-state recovery case, not permission to retry a mutation. The first official recovery surface is the read-only `nuinui last-result` command. The durable result store and its verified canonical output are the evidence; chat history is not the authority. A later mutation is never automatically retried merely because the terminal disappeared.
+For a pre-existing SAY task already using the `nuinui` lifecycle, lost Human terminal output is an external-state recovery case, not permission to retry a mutation. The first official recovery surface is the read-only `nuinui last-result` command; its durable result and verified canonical output are evidence. Resume only from current repository / GitHub state and the minimum legacy checkpoint required by that lifecycle. A later mutation is never automatically retried because terminal output disappeared. This recovery path does not apply to a new GitHub-native Issue.
 
 ## Chat roles
 
@@ -39,11 +40,11 @@ chatを新しく作っただけではIssue statusやexecution laneを変更し�
 同じIssueは必要に応じて複数chatへrotationしてよい。
 
 ```text
-SAY-123 authoring #1
--> SAY-123 authoring #2
--> SAY-123 implementation #1
--> SAY-123 implementation #2
--> SAY-123 E2E
+GitHub #123 authoring #1
+-> GitHub #123 authoring #2
+-> GitHub #123 implementation #1
+-> GitHub #123 implementation #2
+-> GitHub #123 E2E
 ```
 
 このchat分割自体はIssue decompositionではない。Issue boundaryは`CONTRACT-DECISIONS.md`、implementation sliceは`IMPLEMENTATION-SLICING.md`がauthority。
@@ -68,11 +69,11 @@ ChatGPTはrotation前に、**chatにしか存在せず外部stateから復元で
 
 - Human Manual E2E observation / result
 - 未記録のproduct / UX decision
-- Luna handoffのうちremote / Linearへまだ保存されていないcurrent checkpoint
+- compatible pre-existing SAY executionで、remote / legacy Linear checkpointへまだ保存されていないcurrent checkpoint
 - 唯一のscreenshot / evidenceへの必要な参照情報
-- next chatがrepository / Linear / local stateだけでは復元できない一時情報
+- next chatがrepository / GitHub Issue / local stateだけでは復元できない一時情報
 
-GitHub / Linear / dev-contextから再取得できる情報を長大なhandoff summaryとして複製しない。
+GitHub / dev-contextから再取得できる情報を長大なhandoff summaryとして複製しない。
 
 ### Emergency rotation
 
@@ -81,7 +82,7 @@ GitHub / Linear / dev-contextから再取得できる情報を長大なhandoff s
 新chatでは例えば次だけでよい。
 
 ```text
-SAY-123を外部状態から復元して続ける。前チャットは信用しない
+GitHub Issue #123を外部状態から復元して続ける。前チャットは信用しない
 ```
 
 その場合、外部保存されていないchat-only stateは失われ得る。必要なHuman observation / decisionが外部化されていなければ、再確認が必要になることは許容する。
@@ -94,22 +95,23 @@ Issue / Workを新chatで開始・再開するとき、過去chatの要約から
 
 1. latest Project Context `README.md`
 2. loading ruleが要求するlatest dev-context owner documents
-3. current Linear Issue / Comments / relevant Document
+3. current GitHub Issue body / material comments / relevant Issues
 4. latest GitHub remote repository / branch / PR / CI state
 5. local executionが関係する場合だけactual declared-lane state
+6. compatible pre-existing SAY executionの場合に限り必要なminimum legacy Linear checkpoint
 
 current implementation factはlatest repositoryをauthoritativeとする。
 
 通常の開始文は短くてよい。
 
 ```text
-SAY-123を続ける
+GitHub Issue #123を続ける
 ```
 
 またはfresh reconstructionを明示するなら:
 
 ```text
-SAY-123を最新の外部状態から再開
+GitHub Issue #123を最新の外部状態から再開
 ```
 
 ## Rotation is not Task pause
@@ -118,14 +120,14 @@ SAY-123を最新の外部状態から再開
 
 同じWorkを継続するためにchatだけを交換する場合、rotationだけを理由に次を行わない。
 
-- Linear status変更
+- Linear status変更（既存SAY executionが要求するcheckpointを除く）
 - implementation / E2E lane release
 - Base checkpoint更新
 - branch変更
 - active slice変更
 - tested commit変更
 
-Work自体をpauseしてlaneを解放する場合だけ、`LINEAR-ISSUES.md` / `CHECKOUTS.md`のpause / release ruleを使う。
+Work自体をpauseしてlaneを解放する場合だけ、compatible pre-existing SAY executionについて`LINEAR-ISSUES.md` / `CHECKOUTS.md`のpause / release ruleを使う。
 
 ## Parallelism model
 
@@ -147,22 +149,21 @@ Issue Authoringを多数並行することは許可するが、Ready Workが増�
 ```text
 Human report / idea
 -> Issue Authoring chat
--> Issue / contract Ready
--> Todo
--> Coordinator or direct request selects Work
--> Implementation chat + FREE declared implementation lane
--> implementation merge + authoritative read-back
--> prove remaining acceptance is required Manual E2E only
--> synchronize Linear status to In Review
--> synchronize `manual_e2e_only` and current Manual E2E state according to existing policy
--> exact declared implementation lane release
--> successful IMPLEMENTATION RELEASED
--> Lane release checkpoint record and read-back
--> implementation lane proven FREE
--> if a Human-test lane is FREE, normal e2e-start / E2E handoff
--> if all suitable Human-test lanes are BUSY, remain In Review and wait without retaining the implementation lane
--> PASS
--> Done
+-> GitHub Issue body / comments and contract readiness
+-> Coordinator selects Work
+   -> new GitHub-native Issue: implementation waits until D1 proves the Git-only workflow
+   -> compatible pre-existing SAY task: existing `nuinui` implementation lifecycle
+      -> implementation merge + authoritative read-back
+      -> prove remaining acceptance is required Manual E2E only
+      -> synchronize the minimum required legacy checkpoint
+      -> exact declared implementation lane release
+      -> successful IMPLEMENTATION RELEASED
+      -> Lane release checkpoint record and read-back
+      -> implementation lane proven FREE
+      -> if a Human-test lane is FREE, normal e2e-start / E2E handoff
+      -> if all suitable Human-test lanes are BUSY, wait without retaining the implementation lane
+      -> PASS
+      -> legacy status completion checkpoint
 ```
 
 ImplementationからE2Eへのcanonical handoffでは、E2E startをimplementation release barrierより前に置かない。Human-test laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、selected Human-test laneがBUSYならimplementation laneを保持せずIn Reviewで待つ。
@@ -172,11 +173,12 @@ roleを切り替える際も、destination roleのstartup gateを省略しない
 ## Loading rule
 
 1. Chat role判断、rotation、handoff、external-state recoveryではこのdocumentを読む。
-2. Coordinator workでは`CHAT-COORDINATOR.md`。
-3. Issue Authoringでは`CHAT-AUTHORING.md`。
-4. Implementationでは`CHAT-IMPLEMENTATION.md`。
-5. E2Eでは`CHAT-E2E.md`。
-6. 各role ownerを読んだ後、READMEのtopic-specific loading ruleに従う。
+2. Current Work / contract recoveryでは`ISSUES.md`とfresh GitHub Issue / repository stateを使う。
+3. Coordinator workでは`CHAT-COORDINATOR.md`。
+4. Issue Authoringでは`CHAT-AUTHORING.md`。
+5. Implementationでは`CHAT-IMPLEMENTATION.md`。
+6. E2Eでは`CHAT-E2E.md`。
+7. 各role ownerを読んだ後、READMEのtopic-specific loading ruleに従う。
 
 ## Maintenance rule
 

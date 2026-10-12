@@ -6,7 +6,13 @@ Repository: `sayosomi/nuinuiCAD`
 
 Current taskのSHA、branch、進捗、個別implementation planはここに書かない。詳細policyはowner documentへ置き、このREADMEは「何をいつ読むか」を中心に保つ。
 
-## Normal implementation flow
+## Compatible legacy SAY implementation flow
+
+The flow below applies only to pre-existing SAY tasks that are already using the
+current `nuinui begin` / `handoff` / `release` lifecycle. It does not admit a
+GitHub-native Issue to the SAY-only helper. GitHub-native Work may be authored
+after the C1 policy cutover, but implementation startup for that Work must wait
+until the Git-only safety workflow is proven in D1.
 
 ```text
 Human asks ChatGPT to implement
@@ -60,12 +66,12 @@ replacement for the normal implementation-agent route.
 | open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
-| Linear overview / routing | [Linear policy router](./LINEAR.md) |
-| GitHub-native Issue authoring / contract — Phase C prepared, inactive | [GitHub Issues policy (prepared)](./ISSUES.md) |
-| Linear Issue status / Ready Queue / lane checkpoint / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
-| Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
-| Linear ↔ GitHub PR integration | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
-| Linear Documents / long-term Spec | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
+| Current Work authoring / contract / readiness / completion | [GitHub Issues policy](./ISSUES.md) |
+| GitHub PR linking / review / merge policy | [GitHub PR policy](./LINEAR-GITHUB.md) |
+| Historical Linear reference and legacy SAY execution checkpoints | [Linear policy router](./LINEAR.md) |
+| Historical Linear Issue status / Ready Queue / lane checkpoints | [Linear Issue workflow](./LINEAR-ISSUES.md) — compatible pre-existing SAY execution only |
+| Historical Linear Project / Project labels | [Linear Project policy](./LINEAR-PROJECTS.md) |
+| Historical Linear Documents and provenance | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
 | shared CI incident / declared-lane reproduction | [Shared CI incident escalation](./CI-INCIDENTS.md) |
 | Manual E2E Judgment / Human Executor / PASS-FAIL-BLOCKED | [Manual E2E execution rules](./MANUAL-E2E.md) |
 | VS Code isolated Manual E2E host | [VS Code Manual E2E environment](./VS-CODE-E2E.md) |
@@ -74,8 +80,8 @@ replacement for the normal implementation-agent route.
 | implementation contract judgment | [Implementation contract decision rule](./CONTRACT-DECISIONS.md) |
 | user-facing command contract | [Command contract policy](./COMMAND-CONTRACTS.md) |
 | explicit contract re-audit | [Contract re-audit policy](./CONTRACT-REAUDIT.md) |
-| Linear Free plan capacity | [Linear Free plan capacity policy](./LINEAR-CAPACITY.md) |
-| GitHub Issues public mirror | [GitHub Issues sync](./GITHUB-ISSUES-SYNC.md) |
+| Historical Linear Free plan capacity | [Linear Free plan capacity policy](./LINEAR-CAPACITY.md) |
+| Historical GitHub Issue mirror mapping / preservation | [GitHub Issues sync](./GITHUB-ISSUES-SYNC.md) |
 | legacy Notion | [Legacy Notion archive](./NOTION-LEGACY.md) |
 
 ## Declared execution lanes
@@ -108,16 +114,29 @@ Hard rule:
 
 ## Work / specification management
 
-現在のWork / specification管理はLinearを正式な管理先とする。
+After the coordinated C1 policy change has merged and authoritative `main`
+read-back has succeeded, GitHub Issues are the primary Work and current-contract
+authority. New native Work uses `sayosomi/nuinuiCAD#N`; the Issue body owns
+current scope and acceptance, comments retain material decisions and evidence,
+and GitHub branches, commits, PRs, and checks establish execution facts. See
+[`ISSUES.md`](./ISSUES.md) for authoring, readiness, freshness, and completion.
 
-Phase C用の[GitHub Issues運用ルール準備版](./ISSUES.md)は**未適用**。正式なauthority切替まではこのLinear運用を継続する。
+New GitHub-native Work may be authored after that cutover. Do not start its
+implementation until D1 has proven the Git-only safety workflow. Pre-existing
+SAY tasks already using the current `nuinui` lifecycle may retain only the
+minimum Linear execution/status checkpoints that lifecycle requires until D1
+replaces it. These checkpoints do not change the GitHub Issue contract or
+execution evidence. No new Linear Work or Documents, bulk Linear updates, or
+reverse sync are part of the normal route.
 
-- 作業予定・進捗・調査結果・lane checkpoint: Linear Issue / Comment
-- 長期的に参照する仕様・設計: Linear Document
+Existing Linear Documents and Linear/GitHub mirrors remain historical evidence;
+their identity and links are retained. Repository-owned normative
+specifications keep their current owners. Notion remains a legacy archive, not
+a new Work or specification owner.
 
-Notionは新規Work / Specの管理先には使わない。
-
-新しい開発Task開始時はlatest remote stateとexisting Linear Issue / Documentを確認してからimplementation contractを策定する。
+For existing SAY execution only, inspect the applicable historical Linear
+checkpoint and the latest repository state. Do not treat Linear as the source
+for new Work, current GitHub Issue contracts, or implemented behavior.
 
 ## Parallel execution rule
 
@@ -143,17 +162,19 @@ implementation lanesは互いの途中変更を取り込まない。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
-6. **Evaluator semantic-conformance exploration:** `ASTRA-AUDIT.md` (GPT-6.1 Sol High first pass; GPT-6 Astra only under the documented escalation conditions). Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; Work tracking follows `LINEAR.md` and `LINEAR-ISSUES.md`.
+6. **Evaluator semantic-conformance exploration:** `ASTRA-AUDIT.md` (GPT-6.1 Sol High first pass; GPT-6 Astra only under the documented escalation conditions). Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; current Work tracking follows `ISSUES.md`.
 7. **Implementation-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`.
 8. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`. Read Shared / nuinuiCAD Agent Skills when applicable.
 9. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`.
-10. **Linear operations or references, or implementation contract work:** `LINEAR.md`, `CONTRACT-DECISIONS.md`, `LINEAR-CAPACITY.md`, `GITHUB-ISSUES-SYNC.md`; follow `LINEAR.md` for detailed routing.
-11. **PR creation / review / merge / Auto-merge / PR authorization:** [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
-12. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`. For a VS Code host, also read `VS-CODE-E2E.md`. Read `VS-CODE-E2E-LOCALE.md` only when display-language / locale-specific verification is required. The Manual E2E executor is always Human. `LUNA-E2E-PLAYBOOK.md` is inactive; load it only if the Human explicitly asks to consider reactivating Luna E2E.
-13. **Shared CI incident suspicion / local reproduction:** read `CI-INCIDENTS.md` only when there is a strong signal. Reproduction also uses only a FREE declared implementation lane.
-14. **Adding or changing a user-facing command surface:** `COMMAND-CONTRACTS.md`.
-15. **Legacy history or migration exception:** read `NOTION-LEGACY.md` only when needed.
-16. **Current implementation / architecture / DSL decisions:** always inspect the latest repository.
+10. **New Work authoring / contract / re-audit:** `ISSUES.md`, `CONTRACT-DECISIONS.md`, and `CONTRACT-REAUDIT.md`; read the relevant current Issue and repository owners fresh.
+11. **Historical Linear references or a compatible pre-existing SAY execution checkpoint:** `LINEAR.md` and only the applicable Linear owner. Do not use Linear for new Work, Documents, bulk updates, or reverse sync.
+12. **PR creation / review / merge / Auto-merge:** [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md), which owns current GitHub-native policy and retains the legacy SAY integration record.
+13. **Manual E2E:** `MANUAL-E2E.md` + `LOCAL-TOOLS.md`. For a VS Code host, also read `VS-CODE-E2E.md`. Read `VS-CODE-E2E-LOCALE.md` only when display-language / locale-specific verification is required. The Manual E2E executor is always Human. `LUNA-E2E-PLAYBOOK.md` is inactive; load it only if the Human explicitly asks to consider reactivating Luna E2E.
+14. **Shared CI incident suspicion / local reproduction:** read `CI-INCIDENTS.md` only when there is a strong signal. Reproduction also uses only a FREE declared implementation lane.
+15. **Adding or changing a user-facing command surface:** `COMMAND-CONTRACTS.md`.
+16. **Historical mirror mapping / provenance / disabled reconciliation investigation:** `GITHUB-ISSUES-SYNC.md`; load `GITHUB-ISSUES-MIRROR-CONTRACT.md` or `GITHUB-ISSUES-MIRROR-OPS.md` only to understand preserved history. Do not run ordinary reconciliation.
+17. **Legacy history:** read `NOTION-LEGACY.md` only when needed.
+18. **Current implementation / architecture / DSL decisions:** always inspect the latest repository.
 
 ## Maintenance rule
 

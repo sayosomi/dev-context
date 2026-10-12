@@ -16,10 +16,10 @@ Issue Authoringはrepository implementationではない。
 
 - Authoring chat数にimplementation capacity上限を適用しない。
 - execution laneをclaimしない。
-- contractをReadyにしただけでは`In Progress`へ進めない。
-- repository implementation / blocking fixはReady後にmanifest-declared implementation laneへ割り当て、Luna xhighで実行する。
+- contractをReadyにしただけではimplementationを開始しない。各Workのstartup gateはcurrent policyとIssue identityに応じて適用する。
+- compatible pre-existing SAY taskのrepository implementation / blocking fixは、Ready後にmanifest-declared implementation laneへ割り当て、既存lifecycleのCoding Agent ruleに従って実行する。GitHub-native WorkはD1でGit-only safety workflowが証明されるまでimplementation startupを行わない。
 
-複数Authoring chatが同じIssueを扱う場合、Linear write前にcurrent Issue / relevant commentsを再取得し、別chatのcurrent decisionを失わない。競合するproduct decisionをlast-write-winsで上書きしない。
+複数Authoring chatが同じIssueを扱う場合、GitHub Issue write前にcurrent body / material commentsを再取得し、別chatのcurrent decisionを失わない。競合するproduct decisionをlast-write-winsで上書きしない。
 
 ## Rule
 
@@ -60,7 +60,7 @@ real product branchのうち、差がplacement、density、hierarchy、visual em
 1. latest repository / platform / normative spec / durable policyから一意に決まる事項を先に除外する。
 2. 残ったreal UX branchだけをmockの比較軸にする。
 3. fake / static fixtureでproduction semanticsから分離できる範囲に限定してHumanへ触って比較してもらう。
-4. Humanが選んだ結果をcurrent Linear contractへ記録して初めてproduct decisionとして扱う。
+4. Humanが選んだ結果をcurrent GitHub Issue body / commentsへ記録して初めてproduct decisionとして扱う。
 
 mockそのもの、fixture、仮interaction、default variantはauthorityではない。mockで見せたからという理由でDSL semantics、diagnostic meaning、persistence、canonical ownership、runtime architecture、compatibility等を決めない。
 
@@ -68,15 +68,15 @@ mockとtarget hostに差がある場合、その差が選択判断へ影響し�
 
 ## Ready contract refresh vs Pending
 
-`Contract: Ready`は「current repositoryのfile名やimplementation pathが永久に固定された」という意味ではない。
+`contract:ready`は「current repositoryのfile名やimplementation pathが永久に固定された」という意味ではない。
 
 latest repositoryに合わせてcontractを更新するときは、次で判定する。
 
 > 既に確定したuser-facing semantics / scope / acceptanceを変えずに、latest authorityからcontractを一意にrefreshできるか？
 
-- **YES:** `Contract: Ready`を維持したままcurrent fact / implementation pathをrefreshする。
-- **NO:** 複数の合理的なproduct / UX / scope / compatibility / acceptance選択肢が生じるなら`Contract: Pending`へ戻す。
-- **実行不能なprerequisite:** viableな選択肢以前に必要なfoundation / capabilityが存在せずcontractを完成できないなら`Contract: Blocked`。
+- **YES:** `contract:ready`を維持したままcurrent fact / implementation pathをrefreshする。
+- **NO:** 複数の合理的なproduct / UX / scope / compatibility / acceptance選択肢が生じるなら`contract:pending`へ戻す。
+- **実行不能なprerequisite:** viableな選択肢以前に必要なfoundation / capabilityが存在せずcontractを完成できないなら`contract:blocked`。
 
 `Ready`のままrefreshしてよい代表例:
 
@@ -85,7 +85,7 @@ latest repositoryに合わせてcontractを更新するときは、次で判定�
 - 別Taskのmergeで内部data flowが変わったが、既決定のproduct semanticsを保つ追従方法が一意
 - broad Issueをcurrent repository ownershipに沿うimplementation sliceへ再配置したが、product scope / acceptance自体は変えていない
 
-`Pending`へ戻す代表例:
+`contract:pending`へ戻す代表例:
 
 - latest repositoryを踏まえると2つ以上の合理的なuser-facing behaviorが成立する
 - compatibility / migration / scope / acceptanceを選び直す必要がある
@@ -149,9 +149,9 @@ Issue boundary、chat、execution laneは別判断。
 
 ```text
 new leaf Issue
-  -> Authoring / contract Ready
-  -> Todo
-  -> FREEなdeclared implementation laneへstartupした時だけIn Progress
+  -> Authoring / GitHub Issue contract ready
+  -> native GitHub Issue: implementation startup waits until D1 proves the Git-only workflow
+  -> compatible pre-existing SAY task: existing lifecycle checkpoint and declared-lane startup rules
 
 same Issue next slice
   -> current laneで継続、またはsafe checkpointでrelease / later restart
@@ -165,7 +165,7 @@ execution capacity / laneは`LANES.conf` + `CHECKOUTS.md`、implementation execu
 original Issueのscopeを複数leafへ移した場合、pure tracking parentを自動的に残さない。
 
 - parent自身にaggregate acceptance / integrated Manual E2E / final cutover等が残る → retained parentとして維持。
-- original scope / acceptanceをすべてleafへ移し、親に独自Workがない → tracking shellとしてactiveに残さない。status handlingは`LINEAR-ISSUES.md`に従う。
+- original scope / acceptanceをすべてleafへ移し、親に独自Workがない → tracking shellとしてactiveに残さない。GitHub Issue state / close handlingは[`ISSUES.md`](./ISSUES.md)に従う。
 - decomposition / research自体がoriginal Workだった → そのacceptanceが完了すればDoneにしてよい。
 
 retained parentはexecution ownership labelを持たない。
@@ -181,7 +181,7 @@ normative specとactual codeが食い違っただけでは、specをcodeに合�
 
 - spec = A、code = B、Aをsupersedeする新しいauthoritative decisionなし → code側のbugとして扱う。
 - old spec = A、より新しいauthoritative product decision = B、code = B → staleなspecをBへ更新する。
-- spec = A、code = B、どちらがintendedかcurrent authorityから一意に確定できない → `Contract: Pending`としてproduct decisionを確認する。
+- spec = A、code = B、どちらがintendedかcurrent authorityから一意に確定できない → `contract:pending`としてproduct decisionを確認する。
 
 actual implementationを調べる質問と、normative behaviorを決める質問を分ける。
 
@@ -205,7 +205,7 @@ actual implementationを調べる質問と、normative behaviorを決める質�
 5. platform標準または既存nuinuiCAD ruleから一意に決まる事項をcontractへ直接記録する。
 6. 一意に決まらないproduct decisionだけをユーザーへ確認する。
 7. boundary map / implementation slicing / later execution routingは`IMPLEMENTATION-SLICING.md`、`CHECKOUTS.md`、`CODING-AGENT.md`で決定する。
-8. Linear write直前にcurrent Issue / relevant commentsを再取得し、並行Authoringの変更を失わないことを確認する。
-9. 決定後、Issue本文・Contract label・Manual E2E plan・dependencyを同じcheckpointで整合させる。
+8. GitHub Issue write直前にcurrent body / material commentsを再取得し、並行Authoringの変更を失わないことを確認する。
+9. 決定後、Issue body / commentsとreadiness語彙、Manual E2E plan、dependencyを整合させ、write後にread backする。
 
 ユーザーへ確認する項目数を減らすこと自体を目的にしない。目的は、既に決まっていることを再質問せず、本当に判断が必要な分岐だけに会話を使うこと。

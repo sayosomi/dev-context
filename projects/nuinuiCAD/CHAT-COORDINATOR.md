@@ -12,39 +12,41 @@ Coordinator chatはimplementation laneやManual E2E laneを占有しない。
 
 主な用途:
 
-- current status / Ready Queue / blockersの確認
+- current GitHub Issue state / contract readiness / blockersの確認
 - 次に進めるWorkの選択と優先順位付け
-- lane / remote / Linearの整合確認
+- legacy executionに適用されるphysical lane / Linear checkpoint / GitHub stateの整合確認
 - project運用ruleの検討
 - Issue Authoring / Implementation / E2E chatへの振り分け
 
-候補選定では、current Linear / repository / relevant execution stateから「なぜ今そのWorkか」を判断する。過去chatや古いsummaryだけでcurrent候補を決めない。
+新しいWorkの候補はcurrent GitHub Issuesとlatest repositoriesから選び、Issue bodyのscope / acceptanceとcurrent code / specを読む。Linear Ready Queueを使わない。過去chatや古いsummaryだけでcurrent候補を決めない。
+
+GitHub-native IssueはC1後にauthoringできるが、implementation startupはD1でGit-only safety workflowが証明されるまで禁止する。Ready contractや空きlaneだけで実装へroutingしない。
 
 ### Implementation occupancy reconciliation before routing
 
-新しいimplementation Workを選択・routingする前にfreshなmanifest-derived lane stateを利用できる場合、Coordinatorは全`role=implementation` laneのphysical occupancyとLinear上のcurrent implementation `In Progress` Issueを照合する。
+既存SAY executionのimplementationを継続・routingする前にfreshなmanifest-derived lane stateを利用できる場合、Coordinatorは全`role=implementation` laneのphysical occupancyと、該当するpre-existing SAY Issueのcurrent legacy Linear execution/status checkpointを照合する。GitHub-native IssueにLinear status checkpointを割り当てない。
 
 照合は件数だけではなく**Issue identity単位**で行う。
 
-- physical `BUSY` laneから一意に読めるIssueは、Linearでもcurrent implementation `In Progress`であること;
-- Linearでcurrent implementation `In Progress`なIssueは、対応する`BUSY` implementation laneを一意に持つこと;
-- `RELEASE-PENDING`、idle / `FREE` lane、authoring-only Workをcurrent implementation `In Progress`として数えない。
+- physical `BUSY` laneから一意に読めるpre-existing SAY Issueは、Linearに必要なcurrent execution checkpointを持つこと;
+- 互換legacy lifecycle上のLinear implementation checkpointは、対応する`BUSY` implementation laneを一意に持つこと;
+- `RELEASE-PENDING`、idle / `FREE` lane、authoring-only Workをactive implementationとして数えない。
 
-不一致があれば、新しいimplementation startをroutingする前にcurrent remote / Linear checkpoint / fresh lane evidenceからstale stateを解消する。既存authorityだけでは安全に解消できない不一致は`BLOCKED / UNKNOWN`として扱い、新しいstart handoffを出さない。
+不一致があれば、legacy implementationを継続・routingする前にcurrent remote / legacy Linear checkpoint / fresh lane evidenceからstale stateを解消する。既存authorityだけでは安全に解消できない不一致は`BLOCKED / UNKNOWN`として扱い、新しいstart handoffを出さない。
 
-`In Progress`の件数条件だけでは整合確認を満たさない。physical declared laneから読めるIssue集合とLinearのcurrent implementation `In Progress`集合がidentity単位で一致していなければならない。
+件数だけでは整合確認を満たさない。legacy physical declared laneから読めるIssue集合と、互換Linear lifecycle上のcurrent implementation checkpoint集合がidentity単位で一致していなければならない。
 
 ### Parallel admission gate
 
 Humanが特定Issueのlane移動・再配置を明示せず、fresh lane stateとともにimplementation laneが`FREE`になったことを報告した場合、その報告を既存`BUSY` Issueのlane migration要求として解釈しない。既存`BUSY` laneのownershipを維持したまま、このsectionのparallel admission gateに従って`FREE` laneへ開始可能な別Issueを評価する。
 
-あるimplementation laneが`BUSY`で、別のlaneが`FREE`なとき、CoordinatorはReady Queueの優先順位だけで追加のWorkを開始しない。先に**parallel interference risk**を評価し、相手laneと独立して進められる候補だけをparallel start候補へ入れる。
+あるimplementation laneが`BUSY`で、別のlaneが`FREE`なとき、CoordinatorはGitHub Issue readinessやLinear Ready Queueの順番だけでWorkを開始しない。既存legacy executionにおいて並行開始が許可されるときだけ先に**parallel interference risk**を評価し、相手laneと独立して進められる候補を扱う。C1はdeclared capacityを追加せず、native GitHub Issueのimplementationを許可しない。
 
 `FREE` laneはcapacityでありutilization targetではない。安全なparallel candidateがなければ、laneを`FREE`のまま残すことを正常な選択肢とする。
 
 #### Active lane interference envelope
 
-freshなrepository state、current Issue / Linear checkpoint、current slice contractから、現在`BUSY`なlaneについて少なくとも次を整理する。
+freshなrepository state、current Issue / 該当するlegacy checkpoint、current slice contractから、現在`BUSY`なlaneについて少なくとも次を整理する。
 
 - primary semantic owner / boundary;
 - current sliceが直接変更する、またはblocking fixで接続し得るshared owner / API / registry / composition root;
@@ -66,7 +68,7 @@ file pathだけをreservationとして扱わない。異なるfileでも同じse
 
 priority、blocker解消効果、Issue size等による通常のWork選定は**parallel admission後**に行う。高priorityであることは`MEDIUM` / `HIGH` interferenceを上書きしない。
 
-Ready Queueに`LOW` candidateがなければ、Coordinatorは正式なrouting結果として`NO PARALLEL START`を選んでよい。この場合:
+互換legacy execution candidateのうち`LOW` interference candidateがなければ、Coordinatorは正式なrouting結果として`NO PARALLEL START`を選んでよい。この場合:
 
 - `FREE` laneを無理に埋めない;
 - 3つ目のbranch / worktreeを作らない;
@@ -79,11 +81,11 @@ candidateを選定してからactual startするまでにactive laneのscopeがs
 
 ### Blocked Issue candidate routing
 
-`Contract: Blocked` Issueは、block理由にmaterialな変化が確認できない限り、通常の「次に進めるWork」「次の調査候補」「Issue Authoring候補」として繰り返し提示しない。
+`contract:blocked` GitHub Issueは、block理由にmaterialな変化が確認できない限り、通常の「次に進めるWork」「次の調査候補」「Issue Authoring候補」として繰り返し提示しない。
 
-ただし、dependency待ちの連続Workを止めない。`LINEAR-ISSUES.md`のReady Queue synchronizationに該当するblocker relation変更、blocker Done、その他current prerequisiteの成立が確認された場合は、そのdependent Issueを通常どおり再評価し、current stateに応じて候補へ戻す。
+ただし、dependency待ちの連続Workを止めない。GitHub Issue body / commentsでblocker relationの変化、blocker close、その他current prerequisiteの成立が確認された場合は、そのdependent Issueをfreshに再評価し、current stateに応じて候補へ戻す。
 
-Linear relationで表現されない外部platform capabilityや将来foundation等を待つBlocked Issueは、Issueに記録された解除条件へmaterialな変化を示すfresh signalがある場合、またはHumanが明示的に再確認を求めた場合だけ再調査する。単に未完了である、時間が経過した、他の候補が減った、という理由だけでは通常候補へ戻さない。
+GitHub Issueで記録された外部platform capabilityやfuture foundation等を待つBlocked Workは、記録された解除条件へmaterialな変化を示すfresh signalがある場合、またはHumanが明示的に再確認を求めた場合だけ再調査する。単に未完了である、時間が経過した、他の候補が減った、という理由だけでは通常候補へ戻さない。
 
 ## Routing handoff rule
 
@@ -101,8 +103,8 @@ HumanへWork候補やroutingを提案するときは、候補ごとに、適切�
 
 Coordinator chatはroutingとstatus整理をownerするが、role-specific executionは各ownerへ渡す。
 
-- Issue作成 / 調査 / contract策定 → [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md)
-- repository implementation / blocking fix / integration → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md)
+- GitHub Issue作成 / 調査 / contract策定 → [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md)
+- compatible pre-existing SAY implementation / blocking fix / integration → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md)
 - required Manual E2E → [`CHAT-E2E.md`](./CHAT-E2E.md)
 
 Coordinatorで候補を選んだだけではIssue statusやlane occupancyを変更しない。実際のrole startup gateを省略しない。
@@ -111,7 +113,7 @@ Coordinatorで候補を選んだだけではIssue statusやlane occupancyを変�
 
 Coordinatorとしてcurrent status、次Work選定、routing、handoff message生成を行うときは、まず [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読む。
 
-current factが必要な場合はREADMEのloading ruleに従ってLinear / latest repository / checkout state等のauthoritative sourceを追加で確認する。
+current factが必要な場合はREADMEのloading ruleに従い、current GitHub Issues / latest repository / relevant checkout stateを確認する。Linearはcompatible pre-existing SAY execution checkpointにだけ使う。
 
 ## Maintenance rule
 
