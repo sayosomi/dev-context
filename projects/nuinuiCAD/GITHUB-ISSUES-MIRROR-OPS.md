@@ -1,72 +1,51 @@
-# nuinuiCAD GitHub Issues mirror operations
+# nuinuiCAD historical GitHub Issues mirror operations
 
-## Purpose
+## Purpose and status
 
-GitHub Issues public mirrorを運用するCloudflare Worker、webhook / Queue / safety sweep、repair / shadow cleanupのruleを定義する。
+このdocumentはC1 cutover前に使われていたCloudflare Workerのwebhook / Queue / Cron reconciliation pipelineを、調査可能なhistorical operationとして記録する。通常のWork authoring、contract、status更新の手順ではない。Current authorityは[`ISSUES.md`](./ISSUES.md)、mirror historyとmappingの案内は[`GITHUB-ISSUES-SYNC.md`](./GITHUB-ISSUES-SYNC.md)がownerする。
 
-- authority / public boundary / loading: [`GITHUB-ISSUES-SYNC.md`](./GITHUB-ISSUES-SYNC.md)
-- reconciliation field / mapping contract: [`GITHUB-ISSUES-MIRROR-CONTRACT.md`](./GITHUB-ISSUES-MIRROR-CONTRACT.md)
+Cloudflare Worker `nuinuicad-linear-github-mirror` は、[#268のproduction read-back](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6120792472)と[post-disabled barrier verification](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6120985293)に記録されたdisabled modeで維持する。記録versionは`41736512-dc33-440b-b292-e470e2541519`。Workerは無効のままとし、HTTP / webhook、Queue consumer、CronのいずれからもGitHub writeを再開しない。
 
-## Automatic mirror owner
+## Historical pipeline behavior
 
-通常の自動reconciliation ownerはCloudflare Worker `nuinuicad-linear-github-mirror` とする。
+以前はLinearのIssue / Comment / Document eventをone-wayで公開GitHub Issueへ反映していた。
 
 ```text
 Linear Issue / Comment / Document change
-  → Linear webhook
+  → webhook signature / replay-window validation
   → Cloudflare Worker
-  → HMAC / replay-window validation
-  → Cloudflare Queue
+  → Queue
   → canonical Linear data refetch
   → GitHub REST API reconcile
 ```
 
-Webhook対象は`Issue`、`Comment`、`Document`とする。
+Cloudflare Cronは以前`0 */12 * * *` UTCでsafety sweepを行い、webhook gapやrelation-only changeをQueue経由で回収した。Issue / Documentのdeduplication、hidden marker、managed comment識別などは[`GITHUB-ISSUES-MIRROR-CONTRACT.md`](./GITHUB-ISSUES-MIRROR-CONTRACT.md)に記録される。この説明は過去挙動の調査用であり、再稼働手順ではない。
 
-Webhook gapやrelation-only change、Document / comment driftを回収するため、同じWorkerがCloudflare Cron `0 */12 * * *` (UTC) で12時間ごとのsafety sweepを実行し、同じQueue reconciliation pathへ流す。
+## Cutover operation boundary
 
-旧ChatGPT `Legacy Issue Mirror` scheduled automationはcutover完了後は無効のまま維持し、通常経路として再有効化しない。Cloudflare mirrorが障害で長時間利用できず、明示的なfallback運用を決めた場合だけ別途扱う。
+- C1後のGitHub Issueを過去のmirror destinationとして扱わず、Linear側の値で上書きしない。
+- ordinary reconciliation、repair sweep、手動GitHub issue update、reverse syncを実行しない。
+- 旧ChatGPT `Legacy Issue Mirror` automation、Linear公式two-way sync、Workerのautomatic fallbackを再有効化しない。
+- Cloudflare Workerを再deploy / reactivateせず、webhook、Queue、Cron設定を変更しない。
+- 8件のhistorical DLQ messageはuntouchedのまま保つ。DLQをpurge、ack、replay、再投入しない。
+- mirror drift、duplicate、欠落historyが見つかっても、自動修復、destructive cleanup、Issueの作り直しをしない。必要ならevidenceをread-onlyで調査し、#268の新たな明示決定がない限り停止する。
 
-## Reconciliation operation
+過去のshutdown / verification / DLQ evidenceを確認する必要がある場合は、[#268](https://github.com/sayosomi/dev-context/issues/268)と[`GITHUB-ISSUES-SYNC.md`](./GITHUB-ISSUES-SYNC.md)を参照する。Disabled stateはworker sourceやhealth endpoint単独ではなく、記録済みのdeployment / mode / route guards / read-back evidenceに基づく。
 
-Webhook / sweepのどちらから入った場合も、canonical Linear current dataをrefetchしてからGitHub REST APIへreconcileする。
+## Historical shadow cleanup and fallback record
 
-GitHub側の状態をそのままLinear authorityとして採用しない。
-
-Issue / Document createのdeduplication、hidden marker、managed commentの識別等の具体的contractは [`GITHUB-ISSUES-MIRROR-CONTRACT.md`](./GITHUB-ISSUES-MIRROR-CONTRACT.md) に従う。
-
-## Shadow cleanup rule
-
-過去にLinear公式two-way syncが有効だった際、legacy GitHub mirrorの更新を新しいLinear Issueとして再取り込み、canonical Issueとは別のsync shadowを作ったことがある。
-
-同様の状態を検出した場合:
-
-- 元のcanonical Linear Issueをauthorityとして維持する。
-- shadow Issueを新しいWork itemとして扱わない。
-- legacy GitHub Issueを新しく作り直さない。
-- GitHub attachment / sync relationが残っているshadow Issueを先にCanceled / Duplicate / Doneへ変更しない。
-
-cleanup checkpointでは次の順序を守る。
+以前Linear公式two-way syncが有効だった時期には、legacy GitHub mirror updateからduplicate sync shadow Issueが生じた。Historical investigation recordには次の順序が残っている。
 
 1. canonical Linear Issueとlegacy GitHub Issueの既存mappingを再確認する。
 2. shadow IssueのGitHub attachment / official sync relationを先に解除する。
 3. legacy GitHub Issueが削除・close・意図しないfield変更を受けていないことを確認する。
-4. sync解除を確認できた場合だけ、shadow Issueをcanonical Linear IssueのDuplicateとして整理する。
-5. sync解除を確認できない場合はstatusを変更せず、その場で停止する。
+4. relation解除を確認できた場合に限り、shadow Issueをcanonical Linear IssueのDuplicateとして整理する。
+5. relation解除が確認できなければstatusを変更せず停止する。
 
-## ChatGPT operation rule
+これは過去手順の調査記録であり、C1後にこのcleanupを実行してshadowを変更・close・deleteしない。
 
-Linear Issue / Documentを参照・更新するときはLinearを先に更新し、自動mirrorを通常経路とする。
+過去の運用でも、Cloudflare mirror failureだけを理由にChatGPT scheduled mirrorやLinear two-way syncへautomatic fallbackすることは禁止されていた。この禁止は引き続き有効であり、明示的なPhase C1 approvalや一般reconciliation permissionを意味しない。
 
-- 通常のfield / comment更新について、同じcheckpointでGitHub Issueを手動二重更新しない。
-- mirror attachmentがまだ無い新規Issueでも、Workerがcreate / attachするため通常は手動GitHub Issueを作らない。
-- Linear DocumentもWorkerがGitHub Issueをcreate / reconcileするため通常は手動mirrorしない。
-- mirror driftを検出した場合は、まずLinear current stateとCloudflare Worker / Queueの状態を確認する。
-- manual reconciliationは自動経路の障害調査または明示的なrepair時だけ行う。
-- Linear公式GitHub Issues two-way sync mappingを再度有効化しない。
+## Loading rule
 
-## Fallback boundary
-
-Cloudflare mirrorの通常経路が一時的に失敗しただけで、旧ChatGPT scheduled mirrorやLinear公式two-way syncを自動的に再有効化しない。
-
-fallback / manual repairが必要な場合も、Linearをauthorityとして [`GITHUB-ISSUES-MIRROR-CONTRACT.md`](./GITHUB-ISSUES-MIRROR-CONTRACT.md) と同じone-way reconciliation contractを維持する。
+このdocumentはdisabled Worker / historical webhook・Queue・Cron behavior / preserved DLQ evidenceの調査にだけ読む。通常のGitHub Issue Workを扱うときは[`ISSUES.md`](./ISSUES.md)を読み、mirror reconciliationは行わない。

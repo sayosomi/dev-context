@@ -4,6 +4,10 @@
 
 nuinuiCADのimplementation / blocking-fix executionを定義する。
 
+### C1 transition boundary
+
+C1後も、このdocumentと下記`SAY-N` / `nuinui handoff` startup proceduresはcompatible pre-existing SAY tasksにだけ適用する。新しいGitHub-native IssueをSAY identifierへ変換したり、このhelperに渡したりしない。GitHub-native implementation startupはD1でGit-only safety workflowが証明されるまで待つ。
+
 Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従い、prompt publicationのmachine-checkable gateは [`../../shared/AGENT-PROMPT-PREFLIGHT.md`](../../shared/AGENT-PROMPT-PREFLIGHT.md) に従う。
 
 Project-specific ruleとして、nuinuiCADの**source-code implementation / blocking fix**はmanifest-declared `role=implementation` laneを担当する**implementation Coding Agent**が実行する。Coding Agent product / model / effortの選択はHumanがprompt / handoffの外側で行う。ChatGPTはimplementation promptへ特定product / model / effortをrequired executor identityとして埋め込まず、implementation agentもself-reported model nameをauthorization / safety gateとして扱わない。web ChatGPTがdirect GitHub editingでsource-code implementationを代替するexecution routeは持たない。
@@ -60,7 +64,7 @@ write直前にlatest remote SHAとtarget file freshnessを再確認する。fres
 
 開始前に[`CHECKOUTS.md`](./CHECKOUTS.md)のtransitional exception admission proofを満たし、既存product checkoutがcleanで、active implementation claim / audit reservationがなく、unrelated workがないことを確認する。exceptional sliceでは`nuinui begin`、`nuinui handoff`、`nuinui release`を要求せず、Linear checkpoint/statusやdurable claim/checkpoint metadataを作らない。既存metadataを変更・削除せず、別implementation / auditとの並行実行も認めない。実装AgentのGit-only startup境界は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)がownerする。
 
-PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。他のnuinuiCAD Workは既存のLinear / declared-lane workflowを継続する。
+PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。このPhase B exceptionはhistoricalである。C1後はGitHub Issue bodyがcurrent Work contractをownerするが、新しいnative Issueの実装はD1まで開始しない。既存SAY tasksだけがC1 bridgeに沿ってcurrent lifecycleを継続できる。
 
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 

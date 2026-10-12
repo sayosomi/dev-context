@@ -2,7 +2,11 @@
 
 ## Purpose
 
-Implementation chatは`Contract: Ready`なIssueのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
+Implementation chatは、対応するimplementation startup policyで許可されたWorkのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
+
+### C1 transition boundary
+
+C1後のcurrent contractはGitHub Issueがownerするが、既存のSAY-only `nuinui` helperには新しいGitHub-native Issueを渡さない。GitHub-native Workのimplementation startupはD1でGit-only safety workflowが証明されるまで待つ。以下の既存`SAY-N` / `nuinui begin` / `handoff` / `release` procedureは、すでにそのlifecycleに入っているcompatible pre-existing SAY taskにだけ適用する。
 
 実行capacityはchat数ではなく[`LANES.conf`](./LANES.conf)に宣言されたimplementation laneで決まる。各宣言laneは同時に1つのimplementation generationだけを保持する。
 
@@ -37,11 +41,12 @@ boundary in [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md): do not create a
 SAY Linear Issue or require `nuinui begin`, `nuinui handoff`, or
 `nuinui release`. This is still source-code work for the implementation Coding
 Agent, not a ChatGPT direct-execution exception. Do not record Linear status or
-checkpoint for this slice, and do not alter durable lane metadata. All other
-implementation starts follow the normal rules below; the exception does not
-transfer general Work authority from Linear.
+checkpoint for this slice, and do not alter durable lane metadata. This Phase B
+exception is historical. C1 makes GitHub Issues the Work / contract authority;
+the SAY-only lifecycle below remains for compatible pre-existing SAY tasks, and
+new GitHub-native implementation waits for D1 as stated above.
 
-Humanがimplementation Issueについて開始 / 再開 / 続行を指示した場合、remote / Linear / policyの再確認やblocker説明だけで停止しない。
+Compatible pre-existing SAY taskについてHumanが開始 / 再開 / 続行を指示した場合、remote / required legacy checkpoint / policyの再確認やblocker説明だけで停止しない。新しいGitHub-native Issueのimplementation requestはD1まで保留し、旧helperへhandoffしない。
 
 その応答は次のどちらかへ到達して完了する。
 

@@ -1,116 +1,57 @@
-# nuinuiCAD Linear policy router
+# nuinuiCAD historical Linear reference and legacy execution router
 
 ## Purpose
 
-LinearをnuinuiCADの正式なWork管理・長期仕様管理の場所として使う。
+Linearは過去のnuinuiCAD Work / decision / specification recordを参照する場所であり、新しいWorkやlong-term specificationのauthorityではない。C1後に例外的に書き込めるのは、既存SAY taskが現行`nuinui begin` / `handoff` / `release` lifecycleを継続するために必要とする最小限のexecution/status checkpointだけである。
 
-この文書はLinear運用の入口 / router。実装済み事実はlatest `sayosomi/nuinuiCAD` repository、execution capacityは [`CHECKOUTS.md`](./CHECKOUTS.md) がauthority。
+Current Work、contract、readiness、completionは[GitHub Issues policy](./ISSUES.md)を使う。実装済み事実はlatest `sayosomi/nuinuiCAD` repository、repository-owned normative specificationは該当するrepository ownerがauthority。Linear checkpointはGitHub Issue contractやbranch / commit / PR / checksのexecution evidenceを置き換えない。
 
-## Structure
+## Legacy record structure
+
+以下は既存recordの解釈と互換executionに必要な歴史的案内であり、新しいLinear workflowを開始する許可ではない。
 
 - Workspace: Sayosomi
 - Team: Sayosomi
 - Initiative: nuinuiCAD
-- Project: exception-onlyの極短期aggregate tracking
-- Issue: 実際に着手・完了するWork
-- Document: repositoryにownerがない長期仕様・設計
+- Project: historical aggregate records
+- Issue: existing SAY Work identity / historical checkpoint
+- Document: existing historical decision and specification record
 
-Projectは通常の分類・roadmap単位にしない。通常のWork管理はIssue + relationを基本とする。
+SAY identifier、Linear Issue / Document identity、GitHub linksを保存する。SAY番号とGitHub Issue番号を同一視しない。
 
 ## Policy map
 
-| Topic | Owner |
+| Topic | Owner / use |
 | --- | --- |
-| Project粒度 / lifecycle | [Linear Project policy](./LINEAR-PROJECTS.md) |
-| Issue status / Ready Queue / lane checkpoints / Done freshness | [Linear Issue workflow](./LINEAR-ISSUES.md) |
-| execution lane / checkout capacity | [Execution lane policy](./CHECKOUTS.md) |
-| implementation slicing / integration checkpoint | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
-| implementation Coding Agent | [nuinuiCAD Coding Agent policy](./CODING-AGENT.md) |
-| explicit contract re-audit campaign | [Contract re-audit policy](./CONTRACT-REAUDIT.md) |
-| GitHub PR linking / merge sync | [Linear / GitHub integration](./LINEAR-GITHUB.md) |
-| long-term specification / Linear Documents | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
-| Manual E2E classification / executor / result | [Manual E2E execution rules](./MANUAL-E2E.md) |
-| implementation contract judgment | [Implementation contract decision rule](./CONTRACT-DECISIONS.md) |
-| Linear Free plan capacity | [Linear free-plan capacity policy](./LINEAR-CAPACITY.md) |
-| GitHub Issues public mirror | [GitHub Issues sync](./GITHUB-ISSUES-SYNC.md) |
-| legacy Notion | [Legacy Notion archive](./NOTION-LEGACY.md) |
+| Current Work / contract / readiness / close | [GitHub Issues policy](./ISSUES.md) |
+| Historical Linear Issue status and legacy execution checkpoints | [Linear Issue workflow](./LINEAR-ISSUES.md), compatible pre-existing SAY execution only |
+| Historical Linear Project records | [Linear Project policy](./LINEAR-PROJECTS.md) |
+| Historical Linear Documents and provenance | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
+| Current GitHub PR linking / review / merge | [GitHub PR policy](./LINEAR-GITHUB.md) |
+| Current implementation facts | latest product repository |
+| Checkout / execution lifecycle | [Checkout policy](./CHECKOUTS.md); do not replace its existing lifecycle in C1 |
+| Manual E2E judgment / Human executor | [Manual E2E execution rules](./MANUAL-E2E.md) |
 
-## Search before create
+## Compatible pre-existing SAY execution
 
-Initiative / Project / Issue / Documentを新規作成する前に既存項目を検索する。
+既存SAY taskがすでにcurrent `nuinui` lifecycleへ入っている場合だけ、そのlifecycle checkpointで要求されるstatus / branch / slice / release factsをLinearへ最小限記録してよい。既存checkpointをfreshに読んで必要な事実を確認し、余分なtranscript、commit log、mirror repair、contract rewriteを追加しない。
 
-同じWork / Specがある場合は新規作成せず更新する。軽い思いつきは [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のIdea Inboxへ置く。
+この互換運用は新規SAY Issue / Linear Work / Documentを作成せず、新しいLinear-driven lifecycleを開始しない。GitHub-native Workのcontractやexecution evidenceをLinear側へ複製しない。GitHub-native Issueのimplementation startupはD1でGit-only safety workflowが証明されるまで待つ。
 
-## Source of truth
+## Prohibited post-cutover operations
 
-- actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
-- repository-owned normative contract: repositoryの該当spec / policy owner
-- work plan / progress / current execution checkpoint: Linear Issue / Comment
-- repositoryにownerがない長期仕様・設計: Linear Document
-- local lane occupancy: actual checkout state + current Linear checkpoint
-
-実装事実についてLinear / Notion / 過去チャットとrepositoryが矛盾する場合はlatest repositoryをauthoritativeとする。
-
-## New Task startup
-
-新規開発Task開始前に:
-
-1. latest Project Contextを読む。
-2. latest GitHub remote stateを確認する。
-3. Linearでexisting Issue / relevant specを確認する。
-4. Contract / Manual E2E / dependency / current commentsを確認する。
-5. current lifecycle phaseを判定しstatusを同期する。
-6. [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) でcurrent executable sliceを決める。
-7. [`CHECKOUTS.md`](./CHECKOUTS.md) の3-lane preflightを行う。
-8. `FREE`な`main` / `sub` implementation laneがある場合だけimplementationを開始する。
-9. lane start時点のlatest remote mainからBase checkpoint SHAを固定する。
-10. Issueを`In Progress`へ進め、lane / Base checkpoint / branch / current sliceを同じstartup checkpointでrecordする。
-
-`Contract: Pending`の調査だけではIn Progressにしない。
-
-implementation laneが2つともBUSYならReady IssueはTodoのまま待つ。3つ目のparallel implementation trackをIssue / branch / worktreeで作らない。
-
-## ChatGPT manages Linear operations
-
-ユーザーにLinearの手動更新を要求しない。
-
-Issue作成、status変更、label更新、relations、Comment、Document更新等は原則ChatGPTが行う。
-
-Linear管理はcheckpointで必要なcurrent-state recordだけをまとめて更新する。細かなcommit logや過去チャットの複製をIssueへ積まない。
-
-## Coding Agent boundary
-
-- ChatGPT: repository調査、contract、slicing、lane assignment、blocking review、merge判断、Manual E2E plan、Linear管理
-- Luna xhigh: implementation / blocking fix / tests / git / integration checkpoint work
-
-local executionは [`CHECKOUTS.md`](./CHECKOUTS.md)、prompt / executor detailは [`CODING-AGENT.md`](./CODING-AGENT.md) をauthorityとする。
-
-web ChatGPTによるdirect GitHub implementationを別execution routeとして管理しない。
-
-## Parallel work model
-
-ParallelismはLinear reservation labelやworker-specific execution labelではなく、**固定2 implementation lane**で管理する。
-
-```text
-main lane -> at most 1 implementation track
-sub lane  -> at most 1 implementation track
-e2e lane  -> at most 1 Manual E2E track
-```
-
-same file / subsystem overlapは開始判断のsignalにはなるが、active lane同士を途中同期して解決しない。real dependency / owner conflictが判明した場合はdependent laneをsafe checkpointで止め、prerequisite merge後のnext integration / restart checkpointで解決する。
+- 新しいSAY Issue / Linear Work / Linear Documentを作成する。
+- Linear Ready Queueを新規Work選定やGitHub Issue readinessの代わりに使う。
+- Bulk status / label / description update、contract migration campaign、mirror history replayを行う。
+- LinearからGitHubへ、またはGitHubからLinearへautomatic / manual reverse syncする。
+- Historical Documentをfreshness reviewと明示的promotionなしにcurrent normative specificationとして扱う。
+- Official two-way syncまたはdisabled Cloudflare mirrorをreactivateする。
 
 ## Loading rule
 
-1. Linear操作・参照ではこの`LINEAR.md`を読む。
-2. Issue作成 / status / labels / readiness / Done / lane checkpointでは`LINEAR-ISSUES.md`を読む。
-3. implementation開始 / pause-resume / sequential PR / integration checkpointでは`IMPLEMENTATION-SLICING.md`を読む。
-4. local execution start / lane capacityでは`CHECKOUTS.md`を読む。
-5. Contract re-auditでは`CONTRACT-REAUDIT.md`。
-6. Projectでは`LINEAR-PROJECTS.md`。
-7. PR linking / merge checkpointでは`LINEAR-GITHUB.md`。
-8. Linear Documentでは`LINEAR-DOCUMENTS.md`。
-9. Manual E2E / contract / capacity / public mirrorはPolicy mapのownerを読む。
+1. 新しいWork authoring、contract、readiness、completionでは[GitHub Issues policy](./ISSUES.md)を読む。
+2. 既存SAY taskが旧`nuinui` execution lifecycle上にある場合だけ、必要なLinear checkpoint ownerを読む。
+3. Linear historyまたはDocument provenanceを調べる場合は該当ownerをhistorical referenceとして読む。
+4. PR linking、review、mergeでは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のcurrent GitHub-native policyを使う。
 
-## Maintenance rule
-
-新しいLinear詳細ruleをこのrouterへ積み上げない。既存ownerへ置き、ここにはroute / shared boundary / loading conditionだけを残す。
+このrouterにはLinearの過去運用や互換checkpointの説明だけを置き、新しいWorkの作成・status・specification手順は定義しない。
