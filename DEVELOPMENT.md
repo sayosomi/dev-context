@@ -144,9 +144,25 @@ Human terminal routeはpersistent worktreeをedit pathとして使わず、GitHu
 
 Task間でworktreeをremove / recreateしない。persistent worktreeをmerge後に`main`へ戻すことは必須ではなく、merged prior topic branchがnormal safe branch transitionまでlocalに残ることも許容する。next Taskを開始するためだけのbranch cleanupも要求しない。
 
-Recurring transition checksはversioned helperへrouteする。production read-back後は、GitHub authoritative `main` SHAと生成artifact blob SHAをcaller expectationとして、`nuinui context-audit <expected-main> <expected-artifact-blob>`でstandard cloneをread-only監査し、成功後だけ`nuinui context-sync <expected-main> <expected-artifact-blob>`でguarded fast-forwardする。persistent worktreeの通常のSequential Task handoffは、ChatGPTが確定したcaller expectationsをHumanが1回の named commandで渡す`nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>`を使う。これは既存の`context_dev_audit_prove`によるread-only audit proofが成功した場合だけ既存の`context_dev_transition_command`へ進み、同じtransition ownerのfresh mutation-boundary revalidationを再実行する。standaloneの`context-dev-audit <expected-branch> <expected-head>`はdiagnosis / explicit audit用に残し、`context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>`もunderlying / explicit public transition boundaryとして残す。後者は同じregistered worktreeを保持したまま、exact mainへのordinary detach/switchとfresh branch create/switchだけを行う。
+Until D3-B activation, recurring transition checks remain on the existing production `nuinui` helper. After authoritative read-back, pass the GitHub `main` SHA and generated-artifact blob SHA as caller expectations: use `nuinui context-audit <expected-main> <expected-artifact-blob>` to inspect the standard clone, then only on success use `nuinui context-sync <expected-main> <expected-artifact-blob>` for guarded fast-forward. For the persistent worktree's normal sequential Task handoff, use `nuinui context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>` with the caller expectations fixed by ChatGPT. It proceeds only after the existing `context_dev_audit_prove` read-only audit succeeds, then reruns the same transition owner's fresh mutation-boundary validation. Keep standalone `context-dev-audit <expected-branch> <expected-head>` for diagnosis / explicit audit, and `context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` as the underlying / explicit public transition boundary. The latter keeps the same registered worktree and performs only an ordinary detach/switch to exact `main` followed by fresh branch create/switch.
 
 `context-dev-transition`、およびそれへ委譲する`context-dev-next`がexact immediate duplicateとして`DEV-CONTEXT ALREADY TRANSITIONED`と`mutation=no-op`を返した場合、そのenvelopeはrequested transitionが安全に完了済みであるterminal proofである。ChatGPTはその結果からcurrent Taskのnormal workflowへ直接継続する。duplicate invocationだけを理由に、追加の`context-dev-audit`、branch / HEAD / worktree-registration paste、最初のtransitionの確認、同じtransitionの再実行、またはgeneric diagnosisを求めない。current branchが進行済み、mismatched、またはambiguousな場合はalready-transitionedとは扱わず、従来どおりfail-closedしてnormal fresh-state routeを使う。このclarificationはsingle-track policyと通常のtransition safety rulesを変更しない。
+
+#### Context-only CLI cutover (D3-B)
+
+The future context-only route is:
+
+```text
+nuinui-context context-audit <expected-main> <expected-artifact-blob>
+nuinui-context context-sync <expected-main> <expected-artifact-blob>
+nuinui-context context-dev-audit <expected-branch> <expected-head>
+nuinui-context context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>
+nuinui-context context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>
+nuinui-context context-check
+nuinui-context last-result
+```
+
+This route becomes effective only after the D3-B policy PR is independently reviewed and successfully merged, the intended change is read back from authoritative GitHub `main`, the standard clone is guardedly synchronized with the existing production `nuinui`, an independent read-only candidate canary passes, and a separate explicit D3-B activation checkpoint is recorded in dev-context [Issue #268](https://github.com/sayosomi/dev-context/issues/268). Until that checkpoint is recorded, keep using the existing `nuinui` context route, including the existing production sync procedure. The new helper does not change sequential development, canonical worktree identity, caller-supplied exact SHA expectations, or fail-closed transition semantics.
 
 #### Fail-closed reuse
 
@@ -221,14 +237,14 @@ merge後は、最初にauthoritative GitHub `main`をread backし、意図した
 
 persistent development worktreeはmerge後もremoveしない。next sequential Taskに利用可能な状態として保持し、次のTask自身がfresh remote/bootstrapとsafe branch transitionを行う。mergeごとに直ちに`main`をcheckoutすることは、後続のsafe operationに必要な場合を除いて要求しない。
 
-通常のsyncは、GitHub authoritative read-backで確定したexpected valuesを埋めたversioned helperで行う。
+Separate D3-B activationまでのstandard-clone syncは、現在のproduction `nuinui` routeで行い、その既存policyとfallbackを維持する。D3-B activation後は、[Context-only CLI cutover](#context-only-cli-cutover-d3-b)の`nuinui-context` routeを使う。後者は独立したartifact / checkout identity確認を必要とし、interruptedまたはambiguousなmutationの後にblind retryや別helperへのautomatic fallbackを行わない。
 
 ```bash
 nuinui context-audit <expected-main> <expected-artifact-blob>
 nuinui context-sync <expected-main> <expected-artifact-blob>
 ```
 
-`context-audit`はmutation-freeであり、production cloneがexpected mainよりbehindでもlocal artifact blobをtargetと一致させることは要求しない。`context-sync`はfresh fetch後にauthoritative main、ancestry、expected-main treeのartifact blobを再検証し、fast-forward後もHEAD / artifact / clean stateをread backする。standard cloneがdirty、`main`以外、またはfast-forward不能なら`BLOCKED`として停止する。versioned helperが未install、stale、broken、またはcurrent operationをsupportしていない場合に限り、同じread-backとmanual safety checkを満たしたfallbackとして`git -C /Users/yosomi/Code/dev-context pull --ff-only`を提示する。reset、stash、force-switch、force-updateで修復しない。Human / local executionが実際に成功するまでsyncedと呼ばない。
+Pre-activationのlegacy `context-audit`はmutation-freeであり、production cloneがexpected mainよりbehindでもlocal artifact blobをtargetと一致させることは要求しない。legacy `context-sync`はfresh fetch後にauthoritative main、ancestry、expected-main treeのartifact blobを再検証し、fast-forward後もHEAD / artifact / clean stateをread backする。standard cloneがdirty、`main`以外、またはfast-forward不能なら`BLOCKED`として停止する。旧versioned helperが未install、stale、broken、またはcurrent operationをsupportしていない場合に限り、activation前は同じread-backとmanual safety checkを満たした既存fallbackとして`git -C /Users/yosomi/Code/dev-context pull --ff-only`を提示する。reset、stash、force-switch、force-updateで修復しない。Human / local executionが実際に成功するまでsyncedと呼ばない。Candidate起動後のrecoveryは、そのcandidate自身のresult storeとcurrent checkout stateを確認して行い、legacy helperやmanual pullへ自動fallbackしない。
 
 ## Ownership boundaries
 
