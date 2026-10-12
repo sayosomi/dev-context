@@ -6,13 +6,13 @@
 
 Work decompositionとimplementation slicingを混同しない。
 
-- Work decomposition: original scope / acceptanceをsame Linear Issueに残すか、independent leaf Issueへ移すか。
+- Work decomposition: native Workのoriginal scope / acceptanceをsame GitHub Issueに残すか、independent leaf Issueへ移すか。compatible pre-existing SAY Workは既存Linear identityを歴史的に保持する。
 - Implementation slicing: same Issueのimplementationを1つまたは複数のsequential slice / PRへどう分けるか。
 - Execution lane: current implementation sliceをどのmanifest-declared implementation laneで実行するか。
 
 Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、lane capacity / checkout isolationは [`CHECKOUTS.md`](./CHECKOUTS.md)、implementation executorは [`CODING-AGENT.md`](./CODING-AGENT.md) がauthority。
 
-以下のlane assignmentとLinear checkpoint recordはcompatible pre-existing SAY executionにだけ適用する。GitHub-native slicingの提案は末尾の独立したsectionに記し、proofと別個のactivation checkpointまではinactiveとする。
+以下のlane assignmentとLinear checkpoint recordはcompatible pre-existing SAY executionにだけ適用する。GitHub-native slicingは末尾のsectionがownerし、一般D1 activation checkpoint後に通常適用する。それまではnative implementation startupを行わない。
 
 same Issueであることはsame branch、same PR、same Luna session、same uninterrupted execution trackを意味しない。
 
@@ -322,13 +322,20 @@ previously passed unaffected unitsはshared owner / premiseが変わらない限
 
 ChatGPTがcurrent sliceのcontract / lane / Base checkpoint / safe checkpointを決め、Lunaにはそのnarrow implementationだけを渡す。詳細は [`CODING-AGENT.md`](./CODING-AGENT.md)。
 
-## Proposed GitHub-native slicing and checkpoints — inactive
+## GitHub-native slicing and checkpoints — after general activation
 
-This proposed section applies only after the Git-only route has passed its
-separate controlled proof and received a later authoritative activation
-checkpoint. Until then, the active C1 prohibition on native implementation
-startup remains in force. Do not import the compatible SAY lane claims or
-Linear checkpoints below into a native Issue.
+Use this policy for ordinary GitHub-native Work after the general D1 activation
+checkpoint is recorded in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268).
+That checkpoint follows independent review, merge, and authoritative dev-context
+`main` read-back of the coordinated policy PR. Until then, native implementation
+startup remains blocked. The completed #1374 pilot was one-off operational proof
+under an expressly waived policy-amendment prerequisite, not strict compliance
+with the unchanged pre-activation policy or general activation. Once the
+checkpoint is recorded, no separate per-Task approval or activation mechanism
+applies.
+
+Do not import the compatible SAY lane claims or Linear checkpoints below into a
+native Issue.
 
 Keep Work decomposition separate from implementation slicing. Keep one
 product implementation active at a time. Choose slice boundaries by independent

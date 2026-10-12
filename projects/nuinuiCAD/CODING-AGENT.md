@@ -4,9 +4,16 @@
 
 nuinuiCADのimplementation / blocking-fix executionを定義する。
 
-### C1 transition boundary
+### GitHub-native and legacy startup boundary
 
-C1後も、このdocumentと下記`SAY-N` / `nuinui handoff` startup proceduresはcompatible pre-existing SAY tasksにだけ適用する。新しいGitHub-native IssueをSAY identifierへ変換したり、このhelperに渡したりしない。GitHub-native implementation startupはD1でGit-only safety workflowが証明されるまで待つ。
+このdocument内の`SAY-N` / `nuinui handoff` startup proceduresは、すでに
+そのlifecycleへ入ったcompatible pre-existing SAY taskにだけ適用する。新しい
+GitHub-native IssueをSAY identifierへ変換したり、legacy helperへ渡したり
+しない。普通のnative implementationは、D1一般activation checkpointが
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268)に記録
+された後、[EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)と
+[CHECKOUTS.md](./CHECKOUTS.md)のGit-only routeを使う。checkpoint前はstartupを
+止め、checkpoint後にper-Task approvalを追加しない。
 
 Shared role boundary / prompt content / Git handoffは [`../../shared/CODING-AGENT-WORKFLOW.md`](../../shared/CODING-AGENT-WORKFLOW.md) に従う。Prompt language / formattingは [`../../shared/AGENT-PROMPT-STYLE.md`](../../shared/AGENT-PROMPT-STYLE.md) に従い、prompt publicationのmachine-checkable gateは [`../../shared/AGENT-PROMPT-PREFLIGHT.md`](../../shared/AGENT-PROMPT-PREFLIGHT.md) に従う。
 
@@ -14,12 +21,17 @@ Project-specific ruleとして、nuinuiCADの**source-code implementation / bloc
 
 GPT-6 Astraのevaluator explorationは、source implementationとは別のnon-implementation roleであり、その唯一のproject ownerは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)である。この探索役割は、本書が定める通常のimplementation Coding Agent ownershipを弱めず、競合もしない。
 
-### Proposed GitHub-native Work agent contract — inactive pending proof
+### GitHub-native Work agent contract — after general activation
 
-This section is a future proposal and does not change the active C1 startup
-prohibition. A GitHub-native implementation agent may use this route only after
-separate proof and authoritative activation. The first controlled proof also
-requires bounded Human approval and C1 policy reconciliation in advance.
+This route applies to ordinary future GitHub-native implementation after the
+coordinated policy PR is independently reviewed, merged, read back on
+authoritative dev-context `main`, and the activation checkpoint is recorded in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). Until
+then, native startup is blocked. The completed #1374 pilot was successful
+one-off operational proof under the separately recorded Human waiver of its
+policy-amendment prerequisite; it was not strict compliance with the unchanged
+pre-activation policy and did not itself activate general startup. After the
+checkpoint, no separate per-Task approval or activation mechanism applies.
 
 Agent responsibilities:
 
@@ -51,7 +63,7 @@ or new dependencies. ChatGPT owns those decisions. Shared requirements for
 prompt completeness, freshness, exact-head review, direct English style, and
 completion reporting continue to apply.
 
-This GitHub-native route is proposed and is not yet generally executable.
+Once the global activation checkpoint above is recorded, this is the normal GitHub-native implementation-agent route.
 
 ### Documentation / policy direct execution exception
 
@@ -103,7 +115,7 @@ write直前にlatest remote SHAとtarget file freshnessを再確認する。fres
 
 開始前に[`CHECKOUTS.md`](./CHECKOUTS.md)のtransitional exception admission proofを満たし、既存product checkoutがcleanで、active implementation claim / audit reservationがなく、unrelated workがないことを確認する。exceptional sliceでは`nuinui begin`、`nuinui handoff`、`nuinui release`を要求せず、Linear checkpoint/statusやdurable claim/checkpoint metadataを作らない。既存metadataを変更・削除せず、別implementation / auditとの並行実行も認めない。実装AgentのGit-only startup境界は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)がownerする。
 
-PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。このPhase B exceptionはhistoricalである。C1後はGitHub Issue bodyがcurrent Work contractをownerするが、新しいnative Issueの実装はD1まで開始しない。既存SAY tasksだけがC1 bridgeに沿ってcurrent lifecycleを継続できる。
+PR descriptionには[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のexact cross-repository referenceを使う。通常のGitHub CI、independent pushed-head blocking review、protected PR / safe merge conditionsはすべて維持し、この例外ではparent migration Issueをcloseしない。production authority transferは、production Cloudflare write barrierのdeployとread-back verification後に限る。このPhase B exceptionはhistoricalである。C1後はGitHub Issue bodyがcurrent Work contractをownerする。compatible pre-existing SAY tasksだけがlegacy lifecycleを継続し、一般activation checkpoint後の新しいnative IssueはGit-only routeを使う。
 
 Manual E2E executorはこのpolicyではなく [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
 
@@ -214,7 +226,7 @@ Documentation / policy direct execution exceptionとnarrow CI/tooling direct exe
 
 Coding Agent workspace / project root、implementation-agent processのinitial working directory、またはsession開始時の`pwd`はimplementation laneを定義しない。
 
-implementation laneのauthorityは、ChatGPTがcurrent sliceへ割り当ててLinear checkpointへ記録したmanifest-declared checkout pathである。
+compatible pre-existing SAY taskでは、implementation laneのauthorityはChatGPTがcurrent sliceへ割り当て、legacy Linear checkpointへ記録したmanifest-declared checkout pathである。GitHub-native Workはlegacy lane claim / Linear checkpointを使わず、[CHECKOUTS.md](./CHECKOUTS.md)と[EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)が定める単一checkout Git-only admissionを使う。
 
 具体的なlane nameとpathはcurrent `LANES.conf`から読む。lane nameからpathやroleを推測しない。
 

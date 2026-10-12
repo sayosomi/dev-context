@@ -25,7 +25,7 @@ Issue Authoringはrepository implementationではない。
 - implementation branch / worktreeを作らない。
 - product code implementation / blocking fixを開始しない。
 - Readyになっただけではimplementationを開始しない。
-- GitHub-native Issueのimplementation startupはD1でGit-only safety workflowが証明されるまで行わない。
+- GitHub-native IssueをSAY-only helperへ渡さない。一般D1 activation checkpoint後のimplementationはGit-only routeを使い、checkpoint前はstartupを保留する。
 
 Issue authoring / freshness / contract stateは [`ISSUES.md`](./ISSUES.md)、判断詳細は [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) をauthorityとする。
 
@@ -106,7 +106,7 @@ Issue Authoringのmock作成はexecution laneをclaimするrepository implementa
 
 Issue / contractがReadyになっても、そのchatだけを理由にimplementationを開始しない。
 
-Ready contractをGitHub Issue bodyへ記録する。GitHub-native IssueはD1が完了するまでimplementationへ渡さない。既存SAY taskを継続する場合はその互換範囲内だけで [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) のlegacy startup boundaryへ渡す。
+Ready contractをGitHub Issue bodyへ記録する。一般D1 activation checkpoint後は新しいGitHub-native Issueを[`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md)のGit-only routeへ渡す。checkpoint前は実装を保留する。compatible pre-existing SAY taskの継続だけは、その範囲内で同documentのlegacy startup boundaryへ渡す。Ready state自体は別のper-Task activationではない。
 
 ## Loading rule
 

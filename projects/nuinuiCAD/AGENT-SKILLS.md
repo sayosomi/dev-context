@@ -109,7 +109,7 @@ skill selectionは`main` / `sub`のどちらでも同じ。
 共通のpacket semanticsは [`../../shared/skills/work-packet/SKILL.md`](../../shared/skills/work-packet/SKILL.md) がownerする。nuinuiCAD側では、そのshared skillを使い、次のproject-specific authority / state modelだけをoverlayする。
 
 - Read [`projects/nuinuiCAD/README.md`](./README.md) first as the nuinuiCAD project entrypoint before applying this project-specific authority / state overlay.
-- current contract authorityはLinearのcurrent Work / Issueとする。
+- current Work / contract authorityはGitHub Issue bodyとする。Materialなevidence / decisionsはIssue commentsに記録し、execution factsはGitHub commits / PRs / checksから確認する。
 - repository / declared-lane / checkpoint stateは [`CHECKOUTS.md`](./CHECKOUTS.md)、[`CODING-AGENT.md`](./CODING-AGENT.md)、およびshared declared-lane ownerに従う。
 - active interim routingは [`CODEX-ONLY-INTERIM.md`](./CODEX-ONLY-INTERIM.md) がActiveな場合に読み、現在のruleを記録する。
 - recipient / executorごとのroutingは [`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md)、[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)、[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)、[`MANUAL-E2E.md`](./MANUAL-E2E.md)、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) のうちrelevantなownerを読む。
@@ -118,4 +118,4 @@ skill selectionは`main` / `sub`のどちらでも同じ。
 
 このoverlayはshared skillのfreshness、unknown preservation、no-guessing、no-write、stop-condition semanticsを弱めない。policy本文をpacketへ複製せず、競合・stale evidence・不明ownerは推測で埋めず停止する。
 
-すべてのskillはparent task、repository `AGENTS.md`、current Linear contract、declared-lane policyを上書きしない。
+すべてのskillはparent task、repository `AGENTS.md`、current GitHub Issue contract、declared-lane policyを上書きしない。Linear checkpointはcompatible pre-existing SAY tasksに限る。

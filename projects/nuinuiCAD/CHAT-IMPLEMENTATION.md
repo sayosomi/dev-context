@@ -4,9 +4,15 @@
 
 Implementation chatは、対応するimplementation startup policyで許可されたWorkのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
 
-### C1 transition boundary
+### GitHub-native and legacy startup boundary
 
-C1後のcurrent contractはGitHub Issueがownerするが、既存のSAY-only `nuinui` helperには新しいGitHub-native Issueを渡さない。GitHub-native Workのimplementation startupはD1でGit-only safety workflowが証明されるまで待つ。以下の既存`SAY-N` / `nuinui begin` / `handoff` / `release` procedureは、すでにそのlifecycleに入っているcompatible pre-existing SAY taskにだけ適用する。
+GitHub Issueはcurrent Work contractをownerする。普通の新規GitHub-native
+implementationは、D1の一般activation checkpointがdev-context #268に記録
+された後、Git-only routeへ進む。checkpoint前はstartupを停止する。checkpoint
+後に別のper-Task approval / activationは追加しない。新しいnative IssueをSAY-only
+`nuinui` helperへ渡さない。以下の`SAY-N` / `nuinui begin` / `handoff` /
+`release` procedureは、すでにそのlifecycleへ入ったcompatible pre-existing
+SAY taskにだけ適用する。
 
 実行capacityはchat数ではなく[`LANES.conf`](./LANES.conf)に宣言されたimplementation laneで決まる。各宣言laneは同時に1つのimplementation generationだけを保持する。
 
@@ -31,60 +37,59 @@ Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)
 
 ## Implementation start / resume completion rule
 
-### Proposed GitHub-native implementation lifecycle — inactive pending proof
+### GitHub-native implementation lifecycle — after general activation
 
-This is the proposed lifecycle for future GitHub-native Work. The active C1
-startup prohibition remains in force, so this section is not an executable
-startup route. Existing compatible SAY execution continues under the separate
-procedure below.
+This is the ordinary route for future GitHub-native Work after the global D1
+activation checkpoint is recorded in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). The
+checkpoint follows independent review, merge, and authoritative dev-context
+`main` read-back of the coordinated policy PR. Before that checkpoint, stop
+native implementation startup. After it, no separate per-Task approval or
+activation mechanism is required. The completed #1374 pilot was one-off
+operational proof under an expressly waived policy-amendment prerequisite; it
+was not strict compliance with the pre-activation policy and did not itself
+activate general startup.
 
-After a separately authorized controlled proof and a distinct general
-activation checkpoint, an implementation chat will:
+For each authorized implementation Task, the implementation chat will:
 
 1. Resolve the canonical GitHub Issue body and material comments. Re-audit
-   implementation readiness, dependencies, latest product code, normative
-   specifications, and relevant policy owners.
-2. Confirm that the Git-only route has a separate authoritative activation
-   checkpoint after the proof. Before that checkpoint, stop native
-   implementation startup.
-   Before the first controlled proof itself, obtain the separately approved
-   narrow exception and reconcile the still-active C1 startup owners.
-3. Perform the proposed checkout and startup proof in
-   [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md) and
-   [CHECKOUTS.md](./CHECKOUTS.md).
-4. Generate the complete implementation-agent prompt from the approved
-   contract, acceptance, verification, and non-goals, following shared prompt
-   style and completeness owners.
-5. Have the agent implement only the authorized slice, run focused tests and
-   authorized verification, commit, and push normally to the exact topic branch.
-6. Independently review the exact pushed SHA in ChatGPT. Use the current
-   [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) owner for protected required CI,
-   blocking review, and
-   reviewed auto-merge or ordinary merge; do not bypass its head, base,
+   scope, acceptance, verification, non-goals, dependencies, latest product
+   code, normative specifications, relevant policy owners, and readiness.
+2. Perform the exact checkout, competing-work, legacy-metadata, new-Task
+   read-only preflight, or same-Task pushed-checkpoint checks owned by
+   [CHECKOUTS.md](./CHECKOUTS.md) and
+   [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md).
+3. Generate the complete implementation-agent prompt from the current Issue
+   contract, following shared prompt style and completeness owners.
+4. Have the agent implement only the authorized slice, run focused tests and
+   required verification, commit, and push normally to the exact topic branch.
+5. Independently review the exact pushed SHA in ChatGPT. Use
+   [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) for protected required CI, blocking
+   review, reviewed auto-merge or ordinary merge; do not bypass its head, base,
    authorization, or CI checks.
-7. Link the PR with Refs #N. Use Closes #N only if the merge satisfies every
-   acceptance condition, including required Human Manual E2E, under the
-   existing PR policy.
-8. After confirmed merge, read back the authoritative GitHub merge and main,
+6. Link the PR with `Refs #N`. Use `Closes #N` only if merge satisfies all
+   acceptance, including required Human Manual E2E, under the existing PR
+   policy.
+7. After confirmed merge, read back the authoritative GitHub merge and `main`,
    the Issue, and remaining acceptance. Return the clean checkout to updated
-   main using the reset-free transition in [CHECKOUTS.md](./CHECKOUTS.md).
-9. Keep incomplete acceptance and required Human Manual E2E open. Record
+   `main` using the reset-free transition in [CHECKOUTS.md](./CHECKOUTS.md).
+8. Keep incomplete acceptance and required Human Manual E2E open. Record
    material implementation, review, verification, and merge checkpoints in
    GitHub Issue comments. Do not write new-Work lifecycle or lane semantics to
    Linear.
 
-For an interrupted run, inspect current GitHub PR, commit, remote topic, main,
+For an interrupted run, inspect current GitHub PR, commit, remote topic, `main`,
 and Issue state, then inspect the exact local checkout and status before
-resuming. Continue only when both local and remote state match a verified
-pushed checkpoint and the current contract remains valid. Lost terminal output
-does not authorize replaying commit, push, merge, or another mutation. Dirty,
-missing, or mismatched state stops for review and recovery; preserve all
-changes.
+resuming. Continue only when local and remote state match a verified pushed
+checkpoint and the current contract remains valid. Lost terminal output does
+not authorize replaying commit, push, merge, or another mutation. Dirty, missing,
+or mismatched state stops for review and recovery; preserve all changes.
 
 Do not apply legacy Linear status, lane-release, claim, or checkpoint semantics
 to a new native Issue. The existing SAY implementation procedure remains
-separate and functional. This document does not declare Phase C2 complete or
-retire any existing helper.
+separate and functional for compatible pre-existing tasks. Evaluator audit and
+Manual E2E remain under their separate policies; this document does not retire
+any existing helper.
 
 ### Transitional Cloudflare mirror shutdown startup exception — #268 only
 
@@ -97,11 +102,12 @@ SAY Linear Issue or require `nuinui begin`, `nuinui handoff`, or
 `nuinui release`. This is still source-code work for the implementation Coding
 Agent, not a ChatGPT direct-execution exception. Do not record Linear status or
 checkpoint for this slice, and do not alter durable lane metadata. This Phase B
-exception is historical. C1 makes GitHub Issues the Work / contract authority;
-the SAY-only lifecycle below remains for compatible pre-existing SAY tasks, and
-new GitHub-native implementation waits for D1 as stated above.
+exception is historical. C1 makes GitHub Issues the Work / contract
+authority. The SAY-only lifecycle below remains for compatible pre-existing SAY
+tasks; after the general D1 activation checkpoint, new GitHub-native work follows
+the Git-only route above.
 
-Compatible pre-existing SAY taskについてHumanが開始 / 再開 / 続行を指示した場合、remote / required legacy checkpoint / policyの再確認やblocker説明だけで停止しない。新しいGitHub-native Issueのimplementation requestはD1まで保留し、旧helperへhandoffしない。
+Compatible pre-existing SAY taskについてHumanが開始 / 再開 / 続行を指示した場合、remote / required legacy checkpoint / policyの再確認やblocker説明だけで停止しない。Activation checkpoint前のGitHub-native implementation requestは保留し、旧helperへhandoffしない。checkpoint後は上記Git-only routeへ進む。
 
 その応答は次のどちらかへ到達して完了する。
 

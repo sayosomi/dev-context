@@ -4,9 +4,19 @@
 
 ## Activation boundary
 
-このpolicyは、承認済みC1 owner一式を含むPRがmergeされ、authoritative GitHub `main`をread backして変更が存在することを確認した後にだけ有効になる。C1 PRの作成・review中やmerge前にcutover済みと扱わない。Workerのdisabled状態だけでもauthorityは移らない。
+C1 GitHub Issues Work authority is active after its coordinated owner PR was
+merged and authoritative GitHub `main` was read back. The Worker disabled mode
+alone is not an authority-transfer signal.
 
-有効化後、新しいWorkのauthoringにはGitHub Issuesを使える。ただし、GitHub-native Issueのimplementation startupはD1でGit-only safety workflowが実証されるまで開始しない。C1は既存の `nuinui begin` / `handoff` / `release` lifecycleを置き換えない。
+The separate D1 general Git-only route becomes effective only after its
+coordinated policy PR is independently reviewed, merged, read back on
+authoritative dev-context `main`, and recorded as the activation checkpoint in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). The
+completed #1374 pilot was one-off operational proof under a Human-waived
+policy-amendment prerequisite, not strict compliance with the unchanged
+pre-activation policy and not general activation. Until the general checkpoint
+is recorded, do not start ordinary GitHub-native implementation. After it, use
+the Git-only route without a separate per-Task approval or activation step.
 
 ## Authority and identity
 
@@ -43,7 +53,7 @@ Issue作成、contract更新、readiness変更、completionの直前に、対象
 
 Humanまたは別chatのwriteをstale snapshotから消さない。独立した追記はreconcileし、scope / acceptance / decisionが競合して一意に統合できない場合はwriteを止めてHuman判断を求める。write後もIssueを再取得して内容・stateを確認する。
 
-`contract:ready`はimplementation開始許可ではない。implementation直前にcurrent owner、dependencies、acceptance、latest repository、execution routeを再auditする。fact driftだけでcontract choiceが変わらなければReadyを保ってrefreshする。Materialな選択が発生すればPendingへ戻し、必須prerequisiteを失えばBlockedにする。GitHub-native implementation自体はD1の実証完了まで開始しない。
+`contract:ready`はimplementation開始許可ではない。implementation直前にcurrent owner、dependencies、acceptance、latest repository、execution routeを再auditする。fact driftだけでcontract choiceが変わらなければReadyを保ってrefreshする。Materialな選択が発生すればPendingへ戻し、必須prerequisiteを失えばBlockedにする。一般activation checkpoint後のimplementation startupは、current Issue contractと既存Git-only safety policyに従う。contract readinessはWorkの状態であり、D1に追加のper-Task approval / activationを要求しない。
 
 ## Existing mirror history and Linear compatibility
 
@@ -53,4 +63,4 @@ Linearは新しいWorkやDocumentの作成先ではなく、既存SAY taskの旧
 
 ## Maintenance boundary
 
-本documentはGitHub Issueのauthoring、current contract、readiness、freshness、completion、history preservationをownerする。Cutover checkpointは[#268](https://github.com/sayosomi/dev-context/issues/268)、GitHub PR linking / mergeは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)、checkout / implementation lifecycleはlegacy互換の各ownerと後続D1 policyがownerする。個別TaskのSHA、branch、progressをこのdurable policyへ保存しない。
+本documentはGitHub Issueのauthoring、current contract、readiness、freshness、completion、history preservationをownerする。Cutover checkpointは[#268](https://github.com/sayosomi/dev-context/issues/268)、GitHub PR linking / mergeは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)、checkout / implementation lifecycleは[`CHECKOUTS.md`](./CHECKOUTS.md)、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)、および各role ownerが定める。個別TaskのSHA、branch、progressをこのdurable policyへ保存しない。

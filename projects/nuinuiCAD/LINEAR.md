@@ -29,14 +29,14 @@ SAY identifier、Linear Issue / Document identity、GitHub linksを保存する�
 | Historical Linear Documents and provenance | [Linear Document policy](./LINEAR-DOCUMENTS.md) |
 | Current GitHub PR linking / review / merge | [GitHub PR policy](./LINEAR-GITHUB.md) |
 | Current implementation facts | latest product repository |
-| Checkout / execution lifecycle | [Checkout policy](./CHECKOUTS.md); do not replace its existing lifecycle in C1 |
+| Checkout / execution lifecycle | [Checkout policy](./CHECKOUTS.md); compatible pre-existing SAY tasks retain the legacy lifecycle |
 | Manual E2E judgment / Human executor | [Manual E2E execution rules](./MANUAL-E2E.md) |
 
 ## Compatible pre-existing SAY execution
 
 既存SAY taskがすでにcurrent `nuinui` lifecycleへ入っている場合だけ、そのlifecycle checkpointで要求されるstatus / branch / slice / release factsをLinearへ最小限記録してよい。既存checkpointをfreshに読んで必要な事実を確認し、余分なtranscript、commit log、mirror repair、contract rewriteを追加しない。
 
-この互換運用は新規SAY Issue / Linear Work / Documentを作成せず、新しいLinear-driven lifecycleを開始しない。GitHub-native Workのcontractやexecution evidenceをLinear側へ複製しない。GitHub-native Issueのimplementation startupはD1でGit-only safety workflowが証明されるまで待つ。
+この互換運用は新規SAY Issue / Linear Work / Documentを作成せず、新しいLinear-driven lifecycleを開始しない。GitHub-native Workのcontractやexecution evidenceをLinear側へ複製しない。一般D1 activation checkpoint後のGitHub-native implementationはGit-only routeを使い、Linear lifecycleへ渡さない。
 
 ## Prohibited post-cutover operations
 

@@ -42,24 +42,35 @@ Capacity and routing rules:
 
 1つでも確認できない、またはstateがambiguousなら開始しない。existing durable metadataを削除、書換え、初期化、またはexceptionのために解放しない。既存claim / reservationがある場合はそのownerの通常lifecycleが結論するまで待つ。
 
-この一sliceでは上記auditの後、fresh verified `main`からordinary topic branchを使い、`nuinui begin` / `nuinui handoff` / `nuinui release`を要求しない。durable claim/checkpoint metadataを作成・変更しない。既存のGitHub CI、pushed-head independent blocking review、PR protection、safe merge gateは維持する。これはPhase B限りのadmission例外であり、その他のimplementation / audit / Manual E2Eでは既存lane lifecycleが引き続き必須である。
+Phase Bでは上記auditの後、fresh verified `main`からordinary topic branchを使い、`nuinui begin` / `nuinui handoff` / `nuinui release`を要求しない1つのsequential sliceを許可した。durable claim/checkpoint metadataは作成・変更せず、既存のGitHub CI、pushed-head independent blocking review、PR protection、safe merge gateを維持した。この例外はPhase Bに限られ、一般activation checkpoint後のGitHub-native implementationは上記Git-only routeを使う。compatible pre-existing SAY implementationはlegacy lifecycleを継続する。Evaluator auditとHuman Manual E2Eはそれぞれ別の既存policyに従う。
 
-## Proposed GitHub-native single-checkout Git workflow — inactive until proof
+## GitHub-native single-checkout Git-only workflow — general activation gate
 
-This is the proposed D1 policy for GitHub-native nuinuiCAD Work. C1 GitHub
-Issues authority is active, but its prohibition on ordinary GitHub-native
-implementation startup remains active. This documentation does not authorize a
-native implementation, pilot, evaluator audit, product checkout transition, or
-legacy helper retirement.
+This D1 workflow is the normal startup and continuation route for ordinary
+future GitHub-native nuinuiCAD implementation Tasks. It becomes effective only
+after the coordinated policy PR is independently reviewed, merged, read back on
+authoritative dev-context `main`, and recorded as the activation checkpoint in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). Until
+that global checkpoint is recorded, GitHub-native implementation startup stays
+blocked. Once recorded, this policy requires no separate per-Task approval or
+activation step.
 
-The proposed route uses only the existing product checkout at
-/Users/yosomi/Code/nuinuiCAD. It does not change the manifest, declared-lane
-classification, or the existing claim, lock, reservation, initialization, or
-release algorithms. Until a separate controlled proof and later activation
-checkpoint succeed, use the current compatible SAY execution lifecycle for
-Work already admitted to it.
+The completed [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
+proved the Git-only operational cycle under the one-run policy-amendment waiver
+recorded in [#268 comment 6125057400](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6125057400).
+It was successful one-off operational proof, not strict compliance with the
+unchanged pre-activation policy and not general activation. This coordinated
+policy change is the separate general-activation step.
 
-### Proposed startup admission
+The route uses only the existing product checkout at
+`/Users/yosomi/Code/nuinuiCAD`. It does not change the manifest, declared-lane
+classification, or existing claim, lock, reservation, initialization, or
+release algorithms. Compatible pre-existing SAY tasks already admitted to the
+legacy lifecycle continue there until a separate retirement checkpoint.
+Evaluator audits remain under their distinct reservation policy; Manual E2E
+policy is unchanged.
+
+### Startup admission
 
 Before a new GitHub-native Task, ChatGPT and the implementation agent must
 independently re-establish the following from current GitHub and local state:
@@ -77,8 +88,8 @@ independently re-establish the following from current GitHub and local state:
   execution occupancy cannot be established, stop.
 - Apply the legacy idle classifier according to the entry type. For a new Task,
   the checkout must be in the declared idle `main` form and the existing
-  read-only nuinui preflight must report `FREE` / `preflight=PASS` before the
-  controlled route starts. For a same-Task native continuation on its expected
+  read-only nuinui preflight must report `FREE` / `preflight=PASS` for
+  new-Task idle-main admission. For a same-Task native continuation on its expected
   topic branch, do not require the legacy preflight to classify the checkout as
   `FREE` or return `PASS`. A clean topic branch without a legacy slot may be
   `BLOCKED` under the existing classifier; that known classification difference
@@ -185,34 +196,32 @@ origin/main. If switching or fast-forwarding is unsafe, stop. Keep the merged
 topic branch and unrelated local branches; do not reset main or delete local
 branches as cleanup.
 
-### Controlled proof and activation boundary
+### D1 pilot record and general activation boundary
 
-The first full controlled proof is a separate future operation. It requires
-fresh physical checkout and legacy-ownership evidence plus explicit Human
-approval for a one-run exception to the active startup prohibition. Approval
-must name the single proof Issue, exact checkout, expected base, topic branch,
-approved contract, acceptance, verification, non-goals, and bounded run; an
-ordinary request to implement and this D1 documentation change are not that
-approval.
+The controlled [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
+completed the one-off Git-only operational cycle: [PR #1375](https://github.com/sayosomi/nuinuiCAD/pull/1375)
+passed independent exact-pushed-head review and required CI run
+[38256280538](https://github.com/sayosomi/nuinuiCAD/actions/runs/38256280538),
+was merged, and authoritative product `main` was read back. The final clean,
+reset-free local return was reported by the Human in
+[#1374 comment 6125424675](https://github.com/sayosomi/nuinuiCAD/issues/1374#issuecomment-6125424675).
 
-Before the run, ChatGPT must re-audit and coherently reconcile every active
-owner that currently blocks native startup. This includes project ISSUES.md,
-CHAT-WORKFLOW.md, CHAT-COORDINATOR.md, CHAT-AUTHORING.md,
-CONTRACT-DECISIONS.md, CONTRACT-REAUDIT.md, LINEAR.md, and
-LINEAR-GITHUB.md, plus any current README, implementation-chat, agent, or
-handoff route that carries the same gate. The coordinated policy must permit
-only the named proof run and keep general native startup inactive. Re-read the
-updated authoritative owners before starting. If this narrow exception cannot
-be made coherent, do not run the proof.
+The Human expressly waived the pilot's prior policy-owner amendment
+prerequisite for that single run in
+[#268 comment 6125057400](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6125057400).
+The pilot therefore records successful one-off operational proof under that
+waiver; it must not be described as strict compliance with the unchanged
+pre-activation policy or as general activation.
 
-The proof must demonstrate one full GitHub-native Issue implementation through
-startup admission, sequential branch implementation, focused verification,
-commit and push, independent blocking review of the exact pushed HEAD, required
-CI, PR merge, authoritative main read-back, and a safe reset-free checkout
-transition. General GitHub-native startup remains inactive until a distinct
-authoritative activation checkpoint
-records that the complete proof passed. Evaluator-audit migration and runtime
-helper retirement are later, separate Phase D proof gates.
+General GitHub-native startup becomes effective only after this coordinated
+policy PR is independently reviewed, merged, read back on authoritative
+dev-context `main`, and recorded as the activation checkpoint in
+[#268](https://github.com/sayosomi/dev-context/issues/268). Before that
+checkpoint, native implementation startup remains blocked. After it, the
+Git-only workflow above is the ordinary route and requires no additional
+per-Task approval or activation mechanism. Evaluator-audit replacement,
+product legacy-helper retirement, and Human Manual E2E policy remain separate
+work and are not activated by this checkpoint.
 
 ## Human-authorized forensic worktree exception
 

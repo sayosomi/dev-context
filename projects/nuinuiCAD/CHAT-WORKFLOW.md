@@ -151,7 +151,7 @@ Human report / idea
 -> Issue Authoring chat
 -> GitHub Issue body / comments and contract readiness
 -> Coordinator selects Work
-   -> new GitHub-native Issue: implementation waits until D1 proves the Git-only workflow
+   -> new GitHub-native Issue: after the general D1 activation checkpoint, use the Git-only implementation route
    -> compatible pre-existing SAY task: existing `nuinui` implementation lifecycle
       -> implementation merge + authoritative read-back
       -> prove remaining acceptance is required Manual E2E only
