@@ -29,18 +29,18 @@ Capacity and routing rules:
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
 
-## Transitional Cloudflare mirror shutdown and repair exception — #268 only
+## Historical Phase B Cloudflare mirror shutdown and repair exception — #268 only
 
-通常のsource-code implementationは、declared laneのLinear ownershipと`nuinui begin` / implementation-agent `nuinui handoff` / `nuinui release`を使う。例外として、`sayosomi/dev-context#268` のPhase Bで認められた既存Cloudflare mirror Worker write-barrier / shutdown実装、ならびにcutover前に必要な既存Linear→GitHub mirrorのlossless reconciliation / history repair（Linear-to-GitHub identity mapping、status drift、Issue / Document comments、Linear Document reconciliation）と、その範囲を証明するfocused tests / configurationだけは、既存のnuinuiCAD checkoutを使うsequential Git workflowで実施してよい。repairは既存mirror recordに限り、GitHub Issueのidentityや既存historyを保持する。Issueのdelete / recreate、historyの欠落・重複、reverse sync、または一般的なnuinuiCAD implementationを許可しない。新しいlane、worktree、clone、SAY Issue、またはdurable implementation generationは作らない。
+このsectionは歴史的なPhase B exceptionを記録する。declared-lane Linear ownershipと`nuinui begin` / implementation-agent `nuinui handoff` / `nuinui release`は、すでにそのlifecycleへadmitされたcompatible pre-existing SAY taskだけに適用する。一般activation checkpoint後のordinary GitHub-native implementationは下記Git-only routeを使い、legacy lifecycleへ入らない。Phase Bで認められたのは、`sayosomi/dev-context#268` の既存Cloudflare mirror Worker write-barrier / shutdown実装、ならびにcutover前に必要な既存Linear→GitHub mirrorのlossless reconciliation / history repair（Linear-to-GitHub identity mapping、status drift、Issue / Document comments、Linear Document reconciliation）と、その範囲を証明するfocused tests / configurationだけであり、既存のnuinuiCAD checkoutを使うsequential Git workflowで実施した。repairは既存mirror recordに限り、GitHub Issueのidentityや既存historyを保持する。Issueのdelete / recreate、historyの欠落・重複、reverse sync、または一般的なnuinuiCAD implementationを許可しない。新しいlane、worktree、clone、SAY Issue、またはdurable implementation generationは作らない。
 
-このexceptional workflowへ入る前に、read-onlyなcheckout auditで次をすべて確認する。
+Phase B当時、このexceptional workflowの開始前には、read-onlyなcheckout auditで次をすべて確認する必要があった。
 
 - 対象は既存manifest-declared nuinuiCAD checkoutであり、repository / registered-worktree identityとfresh remote `main`が明確である。
 - active implementation claim、audit reservation、mutation lock、release-pending / tombstone、または未解決のdurable ownership stateがない。
 - checkoutがcleanで、current branch / HEADが説明可能であり、unrelated tracked / untracked workがない。
 - 他のimplementationまたはevaluator auditが同じproduct checkoutを使用中でなく、このsliceを別作業と並行させない。
 
-1つでも確認できない、またはstateがambiguousなら開始しない。existing durable metadataを削除、書換え、初期化、またはexceptionのために解放しない。既存claim / reservationがある場合はそのownerの通常lifecycleが結論するまで待つ。
+1つでも確認できない、またはstateがambiguousなら開始を止める。existing durable metadataを削除、書換え、初期化、またはexceptionのために解放してはならず、既存claim / reservationがある場合はそのownerの通常lifecycleが結論するまで待つ。
 
 Phase Bでは上記auditの後、fresh verified `main`からordinary topic branchを使い、`nuinui begin` / `nuinui handoff` / `nuinui release`を要求しない1つのsequential sliceを許可した。durable claim/checkpoint metadataは作成・変更せず、既存のGitHub CI、pushed-head independent blocking review、PR protection、safe merge gateを維持した。この例外はPhase Bに限られ、一般activation checkpoint後のGitHub-native implementationは上記Git-only routeを使う。compatible pre-existing SAY implementationはlegacy lifecycleを継続する。Evaluator auditとHuman Manual E2Eはそれぞれ別の既存policyに従う。
 
@@ -293,7 +293,9 @@ canonical interface:
 nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...]
 ~~~
 
-### Preflight diagnostic / routing rule
+### Legacy SAY preflight diagnostic / routing rule
+
+このdiagnostic / routing手順はcompatible pre-existing SAY taskだけに適用する。Native GitHub new Taskは上記Git-only admissionに定めたread-only `nuinui preflight`とindependent safety checksを使い、same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証する。native Taskをlegacy `begin` / `handoff`へrouteしない。
 
 `nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation Luna handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
 
@@ -386,7 +388,7 @@ active slice途中では次を行わない。
 
 remote `main` advanceは観測してよい。contract / ownershipを無効化する重大な変更が見つかった場合はcurrent workを安全にremote保存してcheckpointで停止し、途中同期して継続しない。
 
-## Integration checkpoint
+## Legacy SAY integration checkpoint
 
 他line / latest `main`を取り込めるのはcurrent sliceが明確なintegration checkpointへ到達したときだけ。
 
@@ -405,7 +407,9 @@ first / routine Integration checkpointで、ChatGPTがBase checkpointとcurrent 
 
 このhelperはnew lane claim / Base refresh / source implementation routeではない。current durable slotをconsumeし、exact Issue / claim / branch / Base / local topic / remote topic / current main / clean stateをmutation boundaryで再検証する。conflict resolutionやintegration fixは行わず、conflictまたはpre-commit failureではoriginal topic checkpointへのexact rollbackを証明する。push failure後はverified local merge commitを保持してfresh diagnosisへ戻す。
 
-## Durable implementation ownership
+## Compatible pre-existing SAY durable implementation ownership
+
+以下のdurable lane ownership、lane start / resume / release、Linear checkpoint手順は、compatible pre-existing SAY taskがすでにadmittedされたlegacy lifecycleだけに適用する。Native GitHub Workは上記D1 Git-only routeを使い、legacy slotをclaimせずLinear checkpointを記録しない。
 
 ### Authority
 
