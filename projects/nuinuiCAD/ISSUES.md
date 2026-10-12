@@ -18,11 +18,15 @@ pre-activation policy and not general activation. Until the general checkpoint
 is recorded, do not start ordinary GitHub-native implementation. After it, use
 the Git-only route without a separate per-Task approval or activation step.
 
-The D2-A policy preparation separately defines one fixed-SHA reservation-free
-Sol audit pilot. It does not itself start or prove the D2-B pilot, and D1
-activation does not activate reservation-free audits generally. General audit
-use requires real pilot evidence, independent verification, and a separate
-explicit checkpoint in #268.
+Reservation-free fixed-SHA audits are the normal route for new GitHub-native
+Research/Improvement evaluator Work only after the D2-C policy PR is
+independently reviewed and merged, its changes are read back on authoritative
+dev-context `main`, and a separate explicit activation checkpoint is recorded
+in #268. The D2-B pilot supplied historical operational proof, but neither its
+completion nor D1 implementation activation activates the evaluator route.
+Until all D2-C activation conditions are met, do not start a new
+reservation-free evaluator audit. The D2-B SHA remains historical evidence,
+not a fixed revision for later audits.
 
 ## Authority and identity
 
@@ -57,14 +61,18 @@ Use explicit comment headings and record:
 - `Evaluator audit final checkout proof`: unchanged repository/worktree
   identity, branch `main`, HEAD equal to the original fixed SHA, clean tracked
   and untracked state, unchanged legacy ownership metadata, and retained
-  evidence/residuals. Record remote-main drift without incorporating it.
+  evidence/residuals. Record remote-main drift without incorporating it. An
+  independent verifier must compare this checkpoint with the actual checkout,
+  process/occupancy evidence, and metadata baseline before the checkout is
+  available for reuse.
 
-These comments are operational checkpoints, not an atomic or machine-enforced
-lock. An unmatched audit-start comment, missing final proof, or ambiguous
+Issue comments are operational checkpoints, not atomic or machine-enforced
+locks. An unmatched audit-start comment, missing final proof, or ambiguous
 execution state blocks implementation, another audit, and checkout transition
-until explicit investigation and complete post-audit proof resolve it. A stop
-comment alone is not proof that the checkout is safe to reuse. Detailed
-physical admission and recovery remain owned by [`CHECKOUTS.md`](./CHECKOUTS.md).
+until explicit investigation and complete independent post-audit verification
+resolve it. A stop comment alone is not proof that the checkout is safe to
+reuse. Detailed physical admission and recovery remain owned by
+[`CHECKOUTS.md`](./CHECKOUTS.md).
 
 ## Native Issue authoring
 

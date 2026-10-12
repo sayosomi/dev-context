@@ -4,9 +4,9 @@
 
 This historical workflow applies only to compatible pre-existing SAY work
 already admitted through the legacy `nuinui` lifecycle. Current Work authority,
-including any future reservation-free evaluator audit under the D2-A-prepared
-pilot, is GitHub Issues under [`ISSUES.md`](./ISSUES.md). Do not use Linear as
-current Research/Improvement Work authority.
+including GitHub-native evaluator audits using the D2-C reservation-free route,
+is GitHub Issues under [`ISSUES.md`](./ISSUES.md). Do not use Linear as current
+Research/Improvement Work authority.
 
 Linear Issueのstatus、readiness、execution-lane checkpoint、labels、Done freshnessを定義する。
 
@@ -47,7 +47,7 @@ Readyだけを理由にIn Progressへしない。actual durable lane assignment�
 
 ## Legacy evaluator audit reservation status — compatible SAY only
 
-`nuinui audit-begin`が作るgeneration-bound `audit-reservation`は、compatible pre-existing SAY lifecycle上のmanifest-declared implementation laneを物理的に占有するが、implementation slot / generationではない。有効なreservationのread-backがある間は、その予約に対応するlegacy Research/Improvement audit Issueを`In Progress`として同期してよい。これはD2-Aで準備するreservation-free Git-only pilotには適用しない。reservationがない、malformed、interrupted、またはambiguousな場合、checkout shapeやdetached HEADだけからaudit execution/statusを推定しない。
+`nuinui audit-begin`が作るgeneration-bound `audit-reservation`は、compatible pre-existing SAY lifecycle上のmanifest-declared implementation laneを物理的に占有するが、implementation slot / generationではない。有効なreservationのread-backがある間は、その予約に対応するlegacy Research/Improvement audit Issueを`In Progress`として同期してよい。このlegacy reservation lifecycleはD2-Cの新しいGitHub-native evaluator auditには適用しない。reservationがない、malformed、interrupted、またはambiguousな場合、checkout shapeやdetached HEADだけからaudit execution/statusを推定しない。
 
 このaudit statusはcurrent implementation `In Progress`集合とimplementation occupancy reconciliationから分離する。Bug implementationは別途canonical `nuinui begin`でimplementation generationを取得しない限り`In Progress`にならない。`audit-release`がsuccessful `FREE` / `FREE / STALE` evidenceを返したらaudit reservationは終了するが、Research/Improvement Work statusは実際の残作業とcompletion gateに従って同期する。
 

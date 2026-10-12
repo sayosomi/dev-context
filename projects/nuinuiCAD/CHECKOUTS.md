@@ -67,8 +67,9 @@ The route uses only the existing product checkout at
 classification, or existing claim, lock, reservation, initialization, or
 release algorithms. Compatible pre-existing SAY tasks already admitted to the
 legacy lifecycle continue there until a separate retirement checkpoint.
-Evaluator audits follow the controlled fixed-SHA pilot policy below; D1
-implementation activation does not activate reservation-free audits generally.
+Evaluator audits follow the reservation-free GitHub-native route below only
+after its separate D2-C activation checkpoint; D1 implementation activation
+does not activate reservation-free audits.
 Manual E2E policy is unchanged.
 
 ### Startup admission
@@ -234,56 +235,66 @@ current `preflight` / `begin` / `start` invocationで認識できるsupplied reg
 
 exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、declared lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、宣言laneに対する通常のlane safety checkはすべて引き続き適用される。
 
-## Controlled reservation-free evaluator-audit pilot — D2-A preparation
+## Reservation-free GitHub-native evaluator audits — D2-C
 
-This section prepares one narrowly authorized, fixed-SHA Sol audit pilot. D2-A
-is policy preparation only. The pilot may run as D2-B only after the policy is
-merged and read back on authoritative dev-context `main`; it does not activate
-the reservation-free route for general use. General activation requires a real
-pilot run, independent verification, and a separate explicit checkpoint in
-dev-context #268. Evaluator role, semantic scope, evidence, and escalation are
-owned by [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md); GitHub Issue checkpoint fields
-are owned by [`ISSUES.md`](./ISSUES.md).
+After general activation, every new GitHub-native Research/Improvement
+evaluator audit uses this reservation-free fixed-SHA route. Activation is
+effective only after the D2-C policy PR is independently reviewed and merged,
+the change is read back on authoritative dev-context `main`, and a separate
+explicit activation checkpoint is recorded in dev-context #268. Before that
+checkpoint, do not start a new reservation-free audit. The D2-B run is
+historical operational proof; its product SHA is not the fixed revision for
+future runs. Evaluator role, semantic scope, evidence, budgets, and escalation
+are owned by [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md); GitHub Issue checkpoint
+fields are owned by [`ISSUES.md`](./ISSUES.md).
 
 ### Admission
 
-Before a pilot audit starts, all of the following must be verified:
+Before each new GitHub-native audit starts, all of the following must be
+verified:
 
 - A current canonical `sayosomi/nuinuiCAD#N` Research/Improvement Issue is
   open. Its body owns the approved bounded semantic-conformance scope and
-  acceptance; material decisions are in its comments.
+  acceptance; material decisions are in its comments. The D2-C activation
+  checkpoint is already present in dev-context #268.
 - The exact fixed audit SHA is the freshly verified authoritative product
   `main` commit. The existing single product checkout at
   `/Users/yosomi/Code/nuinuiCAD` is the correct repository and registered
-  worktree; the complete registered-worktree inventory has been inspected.
+  worktree; the complete registered-worktree inventory confirms exactly one
+  registered product checkout.
 - The checkout's current branch is exactly `main`, HEAD is exactly the fixed
   audit SHA, and tracked and untracked state is clean.
 - Existing required legacy ownership and audit metadata has been inspected
-  read-only using the metadata inventory and schema requirements listed in
-  Startup admission above. Reject missing required records,
-  symlinks, malformed or inconsistent records, or ambiguous ownership. There
-  is no active implementation claim, mutation lock, release-pending state,
-  audit reservation, or other unresolved ownership state. Record a read-only,
+  read-only using the complete metadata inventory and schema requirements
+  listed in Startup admission above. Validate present and required records
+  against their existing schemas; reject missing required records, symlinks,
+  malformed or inconsistent records, or ambiguous ownership. There is no
+  active implementation claim, mutation lock, release-pending state, audit
+  reservation, or other unresolved ownership state. Record a read-only,
   non-secret baseline fingerprint outside the checkout so final proof can show
-  that this metadata was not mutated.
+  that this metadata was not mutated. Do not create, initialize, rewrite,
+  release, or replace legacy metadata or reservations.
 - Current Issue/PR checkpoints and the checkout show no active, paused, or
   otherwise unfinished implementation execution, no competing evaluator
   audit, and no unmatched evaluator-audit start checkpoint. A not-yet-started
   Issue alone is not execution occupancy. Branches or PRs alone do not prove
-  the checkout is idle.
-- The Human/operator explicitly confirms the checkout is available for this
-  audit. If process or execution occupancy cannot be established, admission
-  fails closed.
+  the checkout is idle. Any ambiguous implementation or audit state blocks
+  admission.
+- The Human/operator explicitly confirms that no implementation, evaluator
+  audit, or checkout transition is in progress and that the checkout is
+  available for this audit. If process or execution occupancy cannot be
+  established, admission fails closed.
 
 Re-read authoritative remote `main` after the other admission checks and
 immediately before the start checkpoint. If it no longer equals the fixed SHA,
 stop and repeat admission for the new intended revision.
 
-The existing read-only `nuinui preflight` may be used as a transitional safety
+The existing read-only `nuinui preflight` may be used as a supplementary safety
 check, but it is not sufficient evidence of audit admission. A `FREE` result
 does not override an active or ambiguous GitHub audit checkpoint. Do not run
-`nuinui audit-begin` or `nuinui audit-release` for this pilot. Do not create,
-initialize, rewrite, or automatically release legacy metadata or reservations.
+`nuinui audit-begin` or `nuinui audit-release` for a new GitHub-native audit. Do
+not create, initialize, rewrite, or automatically release legacy metadata or
+reservations.
 If local `main` is behind authoritative remote `main`, stop admission. Perform
 any needed synchronization separately through the established safe Git
 workflow, then repeat the complete admission check against a new fixed SHA.
@@ -296,16 +307,17 @@ product source read-only. Place temporary harnesses, reducers, logs, outputs,
 caches, and evidence outside the product checkout. Use only the existing
 single product checkout; do not add a permanent audit checkout or worktree.
 
-From the audit-start checkpoint until final checkout proof is recorded and
+From the audit-start checkpoint until final checkout proof is independently
 verified, no implementation, second evaluator audit, or checkout transition
-may start. Record audit start, stop, any revision/scope/evidence/residual
-updates, and final checkout proof in the current GitHub Issue comments using
-the fields owned by `ISSUES.md`. These comments are operational checkpoints,
-not an atomic lock: this workflow does not provide the machine-enforced
-exclusion formerly supplied by the durable audit reservation. All participants
-must follow the sequence, and missing or ambiguous occupancy blocks execution.
-The D1 implementation admission must check for an unfinished evaluator audit
-even when legacy preflight reports `FREE`.
+may start. Record audit start, progress, stop, any revision/scope/evidence/
+residual updates, and final checkout proof in the current GitHub Issue comments
+using the fields owned by `ISSUES.md`. Issue comments are operational
+checkpoints, not atomic or machine-enforced locks: this workflow does not
+provide the machine-enforced exclusion formerly supplied by the durable audit
+reservation. All participants must follow the sequence, and missing or
+ambiguous occupancy blocks execution. The D1 implementation admission must
+check for an unfinished evaluator audit even when legacy preflight reports
+`FREE`.
 
 If remote product `main` advances during an active audit, record the new SHA
 as drift in the Issue comments. Keep the local checkout and audit evidence at
@@ -317,13 +329,18 @@ evidence. Defer any synchronization until the audit has safely completed.
 After audit execution stops, prove and record that all audit processes using
 the checkout have stopped; repository and registered-worktree identity are
 unchanged; branch remains `main`; HEAD equals the original fixed SHA; tracked
-and untracked state is clean; legacy ownership metadata is unchanged; and
-evidence plus residual findings are retained. A newer remote `main` is allowed
-and must not be incorporated during completion. The next implementation Task
-uses the existing D1 freshness and safe fast-forward procedure.
+and untracked state is clean; legacy ownership metadata matches the admission
+fingerprint; and evidence plus residual findings are retained. A newer remote
+`main` is allowed and must not be incorporated during completion. The next
+implementation Task uses the existing D1 freshness and safe fast-forward
+procedure.
 
-Verify the final Issue checkpoint against the actual checkout and compare the
-legacy metadata with the admission fingerprint before permitting reuse.
+An independent verifier must compare the final Issue checkpoint with the
+actual checkout and registered-worktree inventory, stopped-process and
+occupancy evidence, and metadata baseline. No implementation, other audit, or
+checkout transition may begin until this independent final checkout
+verification passes. An audit-stop checkpoint alone does not release the
+checkout.
 
 If execution is interrupted, the final state is ambiguous, or required proof
 is missing, preserve the checkout and report `BLOCKED`. An unmatched audit
@@ -331,17 +348,18 @@ start is not proof of safe release. Investigate it explicitly and require the
 complete post-audit proof above before permitting another execution. Never
 reset, clean, stash, delete, auto-release, or repair an ambiguous checkout.
 
-Compatible pre-existing legacy audit reservations remain governed by the
+Compatible pre-existing SAY audit reservations remain governed by the
 existing lifecycle in [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) and
-[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md); this pilot does not alter that lifecycle.
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md); the GitHub-native route does not alter
+that lifecycle.
 Any forensic worktree use remains subject to its separate explicit Human
 authorization and inventory rule.
 
 ### Compatible pre-existing SAY audit reservations
 
 This physical reservation lifecycle applies only to evaluator audits already
-admitted through the compatible legacy SAY flow. It does not apply to the
-D2-A-prepared GitHub Issue pilot.
+admitted through the compatible legacy SAY flow. It does not apply to new
+GitHub-native evaluator audits using the reservation-free D2-C route.
 
 The legacy owner selects the Research/Improvement Issue, declared lane, exact
 authoritative `main` revision, and bounded scope, then uses the existing

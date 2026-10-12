@@ -6,7 +6,7 @@ This is the sole nuinuiCAD project-policy owner for open-ended evaluator correct
 
 The default first-pass executor is GPT-6.1 Sol at High reasoning. GPT-6 Astra is reserved for explicit escalation after a Sol pass. This policy defines both roles and the handoff for findings. Project checkout constraints are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Current Research/Improvement Work uses GitHub Issues under [`ISSUES.md`](./ISSUES.md): the Issue body owns current scope and acceptance, while comments retain material decisions and audit evidence.
 
-The reservation-free route is prepared only for one fixed-SHA Sol pilot. D2-A prepares that policy; it does not start an audit or activate the route generally. After the policy is merged and read back, the separately recorded D2-B pilot may provide real operational proof. General use requires independent verification and a distinct explicit checkpoint in dev-context #268. Compatible legacy SAY audits already admitted through the reservation lifecycle remain under that lifecycle until a separate retirement checkpoint.
+The reservation-free route is the normal route for new GitHub-native evaluator audits only after the D2-C policy PR has been independently reviewed and merged, its change has been read back on authoritative dev-context `main`, and a separate explicit activation checkpoint has been recorded in dev-context #268. Until all three conditions are met, do not start a new reservation-free audit. The D2-B run on [product #1194](https://github.com/sayosomi/nuinuiCAD/issues/1194) is historical operational proof at its recorded SHA, not a fixed revision for future audits. Compatible pre-existing SAY audits already admitted through the reservation lifecycle remain under that lifecycle until a separate retirement checkpoint.
 
 ## Role split
 
@@ -91,15 +91,15 @@ An Astra independent second pass should normally use a separate session so that 
 
 Session reuse and rotation are efficiency choices only. They do not weaken fixed-revision isolation, evidence thresholds, stop rules, or checkout safety.
 
-## Controlled fixed-revision pilot — D2-A preparation
+## General reservation-free GitHub-native evaluator audits — D2-C
 
-D2-A prepares one narrowly bounded reservation-free Sol audit pilot at an exact authoritative product `main` SHA. The pilot is eligible only after this policy is merged and read back on authoritative dev-context `main`; its real run and evidence are a later D2-B checkpoint. This preparation is not evidence that the pilot ran and does not activate reservation-free audits for other Work. D2-C general activation requires successful operational proof, independent verification, and a separate explicit #268 checkpoint.
+After the D2-C activation conditions above are verified, every new GitHub-native Research/Improvement evaluator audit uses the reservation-free fixed-SHA route. Each run uses its current approved Issue scope and the exact authoritative product `main` SHA freshly admitted for that run. A later audit may use a different SHA; the D2-B pilot SHA is historical evidence only.
 
-For the pilot, use a current GitHub Research/Improvement Issue with an approved bounded semantic-conformance scope and exact fixed revision. Keep the tracked product source read-only, place all run-specific artifacts outside the checkout, and preserve the existing Sol-first/Astra-escalation, evidence, contamination, finding, and repair/re-audit rules in this document. Physical checkout admission, sequential exclusion, Issue checkpoint fields, and safe return are owned by [`CHECKOUTS.md`](./CHECKOUTS.md), [`ISSUES.md`](./ISSUES.md), and the implementation startup owners. The pilot does not run `nuinui audit-begin` or `nuinui audit-release`, switch or detach the checkout, or create another checkout.
+Keep tracked product source read-only and place all run-specific harnesses, reducers, logs, outputs, caches, and evidence outside the checkout. Preserve the Sol-first/Astra-escalation, evidence, contamination, finding, budget, and repair/re-audit rules in this document. Physical checkout admission, sequential exclusion, Issue checkpoint fields, independent final checkout verification, and safe return are owned by [`CHECKOUTS.md`](./CHECKOUTS.md) and [`ISSUES.md`](./ISSUES.md), with implementation admission routed through the existing startup owners. New GitHub-native audits do not run `nuinui audit-begin` or `nuinui audit-release`, switch or detach the checkout, or create another checkout.
 
 ### Compatible legacy audit reservations
 
-The following commands and durable reservation lifecycle apply only to an evaluator audit already admitted through the compatible legacy SAY flow. They do not apply to the D2-B pilot or activate a new audit route. Physical reservation admission and safe return are owned by [`CHECKOUTS.md`](./CHECKOUTS.md); command behavior is documented in [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md).
+The following commands and durable reservation lifecycle apply only to an evaluator audit already admitted through the compatible pre-existing SAY flow. They do not apply to a new GitHub-native audit under the D2-C route. Physical reservation admission and safe return are owned by [`CHECKOUTS.md`](./CHECKOUTS.md); command behavior is documented in [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md).
 
 ```text
 nuinui audit-begin --issue SAY-N --lane <declared-lane> --revision <40-character-main-sha>

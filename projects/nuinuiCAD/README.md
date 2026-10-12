@@ -16,23 +16,23 @@ activation checkpoint in [dev-context #268](https://github.com/sayosomi/dev-cont
 Until all four conditions are met, do not start a GitHub-native implementation.
 Afterward, no separate per-Task approval or activation mechanism is required.
 
-## Evaluator audit route — controlled pilot preparation
+## Evaluator audit route — D2-C activation gated
 
-D2-A prepares one reservation-free fixed-SHA Sol audit pilot; it does not
-activate that route for general use. General activation requires a real pilot
-run, independent verification, and a separate explicit checkpoint in dev-context
-[#268](https://github.com/sayosomi/dev-context/issues/268). Read
-[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) for evaluator roles and evidence, and
-[`CHECKOUTS.md`](./CHECKOUTS.md) for physical admission and safe return.
+New GitHub-native evaluator audits use the reservation-free fixed-SHA route
+only after the D2-C policy PR is independently reviewed and merged, read back
+on authoritative dev-context `main`, and followed by a separate explicit
+activation checkpoint in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268).
+Until then, do not start a new reservation-free audit. Read
+[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) for executor roles and evidence, and
+[`CHECKOUTS.md`](./CHECKOUTS.md) plus [`ISSUES.md`](./ISSUES.md) for admission,
+operational checkpoints, independent final checkout verification, and safe
+return.
 
-The completed [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
-proved one operational Git-only implementation cycle. The Human waived the
-pilot's policy-amendment prerequisite for that run only
-([#268 comment](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6125057400));
-it was not strict compliance with the unchanged pre-activation policy and did
-not generally activate startup. The policy PR and activation checkpoint are a
-separate step, with the checkpoint recorded under
-[#268](https://github.com/sayosomi/dev-context/issues/268).
+The completed [D2-B pilot on #1194](https://github.com/sayosomi/nuinuiCAD/issues/1194)
+is historical operational proof at the revision recorded in its
+[independently verified final checkout checkpoint](https://github.com/sayosomi/nuinuiCAD/issues/1194#issuecomment-6128846922).
+That SHA is not a fixed revision for future audits. General use still requires
+the separate D2-C activation checkpoint in #268.
 
 ## Compatible legacy SAY implementation flow
 
@@ -167,15 +167,13 @@ For existing SAY execution only, inspect the applicable historical Linear
 checkpoint and the latest repository state. Do not treat Linear as the source
 for new Work, current GitHub Issue contracts, or implemented behavior.
 
-C1 GitHub Issues Work authority is active. The completed #1374 pilot is a
-one-off operational proof under its expressly waived policy-amendment
-prerequisite, not general activation. The general Git-only route becomes active
-only after the coordinated D1 policy PR is independently reviewed, merged, read
-back on authoritative dev-context `main`, and recorded as an activation
-checkpoint in #268. This is one global policy checkpoint, not a per-Task
-approval step. Compatible pre-existing SAY work keeps its legacy lifecycle;
-evaluator-audit migration, Human Manual E2E policy, and legacy runtime-helper
-retirement remain separate.
+C1 GitHub Issues Work authority and the general D1 Git-only implementation
+route are active. The completed #1374 pilot remains one-off operational proof
+under its expressly waived policy-amendment prerequisite. D1 is one global
+policy checkpoint, not a per-Task approval step. Compatible pre-existing SAY
+work keeps its legacy lifecycle. Reservation-free evaluator audits have their
+separate D2-C activation boundary; Human Manual E2E policy and legacy
+runtime-helper retirement remain separate.
 
 ## Parallel execution rule
 
