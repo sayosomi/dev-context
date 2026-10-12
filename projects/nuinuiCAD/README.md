@@ -16,6 +16,15 @@ activation checkpoint in [dev-context #268](https://github.com/sayosomi/dev-cont
 Until all four conditions are met, do not start a GitHub-native implementation.
 Afterward, no separate per-Task approval or activation mechanism is required.
 
+## Evaluator audit route — controlled pilot preparation
+
+D2-A prepares one reservation-free fixed-SHA Sol audit pilot; it does not
+activate that route for general use. General activation requires a real pilot
+run, independent verification, and a separate explicit checkpoint in dev-context
+[#268](https://github.com/sayosomi/dev-context/issues/268). Read
+[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) for evaluator roles and evidence, and
+[`CHECKOUTS.md`](./CHECKOUTS.md) for physical admission and safe return.
+
 The completed [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
 proved one operational Git-only implementation cycle. The Human waived the
 pilot's policy-amendment prerequisite for that run only

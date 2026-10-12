@@ -36,6 +36,21 @@ GitHub-native IssueはC1後にauthoringできる。一般D1 activation checkpoin
 
 件数だけでは整合確認を満たさない。legacy physical declared laneから読めるIssue集合と、互換Linear lifecycle上のcurrent implementation checkpoint集合がidentity単位で一致していなければならない。
 
+### Evaluator-audit execution exclusion
+
+Before routing an implementation, another evaluator audit, or a checkout
+transition, inspect current Research/Improvement GitHub Issues, their material
+comments, and the physical checkout state. An unmatched evaluator-audit start,
+missing final checkout proof, or ambiguous execution occupancy blocks routing
+until explicit investigation and complete proof resolve it. Audit admission
+also waits for all unfinished implementation execution to conclude. For a
+compatible pre-existing SAY audit, continue to verify its existing legacy
+reservation and minimum Linear checkpoint under the legacy owners. Issue
+comments are operational checkpoints, not an atomic lock; absence of a known
+comment or a `FREE` legacy preflight alone does not prove that execution is idle.
+The physical admission and recovery details belong to
+[`CHECKOUTS.md`](./CHECKOUTS.md) and [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
+
 ### Parallel admission gate
 
 Humanが特定Issueのlane移動・再配置を明示せず、fresh lane stateとともにimplementation laneが`FREE`になったことを報告した場合、その報告を既存`BUSY` Issueのlane migration要求として解釈しない。既存`BUSY` laneのownershipを維持したまま、このsectionのparallel admission gateに従って`FREE` laneへ開始可能な別Issueを評価する。

@@ -74,6 +74,14 @@ state:
 - Confirm there is no competing implementation or evaluator audit on the
   product checkout. GitHub branches or PRs alone do not prove local execution
   is idle; if current occupancy cannot be established, stop.
+- For D1 implementation admission, inspect current GitHub Research/Improvement
+  Issues and their material comments for evaluator-audit start checkpoints.
+  An unmatched start, final checkout proof not independently verified against
+  the checkout, or ambiguous audit state blocks implementation even when the
+  legacy read-only preflight says `FREE`.
+  The Issue comments are operational checkpoints, not a machine-enforced lock;
+  follow the sequential exclusion rule in [`CHECKOUTS.md`](./CHECKOUTS.md).
+  This is an occupancy check, not a new per-Task D1 activation or approval gate.
 - For a new Task, require the declared idle `main` form and run the existing
   read-only `nuinui preflight`; it must report `FREE` / `preflight=PASS` before
   new-Task admission is granted. For same-Task continuation, preserve the

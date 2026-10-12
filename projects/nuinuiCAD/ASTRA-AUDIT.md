@@ -4,7 +4,9 @@
 
 This is the sole nuinuiCAD project-policy owner for open-ended evaluator correctness and semantic-conformance exploration. The work covered here is local nuinuiCAD compiler/evaluator/language-service correctness research. It is not a source-implementation role.
 
-The default first-pass executor is GPT-6.1 Sol at High reasoning. GPT-6 Astra is reserved for explicit escalation after a Sol pass. This policy defines both roles and the handoff for findings. Project checkout constraints are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Current Work selection and tracking continue to follow the project's existing work-management policy.
+The default first-pass executor is GPT-6.1 Sol at High reasoning. GPT-6 Astra is reserved for explicit escalation after a Sol pass. This policy defines both roles and the handoff for findings. Project checkout constraints are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Current Research/Improvement Work uses GitHub Issues under [`ISSUES.md`](./ISSUES.md): the Issue body owns current scope and acceptance, while comments retain material decisions and audit evidence.
+
+The reservation-free route is prepared only for one fixed-SHA Sol pilot. D2-A prepares that policy; it does not start an audit or activate the route generally. After the policy is merged and read back, the separately recorded D2-B pilot may provide real operational proof. General use requires independent verification and a distinct explicit checkpoint in dev-context #268. Compatible legacy SAY audits already admitted through the reservation lifecycle remain under that lifecycle until a separate retirement checkpoint.
 
 ## Role split
 
@@ -89,18 +91,24 @@ An Astra independent second pass should normally use a separate session so that 
 
 Session reuse and rotation are efficiency choices only. They do not weaken fixed-revision isolation, evidence thresholds, stop rules, or checkout safety.
 
-## Fixed-revision reservation commands
+## Controlled fixed-revision pilot — D2-A preparation
 
-After selecting the current Research/Improvement Issue, declared implementation lane, exact authoritative `main` revision, and bounded semantic scope, ChatGPT supplies these two complete Human commands:
+D2-A prepares one narrowly bounded reservation-free Sol audit pilot at an exact authoritative product `main` SHA. The pilot is eligible only after this policy is merged and read back on authoritative dev-context `main`; its real run and evidence are a later D2-B checkpoint. This preparation is not evidence that the pilot ran and does not activate reservation-free audits for other Work. D2-C general activation requires successful operational proof, independent verification, and a separate explicit #268 checkpoint.
+
+For the pilot, use a current GitHub Research/Improvement Issue with an approved bounded semantic-conformance scope and exact fixed revision. Keep the tracked product source read-only, place all run-specific artifacts outside the checkout, and preserve the existing Sol-first/Astra-escalation, evidence, contamination, finding, and repair/re-audit rules in this document. Physical checkout admission, sequential exclusion, Issue checkpoint fields, and safe return are owned by [`CHECKOUTS.md`](./CHECKOUTS.md), [`ISSUES.md`](./ISSUES.md), and the implementation startup owners. The pilot does not run `nuinui audit-begin` or `nuinui audit-release`, switch or detach the checkout, or create another checkout.
+
+### Compatible legacy audit reservations
+
+The following commands and durable reservation lifecycle apply only to an evaluator audit already admitted through the compatible legacy SAY flow. They do not apply to the D2-B pilot or activate a new audit route. Physical reservation admission and safe return are owned by [`CHECKOUTS.md`](./CHECKOUTS.md); command behavior is documented in [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md).
 
 ```text
 nuinui audit-begin --issue SAY-N --lane <declared-lane> --revision <40-character-main-sha>
 nuinui audit-release --issue SAY-N --revision <same-40-character-sha>
 ```
 
-Start Sol, or an explicitly justified Astra escalation, only after `audit-begin` returns `AUDIT RESERVATION READY` with the same Issue, lane, revision, generation, clean detached checkout, and `admission=BLOCKED reason=audit-reservation`. This durable physical reservation keeps implementation admission closed for the run. It does not change the executor role, evidence threshold, run budgets, or read-only source boundary.
+For such an existing legacy audit, start Sol or an explicitly justified Astra escalation only after `audit-begin` returns `AUDIT RESERVATION READY` with the same Issue, lane, revision, generation, clean detached checkout, and `admission=BLOCKED reason=audit-reservation`. The durable reservation keeps implementation admission closed for that legacy run. It does not change the executor role, evidence threshold, run budgets, or read-only source boundary.
 
-After the executor stops, release with the exact same Issue and revision. A successful release restores the recorded canonical idle form at the recorded post-fast-forward base; a newer remote `main` may leave the lane `FREE / STALE`. Exact repeated commands are read-back no-ops. If a command is interrupted, dirty, mismatched, or ambiguous, read `nuinui last-result`, preserve the reservation, and return the blocker for review. Do not infer reservation ownership from a detached checkout or attempt cleanup, reset, stash, or force recovery.
+After that executor stops, hand off to the legacy owner for release with the exact same Issue and revision. A successful release restores the recorded canonical idle form at the recorded post-fast-forward base; a newer remote `main` may leave the lane `FREE / STALE`. Exact repeated commands are read-back no-ops. If a command is interrupted, dirty, mismatched, or ambiguous, read `nuinui last-result`, preserve the reservation, and return the blocker for review. Do not infer reservation ownership from a detached checkout or attempt cleanup, reset, stash, or force recovery.
 
 ## Astra escalation
 
@@ -133,7 +141,7 @@ Shape each evaluator-audit run so its actual purpose and boundary are explicit f
 
 ## Work and finding handoff
 
-Track evaluator exploration as explicit Research/Improvement Work with a bounded semantic search domain under the current work-management authority ([`LINEAR.md`](./LINEAR.md) and [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)). Keep the audit revision fixed for each run; if the revision or required semantic scope changes, stop and return the decision to ChatGPT.
+Track evaluator exploration as explicit Research/Improvement Work in a GitHub Issue under [`ISSUES.md`](./ISSUES.md), with a bounded semantic search domain in the Issue body. Keep each run's audit revision fixed; if the revision or required semantic scope changes, stop and return the decision to ChatGPT.
 
 For a Sol first pass:
 

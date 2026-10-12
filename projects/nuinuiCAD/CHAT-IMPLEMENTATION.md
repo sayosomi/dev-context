@@ -78,6 +78,14 @@ For each authorized implementation Task, the implementation chat will:
    GitHub Issue comments. Do not write new-Work lifecycle or lane semantics to
    Linear.
 
+The D1 admission check also reads current evaluator-audit Issue checkpoints.
+An unmatched audit start or final checkout proof not verified against the
+checkout blocks implementation, even when legacy preflight reports `FREE`.
+This is sequential execution exclusion, not another per-Task activation gate;
+the detailed checkpoint and checkout rules remain with
+[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md), [`ISSUES.md`](./ISSUES.md),
+and [`CHECKOUTS.md`](./CHECKOUTS.md).
+
 For an interrupted run, inspect current GitHub PR, commit, remote topic, `main`,
 and Issue state, then inspect the exact local checkout and status before
 resuming. Continue only when local and remote state match a verified pushed
