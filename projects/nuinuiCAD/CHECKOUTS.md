@@ -75,13 +75,38 @@ independently re-establish the following from current GitHub and local state:
 - Confirm there is no other active product implementation or evaluator audit.
   GitHub branches or PRs alone do not prove local execution is idle; if current
   execution occupancy cannot be established, stop.
-- Use the existing read-only nuinui preflight and legacy ownership/audit
-  inventory to prove there is no active implementation claim, audit
-  reservation, unresolved mutation lock, release-pending state, or ambiguous
-  durable metadata. If the existing evidence cannot establish that fact, stop.
-  This read-only inventory does not require a SAY identifier or begin, handoff,
+- Apply the legacy idle classifier according to the entry type. For a new Task,
+  the checkout must be in the declared idle `main` form and the existing
+  read-only nuinui preflight must report `FREE` / `preflight=PASS` before the
+  controlled route starts. For a same-Task native continuation on its expected
+  topic branch, do not require the legacy preflight to classify the checkout as
+  `FREE` or return `PASS`. A clean topic branch without a legacy slot may be
+  `BLOCKED` under the existing classifier; that known classification difference
+  proves neither available capacity nor permission to proceed. If the reason
+  for `BLOCKED`, or any other execution state, is ambiguous, stop.
+- For a native continuation, independently verify that the current Issue
+  checkpoint names this exact Issue and slice, topic branch, and pushed SHA;
+  the local topic branch and HEAD and freshly fetched remote topic ref must all
+  equal that SHA. The checkout must be clean, and no competing implementation
+  or evaluator audit may be active. This continuation proof does not assign a
+  new `FREE` / `BUSY` classification or replace the legacy classifier.
+- For either entry type, inspect the exact Git directory from
+  `git rev-parse --absolute-git-dir` and inventory the existing legacy
+  ownership/audit metadata using read-only operations. This includes the
+  `nuinui-implementation-v1` initialization state,
+  `nuinui-implementation-slot/state`,
+  `nuinui-implementation-lock/state`, every
+  `nuinui-implementation-slot.releasing.<claim>/state` and `checkpoint`, and
+  `nuinui-audit-reservation-v1`. Validate present and required records under
+  their existing schemas and reject symlinks. A missing required record, or a
+  malformed, symlinked, inconsistent, or ambiguous record, is a hard stop. Any
+  active legacy claim, mutation lock, release-pending tombstone, or audit
+  reservation is also a hard stop; do not silently ignore it or infer
+  execution capacity from its absence or from a generic preflight `BLOCKED`
+  result. This inventory does not require a SAY identifier or begin, handoff,
   or release command. Do not create, initialize, release, rewrite, or replace
-  legacy metadata for the proposed route.
+  legacy metadata for the proposed route, and do not add a second ownership
+  state machine or alter the existing classifier.
 - Fetch origin with prune and verify the authoritative GitHub main SHA and
   target branch state. The expected repository, remote, branch, and exact
   checkpoint must match the approved startup contract.
@@ -122,15 +147,16 @@ ambiguous durable metadata blocks native admission even when Git is clean. Leave
 that state to its existing legacy owner and lifecycle; do not release or repair
 it for Git-only startup.
 
-E. A new Task requires an unused topic-branch name. If the requested local or
-remote target branch already exists, choose another unused name without
-deleting or rewriting the existing branch. Same-Task continuation may reuse a
-branch only when the current Issue checkpoint names that exact branch and
-checkpoint, the remote topic ref equals the expected pushed SHA, and the local
-branch is clean at the same SHA. If the local branch is absent but the remote
-checkpoint is exact, create only a local tracking branch from that remote ref.
-Any local/remote mismatch, unexpected existing target, or missing expected
-remote checkpoint is a stop condition.
+E. A new Task's exact ChatGPT-approved topic branch must be unused. If the
+requested local or remote target branch already exists, stop and preserve it;
+ChatGPT must establish and authorize a new exact topic-branch name before the
+agent proceeds. The implementation agent must not silently choose a
+replacement name. Same-Task continuation may reuse a branch only when the
+current Issue checkpoint names that exact branch and checkpoint, the remote
+topic ref equals the expected pushed SHA, and the local branch is clean at the
+same SHA. If the local branch is absent but the remote checkpoint is exact,
+create only a local tracking branch from that remote ref. Any local/remote
+mismatch or missing expected remote checkpoint is a stop condition.
 
 F. Recover an interrupted implementation only from a freshly verified pushed
 checkpoint recorded for the same Issue and slice. Re-read the exact remote

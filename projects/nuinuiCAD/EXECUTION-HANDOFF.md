@@ -70,14 +70,29 @@ Before any repository mutation, the implementation agent must prove:
 - A new Task starts clean, or a same-Task continuation starts clean at the
   exact pushed checkpoint named by the Issue evidence. Dirty state is not
   accepted as a normal recovery checkpoint.
-- Existing read-only nuinui preflight and legacy inventory prove no active
-  product claim, audit reservation, unresolved lock, release-pending state, or
-  ambiguous durable metadata. This inventory does not require a SAY identifier,
-  begin, handoff, or release command. No conflicting implementation or
-  evaluator audit is active.
-- A new Task's topic branch is unused and can be created from the exact
-  approved base. A continuation's topic branch and local HEAD match the exact
-  pushed SHA.
+- For a new Task on the declared idle `main` checkout, the existing read-only
+  nuinui preflight must report `FREE` / `preflight=PASS` before the controlled
+  route starts. For a same-Task native continuation on its expected topic
+  branch, do not require the legacy preflight to report `FREE` or `PASS`; a
+  clean topic branch without a legacy slot may be `BLOCKED` under that
+  classifier. This known classification difference is neither capacity proof
+  nor authorization. Instead, apply the independent read-only Git-directory
+  metadata and execution-occupancy proof defined in
+  [CHECKOUTS.md](./CHECKOUTS.md). Any active legacy claim, mutation lock,
+  release-pending tombstone, audit reservation, competing implementation or
+  evaluator audit, or missing / malformed / symlinked / inconsistent /
+  ambiguous required record remains a hard stop. Do not infer permission from a
+  generic `BLOCKED` result, add a second ownership state machine, or change the
+  legacy classifier.
+- A new Task's exact ChatGPT-approved topic branch is unused and can be
+  created from the exact approved base. If the requested local or remote branch
+  already exists, stop; ChatGPT must establish and authorize a new exact branch
+  before the agent proceeds, and the implementation agent must not choose a
+  replacement. A continuation's current Issue checkpoint must name the exact
+  Issue, slice, branch, and pushed SHA; the local branch and HEAD and remote
+  topic ref must all match that SHA, with clean status. If the local branch is
+  absent but the remote checkpoint is exact, create only a local tracking
+  branch from that remote ref.
 
 For a new Task, after all checks pass, use the existing checkout, fast-forward
 a clean stale main only when ordinary ancestry proves it safe, and create a
