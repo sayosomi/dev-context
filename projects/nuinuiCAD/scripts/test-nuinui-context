@@ -1,0 +1,92 @@
+#!/bin/sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd -P)
+CANDIDATE=$SCRIPT_DIR/nuinui-context
+ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-context-candidate.XXXXXX")
+cleanup() { rm -rf "$ROOT"; }
+trap cleanup EXIT HUP INT TERM
+
+fail() { echo "CONTEXT CANDIDATE TEST FAIL: $*" >&2; exit 1; }
+assert_contains() { case "$1" in *"$2"*) ;; *) fail "$3 missing=$2 output=$1" ;; esac; }
+
+make_fixture() {
+  name=$1
+  kind=$2
+  bare=$ROOT/$name.git
+  seed=$ROOT/$name-seed
+  prod=$ROOT/$name-prod
+  dev=$ROOT/$name-dev
+  git init --bare -q "$bare"
+  git init -q -b main "$seed"
+  git -C "$seed" config user.name Fixture
+  git -C "$seed" config user.email fixture@example.invalid
+  mkdir -p "$seed/projects/nuinuiCAD"
+  awk '/^### Inactive context CLI candidate$/ { print; found=1; next } found && NF==0 && content { exit } found { print; if (NF>0) content=1 }' \
+    "$REPO_ROOT/projects/nuinuiCAD/LOCAL-TOOLS.md" >"$seed/projects/nuinuiCAD/LOCAL-TOOLS.md"
+  [ -s "$seed/projects/nuinuiCAD/LOCAL-TOOLS.md" ] || fail 'inactive candidate docs were not copied into fixture'
+  case "$kind" in
+    broken-link) printf '\n[Broken](MISSING.md)\n' >>"$seed/projects/nuinuiCAD/LOCAL-TOOLS.md" ;;
+    missing-command) sed 's/nuinui-context context-dev-next/other-cli context-dev-next/' "$seed/projects/nuinuiCAD/LOCAL-TOOLS.md" >"$seed/projects/nuinuiCAD/LOCAL-TOOLS.tmp"; mv "$seed/projects/nuinuiCAD/LOCAL-TOOLS.tmp" "$seed/projects/nuinuiCAD/LOCAL-TOOLS.md" ;;
+  esac
+  printf '%s\n' 'Guide fixture.' >"$seed/projects/nuinuiCAD/GUIDE.md"
+  printf '%s\n' '[guide](projects/nuinuiCAD/GUIDE.md)' >"$seed/README.md"
+  git -C "$seed" add README.md projects
+  git -C "$seed" commit -qm 'fixture base'
+  git -C "$seed" remote add origin "$bare"
+  git -C "$seed" push -q -u origin main
+  git clone -q "$bare" "$prod"
+  git -C "$prod" worktree add -q -b fixture/dev "$dev" main
+  export NUINUI_SELFTEST=1
+  export NUINUI_DEV_CONTEXT_WT=$prod
+  export NUINUI_DEV_CONTEXT_DEV_WT=$dev
+  export NUINUI_SELFTEST_EXPECTED_ORIGIN=$bare
+  export NUINUI_SELFTEST_RESULT_REPO=$prod
+  export TEST_PROD=$prod TEST_DEV=$dev TEST_BARE=$bare
+}
+
+make_fixture valid valid
+output=$($CANDIDATE context-check 2>&1) || fail "valid copied docs rejected: $output"
+assert_contains "$output" 'CONTEXT CHECK PASS' 'valid context-check'
+result_gitdir=$(git -C "$TEST_PROD" rev-parse --absolute-git-dir)
+mkdir "$result_gitdir/nuinui-context-command-result-v1"
+cat >"$result_gitdir/nuinui-context-command-result-v1/state" <<'EOF'
+version=1
+operation_id=0123456789012345678901234567890123456789
+timestamp=2026-10-13T00:00:00Z
+command=context-dev-transition
+phase=STARTED
+result=INCOMPLETE
+lane=dev-context
+issue=-
+claim=-
+request_sha256=0123456789012345678901234567890123456789012345678901234567890123
+mutation=unknown
+exit=-
+output_sha256=-
+EOF
+if output=$($CANDIDATE last-result 2>&1); then fail 'interrupted command result was presented as complete'; fi
+assert_contains "$output" 'result=INCOMPLETE' 'interrupted result evidence'
+assert_contains "$output" 'recovery=BLOCKED' 'interrupted result recovery'
+assert_contains "$output" 'tracked mutation did not reach terminal finalization' 'interrupted result diagnostic'
+
+make_fixture broken broken-link
+if output=$($CANDIDATE context-check 2>&1); then fail 'broken Markdown link was accepted'; fi
+assert_contains "$output" 'MISSING.md' 'broken-link diagnostic'
+
+make_fixture missing missing-command
+if output=$($CANDIDATE context-check 2>&1); then fail 'missing candidate command documentation was accepted'; fi
+assert_contains "$output" 'context-dev-next' 'missing-command diagnostic'
+
+make_fixture extra extra
+git -C "$TEST_PROD" worktree add -q -b fixture/unexpected "$ROOT/extra-worktree" main
+if output=$($CANDIDATE context-check 2>&1); then fail 'unexpected third registered worktree was accepted'; fi
+assert_contains "$output" 'worktree inventory is invalid or unexpected' 'unexpected-worktree diagnostic'
+if output=$($CANDIDATE context-dev-audit fixture/dev "$(git -C "$TEST_DEV" rev-parse HEAD)" 2>&1); then fail 'dev audit accepted unexpected worktree registration'; fi
+assert_contains "$output" 'worktree registration' 'unexpected-worktree dev diagnostic'
+
+# The established disposable-repository oracle covers terminal recovery,
+# exact duplicate transitions, ambiguous states, and race-sensitive failures.
+/bin/sh "$SCRIPT_DIR/test-nuinui-context-sync" "$CANDIDATE"
+echo 'CONTEXT CANDIDATE FIXTURE TEST PASS'
