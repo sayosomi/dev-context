@@ -31,6 +31,61 @@ Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)
 
 ## Implementation start / resume completion rule
 
+### Proposed GitHub-native implementation lifecycle — inactive pending proof
+
+This is the proposed lifecycle for future GitHub-native Work. The active C1
+startup prohibition remains in force, so this section is not an executable
+startup route. Existing compatible SAY execution continues under the separate
+procedure below.
+
+After a separately authorized controlled proof and a distinct general
+activation checkpoint, an implementation chat will:
+
+1. Resolve the canonical GitHub Issue body and material comments. Re-audit
+   implementation readiness, dependencies, latest product code, normative
+   specifications, and relevant policy owners.
+2. Confirm that the Git-only route has a separate authoritative activation
+   checkpoint after the proof. Before that checkpoint, stop native
+   implementation startup.
+   Before the first controlled proof itself, obtain the separately approved
+   narrow exception and reconcile the still-active C1 startup owners.
+3. Perform the proposed checkout and startup proof in
+   [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md) and
+   [CHECKOUTS.md](./CHECKOUTS.md).
+4. Generate the complete implementation-agent prompt from the approved
+   contract, acceptance, verification, and non-goals, following shared prompt
+   style and completeness owners.
+5. Have the agent implement only the authorized slice, run focused tests and
+   authorized verification, commit, and push normally to the exact topic branch.
+6. Independently review the exact pushed SHA in ChatGPT. Use the current
+   [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) owner for protected required CI,
+   blocking review, and
+   reviewed auto-merge or ordinary merge; do not bypass its head, base,
+   authorization, or CI checks.
+7. Link the PR with Refs #N. Use Closes #N only if the merge satisfies every
+   acceptance condition, including required Human Manual E2E, under the
+   existing PR policy.
+8. After confirmed merge, read back the authoritative GitHub merge and main,
+   the Issue, and remaining acceptance. Return the clean checkout to updated
+   main using the reset-free transition in [CHECKOUTS.md](./CHECKOUTS.md).
+9. Keep incomplete acceptance and required Human Manual E2E open. Record
+   material implementation, review, verification, and merge checkpoints in
+   GitHub Issue comments. Do not write new-Work lifecycle or lane semantics to
+   Linear.
+
+For an interrupted run, inspect current GitHub PR, commit, remote topic, main,
+and Issue state, then inspect the exact local checkout and status before
+resuming. Continue only when both local and remote state match a verified
+pushed checkpoint and the current contract remains valid. Lost terminal output
+does not authorize replaying commit, push, merge, or another mutation. Dirty,
+missing, or mismatched state stops for review and recovery; preserve all
+changes.
+
+Do not apply legacy Linear status, lane-release, claim, or checkpoint semantics
+to a new native Issue. The existing SAY implementation procedure remains
+separate and functional. This document does not declare Phase C2 complete or
+retire any existing helper.
+
 ### Transitional Cloudflare mirror shutdown startup exception — #268 only
 
 For only the Phase B write-barrier shutdown implementation of the existing
