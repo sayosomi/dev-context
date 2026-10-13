@@ -48,9 +48,11 @@ nuinui_e2e_host__record_payload() {
 }
 
 nuinui_e2e_host__read_record() {
-  [ "$#" = 2 ] || return 2
+  [ "$#" -ge 2 ] && [ "$#" -le 3 ] || return 2
   nuinui_e2e_host_read_path=$1
   nuinui_e2e_host_read_kind=$2
+  nuinui_e2e_host_read_fixture_policy=${3:-${nuinui_e2e_host_fixture_policy:-required}}
+  case "$nuinui_e2e_host_read_fixture_policy" in required|historical) ;; *) return 2 ;; esac
   nuinui_e2e_host_base_keys=schema_version,issue,issue_url,local_id,lane,repository,checkout,git_dir,manifest,manifest_sha256,default_branch,idle_policy,tested_sha,generation,active_sha256,fixture_path,fixture_sha256,port,locale,adapter,root,root_identity,record_state
   case "$nuinui_e2e_host_read_kind" in
     intent|handoff|ready|cleanup-pending) nuinui_e2e_host_read_keys=$nuinui_e2e_host_base_keys ;;
@@ -122,10 +124,27 @@ nuinui_e2e_host__read_record() {
     intent:PREPARING|handoff:HANDOFF|ready:READY|cleanup-pending:CLEANUP-PENDING|cleanup:CLEANED) ;;
     *) return 1 ;;
   esac
-  nuinui_e2e_host_r_fixture_real=$(realpath "$nuinui_e2e_host_r_fixture" 2>/dev/null) || return 1
-  [ "$nuinui_e2e_host_r_fixture_real" = "$nuinui_e2e_host_r_fixture" ] &&
-    nuinui_e2e__regular "$nuinui_e2e_host_r_fixture" &&
-    [ "$(nuinui_e2e__sha256 "$nuinui_e2e_host_r_fixture")" = "$nuinui_e2e_host_r_fixture_sha" ] || return 1
+  case "$nuinui_e2e_host_r_fixture" in /*) ;; *) return 1 ;; esac
+  case "$nuinui_e2e_host_r_fixture" in *//*|*/./*|*/../*|*/.|*/..) return 1 ;; esac
+  if nuinui_e2e__exists "$nuinui_e2e_host_r_fixture"; then
+    nuinui_e2e_host_r_fixture_real=$(realpath "$nuinui_e2e_host_r_fixture" 2>/dev/null) || return 1
+    [ "$nuinui_e2e_host_r_fixture_real" = "$nuinui_e2e_host_r_fixture" ] &&
+      nuinui_e2e__regular "$nuinui_e2e_host_r_fixture" &&
+      [ "$(nuinui_e2e__sha256 "$nuinui_e2e_host_r_fixture")" = "$nuinui_e2e_host_r_fixture_sha" ] || return 1
+  else
+    [ "$nuinui_e2e_host_read_fixture_policy" = historical ] || return 1
+    nuinui_e2e_host_r_fixture_parent=${nuinui_e2e_host_r_fixture%/*}
+    [ -n "$nuinui_e2e_host_r_fixture_parent" ] ||
+      nuinui_e2e_host_r_fixture_parent=/
+    if nuinui_e2e__exists "$nuinui_e2e_host_r_fixture_parent"; then
+      [ -d "$nuinui_e2e_host_r_fixture_parent" ] &&
+        [ ! -L "$nuinui_e2e_host_r_fixture_parent" ] || return 1
+      nuinui_e2e_host_r_fixture_parent_real=$(realpath \
+        "$nuinui_e2e_host_r_fixture_parent" 2>/dev/null) || return 1
+      [ "$nuinui_e2e_host_r_fixture_parent_real/${nuinui_e2e_host_r_fixture##*/}" = \
+        "$nuinui_e2e_host_r_fixture" ] || return 1
+    fi
+  fi
   case "$nuinui_e2e_host_r_fixture" in "$nuinui_e2e_host_r_checkout"/*) return 1 ;; esac
   if [ "$nuinui_e2e_host_read_kind" = cleanup ]; then
     nuinui_e2e_host_r_handoff_sha=$(nuinui_ownership_field \
@@ -255,15 +274,8 @@ nuinui_e2e_host__load_state() {
       nuinui_e2e_host_owner=$(nuinui_e2e_host__owner_path "$nuinui_e2e_host_root")
       nuinui_e2e__regular "$nuinui_e2e_host_owner" || return 1
       nuinui_e2e_host_owner_expected=$(nuinui_e2e_host__owner_content)
-      nuinui_e2e_host_owner_tmp=$(mktemp "${nuinui_e2e_host_root}/.owner-verify.XXXXXX") || return 1
-      printf '%s' "$nuinui_e2e_host_owner_expected" > "$nuinui_e2e_host_owner_tmp" || {
-        rm -f "$nuinui_e2e_host_owner_tmp"
-        return 1
-      }
-      cmp -s "$nuinui_e2e_host_owner_tmp" "$nuinui_e2e_host_owner"
-      nuinui_e2e_host_owner_result=$?
-      rm -f "$nuinui_e2e_host_owner_tmp"
-      [ "$nuinui_e2e_host_owner_result" = 0 ] || return 1
+      printf '%s' "$nuinui_e2e_host_owner_expected" |
+        cmp -s - "$nuinui_e2e_host_owner" || return 1
       nuinui_e2e_host_file=$(nuinui_e2e_host__fixture_copy_path "$nuinui_e2e_host_root")
       if nuinui_e2e__exists "$nuinui_e2e_host_file"; then
         nuinui_e2e__regular "$nuinui_e2e_host_file" &&
@@ -325,12 +337,119 @@ EOF
   fi
 }
 
+nuinui_e2e_host__verify_released_history() (
+  [ "$#" = 4 ] || exit 2
+  nuinui_e2e_host_history_issue=$1
+  nuinui_e2e_host_history_generation=$2
+  nuinui_e2e_host_history_tested=$3
+  nuinui_e2e_host_history_lane=$4
+
+  [ "$nuinui_e2e_host_history_issue" = \
+    "$(nuinui_e2e_identity_issue "$nuinui_e2e_host_history_issue")" ] &&
+    nuinui_e2e_valid_generation "$nuinui_e2e_host_history_generation" &&
+    nuinui_e2e_valid_sha "$nuinui_e2e_host_history_tested" || exit 1
+  lane_manifest_validate_lane_name "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_host_history_lane" >/dev/null 2>&1 || exit 1
+  [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_host_history_lane")" = human-test ] || exit 1
+
+  # The native active marker is shared by generations. Its exact current
+  # generation is validated by lifecycle preflight; it must never name history.
+  nuinui_e2e_host_history_active=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" active) || exit 1
+  if nuinui_e2e__exists "$nuinui_e2e_host_history_active"; then
+    nuinui_e2e__read_record "$nuinui_e2e_host_history_active" active || exit 1
+    [ "$nuinui_e2e_r_generation" != "$nuinui_e2e_host_history_generation" ] &&
+      nuinui_e2e__record_matches_lane "$nuinui_e2e_host_history_lane" \
+        "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path" || exit 1
+  fi
+
+  nuinui_e2e_expected_issue=$nuinui_e2e_host_history_issue
+  nuinui_e2e_expected_url=$(nuinui_e2e_identity_url \
+    "$nuinui_e2e_host_history_issue") || exit 1
+  nuinui_e2e_expected_token=$(nuinui_e2e_identity_token \
+    "$nuinui_e2e_host_history_issue") || exit 1
+  nuinui_e2e_expected_lane=$nuinui_e2e_host_history_lane
+  nuinui_e2e_expected_generation=$nuinui_e2e_host_history_generation
+  nuinui_e2e_expected_tested=$nuinui_e2e_host_history_tested
+  nuinui_e2e_host_fixture_policy=historical
+
+  nuinui_e2e_host_history_payload=
+  nuinui_e2e_host_history_root_identity=
+  nuinui_e2e_host_history_cleanup_handoff_sha=
+  for nuinui_e2e_host_history_kind in intent handoff ready cleanup-pending cleanup; do
+    nuinui_e2e_host_history_path=$(nuinui_e2e_host__metadata_path \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_host_history_kind") || exit 1
+    nuinui_e2e__regular "$nuinui_e2e_host_history_path" || exit 1
+    nuinui_e2e_host__read_record "$nuinui_e2e_host_history_path" \
+      "$nuinui_e2e_host_history_kind" historical || exit 1
+    [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_host_history_issue" ] &&
+      [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_host_history_generation" ] &&
+      [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_host_history_tested" ] &&
+      [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_history_lane" ] &&
+      nuinui_e2e__record_matches_lane "$nuinui_e2e_host_history_lane" \
+        "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path" || exit 1
+    nuinui_e2e_host_history_current_payload=$(nuinui_e2e_host__record_payload \
+      "$nuinui_e2e_host_history_path") || exit 1
+    if [ -z "$nuinui_e2e_host_history_payload" ]; then
+      nuinui_e2e_host_history_payload=$nuinui_e2e_host_history_current_payload
+    else
+      [ "$nuinui_e2e_host_history_current_payload" = \
+        "$nuinui_e2e_host_history_payload" ] || exit 1
+    fi
+    if [ "$nuinui_e2e_host_history_kind" = intent ]; then
+      [ "$nuinui_e2e_host_r_root_identity" = pending ] || exit 1
+    else
+      [ "$nuinui_e2e_host_r_root_identity" != pending ] || exit 1
+      if [ -z "$nuinui_e2e_host_history_root_identity" ]; then
+        nuinui_e2e_host_history_root_identity=$nuinui_e2e_host_r_root_identity
+      else
+        [ "$nuinui_e2e_host_history_root_identity" = \
+          "$nuinui_e2e_host_r_root_identity" ] || exit 1
+      fi
+    fi
+    if [ "$nuinui_e2e_host_history_kind" = cleanup ]; then
+      nuinui_e2e_host_history_cleanup_handoff_sha=$nuinui_e2e_host_r_handoff_sha
+    fi
+  done
+  [ -n "$nuinui_e2e_host_history_root_identity" ] || exit 1
+  nuinui_e2e_host_history_root=$(nuinui_e2e_host__root_for \
+    "$nuinui_e2e_host_history_generation") || exit 1
+  [ ! -e "$nuinui_e2e_host_history_root" ] &&
+    [ ! -L "$nuinui_e2e_host_history_root" ] || exit 1
+  nuinui_e2e_host_history_handoff=$(nuinui_e2e_host__metadata_path \
+    "$nuinui_e2e_expected_repo" handoff) || exit 1
+  [ "$nuinui_e2e_host_history_cleanup_handoff_sha" = \
+    "$(nuinui_e2e__sha256 "$nuinui_e2e_host_history_handoff")" ] || exit 1
+
+  nuinui_e2e_host_history_starting=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" starting) || exit 1
+  nuinui_e2e_host_history_releasing=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" releasing) || exit 1
+  nuinui_e2e_host_history_cleanup=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" cleanup) || exit 1
+  nuinui_e2e_host_history_release=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" release) || exit 1
+  nuinui_e2e__exists "$nuinui_e2e_host_history_starting" && exit 1
+  nuinui_e2e__exists "$nuinui_e2e_host_history_releasing" && exit 1
+  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_host_history_cleanup" || exit 1
+  nuinui_e2e__read_expected_release "$nuinui_e2e_host_history_release" || exit 1
+  nuinui_e2e_host_history_idle_sha=$nuinui_e2e_r_idle_sha
+  git -C "$nuinui_e2e_expected_repo" cat-file -e \
+    "$nuinui_e2e_host_history_idle_sha^{commit}" 2>/dev/null || exit 1
+  nuinui_e2e_host_history_head=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || exit 1
+  git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
+    "$nuinui_e2e_host_history_idle_sha" "$nuinui_e2e_host_history_head" || exit 1
+)
+
 nuinui_e2e_host__preflight_scan() {
   [ "$#" = 2 ] || return 2
   nuinui_e2e_host_scan_git_dir=$1
   nuinui_e2e_host_scan_lane=$2
   nuinui_e2e_host_scan_paths=$(find "$nuinui_e2e_host_scan_git_dir" -maxdepth 1 \
     -name 'nuinui-github-e2e-host-*' -print 2>/dev/null) || return 1
+  nuinui_e2e_host_scan_checked_generations=' '
   if [ -z "$nuinui_e2e_host_scan_paths" ]; then
     nuinui_e2e_host_orphan_root=$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation") || return 1
     nuinui_e2e__exists "$nuinui_e2e_host_orphan_root" && return 1
@@ -341,7 +460,8 @@ nuinui_e2e_host__preflight_scan() {
     [ -n "$nuinui_e2e_host_scan_path" ] || continue
     nuinui_e2e_host_scan_name=${nuinui_e2e_host_scan_path##*/}
     nuinui_e2e_host_scan_kind=$(nuinui_e2e_host__kind_from_name "$nuinui_e2e_host_scan_name") || return 1
-    nuinui_e2e_host__read_record "$nuinui_e2e_host_scan_path" "$nuinui_e2e_host_scan_kind" || return 1
+    nuinui_e2e_host__read_record "$nuinui_e2e_host_scan_path" \
+      "$nuinui_e2e_host_scan_kind" historical || return 1
     [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] || return 1
     nuinui_e2e_host_scan_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_host_r_generation") || return 1
     case "$nuinui_e2e_host_scan_name" in
@@ -352,10 +472,23 @@ nuinui_e2e_host__preflight_scan() {
       nuinui-github-e2e-host-cleanup-v1."$nuinui_e2e_host_scan_hash") ;;
       *) return 1 ;;
     esac
-    [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_expected_issue" ] &&
-      [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_expected_generation" ] &&
-      [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_expected_tested" ] &&
-      [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] || return 1
+    [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] || return 1
+    if [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_expected_generation" ]; then
+      [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+        [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_expected_tested" ] || return 1
+    else
+      nuinui_e2e_host_scan_hash=$(nuinui_e2e__generation_hash \
+        "$nuinui_e2e_host_r_generation") || return 1
+      case "$nuinui_e2e_host_scan_checked_generations" in
+        *" $nuinui_e2e_host_scan_hash "*) ;;
+        *)
+          nuinui_e2e_host__verify_released_history \
+            "$nuinui_e2e_host_r_issue" "$nuinui_e2e_host_r_generation" \
+            "$nuinui_e2e_host_r_tested" "$nuinui_e2e_host_scan_lane" || return 1
+          nuinui_e2e_host_scan_checked_generations="$nuinui_e2e_host_scan_checked_generations$nuinui_e2e_host_scan_hash "
+          ;;
+      esac
+    fi
   done <<EOF
 $nuinui_e2e_host_scan_paths
 EOF
@@ -372,18 +505,35 @@ EOF
 }
 
 nuinui_e2e_host__cleanup_proof_matches() {
-  [ "$#" = 1 ] || return 2
+  case "$#" in 1|6) ;; *) return 2 ;; esac
   nuinui_e2e_host_proof_sha=$1
-  nuinui_e2e_host_proof_path=$(nuinui_e2e_host__metadata_path \
-    "$nuinui_e2e_expected_repo" cleanup) || return 1
+  if [ "$#" = 1 ]; then
+    nuinui_e2e_host_proof_issue=$nuinui_e2e_expected_issue
+    nuinui_e2e_host_proof_lane=$nuinui_e2e_expected_lane
+    nuinui_e2e_host_proof_generation=$nuinui_e2e_expected_generation
+    nuinui_e2e_host_proof_tested=$nuinui_e2e_expected_tested
+    nuinui_e2e_host_proof_fixture_policy=${nuinui_e2e_host_fixture_policy:-required}
+  else
+    nuinui_e2e_host_proof_issue=$2
+    nuinui_e2e_host_proof_lane=$3
+    nuinui_e2e_host_proof_generation=$4
+    nuinui_e2e_host_proof_tested=$5
+    nuinui_e2e_host_proof_fixture_policy=$6
+  fi
+  case "$nuinui_e2e_host_proof_fixture_policy" in required|historical) ;; *) return 2 ;; esac
+  nuinui_e2e_host_proof_git_dir=$(lane_execution__git_dir \
+    "$nuinui_e2e_expected_repo") || return 1
+  nuinui_e2e_host_proof_path=$nuinui_e2e_host_proof_git_dir/nuinui-github-e2e-host-cleanup-v1.$(
+    nuinui_e2e__generation_hash "$nuinui_e2e_host_proof_generation")
   nuinui_e2e__regular "$nuinui_e2e_host_proof_path" || return 1
   [ "$(nuinui_e2e__sha256 "$nuinui_e2e_host_proof_path")" = \
     "$nuinui_e2e_host_proof_sha" ] || return 1
-  nuinui_e2e_host__read_record "$nuinui_e2e_host_proof_path" cleanup || return 1
-  [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_expected_issue" ] &&
-    [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_expected_lane" ] &&
-    [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_expected_generation" ] &&
-    [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_expected_tested" ]
+  nuinui_e2e_host__read_record "$nuinui_e2e_host_proof_path" cleanup \
+    "$nuinui_e2e_host_proof_fixture_policy" || return 1
+  [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_host_proof_issue" ] &&
+    [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_proof_lane" ] &&
+    [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_host_proof_generation" ] &&
+    [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_host_proof_tested" ]
 }
 
 nuinui_e2e_host__native_cleanup_proof() {

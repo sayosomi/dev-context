@@ -110,15 +110,8 @@ nuinui_e2e_host__verify_root() {
   nuinui_e2e_host_expected_owner=$(nuinui_e2e_host__owner_content)
   if nuinui_e2e__exists "$nuinui_e2e_host_owner"; then
     nuinui_e2e__regular "$nuinui_e2e_host_owner" || return 1
-    nuinui_e2e_host_verify_tmp=$(mktemp "${nuinui_e2e_host_verify_root}/.owner-verify.XXXXXX") || return 1
-    printf '%s' "$nuinui_e2e_host_expected_owner" > "$nuinui_e2e_host_verify_tmp" || {
-      rm -f "$nuinui_e2e_host_verify_tmp"
-      return 1
-    }
-    cmp -s "$nuinui_e2e_host_verify_tmp" "$nuinui_e2e_host_owner"
-    nuinui_e2e_host_verify_result=$?
-    rm -f "$nuinui_e2e_host_verify_tmp"
-    [ "$nuinui_e2e_host_verify_result" = 0 ] || return 1
+    printf '%s' "$nuinui_e2e_host_expected_owner" |
+      cmp -s - "$nuinui_e2e_host_owner" || return 1
   elif [ "$nuinui_e2e_host_verify_mode" = complete ]; then
     return 1
   fi
@@ -167,16 +160,9 @@ nuinui_e2e_host__remove_root() {
   fi
   if nuinui_e2e__exists "$nuinui_e2e_host_owner"; then
     nuinui_e2e_host_expected_owner=$(nuinui_e2e_host__owner_content)
-    nuinui_e2e_host_verify_tmp=$(mktemp "${nuinui_e2e_host_root}/.owner-remove.XXXXXX") || return 1
-    printf '%s' "$nuinui_e2e_host_expected_owner" > "$nuinui_e2e_host_verify_tmp" || {
-      rm -f "$nuinui_e2e_host_verify_tmp"
-      return 1
-    }
-    cmp -s "$nuinui_e2e_host_verify_tmp" "$nuinui_e2e_host_owner" || {
-      rm -f "$nuinui_e2e_host_verify_tmp"
-      return 1
-    }
-    rm -f "$nuinui_e2e_host_verify_tmp"
+    nuinui_e2e__regular "$nuinui_e2e_host_owner" || return 1
+    printf '%s' "$nuinui_e2e_host_expected_owner" |
+      cmp -s - "$nuinui_e2e_host_owner" || return 1
     rm "$nuinui_e2e_host_owner" || return 1
   fi
   [ -z "$(find "$nuinui_e2e_host_root" -mindepth 1 -maxdepth 1 -print 2>/dev/null)" ] || return 1
