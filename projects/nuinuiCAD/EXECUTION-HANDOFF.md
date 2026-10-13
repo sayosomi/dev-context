@@ -77,16 +77,19 @@ state:
 - For D1 implementation admission, inspect current GitHub Research/Improvement
   Issues and their material comments for evaluator-audit start checkpoints.
   An unmatched start, final checkout proof not independently verified against
-  the checkout, or ambiguous audit state blocks implementation even when the
-  legacy read-only preflight says `FREE`.
+  the checkout, or ambiguous audit state blocks implementation even when an
+  optional legacy read-only preflight diagnostic says `FREE`.
   The Issue comments are operational checkpoints, not a machine-enforced lock;
   follow the sequential exclusion rule in [`CHECKOUTS.md`](./CHECKOUTS.md).
   This is an occupancy check, not a new per-Task D1 activation or approval gate.
-- For a new Task, require the declared idle `main` form and run the existing
-  read-only `nuinui preflight`; it must report `FREE` / `preflight=PASS` before
-  new-Task admission is granted. For same-Task continuation, preserve the
-  separate exact pushed-checkpoint proof below; do not require the legacy
-  preflight to classify a clean native topic as `FREE` or `PASS`.
+- For a new Task, require the declared idle `main` form and complete the
+  independent read-only admission in [`CHECKOUTS.md`](./CHECKOUTS.md), including
+  validated checkout topology, current GitHub state, exact branch state, and
+  legacy metadata / audit exclusion proofs. A `FREE` / `preflight=PASS` result
+  from legacy `nuinui preflight` is not required and is not admission authority;
+  it remains available for optional diagnostics. For same-Task continuation,
+  preserve the separate exact pushed-checkpoint proof below; do not require the
+  legacy preflight to classify a clean native topic as `FREE` or `PASS`.
 - Inspect the exact Git directory and all existing legacy ownership and audit
   metadata read-only. Validate present and required records under their current
   schemas and reject symlinks. Missing required records, malformed, symlinked,

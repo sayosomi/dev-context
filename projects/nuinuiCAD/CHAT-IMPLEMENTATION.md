@@ -55,8 +55,9 @@ For each authorized implementation Task, the implementation chat will:
 1. Resolve the canonical GitHub Issue body and material comments. Re-audit
    scope, acceptance, verification, non-goals, dependencies, latest product
    code, normative specifications, relevant policy owners, and readiness.
-2. Perform the exact checkout, competing-work, legacy-metadata, new-Task
-   read-only preflight, or same-Task pushed-checkpoint checks owned by
+2. Perform the common checkout-identity, competing-work, and legacy-metadata
+   checks, plus either the new-Task independent read-only admission or the
+   same-Task exact pushed-checkpoint checks owned by
    [CHECKOUTS.md](./CHECKOUTS.md) and
    [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md).
 3. Generate the complete implementation-agent prompt from the current Issue
@@ -80,7 +81,8 @@ For each authorized implementation Task, the implementation chat will:
 
 The D1 admission check also reads current evaluator-audit Issue checkpoints.
 An unmatched audit start or final checkout proof not verified against the
-checkout blocks implementation, even when legacy preflight reports `FREE`.
+checkout blocks implementation, even when an optional legacy preflight
+diagnostic reports `FREE`.
 This is sequential execution exclusion, not another per-Task activation gate;
 the detailed checkpoint and checkout rules remain with
 [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md), [`ISSUES.md`](./ISSUES.md),
