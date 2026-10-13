@@ -162,6 +162,19 @@ nuinui-context context-check
 nuinui-context last-result
 ```
 
+For both `nuinui` and `nuinui-context`, the
+`<expected-artifact-blob>` argument to `context-audit`
+and `context-sync` is the Git blob SHA of
+`projects/nuinuiCAD/scripts/nuinui` at the expected
+authoritative main revision.
+
+The Git blob SHA of `scripts/nuinui-context` is separate
+executable identity evidence. It must not be used as the
+`<expected-artifact-blob>` argument.
+
+Derive both blob identities from the current authoritative
+GitHub revision. Do not reuse historical SHA values.
+
 This route becomes effective only after the D3-B policy PR is independently reviewed and successfully merged, the intended change is read back from authoritative GitHub `main`, the standard clone is guardedly synchronized with the existing production `nuinui`, an independent read-only candidate canary passes, and a separate explicit D3-B activation checkpoint is recorded in dev-context [Issue #268](https://github.com/sayosomi/dev-context/issues/268). Until that checkpoint is recorded, keep using the existing `nuinui` context route, including the existing production sync procedure. The new helper does not change sequential development, canonical worktree identity, caller-supplied exact SHA expectations, or fail-closed transition semantics.
 
 #### Fail-closed reuse

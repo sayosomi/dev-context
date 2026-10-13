@@ -76,6 +76,19 @@ nuinui-context context-check
 nuinui-context last-result
 ```
 
+For both `nuinui` and `nuinui-context`, the
+`<expected-artifact-blob>` argument to `context-audit`
+and `context-sync` is the Git blob SHA of
+`projects/nuinuiCAD/scripts/nuinui` at the expected
+authoritative main revision.
+
+The Git blob SHA of `scripts/nuinui-context` is separate
+executable identity evidence. It must not be used as the
+`<expected-artifact-blob>` argument.
+
+Derive both blob identities from the current authoritative
+GitHub revision. Do not reuse historical SHA values.
+
 This route becomes active only after all of these gates pass: the D3-B policy PR is independently reviewed and merged; the intended policy is read back from authoritative GitHub `main`; the standard clone is guardedly synchronized with the existing production `nuinui`; an independent read-only candidate canary verifies the actual checkouts and artifact; and a separate explicit D3-B activation checkpoint is recorded in dev-context [Issue #268](https://github.com/sayosomi/dev-context/issues/268). A policy merge or successful sync alone does not activate the candidate.
 
 Keep the existing production `nuinui` as the bootstrap tool through activation. Use its existing `context-audit` / `context-sync` procedure for the guarded standard-clone sync of the merged policy state. Before using `nuinui-context`, independently derive the expected candidate Git blob from authoritative GitHub `main` and compare it with both the checked-in candidate and the on-disk executable. Verify the old `nuinui` artifact separately; executable name, self-reported version, and rendered output do not establish artifact identity.
