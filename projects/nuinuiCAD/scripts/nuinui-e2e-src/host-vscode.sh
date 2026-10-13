@@ -22,16 +22,44 @@ if (!portArg || !rustStat || !rustStat.isFile() || (rustStat.mode & 0o111) === 0
   process.exit();
 }
 const port = Number(portArg.split("=", 2)[1]);
+const userDataArg = process.argv.slice(2).find(value => value.startsWith("--user-data-dir="));
+const extensionsArg = process.argv.slice(2).find(value => value.startsWith("--extensions-dir="));
+const cdpKind = process.env.NUINUI_E2E_TEST_CDP_KIND || "fake";
+if (!userDataArg || !extensionsArg || !["fake", "electron"].includes(cdpKind)) {
+  process.exitCode = 1;
+  process.exit();
+}
+const userData = userDataArg.slice("--user-data-dir=".length);
+const extensions = extensionsArg.slice("--extensions-dir=".length);
+const writeProfileFile = (base, relative, content) => {
+  const path = require("node:path");
+  const file = path.join(base, relative);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content, { flag: "wx", mode: 0o600 });
+};
+writeProfileFile(userData, "User/globalStorage/state.vscdb", "disposable global storage\n");
+writeProfileFile(userData, "User/workspaceStorage/fixture-workspace/workspace.json", "{}\n");
+writeProfileFile(userData, "logs/2026-10-13/window1/exthost/extension.log", "disposable extension log\n");
+writeProfileFile(userData, "CachedData/disposable/session.json", "{}\n");
+writeProfileFile(extensions, "extensions.json", "[]\n");
+writeProfileFile(extensions, "publisher.extension-1.0.0/package.json", "{}\n");
 const server = http.createServer((request, response) => {
   if (request.url !== "/json/version") {
     response.writeHead(404);
     response.end();
     return;
   }
-  const body = JSON.stringify({
+  const body = JSON.stringify(cdpKind === "fake" ? {
     Browser: "FakeVSCode/1.0",
     "Protocol-Version": "1.3",
     webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/disposable`,
+  } : {
+    Browser: "Chrome/134.0.6998.205",
+    "Protocol-Version": "1.3",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.6998.205 Electron/35.1.5 Safari/537.36",
+    "V8-Version": "13.5.212.10-electron.0",
+    "WebKit-Version": "537.36 (@disposable)",
+    webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/disposable-electron`,
   });
   response.writeHead(200, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
   response.end(body);
@@ -330,8 +358,13 @@ PY
   nuinui_e2e_vscode_app_identity=$(printf '%s\n' "$nuinui_e2e_vscode_app_rows" | sed -n '3p')
   if [ -n "${NUINUI_E2E_TEST_VSCODE_APP_ROOT:-}" ]; then
     nuinui_e2e_vscode_fake_app=yes
+    nuinui_e2e_vscode_cdp_kind=${NUINUI_E2E_TEST_CDP_KIND:-fake}
+    case "$nuinui_e2e_vscode_cdp_kind" in fake|electron) ;; *)
+      echo 'BLOCKED: test CDP response kind is unsupported'
+      return 1 ;; esac
   else
     nuinui_e2e_vscode_fake_app=no
+    nuinui_e2e_vscode_cdp_kind=electron
   fi
   nuinui_e2e_vscode_artifact_root=$nuinui_e2e_vscode_dogfood_root
   nuinui_e2e_vscode_artifact_identity=$nuinui_e2e_vscode_snapshot_stat
@@ -432,6 +465,149 @@ nuinui_e2e_host_vscode__root_identity() {
   stat -f '%d:%i' "$1" 2>/dev/null
 }
 
+nuinui_e2e_host_vscode__root_tree() {
+  [ "$#" = 4 ] || return 2
+  python3 - "$1" "$2" "$3" "$4" <<'PY'
+import os, stat, sys
+
+root, expected_identity, mode, action = sys.argv[1:]
+def blocked(message):
+    raise SystemExit("BLOCKED: " + message)
+if mode not in ("partial", "complete") or action not in ("verify", "clean-profiles"):
+    blocked("invalid owned-profile operation")
+try:
+    expected_device, expected_inode = (int(part) for part in expected_identity.split(":"))
+except (ValueError, AttributeError):
+    blocked("generation root identity is invalid")
+if os.path.realpath(root) != root:
+    blocked("generation root is not canonical")
+flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    root_fd = os.open(root, flags)
+except OSError as error:
+    blocked("generation root cannot be opened safely: " + str(error))
+
+def check_dir_fd(fd, expected=None):
+    info = os.fstat(fd)
+    if not stat.S_ISDIR(info.st_mode) or info.st_dev != expected_device:
+        blocked("owned profile tree contains a non-directory or crosses a filesystem boundary")
+    if expected is not None and (info.st_dev, info.st_ino) != expected:
+        blocked("owned profile directory identity changed")
+    return info
+
+def inspect_tree(fd, rel, remove=False):
+    check_dir_fd(fd)
+    try:
+        names = sorted(os.listdir(fd))
+    except OSError as error:
+        blocked("owned profile directory cannot be inspected: " + str(error))
+    for name in names:
+        try:
+            before = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        except OSError as error:
+            blocked("owned profile entry cannot be inspected: " + str(error))
+        if before.st_dev != expected_device:
+            blocked("owned profile entry crosses a filesystem boundary")
+        if stat.S_ISLNK(before.st_mode):
+            blocked("owned profile contains a symbolic link")
+        if stat.S_ISDIR(before.st_mode):
+            child_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            try:
+                child_fd = os.open(name, child_flags, dir_fd=fd)
+            except OSError as error:
+                blocked("owned profile directory cannot be opened without following links: " + str(error))
+            try:
+                check_dir_fd(child_fd, (before.st_dev, before.st_ino))
+                inspect_tree(child_fd, rel + "/" + name, remove)
+            finally:
+                os.close(child_fd)
+            if remove:
+                current = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
+                    blocked("owned profile directory changed during cleanup")
+                os.rmdir(name, dir_fd=fd)
+        elif stat.S_ISREG(before.st_mode):
+            if before.st_nlink != 1:
+                blocked("owned profile contains a multiply-linked file")
+            if remove:
+                file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+                try:
+                    file_fd = os.open(name, file_flags, dir_fd=fd)
+                except OSError as error:
+                    blocked("owned profile file cannot be opened without following links: " + str(error))
+                try:
+                    opened = os.fstat(file_fd)
+                    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                        blocked("owned profile file identity changed during cleanup")
+                    current = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                    if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
+                        blocked("owned profile file changed during cleanup")
+                    os.unlink(name, dir_fd=fd)
+                finally:
+                    os.close(file_fd)
+        else:
+            blocked("owned profile contains a special or unsupported filesystem object")
+
+try:
+    root_info = check_dir_fd(root_fd, (expected_device, expected_inode))
+    profile_dirs = {}
+    allowed_files = {
+        ".nuinui-vscode-host-owner-v1", "fixture.nui", "launch-args-v1",
+        "process-owner-v1", "cdp-response-sha256", "launch-intent-v1", "stop-intent-v1",
+    }
+    for name in sorted(os.listdir(root_fd)):
+        entry = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+        if entry.st_dev != root_info.st_dev or stat.S_ISLNK(entry.st_mode):
+            blocked("generation root contains a linked or foreign-device entry")
+        if name in ("user-data", "extensions"):
+            if not stat.S_ISDIR(entry.st_mode):
+                blocked("isolated profile root is not a real directory")
+            profile_dirs[name] = (entry.st_dev, entry.st_ino)
+            child_fd = os.open(name, flags, dir_fd=root_fd)
+            try:
+                check_dir_fd(child_fd, profile_dirs[name])
+                inspect_tree(child_fd, name)
+            finally:
+                os.close(child_fd)
+        elif name in allowed_files:
+            if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+                blocked("generation root contains an unsafe ownership record")
+        else:
+            blocked("generation root contains an unowned or unexpected resource")
+    if mode == "complete":
+        if set(profile_dirs) != {"user-data", "extensions"}:
+            blocked("complete generation is missing an isolated profile root")
+        user_fd = os.open("user-data", flags, dir_fd=root_fd)
+        try:
+            try:
+                user_info = os.stat("User", dir_fd=user_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                blocked("complete generation is missing its isolated User profile")
+            if not stat.S_ISDIR(user_info.st_mode) or user_info.st_dev != root_info.st_dev:
+                blocked("isolated User profile is not a real owned directory")
+        finally:
+            os.close(user_fd)
+    if action == "clean-profiles":
+        for name in ("user-data", "extensions"):
+            expected = profile_dirs.get(name)
+            if expected is None:
+                continue
+            child_fd = os.open(name, flags, dir_fd=root_fd)
+            try:
+                check_dir_fd(child_fd, expected)
+                inspect_tree(child_fd, name, remove=True)
+            finally:
+                os.close(child_fd)
+            current = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+            if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != expected:
+                blocked("isolated profile root changed during cleanup")
+            os.rmdir(name, dir_fd=root_fd)
+    check_dir_fd(root_fd, (expected_device, expected_inode))
+finally:
+    os.close(root_fd)
+PY
+}
+
 nuinui_e2e_host_vscode__verify_root() {
   [ "$#" = 2 ] || return 2
   nuinui_e2e_vscode_verify_root=$1
@@ -443,25 +619,8 @@ nuinui_e2e_host_vscode__verify_root() {
       "$nuinui_e2e_vscode_root" ] &&
     [ "$(nuinui_e2e_host_vscode__root_identity \
       "$nuinui_e2e_vscode_verify_root")" = "$nuinui_e2e_host_root_identity" ] || return 1
-  nuinui_e2e_vscode_links=$(find "$nuinui_e2e_vscode_verify_root" \
-    -type l -print 2>/dev/null) || return 1
-  [ -z "$nuinui_e2e_vscode_links" ] || return 1
-  nuinui_e2e_vscode_entries=$(find "$nuinui_e2e_vscode_verify_root" \
-    -mindepth 1 -print 2>/dev/null) || return 1
-  while IFS= read -r nuinui_e2e_vscode_entry ||
-    [ -n "$nuinui_e2e_vscode_entry" ]; do
-    [ -n "$nuinui_e2e_vscode_entry" ] || continue
-    nuinui_e2e_vscode_relative=${nuinui_e2e_vscode_entry#"$nuinui_e2e_vscode_root"/}
-    case "$nuinui_e2e_vscode_relative" in
-      user-data|user-data/User|extensions) [ -d "$nuinui_e2e_vscode_entry" ] || return 1 ;;
-      .nuinui-vscode-host-owner-v1|user-data/User/settings.json|fixture.nui|\
-      launch-args-v1|process-owner-v1|cdp-response-sha256|launch-intent-v1|stop-intent-v1)
-        nuinui_e2e__regular "$nuinui_e2e_vscode_entry" || return 1 ;;
-      *) return 1 ;;
-    esac
-  done <<EOF
-$nuinui_e2e_vscode_entries
-EOF
+  nuinui_e2e_host_vscode__root_tree "$nuinui_e2e_vscode_verify_root" \
+    "$nuinui_e2e_host_root_identity" "$nuinui_e2e_vscode_verify_mode" verify || return 1
   if nuinui_e2e__exists "$nuinui_e2e_vscode_launch_args"; then
     nuinui_e2e__regular "$nuinui_e2e_vscode_launch_args" || return 1
     nuinui_e2e_host_vscode__launch_args_content | cmp -s - \
@@ -781,19 +940,9 @@ nuinui_e2e_host_vscode__readiness() {
       echo 'BLOCKED: generation-owned CDP readiness endpoint is inaccessible'
       return 1
     }
-  printf '%s' "$nuinui_e2e_vscode_response" | python3 -c '
-import json, sys
-port = int(sys.argv[1])
-try:
-    body = json.load(sys.stdin)
-except (ValueError, OSError):
-    raise SystemExit("BLOCKED: CDP readiness response is not valid JSON")
-if not isinstance(body, dict) or body.get("Browser") != "FakeVSCode/1.0" or body.get("Protocol-Version") != "1.3":
-    raise SystemExit("BLOCKED: CDP readiness response does not identify the disposable host stub")
-url = body.get("webSocketDebuggerUrl", "")
-if not isinstance(url, str) or not url.startswith(f"ws://127.0.0.1:{port}/devtools/browser/"):
-    raise SystemExit("BLOCKED: CDP readiness URL does not bind the requested loopback port")
-' "$nuinui_e2e_host_port" || return 1
+  nuinui_e2e_host_vscode__validate_cdp_response \
+    "$nuinui_e2e_vscode_cdp_kind" "$nuinui_e2e_host_port" \
+    "$nuinui_e2e_vscode_response" || return 1
   nuinui_e2e_vscode_readiness_sha=$(printf '%s' "$nuinui_e2e_vscode_response" |
     shasum -a 256 | awk 'NR == 1 {print $1}') || return 1
   nuinui_e2e_valid_digest "$nuinui_e2e_vscode_readiness_sha" || return 1
@@ -804,12 +953,72 @@ if not isinstance(url, str) or not url.startswith(f"ws://127.0.0.1:{port}/devtoo
     "$nuinui_e2e_vscode_process_pid"
 }
 
+nuinui_e2e_host_vscode__validate_cdp_response() {
+  [ "$#" = 3 ] || return 2
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, re, sys
+from urllib.parse import urlsplit
+
+kind, raw_port, raw_body = sys.argv[1:]
+def blocked(message):
+    raise SystemExit("BLOCKED: " + message)
+if kind not in ("fake", "electron") or not raw_port.isdigit():
+    blocked("CDP response validation mode or port is invalid")
+port = int(raw_port)
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+try:
+    body = json.loads(raw_body, object_pairs_hook=unique_object)
+except (ValueError, TypeError):
+    blocked("CDP readiness response is not unique-key JSON")
+if not isinstance(body, dict) or body.get("Protocol-Version") != "1.3":
+    blocked("CDP readiness response has an unsupported protocol version")
+browser = body.get("Browser")
+websocket = body.get("webSocketDebuggerUrl")
+if not isinstance(browser, str) or not isinstance(websocket, str):
+    blocked("CDP readiness response is missing browser or WebSocket identity")
+try:
+    address = urlsplit(websocket)
+    address_port = address.port
+except ValueError:
+    blocked("CDP readiness WebSocket address is malformed")
+if (address.scheme != "ws" or address.hostname not in ("127.0.0.1", "localhost", "::1") or
+        address_port != port or address.username is not None or address.password is not None or
+        address.query or address.fragment or
+        not re.fullmatch(r"/devtools/browser/[A-Za-z0-9._:-]{1,256}", address.path)):
+    blocked("CDP readiness WebSocket address is not bound to the requested loopback port")
+if kind == "fake":
+    if set(body) != {"Browser", "Protocol-Version", "webSocketDebuggerUrl"} or browser != "FakeVSCode/1.0":
+        blocked("test CDP response does not match the explicit disposable fake-host shape")
+else:
+    chrome = re.fullmatch(r"Chrome/(\d+(?:\.\d+){1,3})", browser)
+    user_agent = body.get("User-Agent")
+    if not chrome:
+        blocked("Electron CDP response has no versioned Chromium browser identity")
+    if user_agent is not None:
+        if not isinstance(user_agent, str):
+            blocked("Electron CDP User-Agent is not text")
+        ua_chrome = re.search(r"(?:^|\s)Chrome/(\d+(?:\.\d+){1,3})(?:\s|$)", user_agent)
+        if ua_chrome and ua_chrome.group(1) != chrome.group(1):
+            blocked("Electron CDP User-Agent disagrees with its Chromium browser identity")
+        electron_versions = re.findall(r"(?:^|\s)Electron/(\d+(?:\.\d+){1,3})(?:\s|$)", user_agent)
+        if len(electron_versions) > 1:
+            blocked("Electron CDP User-Agent contains ambiguous Electron versions")
+PY
+}
+
 nuinui_e2e_host_vscode__cdp_content() {
   printf 'schema_version=1\n'
   printf 'issue=%s\n' "$nuinui_e2e_host_issue"
   printf 'generation=%s\n' "$nuinui_e2e_host_generation"
   printf 'process_identity_sha256=%s\n' "$nuinui_e2e_vscode_process_identity_sha"
   printf 'readiness_sha256=%s\n' "$nuinui_e2e_vscode_readiness_sha"
+  printf 'response_kind=%s\n' "$nuinui_e2e_vscode_cdp_kind"
 }
 
 nuinui_e2e_host_vscode__launch_intent_content() {
@@ -1015,11 +1224,12 @@ nuinui_e2e_host_vscode__verify_process_state() {
   if nuinui_e2e__exists "$nuinui_e2e_vscode_cdp_evidence"; then
     nuinui_e2e__regular "$nuinui_e2e_vscode_cdp_evidence" || return 1
     nuinui_ownership_validate_exact_file "$nuinui_e2e_vscode_cdp_evidence" \
-      schema_version,issue,generation,process_identity_sha256,readiness_sha256 || return 1
+      schema_version,issue,generation,process_identity_sha256,readiness_sha256,response_kind || return 1
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" schema_version)" = 1 ] &&
       [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" issue)" = "$nuinui_e2e_host_issue" ] &&
       [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" generation)" = "$nuinui_e2e_host_generation" ] &&
-      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" process_identity_sha256)" = "$nuinui_e2e_vscode_process_identity_sha" ] || return 1
+      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" process_identity_sha256)" = "$nuinui_e2e_vscode_process_identity_sha" ] &&
+      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" response_kind)" = "$nuinui_e2e_vscode_cdp_kind" ] || return 1
     nuinui_e2e_vscode_readiness_sha=$(nuinui_ownership_field \
       "$nuinui_e2e_vscode_cdp_evidence" readiness_sha256) || return 1
     nuinui_e2e_valid_digest "$nuinui_e2e_vscode_readiness_sha" || return 1
@@ -1148,6 +1358,8 @@ nuinui_e2e_host_vscode__remove_root() {
     nuinui_e2e_host_vscode__read_process_record || return 1
     nuinui_e2e_host_vscode__verify_process_state cleanup-pending || return 1
   fi
+  nuinui_e2e_host_vscode__root_tree "$nuinui_e2e_vscode_root" \
+    "$nuinui_e2e_host_root_identity" partial clean-profiles || return 1
   for nuinui_e2e_vscode_remove_file in \
     "$nuinui_e2e_vscode_user_settings" "$nuinui_e2e_vscode_workspace" \
     "$nuinui_e2e_vscode_launch_args" "$nuinui_e2e_vscode_process_record" \
@@ -1159,16 +1371,6 @@ nuinui_e2e_host_vscode__remove_root() {
       rm "$nuinui_e2e_vscode_remove_file" || return 1
     fi
   done
-  [ ! -L "$nuinui_e2e_vscode_user_data/User" ] || return 1
-  if [ -d "$nuinui_e2e_vscode_user_data/User" ]; then
-    rmdir "$nuinui_e2e_vscode_user_data/User" || return 1
-  fi
-  if [ -d "$nuinui_e2e_vscode_user_data" ]; then
-    rmdir "$nuinui_e2e_vscode_user_data" || return 1
-  fi
-  if [ -d "$nuinui_e2e_vscode_extensions_dir" ]; then
-    rmdir "$nuinui_e2e_vscode_extensions_dir" || return 1
-  fi
   [ -z "$(find "$nuinui_e2e_vscode_root" -mindepth 1 -maxdepth 1 -print 2>/dev/null)" ] || return 1
   [ "$(nuinui_e2e_host_vscode__root_identity "$nuinui_e2e_vscode_root")" = \
     "$nuinui_e2e_host_root_identity" ] || return 1
