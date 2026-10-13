@@ -858,3 +858,91 @@ CI reproductionも追加のexecution laneを作らない。必要ならFREEなde
 - malformed / stale durable metadataのage-based deletion。
 
 並列性はmanifestに宣言されたimplementation lane数で表現する。それ以上のdynamic laneを作らず、全laneを同時に使うこと自体も目的にしない。
+
+## Future GitHub-native Manual E2E checkout contract (inactive)
+
+This is a future checkout contract, not an available lifecycle or permission
+to create a lane, checkout, marker, session, or receipt. Native E2E remains
+unavailable until separately approved tooling and an explicit activation
+checkpoint exist. The compatible SAY lifecycle above keeps its current helper,
+marker/session/receipt authority, and exact recovery behavior.
+
+### Admission and checkout identity
+
+The current [`LANES.conf`](./LANES.conf) declares zero `role=human-test` lanes.
+That is a hard startup block. Do not reuse an implementation lane, create an
+unregistered checkout, or make a native E2E generation until a separate
+Human-approved manifest change declares a Human-test lane and every admission
+check below passes. A Required Manual E2E cannot be waived or reported PASS
+because capacity is zero.
+
+For a future native generation, the selected checkout must be a manifest-
+declared `role=human-test` lane with the required `idle=detached` topology. At
+the admission boundary, verify all of the following from fresh Git and manifest
+state:
+
+- the exact repository is `sayosomi/nuinuiCAD`, with the expected canonical
+  remote and Git directory;
+- the exact checkout path, registered worktree identity, lane name, and role
+  match the manifest;
+- the complete registered-worktree topology for the repository is inventoried
+  and reconciled with declared lanes; no checkout has an unknown or competing
+  owner;
+- the authoritative tested commit and exact tested ref are fixed before
+  startup. For a new generation, require an independently proven FREE,
+  clean, detached Human-test checkout in its manifest-declared idle form.
+  Do not require that idle checkout to already be at the tested ref: only
+  the separately approved guarded start mutation may detach it to that
+  exact ref, verify the clean tested-ref HEAD, and establish the active
+  generation marker. Throughout the active generation, keep HEAD fixed
+  at the tested ref. An exact duplicate start instead proves the existing
+  marker and tested-ref checkout without changing either;
+- the product implementation checkout has a separately verified safe return
+  to its idle state, with no competing implementation or evaluator audit;
+- the current Issue acceptance, Manual E2E eligibility, Human-only executor,
+  and exact generation identity agree with the Issue record.
+
+Do not advance the tested ref or move the detached HEAD during a generation.
+Any mismatch, dirty or named checkout, incomplete topology, stale authority,
+or foreign ownership fails closed before mutation.
+
+### Future generation and recovery evidence
+
+The native Work identity is the canonical GitHub identity in
+[`ISSUES.md`](./ISSUES.md#future-github-native-manual-e2e-checkpoints-inactive).
+If future tooling serializes it locally, it must use the reserved
+`GH-sayosomi-nuinuiCAD-<N>` token and reverse-map exactly to that Issue. This
+token is not accepted by the old `nuinui` or `nuinui-e2e-prepare` executables.
+Do not put it in live metadata in this policy change, reinterpret any `SAY-N`
+record, or change the existing legacy marker schema.
+
+Future native marker and session evidence must be strict, generation-scoped,
+and mutually consistent. Bind the canonical Issue, reserved local token, exact
+manifest lane and checkout identity, immutable tested ref, and unique
+generation identity; bind any session to that same generation. Treat the
+active marker as current-generation authority and give it precedence over
+completed receipts. A receipt cannot override an active marker or session, and
+an old SAY marker, session, or receipt cannot be adopted as native state.
+
+Session, process, handoff, and temporary-root ownership must be proved against
+that exact generation before any cleanup. Cleanup may affect only the owned
+session, processes, handoff, and root. A durable cleanup receipt and its
+read-back must precede release completion. A strict release receipt must be
+durable and verified before the active marker is removed. Final closure then
+requires an independent read-only proof that the exact lane has returned to its
+verified manifest-declared idle topology, is clean and detached at the current
+authoritative ref, and matches the complete registered-worktree topology.
+
+Only an exact duplicate for the same Issue, lane, tested ref, and generation
+may succeed as a read-only no-op after every relevant artifact and ownership
+fact is reverified. Near matches, stale or malformed artifacts, interruption,
+or uncertain process ownership fail closed. Recovery must use a separately
+approved exact-generation procedure with fresh snapshots; never repair state
+automatically, infer a generation from a receipt, retry an unsafe mutation, or
+remove foreign files or processes. No competing checkout ownership is allowed
+at any point.
+
+These future requirements do not change the existing legacy closure order
+`cleanup -> e2e-release -> closure-check` or remove its `SAY-N` release gates.
+Manual E2E judgment and execution semantics remain owned by
+[`MANUAL-E2E.md`](./MANUAL-E2E.md).

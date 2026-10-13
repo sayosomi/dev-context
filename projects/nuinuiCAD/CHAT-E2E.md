@@ -155,3 +155,43 @@ E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読�
 ## Maintenance rule
 
 このdocumentはE2E chat固有のlifecycle boundaryだけをownerする。Manual E2E semantics、Human production-host setup、checkout detailはそれぞれのowner documentへ置く。Inactive Luna E2E materialは`LUNA-E2E-PLAYBOOK.md`だけに隔離する。
+
+## Future GitHub-native Manual E2E route (inactive)
+
+This section defines a future route only. It does not activate or provide a
+currently callable E2E command. The compatible legacy SAY procedures above
+remain the only supported current E2E helper lifecycle.
+
+A native GitHub Issue has no legacy `nuinui` implementation generation or
+claim. Native Manual E2E admission must not require `IMPLEMENTATION RELEASED`,
+a legacy implementation-lane release checkpoint, or a legacy release receipt;
+do not create synthetic legacy state to satisfy those gates.
+
+Before native E2E can start, the current Issue contract and E2E eligibility
+must be rechecked, and all of these facts must be proved together:
+
+- the implementation is merged through the reviewed GitHub path;
+- the authoritative tested commit and exact tested ref are fixed and verified;
+- the product checkout has safely returned to its verified idle state;
+- no competing implementation or evaluator audit owns or is using a checkout;
+- a manifest-declared `role=human-test` lane passes the full checkout and
+  ownership admission in [`CHECKOUTS.md`](./CHECKOUTS.md);
+- the exact Issue, lane, tested ref, generation, and recovery evidence agree.
+
+The current manifest has zero Human-test lanes, so this route is blocked before
+startup. A Required Manual E2E remains governed by
+[`MANUAL-E2E.md`](./MANUAL-E2E.md); this route does not waive its acceptance or
+change its Human-only executor, oracle, result, stabilization, actual-host
+evidence, or post-merge verification rules.
+
+The native start checkpoint and later progress, stop, result, and closure
+evidence belong in the canonical GitHub Issue comments described by
+[`ISSUES.md`](./ISSUES.md#future-github-native-manual-e2e-checkpoints-inactive).
+Closure must prove the exact generation was safely cleaned up and released,
+then independently prove the final checkout state. An interrupted or ambiguous
+generation remains blocked until its exact recovery evidence is independently
+resolved; do not infer closure from a merge, result comment, or stale receipt.
+
+This route cannot be invoked until its tooling has been separately approved,
+implemented, and verified, and a separate explicit activation checkpoint has
+been recorded. This contract-only change is not that approval or activation.

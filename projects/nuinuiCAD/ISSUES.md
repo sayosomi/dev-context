@@ -109,3 +109,67 @@ Linearは新しいWorkやDocumentの作成先ではなく、既存SAY taskの旧
 ## Maintenance boundary
 
 本documentはGitHub Issueのauthoring、current contract、readiness、freshness、completion、history preservationをownerする。Cutover checkpointは[#268](https://github.com/sayosomi/dev-context/issues/268)、GitHub PR linking / mergeは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)、checkout / implementation lifecycleは[`CHECKOUTS.md`](./CHECKOUTS.md)、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)、および各role ownerが定める。個別TaskのSHA、branch、progressをこのdurable policyへ保存しない。
+
+## Future GitHub-native Manual E2E checkpoints (inactive)
+
+This section defines future Issue evidence only. It does not activate native
+E2E or change the current Work-contract authority: the Issue body continues to
+own current scope, acceptance, and Manual E2E eligibility; comments retain
+operational evidence and decisions. A merge, even a reviewed and verified
+merge, is never a Manual E2E PASS.
+
+### Native identity
+
+The canonical GitHub Work identity is `sayosomi/nuinuiCAD#<N>`, with canonical
+URL `https://github.com/sayosomi/nuinuiCAD/issues/<N>`. `<N>` is a positive
+canonical decimal GitHub Issue number with no sign, whitespace, or leading
+zeroes.
+
+Reserve `GH-sayosomi-nuinuiCAD-<N>` as a future-only local serialization token.
+It must map one-to-one back to the canonical GitHub Issue and is distinct from
+legacy `SAY-<N>`. The old `nuinui` and `nuinui-e2e-prepare` executables do not
+accept this token. It is not a supported current input and must not be written
+to live metadata by this contract change. Never equate GitHub Issue number N
+with SAY-N, modify the legacy marker schema, or reinterpret an existing SAY
+record as native Work.
+
+### Operational comment checkpoints
+
+After native tooling is separately approved and activated, retain these
+checkpoints in the canonical GitHub Issue comments. Comments are durable
+evidence, not an atomic lane lock or a substitute for checkout proof.
+
+- **Manual E2E plan and required acceptance:** record the current Issue
+  acceptance and Required status, the plan and eligibility decision, and the
+  relevant owner links. Keep the
+  Human-only execution, oracle, classification, stabilization, actual-host
+  evidence, and post-merge verification rules in
+  [`MANUAL-E2E.md`](./MANUAL-E2E.md).
+- **Tested implementation:** record the reviewed merge, authoritative tested
+  commit and exact tested ref, and evidence mapping the required units to the
+  production path. For post-merge reverse-map evidence, follow
+  [`MANUAL-E2E.md`](./MANUAL-E2E.md#post-merge-implementation-backed-reverse-map-re-audit).
+- **E2E start:** record the canonical Issue, its exact reserved local token
+  mapping if used, manifest lane and checkout identity, exact tested ref, and
+  unique generation / marker / session identity with the admission evidence.
+- **E2E progress and stop:** record material progress, any interruption or
+  stop reason, what execution is known to have stopped, retained evidence, and
+  unresolved process, ownership, or recovery facts.
+- **Human result:** record `PASS`, `FAIL`, or `BLOCKED` with the applicable
+  oracle observations and actual-host evidence. Apply classification and
+  judgment only under [`MANUAL-E2E.md`](./MANUAL-E2E.md).
+- **Closure and final checkout proof:** record exact-generation cleanup and
+  release evidence, marker/session state, and the independent final proof of
+  repository/worktree identity, safe idle return, clean state, and complete
+  registered-worktree topology.
+- **Recovery and rerun:** retain every unresolved recovery condition and the
+  evidence required before an exact recovery or a separately admitted rerun.
+  An unmatched start, missing closure proof, ambiguous owner, or unresolved
+  interruption blocks reuse and rerun.
+
+These future checkpoints do not create lane metadata or synthetic receipts,
+loosen the current zero-Human-test-lane block in
+[`CHECKOUTS.md`](./CHECKOUTS.md#future-github-native-manual-e2e-checkout-contract-inactive),
+or make the reserved token usable by current executables. Native Manual E2E
+cannot be invoked until its tooling is separately approved, implemented,
+verified, and explicitly activated.
