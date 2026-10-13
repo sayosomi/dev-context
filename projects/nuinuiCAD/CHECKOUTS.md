@@ -85,24 +85,29 @@ independently re-establish the following from current GitHub and local state:
 - Prove the repository identity and exact registered product worktree at
   /Users/yosomi/Code/nuinuiCAD. Inspect the complete registered-worktree
   inventory, current branch and HEAD, and tracked and untracked status.
+- Validate the current `LANES.conf` against its existing manifest schema
+  before deriving the expected checkout set. Reject missing, malformed,
+  duplicate, or ambiguous declarations, repository/path mismatches, and any
+  registered-worktree set that differs from the authorized declared paths.
+  This is a read-only check; do not change the manifest or create a checkout.
 - Confirm there is no other active product implementation or evaluator audit.
   GitHub branches or PRs alone do not prove local execution is idle; if current
   execution occupancy cannot be established, stop.
-- Apply the legacy idle classifier according to the entry type. For a new Task,
-  the checkout must be in the declared idle `main` form and the existing
-  read-only nuinui preflight must report `FREE` / `preflight=PASS` for
-  new-Task idle-main admission. For a same-Task native continuation on its expected
-  topic branch, do not require the legacy preflight to classify the checkout as
-  `FREE` or return `PASS`. A clean topic branch without a legacy slot may be
-  `BLOCKED` under the existing classifier; that known classification difference
-  proves neither available capacity nor permission to proceed. If the reason
-  for `BLOCKED`, or any other execution state, is ambiguous, stop.
+- For a new Task, prove the checkout is in the declared idle `main` form using
+  the independent read-only admission checks below. A `FREE` / `preflight=PASS`
+  result from legacy `nuinui preflight` is not required and does not grant
+  admission; that command may be used for optional diagnostics only. For a
+  same-Task native continuation on its expected topic branch, do not require
+  legacy preflight to classify the checkout as `FREE` or return `PASS`. A clean
+  topic branch without a legacy slot may be `BLOCKED` under the old classifier;
+  that classification proves neither capacity nor permission to proceed. If
+  any reason for `BLOCKED`, or any other execution state, is ambiguous, stop.
 - For a native continuation, independently verify that the current Issue
   checkpoint names this exact Issue and slice, topic branch, and pushed SHA;
   the local topic branch and HEAD and freshly fetched remote topic ref must all
   equal that SHA. The checkout must be clean, and no competing implementation
-  or evaluator audit may be active. This continuation proof does not assign a
-  new `FREE` / `BUSY` classification or replace the legacy classifier.
+  or evaluator audit may be active. This exact continuation proof does not
+  require or assign a legacy `FREE` / `BUSY` classification.
 - For either entry type, inspect the exact Git directory from
   `git rev-parse --absolute-git-dir` and inventory the existing legacy
   ownership/audit metadata using read-only operations. This includes the
@@ -316,8 +321,8 @@ checkpoints, not atomic or machine-enforced locks: this workflow does not
 provide the machine-enforced exclusion formerly supplied by the durable audit
 reservation. All participants must follow the sequence, and missing or
 ambiguous occupancy blocks execution. The D1 implementation admission must
-check for an unfinished evaluator audit even when legacy preflight reports
-`FREE`.
+check for an unfinished evaluator audit even when an optional legacy preflight
+diagnostic reports `FREE`.
 
 If remote product `main` advances during an active audit, record the new SHA
 as drift in the Issue comments. Keep the local checkout and audit evidence at
@@ -416,7 +421,7 @@ nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-s
 
 ### Legacy SAY preflight diagnostic / routing rule
 
-このdiagnostic / routing手順はcompatible pre-existing SAY taskだけに適用する。Native GitHub new Taskは上記Git-only admissionに定めたread-only `nuinui preflight`とindependent safety checksを使い、same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証する。native Taskをlegacy `begin` / `handoff`へrouteしない。
+このlegacy preflight / routing手順はcompatible pre-existing SAY taskだけに適用し、その既存startupで必要なpreflightを維持する。Native GitHub new Taskは上記のindependent read-only Git-only admissionを使う。`nuinui preflight`はnative Taskに対するoptional diagnosticであり、admission prerequisiteではない。Same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証し、native Taskをlegacy `begin` / `handoff`へrouteしない。
 
 `nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation Luna handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
 
