@@ -60,6 +60,45 @@ git -C /Users/yosomi/Code/dev-context pull --ff-only
 
 local cloneがdirty、`main`以外、またはfast-forward不可能ならreset / stash / forceせず`BLOCKED:`で停止する。
 
+## Context-only CLI — D3-B gated and currently inactive
+
+`nuinui-context` is a standalone executable whose sole role is the independent dev-context context operations: standard-clone audit and guarded sync, persistent dev-context worktree audit and guarded transition, context checks, and its own result read-back. It does not own nuinuiCAD implementation lifecycle, audit reservations, or E2E operations. The candidate is currently inactive. Until the separate D3-B activation checkpoint is recorded, the production `nuinui` route above remains in force for context audit and standard-clone synchronization.
+
+The future command surface is:
+
+```bash
+nuinui-context context-audit <expected-main> <expected-artifact-blob>
+nuinui-context context-sync <expected-main> <expected-artifact-blob>
+nuinui-context context-dev-audit <expected-branch> <expected-head>
+nuinui-context context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>
+nuinui-context context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>
+nuinui-context context-check
+nuinui-context last-result
+```
+
+For both `nuinui` and `nuinui-context`, the
+`<expected-artifact-blob>` argument to `context-audit`
+and `context-sync` is the Git blob SHA of
+`projects/nuinuiCAD/scripts/nuinui` at the expected
+authoritative main revision.
+
+The Git blob SHA of `scripts/nuinui-context` is separate
+executable identity evidence. It must not be used as the
+`<expected-artifact-blob>` argument.
+
+Derive both blob identities from the current authoritative
+GitHub revision. Do not reuse historical SHA values.
+
+This route becomes active only after all of these gates pass: the D3-B policy PR is independently reviewed and merged; the intended policy is read back from authoritative GitHub `main`; the standard clone is guardedly synchronized with the existing production `nuinui`; an independent read-only candidate canary verifies the actual checkouts and artifact; and a separate explicit D3-B activation checkpoint is recorded in dev-context [Issue #268](https://github.com/sayosomi/dev-context/issues/268). A policy merge or successful sync alone does not activate the candidate.
+
+Keep the existing production `nuinui` as the bootstrap tool through activation. Use its existing `context-audit` / `context-sync` procedure for the guarded standard-clone sync of the merged policy state. Before using `nuinui-context`, independently derive the expected candidate Git blob from authoritative GitHub `main` and compare it with both the checked-in candidate and the on-disk executable. Verify the old `nuinui` artifact separately; executable name, self-reported version, and rendered output do not establish artifact identity.
+
+The tools keep separate durable mutation result stores in the resolved repository Git directory: `nuinui` uses `nuinui-command-result-v1`, while `nuinui-context` uses `nuinui-context-command-result-v1`. Each tool's `last-result` reads only its own store. Original `nuinui` records are not `nuinui-context` execution results, and candidate records are not `nuinui` results. For an interrupted or ambiguous mutation, inspect the result store belonging to the executable that actually ran and reconcile its evidence with current checkout state. Do not blindly retry the mutation, switch to the other tool as an automatic fallback, or treat the other tool's result store as proof.
+
+The real-clone read-only canary found matching identity and clean-state evidence, with one known presentation difference: the candidate prints duplicate plain `AUDIT COMPLETE` and `DEV-CONTEXT AUDIT COMPLETE` headings after the decorated headings. This is not byte-identical output parity. Do not add parsing or routing assumptions that depend on exact legacy heading formatting; independently verify the command's identity and state evidence before activation.
+
+After activation, only these independent context operations move to `nuinui-context`. Existing `nuinui` lifecycle commands, compatible legacy audit reservations, E2E operations, and their recovery remain on `nuinui`; do not remove or deprecate that helper as part of D3-B. If candidate identity, checkout state, or mutation outcome is stale, interrupted, or ambiguous, stop and fail closed at that boundary for a separately reviewed recovery.
+
 ## Versioned `nuinui` helper
 
 current standalone helper version: `1.15.0`。
@@ -405,9 +444,9 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 `nuinui self-test`はmanifest-driven isolated runtime regressionでcomplete inventory admission、renamed lanes、wrong-role rejection、Human-test short/explicit selection、manifest resolution/security、uncertain mutation recovery、release receipt、topology-only helper byte identityを検証し、`scripts/test-nuinui-command-result`、`scripts/test-nuinui-integration-clean`、`scripts/test-nuinui-pr-auto-merge-retired`、`scripts/test-nuinui-context-sync`、およびsource-budget regressionを集約する。
 
-### Inactive context CLI candidate
+### D3-B context CLI activation boundary
 
-`scripts/nuinui-context` is an inactive development candidate for isolated review only. It is not production-approved, does not replace `scripts/nuinui`, and must not be used for real clone synchronization or worktree transitions. Its documented commands are `nuinui-context context-audit`, `nuinui-context context-sync`, `nuinui-context context-dev-audit`, `nuinui-context context-dev-transition`, `nuinui-context context-dev-next`, `nuinui-context context-check`, and `nuinui-context last-result`. Candidate mutation testing must use disposable fixture repositories only.
+`scripts/nuinui-context` is currently inactive and is not production-approved. Until the separate D3-B activation checkpoint, use it only for authorized read-only inspection; do not use its sync or transition commands on real clones. After activation, its scope is limited to the context-only commands listed in the D3-B section above, while `scripts/nuinui` retains the legacy lifecycle, reservation, and E2E roles. Any candidate mutation tests before activation must use disposable fixture repositories.
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / manifest-derived complete inventory fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。通常の`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative default / `clean=yes` / `state=FREE`を返し、exact duplicateは`IMPLEMENTATION ALREADY RELEASED`とlane / Issue / Base / saved checkpoint / released claim / released branch / authoritative default / `clean=yes` / `mutation=no-op` / `state=FREE`を返す。
 
@@ -459,11 +498,11 @@ clean=yes
 
 ### Standalone non-lane mechanics
 
-E2E, context-audit / context-sync / context-dev-audit / context-dev-transition / context-dev-next, doctor, transition-audit, context-checkも同じ`nuinui` scriptが直接実装する。別backend fileの存在をruntime preconditionにしない。
+Until D3-B activation, E2E, `nuinui context-audit`, `nuinui context-sync`, `nuinui context-dev-audit`, `nuinui context-dev-transition`, `nuinui context-dev-next`, doctor, transition-audit, and `nuinui context-check` remain implemented and routed through the existing `nuinui` executable. After activation, route only the independent context operations listed above through `nuinui-context`; the existing helper continues to own its lifecycle, compatible audit-reservation, E2E, doctor, and transition-audit commands. D3-B does not remove or deprecate legacy commands or change their metadata and reservation stores.
 
 旧`nuinui pr-auto-merge` CLIは1.14.0で廃止した。新規PRは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のowner-comment GitHub Actions方式を使う。旧予約の専用runtime・GitHub PR補助・required-check判定・生成入力・CLI dispatchと旧専用回帰テストは削除済み。過去のvalidな`nuinui last-result` version=1 recordsはread-onlyで保持し、廃止済みCLIの再実行は拒否する。`test-nuinui-pr-auto-merge-retired`がCLI拒否・GitHub呼出し不在を確認する。
 
-`nuinui doctor --full`、`transition-audit`、`context-check`、`context-audit`、`context-dev-audit`はread-only。`context-sync`はexpected-main tree artifactを検証したff-only mutation、`context-dev-transition`と`context-dev-next`はexact old-stateを再検証したordinary detach/switch + create/switchだけを行う。これらはcleanup、process stop、Issue selection、GitHub update、merge判断を行わず、one-time worktree migrationやgeneric worktree cleanupもcommand surfaceに含めない。
+Legacy `nuinui doctor --full`, `nuinui transition-audit`, `nuinui context-check`, `nuinui context-audit`, and `nuinui context-dev-audit` are read-only. Its `context-sync` validates the expected-main tree artifact and performs only a guarded ff-only mutation; `context-dev-transition` and `context-dev-next` revalidate the exact old state and perform only ordinary detach/switch plus branch create/switch. After activation, the candidate's `context-check`, `context-audit`, and `context-dev-audit` remain read-only, while its `context-sync`, `context-dev-transition`, and `context-dev-next` preserve those same exact-SHA and fail-closed boundaries. Neither route performs cleanup, process stop, Issue selection, GitHub updates, merge decisions, one-time worktree migration, or generic worktree cleanup.
 
 ## Human Manual E2E preparation helper
 

@@ -34,6 +34,21 @@ is historical operational proof at the revision recorded in its
 That SHA is not a fixed revision for future audits. General use still requires
 the separate D2-C activation checkpoint in #268.
 
+## Independent dev-context context tooling — D3-B activation gated
+
+The future context-only route uses standalone `nuinui-context` for context
+audit, sync, dev-worktree audit and transition, checks, and its own result
+read-back. It becomes effective only after the D3-B policy PR is independently
+reviewed and merged, read back from authoritative dev-context `main`, followed
+by guarded standard-clone sync with the existing production `nuinui`, an
+independent read-only candidate canary, and a separate explicit activation
+checkpoint in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). Until
+that checkpoint, continue the existing `nuinui` context route. See
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) for rollout and recovery boundaries and
+[dev-context `DEVELOPMENT.md`](../../DEVELOPMENT.md) for sequential worktree
+transition rules.
+
 ## Compatible legacy SAY implementation flow
 
 The flow below applies only to pre-existing SAY tasks already admitted to the
