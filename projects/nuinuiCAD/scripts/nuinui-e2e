@@ -1,0 +1,2919 @@
+#!/bin/sh
+#!/bin/sh
+
+# Data-only lane topology manifest API.
+#
+# The manifest is a deliberately small configuration format, not shell. This
+# file parses it with awk and never sources, evaluates, or executes its values.
+# All lane enumeration preserves the manifest's declaration order, which is
+# explicit and deterministic.
+
+lane_manifest__query() {
+  [ "$#" -ge 2 ] || return 2
+  lane_manifest_operation=$1
+  lane_manifest_manifest=$2
+  lane_manifest_query=${3-}
+
+  case "$lane_manifest_operation" in
+    validate|all|role-list|lane-valid|lane-role|lane-path|lane-idle|repository|default-branch)
+      ;;
+    *)
+      return 2
+      ;;
+  esac
+  [ -f "$lane_manifest_manifest" ] && [ -r "$lane_manifest_manifest" ] || {
+    echo "LANE MANIFEST BLOCKED: manifest is not a readable regular file: $lane_manifest_manifest" >&2
+    return 1
+  }
+
+  LC_ALL=C awk \
+    -v operation="$lane_manifest_operation" \
+    -v query="$lane_manifest_query" '
+function blocked(message) {
+  if (!invalid) {
+    print "LANE MANIFEST BLOCKED: " message > "/dev/stderr"
+  }
+  invalid = 1
+}
+function valid_repository(value) {
+  return value ~ /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+}
+function valid_default_branch(value) {
+  if (value !~ /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/) {
+    return 0
+  }
+  if (value ~ /\/\// || value ~ /\/\.\.?($|\/)/ || value ~ /\.lock$/) {
+    return 0
+  }
+  return 1
+}
+function valid_path(value) {
+  if (value !~ /^\// || value == "/") {
+    return 0
+  }
+  if (value ~ /[[:space:]]/ || value ~ /\/\// || value ~ /\/\.\.?($|\/)/) {
+    return 0
+  }
+  return 1
+}
+function valid_role(value) {
+  return value == "implementation" || value == "human-test"
+}
+function valid_idle(value) {
+  return value == "branch" || value == "detached"
+}
+function emit_lanes(role,     i, name) {
+  for (i = 1; i <= lane_count; i++) {
+    name = lane_order[i]
+    if (role == "" || lane_field[name SUBSEP "role"] == role) {
+      print name
+    }
+  }
+}
+BEGIN {
+  invalid = 0
+  current_lane = ""
+  lane_count = 0
+  if (operation == "role-list" && query != "implementation" && query != "human-test") {
+    blocked("invalid role filter: " query)
+  }
+}
+{
+  line = $0
+  if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) {
+    next
+  }
+
+  if (line ~ /^\[lane [A-Za-z0-9][A-Za-z0-9._-]*\]$/) {
+    if (!has_version || !has_repository || !has_default_branch) {
+      blocked("lane section appears before the complete header")
+    }
+    current_lane = substr(line, 7, length(line) - 7)
+    if (current_lane in lane_present) {
+      blocked("duplicate lane name: " current_lane)
+    } else {
+      lane_present[current_lane] = 1
+      lane_order[++lane_count] = current_lane
+    }
+    next
+  }
+
+  if (line !~ /^[a-z_][a-z0-9_]*=[^[:space:]]+$/) {
+    blocked("malformed section or key: " line)
+    next
+  }
+
+  separator = index(line, "=")
+  key = substr(line, 1, separator - 1)
+  value = substr(line, separator + 1)
+  if (current_lane == "") {
+    if (key != "version" && key != "repository" && key != "default_branch") {
+      blocked("malformed header key: " key)
+      next
+    }
+    if (header_present[key]) {
+      blocked("duplicate header key: " key)
+      next
+    }
+    header_present[key] = 1
+    if (key == "version") {
+      has_version = 1
+      if (value != "1") {
+        blocked("unsupported version: " value)
+      }
+    } else if (key == "repository") {
+      has_repository = 1
+      repository = value
+      if (!valid_repository(value)) {
+        blocked("invalid repository identity: " value)
+      }
+    } else {
+      has_default_branch = 1
+      default_branch = value
+      if (!valid_default_branch(value)) {
+        blocked("invalid default branch: " value)
+      }
+    }
+    next
+  }
+
+  if (key != "role" && key != "path" && key != "idle") {
+    blocked("malformed lane key: " key)
+    next
+  }
+  field_key = current_lane SUBSEP key
+  if (field_key in lane_field) {
+    blocked("duplicate lane key: " current_lane "." key)
+    next
+  }
+  lane_field[field_key] = value
+}
+END {
+  if (!has_version) {
+    blocked("missing required key: version")
+  }
+  if (!has_repository) {
+    blocked("missing required key: repository")
+  }
+  if (!has_default_branch) {
+    blocked("missing required key: default_branch")
+  }
+  if (lane_count == 0) {
+    blocked("manifest declares no lanes")
+  }
+
+  for (i = 1; i <= lane_count; i++) {
+    name = lane_order[i]
+    for (j = 1; j <= 3; j++) {
+      if (j == 1) {
+        field = "role"
+      } else if (j == 2) {
+        field = "path"
+      } else {
+        field = "idle"
+      }
+      if (!(name SUBSEP field in lane_field)) {
+        blocked("missing required lane key: " name "." field)
+      }
+    }
+    if ((name SUBSEP "role") in lane_field && !valid_role(lane_field[name SUBSEP "role"])) {
+      blocked("invalid role for lane " name ": " lane_field[name SUBSEP "role"])
+    }
+    if ((name SUBSEP "path") in lane_field && !valid_path(lane_field[name SUBSEP "path"])) {
+      blocked("invalid checkout path for lane " name ": " lane_field[name SUBSEP "path"])
+    }
+    if ((name SUBSEP "idle") in lane_field && !valid_idle(lane_field[name SUBSEP "idle"])) {
+      blocked("invalid idle policy for lane " name ": " lane_field[name SUBSEP "idle"])
+    }
+  }
+
+  if (invalid) {
+    exit 1
+  }
+  if (operation == "validate") {
+    exit 0
+  }
+  if (operation == "all") {
+    emit_lanes("")
+    exit 0
+  }
+  if (operation == "role-list") {
+    emit_lanes(query)
+    exit 0
+  }
+  if (operation == "repository") {
+    print repository
+    exit 0
+  }
+  if (operation == "default-branch") {
+    print default_branch
+    exit 0
+  }
+  if (!(query in lane_present)) {
+    blocked("unknown lane name: " query)
+    exit 1
+  }
+  if (operation == "lane-valid") {
+    print query
+  } else if (operation == "lane-role") {
+    print lane_field[query SUBSEP "role"]
+  } else if (operation == "lane-path") {
+    print lane_field[query SUBSEP "path"]
+  } else if (operation == "lane-idle") {
+    print lane_field[query SUBSEP "idle"]
+  }
+}
+' "$lane_manifest_manifest"
+}
+
+lane_manifest_validate() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query validate "$1" >/dev/null
+}
+
+lane_manifest_all_lanes() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query all "$1"
+}
+
+lane_manifest_lanes_by_role() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query role-list "$1" "$2"
+}
+
+lane_manifest_validate_lane_name() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-valid "$1" "$2" >/dev/null
+}
+
+lane_manifest_lane_name_valid() {
+  lane_manifest_validate_lane_name "$@"
+}
+
+lane_manifest_lane_role() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-role "$1" "$2"
+}
+
+lane_manifest_lane_path() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-path "$1" "$2"
+}
+
+lane_manifest_lane_idle_policy() {
+  [ "$#" = 2 ] || return 2
+  lane_manifest__query lane-idle "$1" "$2"
+}
+
+lane_manifest_repository_identity() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query repository "$1"
+}
+
+lane_manifest_default_branch() {
+  [ "$#" = 1 ] || return 2
+  lane_manifest__query default-branch "$1"
+}
+#!/bin/sh
+
+# Generic durable ownership metadata primitives.
+#
+# The version=1 format is intentionally shared by implementation ownership,
+# recovery, Human-test markers, and command consumers.  This source owns the
+# format and scalar validation without knowing any project's lane names or
+# checkout paths.  Project policy is supplied through the callbacks defined by
+# the assembled runtime.
+
+nuinui_ownership_valid_issue() {
+  if command -v lane_execution_validate_work_id >/dev/null 2>&1; then
+    lane_execution_validate_work_id "$1"
+    return $?
+  fi
+  case "$1" in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+}
+
+nuinui_ownership_valid_sha() {
+  printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'
+}
+
+nuinui_ownership_valid_claim() {
+  printf '%s\n' "$1" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z._-]{7,127}$'
+}
+
+nuinui_ownership_valid_lane_name() {
+  case "$1" in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+}
+
+nuinui_ownership_issue_from_branch() {
+  printf '%s\n' "$1" | sed -n 's/.*[sS][aA][yY]-\([0-9][0-9]*\).*/SAY-\1/p'
+}
+
+nuinui_ownership_valid_branch() {
+  git check-ref-format --branch "$1" >/dev/null 2>&1
+}
+
+nuinui_ownership_validate_issue_branch() {
+  if command -v lane_execution_validate_issue_branch >/dev/null 2>&1; then
+    lane_execution_validate_issue_branch "$1" "$2"
+    return $?
+  fi
+  nuinui_ownership_valid_issue "$1" || return 1
+  nuinui_ownership_valid_branch "$2"
+}
+
+nuinui_ownership_read_fields() {
+  [ -f "$1" ] || return 1
+  nuinui_ownership_metadata_file=$1
+  nuinui_ownership_expected_keys=$2
+  awk -v keys="$nuinui_ownership_expected_keys" '
+    BEGIN {
+      count=split(keys, expected, ",")
+      for (i=1; i<=count; i++) allowed[expected[i]]=1
+    }
+    {
+      equals=index($0, "=")
+      if (equals <= 1) {
+        invalid=1
+        next
+      }
+      key=substr($0, 1, equals-1)
+      value=substr($0, equals+1)
+      if (!(key in allowed) || (key in seen) || value == "") {
+        invalid=1
+        next
+      }
+      seen[key]=1
+      values[key]=value
+    }
+    END {
+      for (i=1; i<=count; i++) if (!(expected[i] in seen)) invalid=1
+      if (invalid) exit 1
+      for (i=1; i<=count; i++) {
+        printf "%s", values[expected[i]]
+        if (i < count) printf " "
+        else printf "\n"
+      }
+    }
+  ' "$nuinui_ownership_metadata_file"
+}
+
+nuinui_ownership_field() {
+  [ -f "$1" ] || return 1
+  nuinui_ownership_metadata_file=$1
+  nuinui_ownership_wanted_key=$2
+  awk -v wanted="$nuinui_ownership_wanted_key" '
+    {
+      equals=index($0, "=")
+      if (equals <= 1) {
+        invalid=1
+        next
+      }
+      key=substr($0, 1, equals-1)
+      value=substr($0, equals+1)
+      if (key == wanted) {
+        if (value == "" || found) invalid=1
+        found=1
+        result=value
+      }
+    }
+    END {
+      if (invalid || !found) exit 1
+      print result
+    }
+  ' "$nuinui_ownership_metadata_file"
+}
+
+nuinui_ownership_validate_exact_file() {
+  nuinui_ownership_read_fields "$1" "$2" >/dev/null
+}
+
+nuinui_ownership_validate_initialization() {
+  nuinui_ownership_initialize_version=$(nuinui_ownership_read_fields "$1" version) || return 1
+  [ "$nuinui_ownership_initialize_version" = 1 ]
+}
+
+nuinui_ownership_parse_slot() {
+  set -- $(nuinui_ownership_read_fields "$1" version,issue,branch,base,claim) || return 1
+  [ "$#" = 5 ] || return 1
+  [ "$1" = 1 ] || return 1
+  nuinui_ownership_validate_issue_branch "$2" "$3" || return 1
+  nuinui_ownership_valid_sha "$4" || return 1
+  nuinui_ownership_valid_claim "$5" || return 1
+  printf '%s %s %s %s\n' "$2" "$3" "$4" "$5"
+}
+
+nuinui_ownership_parse_release_receipt() {
+  set -- $(nuinui_ownership_read_fields "$1" version,lane,issue,branch,base,checkpoint,claim) || return 1
+  [ "$#" = 7 ] || return 1
+  [ "$1" = 1 ] || return 1
+  nuinui_ownership_valid_lane_name "$2" || return 1
+  nuinui_ownership_validate_issue_branch "$3" "$4" || return 1
+  nuinui_ownership_valid_sha "$5" || return 1
+  nuinui_ownership_valid_sha "$6" || return 1
+  nuinui_ownership_valid_claim "$7" || return 1
+  printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
+nuinui_ownership_validate_audit_reservation() {
+  nuinui_ownership_audit_file=$1
+  nuinui_ownership_validate_exact_file "$nuinui_ownership_audit_file" \
+    version,issue,lane,revision,generation,checkout,git_dir,repository,default_branch,idle_policy,original_branch,pre_ff_head,post_ff_base,state || return 1
+  nuinui_ownership_audit_version=$(nuinui_ownership_field "$nuinui_ownership_audit_file" version) || return 1
+  nuinui_ownership_audit_issue=$(nuinui_ownership_field "$nuinui_ownership_audit_file" issue) || return 1
+  nuinui_ownership_audit_lane=$(nuinui_ownership_field "$nuinui_ownership_audit_file" lane) || return 1
+  nuinui_ownership_audit_revision=$(nuinui_ownership_field "$nuinui_ownership_audit_file" revision) || return 1
+  nuinui_ownership_audit_generation=$(nuinui_ownership_field "$nuinui_ownership_audit_file" generation) || return 1
+  nuinui_ownership_audit_checkout=$(nuinui_ownership_field "$nuinui_ownership_audit_file" checkout) || return 1
+  nuinui_ownership_audit_git_dir=$(nuinui_ownership_field "$nuinui_ownership_audit_file" git_dir) || return 1
+  nuinui_ownership_audit_repository=$(nuinui_ownership_field "$nuinui_ownership_audit_file" repository) || return 1
+  nuinui_ownership_audit_default=$(nuinui_ownership_field "$nuinui_ownership_audit_file" default_branch) || return 1
+  nuinui_ownership_audit_idle=$(nuinui_ownership_field "$nuinui_ownership_audit_file" idle_policy) || return 1
+  nuinui_ownership_audit_branch=$(nuinui_ownership_field "$nuinui_ownership_audit_file" original_branch) || return 1
+  nuinui_ownership_audit_pre_ff=$(nuinui_ownership_field "$nuinui_ownership_audit_file" pre_ff_head) || return 1
+  nuinui_ownership_audit_base=$(nuinui_ownership_field "$nuinui_ownership_audit_file" post_ff_base) || return 1
+  nuinui_ownership_audit_state=$(nuinui_ownership_field "$nuinui_ownership_audit_file" state) || return 1
+  [ "$nuinui_ownership_audit_version" = 1 ] || return 1
+  nuinui_ownership_valid_issue "$nuinui_ownership_audit_issue" || return 1
+  nuinui_ownership_valid_lane_name "$nuinui_ownership_audit_lane" || return 1
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_revision" || return 1
+  nuinui_ownership_valid_claim "$nuinui_ownership_audit_generation" || return 1
+  case "$nuinui_ownership_audit_checkout:$nuinui_ownership_audit_git_dir" in
+    /*:/*) ;;
+    *) return 1 ;;
+  esac
+  case "$nuinui_ownership_audit_repository" in
+    ''|*[!A-Za-z0-9._/-]*) return 1 ;;
+  esac
+  nuinui_ownership_valid_branch "$nuinui_ownership_audit_default" || return 1
+  case "$nuinui_ownership_audit_idle" in
+    branch)
+      [ "$nuinui_ownership_audit_branch" = "$nuinui_ownership_audit_default" ] || return 1
+      ;;
+    detached)
+      [ "$nuinui_ownership_audit_branch" = - ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_pre_ff" || return 1
+  [ "$nuinui_ownership_audit_base" = "$nuinui_ownership_audit_revision" ] || return 1
+  case "$nuinui_ownership_audit_state" in
+    PREPARING|ACTIVE|RELEASING) ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_ownership_validate_audit_receipt() {
+  nuinui_ownership_audit_receipt=$1
+  nuinui_ownership_validate_exact_file "$nuinui_ownership_audit_receipt" \
+    version,issue,lane,revision,generation,checkout,git_dir,repository,default_branch,idle_policy,original_branch,pre_ff_head,post_ff_base,released_at || return 1
+  nuinui_ownership_audit_receipt_version=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" version) || return 1
+  nuinui_ownership_audit_receipt_issue=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" issue) || return 1
+  nuinui_ownership_audit_receipt_lane=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" lane) || return 1
+  nuinui_ownership_audit_receipt_revision=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" revision) || return 1
+  nuinui_ownership_audit_receipt_generation=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" generation) || return 1
+  nuinui_ownership_audit_receipt_checkout=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" checkout) || return 1
+  nuinui_ownership_audit_receipt_git_dir=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" git_dir) || return 1
+  nuinui_ownership_audit_receipt_repository=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" repository) || return 1
+  nuinui_ownership_audit_receipt_default=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" default_branch) || return 1
+  nuinui_ownership_audit_receipt_idle=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" idle_policy) || return 1
+  nuinui_ownership_audit_receipt_branch=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" original_branch) || return 1
+  nuinui_ownership_audit_receipt_pre_ff=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" pre_ff_head) || return 1
+  nuinui_ownership_audit_receipt_base=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" post_ff_base) || return 1
+  nuinui_ownership_audit_receipt_time=$(nuinui_ownership_field "$nuinui_ownership_audit_receipt" released_at) || return 1
+  [ "$nuinui_ownership_audit_receipt_version" = 1 ] || return 1
+  nuinui_ownership_valid_issue "$nuinui_ownership_audit_receipt_issue" || return 1
+  nuinui_ownership_valid_lane_name "$nuinui_ownership_audit_receipt_lane" || return 1
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_receipt_revision" || return 1
+  nuinui_ownership_valid_claim "$nuinui_ownership_audit_receipt_generation" || return 1
+  case "$nuinui_ownership_audit_receipt_checkout:$nuinui_ownership_audit_receipt_git_dir" in
+    /*:/*) ;;
+    *) return 1 ;;
+  esac
+  case "$nuinui_ownership_audit_receipt_repository" in
+    ''|*[!A-Za-z0-9._/-]*) return 1 ;;
+  esac
+  nuinui_ownership_valid_branch "$nuinui_ownership_audit_receipt_default" || return 1
+  case "$nuinui_ownership_audit_receipt_idle" in
+    branch)
+      [ "$nuinui_ownership_audit_receipt_branch" = "$nuinui_ownership_audit_receipt_default" ] || return 1
+      ;;
+    detached)
+      [ "$nuinui_ownership_audit_receipt_branch" = - ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  nuinui_ownership_valid_sha "$nuinui_ownership_audit_receipt_pre_ff" || return 1
+  [ "$nuinui_ownership_audit_receipt_base" = "$nuinui_ownership_audit_receipt_revision" ] || return 1
+  printf '%s\n' "$nuinui_ownership_audit_receipt_time" |
+    grep -Eq '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z$'
+}
+
+nuinui_ownership_parse_lock() {
+  set -- $(nuinui_ownership_read_fields "$1" version,operation,issue,branch,base,checkpoint,claim) || return 1
+  [ "$#" = 7 ] || return 1
+  [ "$1" = 1 ] || return 1
+  case "$2" in
+    init|start|resume|release|audit-begin|audit-release) ;;
+    *) return 1 ;;
+  esac
+  case "$3:$4" in
+    -:-) ;;
+    -:*|*:-) return 1 ;;
+    *)
+      case "$2" in
+        audit-begin|audit-release) return 1 ;;
+        *) nuinui_ownership_validate_issue_branch "$3" "$4" || return 1 ;;
+      esac
+      ;;
+  esac
+  [ "$5" = - ] || nuinui_ownership_valid_sha "$5" || return 1
+  [ "$6" = - ] || nuinui_ownership_valid_sha "$6" || return 1
+  nuinui_ownership_valid_claim "$7" || return 1
+  printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
+nuinui_ownership_parse_releasing() {
+  nuinui_ownership_releasing_dir=$1
+  [ -d "$nuinui_ownership_releasing_dir" ] || return 1
+  set -- $(nuinui_ownership_parse_slot "$nuinui_ownership_releasing_dir/state") || return 1
+  [ -f "$nuinui_ownership_releasing_dir/checkpoint" ] || return 1
+  nuinui_ownership_releasing_checkpoint=$(cat "$nuinui_ownership_releasing_dir/checkpoint") || return 1
+  nuinui_ownership_valid_sha "$nuinui_ownership_releasing_checkpoint" || return 1
+  [ "${nuinui_ownership_releasing_dir##*/}" = "nuinui-implementation-slot.releasing.$4" ] || return 1
+  printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$nuinui_ownership_releasing_checkpoint"
+}
+#!/bin/sh
+
+# Generic runtime mechanics shared by manifest-driven lane operations and the
+# existing project command sources.  Lane identity, checkout path, idle form,
+# repository, and default branch are read from NUINUI_RUNTIME_MANIFEST.
+
+lane_execution_runtime_ready() {
+  [ -n "${NUINUI_RUNTIME_MANIFEST:-}" ] &&
+    lane_manifest_validate "$NUINUI_RUNTIME_MANIFEST"
+}
+
+lr() {
+  lane_execution_runtime_ready || return 1
+  lane_manifest_lane_path "$NUINUI_RUNTIME_MANIFEST" "$1"
+}
+
+il() {
+  lane_execution_runtime_ready || return 1
+  [ "$(lane_manifest_lane_role "$NUINUI_RUNTIME_MANIFEST" "$1" 2>/dev/null)" = implementation ]
+}
+
+gr() { [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
+
+ao() {
+  runtime_origin=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+  runtime_origin=${runtime_origin%/}
+  runtime_expected=$2
+  case "$runtime_origin" in
+    *"/$runtime_expected"|*"/$runtime_expected.git"|*":$runtime_expected"|*":$runtime_expected.git"|"$runtime_expected"|"$runtime_expected.git") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cn() { [ -z "$(git -C "$1" status --porcelain 2>/dev/null)" ]; }
+bn() { git -C "$1" symbolic-ref --quiet --short HEAD 2>/dev/null || true; }
+hh() { git -C "$1" rev-parse HEAD 2>/dev/null; }
+
+lane_execution_runtime_default_branch() {
+  if [ -n "${NUINUI_RUNTIME_MANIFEST:-}" ]; then
+    lane_manifest_default_branch "$NUINUI_RUNTIME_MANIFEST"
+  else
+    printf '%s\n' main
+  fi
+}
+
+om() { git -C "$1" rev-parse "origin/$(lane_execution_runtime_default_branch)" 2>/dev/null; }
+fm() { git -C "$1" fetch origin "$(lane_execution_runtime_default_branch)" >/dev/null 2>&1; }
+fp() { git -C "$1" fetch origin --prune >/dev/null 2>&1; }
+an() { git -C "$1" merge-base --is-ancestor "$2" "$3"; }
+sd() { git -C "$1" switch --detach "$2" >/dev/null; }
+gd() { git -C "$1" rev-parse --absolute-git-dir 2>/dev/null; }
+ip() { printf '%s/nuinui-implementation-v1\n' "$(gd "$1")"; }
+sp() { printf '%s/nuinui-implementation-slot\n' "$(gd "$1")"; }
+kp() { printf '%s/nuinui-implementation-lock\n' "$(gd "$1")"; }
+ap() { printf '%s/nuinui-audit-reservation-v1\n' "$(gd "$1")"; }
+arp() { printf '%s/nuinui-audit-release-receipt-v1\n' "$(gd "$1")"; }
+rp() { printf '%s/nuinui-implementation-slot.releasing.%s\n' "$(gd "$1")" "$2"; }
+rds() {
+  runtime_releasing_git_dir=$(gd "$1") || return 1
+  runtime_releasing=$(find "$runtime_releasing_git_dir" -maxdepth 1 -type d \
+    -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  [ -z "$runtime_releasing" ] || printf '%s\n' "$runtime_releasing" | LC_ALL=C sort
+}
+mp() { printf '%s/nuinui-slot\n' "$(gd "$1")"; }
+ep() { printf '%s/nuinui-e2e-session\n' "$(gd "$1")"; }
+
+wa() {
+  runtime_write_target=$1.tmp.$$
+  (umask 077; printf '%b' "$2" >"$runtime_write_target") && mv -- "$runtime_write_target" "$1"
+}
+
+gc() {
+  command -v uuidgen >/dev/null 2>&1 && uuidgen | tr A-Z a-z ||
+    printf '%s:%s:%s\n' $$ "$(date +%s)" "${RANDOM:-0}" | git hash-object --stdin
+}
+
+lo() {
+  runtime_lock_dir=$(kp "$1")
+  mkdir "$runtime_lock_dir" 2>/dev/null || return 1
+  wa "$runtime_lock_dir/state" \
+    "version=1\noperation=$2\nissue=$4\nbranch=$5\nbase=$6\ncheckpoint=$7\nclaim=$3\n"
+}
+
+ul() {
+  runtime_unlock_repo=$1
+  runtime_unlock_claim=$2
+  set -- $(nuinui_ownership_parse_lock "$(kp "$runtime_unlock_repo")/state") || return 1
+  [ "$6" = "$runtime_unlock_claim" ] || return 1
+  rm "$(kp "$runtime_unlock_repo")/state" && rmdir "$(kp "$runtime_unlock_repo")"
+}
+
+am() {
+  git -C "$1" ls-remote origin "refs/heads/$(lane_execution_runtime_default_branch)" 2>/dev/null |
+    awk 'NR == 1 {print $1}'
+}
+
+ab() {
+  git -C "$1" ls-remote --heads origin "refs/heads/$2" 2>/dev/null | awk 'NR == 1 {print $1}'
+}
+
+id() {
+  runtime_idle_lane=$1
+  runtime_idle_repo=$2
+  runtime_idle_head=$3
+  cn "$runtime_idle_repo" || return 1
+  [ "$(hh "$runtime_idle_repo")" = "$runtime_idle_head" ] || return 1
+  case "$(lane_manifest_lane_idle_policy "$NUINUI_RUNTIME_MANIFEST" "$runtime_idle_lane" 2>/dev/null)" in
+    branch) [ "$(bn "$runtime_idle_repo")" = "$(lane_execution_runtime_default_branch)" ] ;;
+    detached) [ -z "$(bn "$runtime_idle_repo")" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+nr() {
+  runtime_no_release_dirs=$(rds "$1") || return 1
+  [ -z "$runtime_no_release_dirs" ]
+}
+
+bo() {
+  runtime_branch_path=$(CDPATH= cd -- "$1" && pwd -P) || return 1
+  git -C "$1" worktree list --porcelain 2>/dev/null |
+    awk -v branch="refs/heads/$2" -v path="$runtime_branch_path" '
+      /^worktree / {worktree=substr($0, 10)}
+      /^branch / && substr($0, 8) == branch && worktree != path {print worktree; exit}
+    '
+}
+
+rr() { printf '%s/nuinui-implementation-release-receipt\n' "$(gd "$1")"; }
+
+lane_execution_prove_busy_retry() {
+  local attempt
+  for attempt in 1 2 3; do lane_execution__prove_busy "$@" && return 0; done
+  return 1
+}
+
+# Compatibility name retained for project integration code. Existing project
+# callers pass lane-first arguments; the generic owner receives the manifest.
+lifecycle_prove_busy_retry() {
+  [ "$#" = 6 ] || return 2
+  lane_execution_prove_busy_retry "$NUINUI_RUNTIME_MANIFEST" "$1" "$2" \
+    "$4" "$3" "$5" &&
+    [ "$lane_execution_proof_checkpoint" = "$6" ]
+}
+#!/bin/sh
+
+# Generic manifest-driven lane preflight and registered-worktree inventory.
+#
+# This source consumes the data-only manifest API and adapts the existing v1
+# ownership readers/classification rules without assigning meaning to lane
+# names.
+
+# BEGIN DEVELOPMENT-ONLY SOURCE LOADING
+lane_execution_source_dir=${LANE_EXECUTION_SOURCE_DIR:-}
+if [ -z "$lane_execution_source_dir" ] && [ "${LANE_EXECUTION_PREFLIGHT_EXECUTE:-0}" = 1 ]; then
+  lane_execution_source_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+fi
+
+if ! command -v lane_manifest_validate >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
+  . "$lane_execution_source_dir/manifest.sh"
+fi
+
+if ! command -v nuinui_ownership_read_fields >/dev/null 2>&1 && [ -n "$lane_execution_source_dir" ]; then
+  . "$lane_execution_source_dir/ownership.sh"
+fi
+# END DEVELOPMENT-ONLY SOURCE LOADING
+
+# Internal, one-call projection used only while the matching audit mutation
+# lock is held. Public preflight entrypoints clear these values before use.
+lane_execution_audit_projection_operation=
+lane_execution_audit_projection_generation=
+
+# Reuse the established v1 field reader and generic scalar validators.  The
+# generic parser below supplies the lane-independent slot/lock checks while
+# keeping project Work-ID / branch policy in an explicit callback.
+
+lane_execution_validate_issue_branch() {
+  # Project adapters may replace this callback with their stricter Work-ID /
+  # branch relationship rule.  The topology contract itself only requires a
+  # non-empty safe issue token and a valid Git branch reference.
+  lane_execution_issue=$1
+  lane_execution_branch=$2
+  case "$lane_execution_issue" in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  git check-ref-format --branch "$lane_execution_branch" >/dev/null 2>&1
+}
+
+lane_execution_validate_work_id() {
+  # Project adapters replace this callback with their Work-ID policy.  It is
+  # intentionally separate from topology parsing: a manifest never contains
+  # project expressions or executable validation rules.
+  lane_execution_work_id=$1
+  case "$lane_execution_work_id" in
+    ''|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+}
+
+lane_execution_human_test_preflight() {
+  # Project adapters replace this hook.  The generic fallback proves only the
+  # common checkout boundary and emits role-specific evidence.
+  lane_execution_human_lane=$1
+  lane_execution_human_repo=$2
+  lane_execution_human_manifest=$3
+  lane_execution_human_branch=$(git -C "$lane_execution_human_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  lane_execution_human_head=$(git -C "$lane_execution_human_repo" rev-parse HEAD 2>/dev/null || true)
+  lane_execution_human_dirty=$(git -C "$lane_execution_human_repo" status --porcelain 2>/dev/null)
+  printf '  branch=%s\n' "${lane_execution_human_branch:-DETACHED}"
+  printf '  head=%s\n' "$lane_execution_human_head"
+  printf '  clean=%s\n' "$([ -z "$lane_execution_human_dirty" ] && echo yes || echo no)"
+  printf '  human_hook=generic\n'
+  printf '  state=%s\n' "$([ -z "$lane_execution_human_dirty" ] && [ -z "$lane_execution_human_branch" ] && echo FREE || echo BLOCKED)"
+  [ -n "$lane_execution_human_head" ] &&
+    [ -z "$lane_execution_human_dirty" ] &&
+    [ -z "$lane_execution_human_branch" ]
+}
+
+lane_execution__path_exists() {
+  [ -e "$1" ] || [ -L "$1" ]
+}
+
+lane_execution__git_dir() {
+  git -C "$1" rev-parse --absolute-git-dir 2>/dev/null
+}
+
+lane_execution__canonical_path() {
+  lane_execution_input_path=$1
+  [ -d "$lane_execution_input_path" ] || return 1
+  lane_execution_canonical=$(CDPATH= cd -- "$lane_execution_input_path" && pwd -P) || return 1
+  [ -n "$lane_execution_canonical" ] || return 1
+  case "$lane_execution_canonical" in
+    /*) printf '%s\n' "$lane_execution_canonical" ;;
+    *) return 1 ;;
+  esac
+}
+
+lane_execution__repository_matches() {
+  lane_execution_repo=$1
+  lane_execution_expected_identity=$2
+  lane_execution_origin=$(git -C "$lane_execution_repo" remote get-url origin 2>/dev/null) || return 1
+  lane_execution_origin=${lane_execution_origin%/}
+  case "$lane_execution_origin" in
+    *"/$lane_execution_expected_identity"|*"/$lane_execution_expected_identity.git"|*":$lane_execution_expected_identity"|*":$lane_execution_expected_identity.git"|"$lane_execution_expected_identity"|"$lane_execution_expected_identity.git")
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+lane_execution__origin_default() {
+  lane_execution_default_repo=$1
+  lane_execution_default_branch_name=$2
+  git -C "$lane_execution_default_repo" ls-remote origin \
+    "refs/heads/$lane_execution_default_branch_name" 2>/dev/null |
+    awk 'NR == 1 {print $1}'
+}
+
+lane_execution__valid_sha() {
+  nuinui_ownership_valid_sha "$1"
+}
+
+lane_execution__valid_claim() {
+  nuinui_ownership_valid_claim "$1"
+}
+
+lane_execution__parse_issue_branch() {
+  lane_execution_validate_issue_branch "$1" "$2"
+}
+
+lane_execution__parse_slot() {
+  [ -f "$1" ] || return 1
+  set -- $(nuinui_ownership_read_fields "$1" version,issue,branch,base,claim) || return 1
+  [ "$#" = 5 ] || return 1
+  [ "$1" = 1 ] || return 1
+  lane_execution__parse_issue_branch "$2" "$3" || return 1
+  lane_execution__valid_sha "$4" || return 1
+  lane_execution__valid_claim "$5" || return 1
+  printf '%s %s %s %s\n' "$2" "$3" "$4" "$5"
+}
+
+lane_execution__parse_lock() {
+  [ -f "$1" ] || return 1
+  set -- $(nuinui_ownership_read_fields "$1" version,operation,issue,branch,base,checkpoint,claim) || return 1
+  [ "$#" = 7 ] || return 1
+  [ "$1" = 1 ] || return 1
+  case "$2" in
+    init|start|resume|release|audit-begin|audit-release) ;;
+    *) return 1 ;;
+  esac
+  case "$3:$4" in
+    -:-) ;;
+    -:*|*:-) return 1 ;;
+    *)
+      case "$2" in
+        audit-begin|audit-release) return 1 ;;
+        *) lane_execution__parse_issue_branch "$3" "$4" || return 1 ;;
+      esac
+      ;;
+  esac
+  [ "$5" = - ] || lane_execution__valid_sha "$5" || return 1
+  [ "$6" = - ] || lane_execution__valid_sha "$6" || return 1
+  lane_execution__valid_claim "$7" || return 1
+  printf '%s %s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
+lane_execution__parse_releasing() {
+  lane_execution_releasing_dir=$1
+  [ -d "$lane_execution_releasing_dir" ] || return 1
+  set -- $(lane_execution__parse_slot "$lane_execution_releasing_dir/state") || return 1
+  [ -f "$lane_execution_releasing_dir/checkpoint" ] || return 1
+  lane_execution_releasing_checkpoint=$(cat "$lane_execution_releasing_dir/checkpoint") || return 1
+  lane_execution__valid_sha "$lane_execution_releasing_checkpoint" || return 1
+  [ "${lane_execution_releasing_dir##*/}" = "nuinui-implementation-slot.releasing.$4" ] || return 1
+  printf '%s %s %s %s %s\n' "$1" "$2" "$3" "$4" "$lane_execution_releasing_checkpoint"
+}
+
+lane_execution__release_dirs() {
+  lane_execution_git_dir=$1
+  find "$lane_execution_git_dir" -maxdepth 1 -type d \
+    -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null | LC_ALL=C sort
+}
+
+lane_execution__occupancy_idle_proof() {
+  lane_execution_idle_lane=$1
+  lane_execution_idle_repo=$2
+  lane_execution_idle_policy=$3
+  lane_execution_idle_default_branch=$4
+  lane_execution_idle_expected_head=${5-}
+  lane_execution_idle_dirty=$(git -C "$lane_execution_idle_repo" status --porcelain 2>/dev/null)
+  [ -z "$lane_execution_idle_dirty" ] || return 1
+  lane_execution_idle_head=$(git -C "$lane_execution_idle_repo" rev-parse HEAD 2>/dev/null) || return 1
+  lane_execution__valid_sha "$lane_execution_idle_head" || return 1
+  [ -z "$lane_execution_idle_expected_head" ] ||
+    [ "$lane_execution_idle_head" = "$lane_execution_idle_expected_head" ] || return 1
+  case "$lane_execution_idle_policy" in
+    branch)
+      [ "$(git -C "$lane_execution_idle_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = "$lane_execution_idle_default_branch" ]
+      ;;
+    detached)
+      [ -z "$(git -C "$lane_execution_idle_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+lane_execution__idle_proof() {
+  lane_execution_idle_lane=$1
+  lane_execution_idle_repo=$2
+  lane_execution_idle_policy=$3
+  lane_execution_idle_default_branch=$4
+  lane_execution_idle_origin=$5
+  lane_execution__occupancy_idle_proof "$lane_execution_idle_lane" \
+    "$lane_execution_idle_repo" "$lane_execution_idle_policy" \
+    "$lane_execution_idle_default_branch" "$lane_execution_idle_origin" || return 1
+  [ "$(git -C "$lane_execution_idle_repo" rev-parse HEAD 2>/dev/null)" = "$lane_execution_idle_origin" ]
+}
+
+lane_execution__classify_implementation() {
+  lane_execution_lane=$1
+  lane_execution_repo=$2
+  lane_execution_idle_policy=$3
+  lane_execution_default_branch=$4
+  lane_execution_git_dir=$(lane_execution__git_dir "$lane_execution_repo" || true)
+  lane_execution_slot=$lane_execution_git_dir/nuinui-implementation-slot
+  lane_execution_lock=$lane_execution_git_dir/nuinui-implementation-lock
+  lane_execution_initialization=$lane_execution_git_dir/nuinui-implementation-v1
+  lane_execution_audit_file=$lane_execution_git_dir/nuinui-audit-reservation-v1
+  lane_execution_branch=$(git -C "$lane_execution_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  lane_execution_head=$(git -C "$lane_execution_repo" rev-parse HEAD 2>/dev/null || true)
+  lane_execution_dirty=$(git -C "$lane_execution_repo" status --porcelain 2>/dev/null)
+  lane_execution_releasing=$(lane_execution__release_dirs "$lane_execution_git_dir")
+  lane_execution_releasing_count=$(printf '%s\n' "$lane_execution_releasing" | grep -c . || true)
+  printf '  branch=%s\n' "${lane_execution_branch:-DETACHED}"
+  printf '  head=%s\n' "$lane_execution_head"
+  printf '  clean=%s\n' "$([ -z "$lane_execution_dirty" ] && echo yes || echo no)"
+
+  lane_execution_skip_lock=0
+  lane_execution_skip_audit=0
+  lane_execution_projection_operation=${lane_execution_audit_projection_operation:-}
+  lane_execution_projection_generation=${lane_execution_audit_projection_generation:-}
+  if [ -n "$lane_execution_projection_operation" ]; then
+    case "$lane_execution_projection_operation" in
+      audit-begin|audit-release) ;;
+      *)
+        echo '  state=BLOCKED reason=invalid-audit-projection'
+        return 1
+        ;;
+    esac
+    nuinui_ownership_valid_claim "$lane_execution_projection_generation" || {
+      echo '  state=BLOCKED reason=invalid-audit-projection'
+      return 1
+    }
+  fi
+
+  if [ -e "$lane_execution_audit_file" ] || [ -L "$lane_execution_audit_file" ]; then
+    [ -f "$lane_execution_audit_file" ] && [ ! -L "$lane_execution_audit_file" ] &&
+      nuinui_ownership_validate_audit_reservation "$lane_execution_audit_file" || {
+      echo '  state=BLOCKED reason=invalid-audit-reservation'
+      return 1
+    }
+    lane_execution_audit_issue=$(nuinui_ownership_field "$lane_execution_audit_file" issue) || return 1
+    lane_execution_audit_lane=$(nuinui_ownership_field "$lane_execution_audit_file" lane) || return 1
+    lane_execution_audit_revision=$(nuinui_ownership_field "$lane_execution_audit_file" revision) || return 1
+    lane_execution_audit_generation=$(nuinui_ownership_field "$lane_execution_audit_file" generation) || return 1
+    lane_execution_audit_checkout=$(nuinui_ownership_field "$lane_execution_audit_file" checkout) || return 1
+    lane_execution_audit_stored_git_dir=$(nuinui_ownership_field "$lane_execution_audit_file" git_dir) || return 1
+    lane_execution_audit_repository=$(nuinui_ownership_field "$lane_execution_audit_file" repository) || return 1
+    lane_execution_audit_default=$(nuinui_ownership_field "$lane_execution_audit_file" default_branch) || return 1
+    lane_execution_audit_idle=$(nuinui_ownership_field "$lane_execution_audit_file" idle_policy) || return 1
+    lane_execution_audit_state=$(nuinui_ownership_field "$lane_execution_audit_file" state) || return 1
+    lane_execution_repo_canonical=$(lane_execution__canonical_path "$lane_execution_repo" || true)
+    lane_execution_repo_identity=$(lane_manifest_repository_identity \
+      "$lane_execution_classification_manifest" 2>/dev/null || true)
+    [ "$lane_execution_audit_lane" = "$lane_execution_lane" ] &&
+      [ "$lane_execution_audit_checkout" = "$lane_execution_repo_canonical" ] &&
+      [ "$lane_execution_audit_stored_git_dir" = "$lane_execution_git_dir" ] &&
+      [ "$lane_execution_audit_repository" = "$lane_execution_repo_identity" ] &&
+      [ "$lane_execution_audit_default" = "$lane_execution_default_branch" ] &&
+      [ "$lane_execution_audit_idle" = "$lane_execution_idle_policy" ] || {
+      echo '  state=BLOCKED reason=invalid-audit-reservation-identity'
+      return 1
+    }
+    if [ -e "$lane_execution_slot" ] || [ -L "$lane_execution_slot" ] ||
+      [ "$lane_execution_releasing_count" != 0 ]; then
+      echo '  state=BLOCKED reason=audit-reservation-implementation-conflict'
+      return 1
+    fi
+    if [ "$lane_execution_projection_operation" = audit-release ] &&
+      [ "$lane_execution_projection_generation" = "$lane_execution_audit_generation" ] &&
+      [ "$lane_execution_audit_state" = RELEASING ] &&
+      [ -d "$lane_execution_lock" ] && [ ! -L "$lane_execution_lock" ]; then
+      set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+      if [ "$#" = 6 ] && [ "$1" = audit-release ] && [ "$6" = "$lane_execution_audit_generation" ]; then
+        lane_execution_skip_audit=1
+        lane_execution_skip_lock=1
+      fi
+    fi
+    if [ "$lane_execution_skip_audit" != 1 ]; then
+      if [ -e "$lane_execution_lock" ] || [ -L "$lane_execution_lock" ]; then
+        set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+        case "$1" in
+          audit-begin|audit-release) lane_execution_audit_operation_valid=1 ;;
+          *) lane_execution_audit_operation_valid=0 ;;
+        esac
+        if [ "$#" = 6 ] && [ "$6" = "$lane_execution_audit_generation" ] &&
+          [ "$lane_execution_audit_operation_valid" = 1 ]; then
+          lane_execution_audit_lock="owned:$1"
+        else
+          lane_execution_audit_lock=conflict
+        fi
+      else
+        lane_execution_audit_lock=none
+      fi
+      [ "$lane_execution_audit_lock" != conflict ] || {
+        echo '  state=BLOCKED reason=audit-reservation-lock-conflict'
+        return 1
+      }
+      printf '  audit_issue=%s audit_revision=%s audit_generation=%s audit_phase=%s audit_lock=%s\n' \
+        "$lane_execution_audit_issue" "$lane_execution_audit_revision" \
+        "$lane_execution_audit_generation" "$lane_execution_audit_state" \
+        "$lane_execution_audit_lock"
+      echo '  state=BLOCKED reason=audit-reservation'
+      return 1
+    fi
+  elif [ "$lane_execution_projection_operation" = audit-release ]; then
+    echo '  state=BLOCKED reason=audit-reservation-missing-for-release-proof'
+    return 1
+  fi
+
+  if [ "$lane_execution_projection_operation" = audit-begin ]; then
+    if [ -d "$lane_execution_lock" ] && [ ! -L "$lane_execution_lock" ]; then
+      set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+      if [ "$#" = 6 ] && [ "$1" = audit-begin ] && [ "$6" = "$lane_execution_projection_generation" ]; then
+        lane_execution_skip_lock=1
+      fi
+    fi
+    [ "$lane_execution_skip_lock" = 1 ] || {
+      echo '  state=BLOCKED reason=audit-begin-lock-mismatch'
+      return 1
+    }
+  fi
+
+  if { [ -e "$lane_execution_lock" ] || [ -L "$lane_execution_lock" ]; } &&
+    [ "$lane_execution_skip_lock" != 1 ]; then
+    set -- $(lane_execution__parse_lock "$lane_execution_lock/state" 2>/dev/null || true)
+    if [ "$#" = 6 ]; then
+      printf '  state=BLOCKED reason=mutation-in-progress operation=%s claim=%s\n' "$1" "$6"
+    else
+      echo '  state=BLOCKED reason=invalid-mutation-lock'
+    fi
+    return 1
+  fi
+
+  if [ -e "$lane_execution_slot" ] || [ -L "$lane_execution_slot" ]; then
+    [ -d "$lane_execution_slot" ] || {
+      echo '  state=BLOCKED reason=invalid-active-slot'
+      return 1
+    }
+    [ "$lane_execution_releasing_count" = 0 ] || {
+      echo '  state=BLOCKED reason=active-and-releasing-state-coexist'
+      return 1
+    }
+    set -- $(lane_execution__parse_slot "$lane_execution_slot/state" 2>/dev/null || true)
+    [ "$#" = 4 ] || {
+      echo '  state=BLOCKED reason=invalid-active-slot'
+      return 1
+    }
+    printf '  owner_issue=%s owner_branch=%s base=%s claim=%s\n' "$1" "$2" "$3" "$4"
+    [ "$lane_execution_branch" = "$2" ] &&
+      git -C "$lane_execution_repo" merge-base --is-ancestor "$3" "$lane_execution_head" 2>/dev/null || {
+        echo '  state=BLOCKED reason=claim-checkout-mismatch'
+        return 1
+      }
+    echo '  state=BUSY'
+    return 0
+  fi
+
+  if [ "$lane_execution_releasing_count" != 0 ]; then
+    [ "$lane_execution_releasing_count" = 1 ] || {
+      echo '  state=BLOCKED reason=multiple-release-states'
+      return 1
+    }
+    set -- $(lane_execution__parse_releasing "$lane_execution_releasing" 2>/dev/null || true)
+    [ "$#" = 5 ] || {
+      echo '  state=BLOCKED reason=invalid-release-state'
+      return 1
+    }
+    printf '  state=RELEASE-PENDING claim=%s checkpoint=%s\n' "$4" "$5"
+    return 0
+  fi
+
+  nuinui_ownership_validate_initialization "$lane_execution_initialization" || {
+    echo '  state=BLOCKED reason=durable-ownership-initialization-required'
+    return 1
+  }
+  lane_execution_origin=$(
+    lane_execution__origin_default "$lane_execution_repo" "$lane_execution_default_branch"
+  )
+  lane_execution__valid_sha "$lane_execution_origin" &&
+    lane_execution__occupancy_idle_proof "$lane_execution_lane" "$lane_execution_repo" \
+      "$lane_execution_idle_policy" "$lane_execution_default_branch" || {
+      printf '  state=BLOCKED reason=invalid-idle-state origin_main=%s\n' "$lane_execution_origin"
+      return 1
+    }
+  if [ "$lane_execution_head" = "$lane_execution_origin" ]; then
+    lane_execution_freshness=FRESH
+  else
+    lane_execution_freshness=STALE
+  fi
+  printf '  state=FREE origin_main=%s freshness=%s\n' \
+    "$lane_execution_origin" "$lane_execution_freshness"
+}
+
+lane_execution__inventory_check() {
+  lane_execution_manifest=$1
+  lane_execution_anchor=$2
+  lane_execution_forensic=${3-}
+  lane_execution_expected_file=$(mktemp "${TMPDIR:-/tmp}/lane-expected.XXXXXX") || return 1
+  lane_execution_actual_file=$(mktemp "${TMPDIR:-/tmp}/lane-actual.XXXXXX") || {
+    rm -f "$lane_execution_expected_file"
+    return 1
+  }
+  lane_execution_sorted_expected=$lane_execution_expected_file.sorted
+  lane_execution_sorted_actual=$lane_execution_actual_file.sorted
+  lane_execution_inventory_rc=0
+  trap 'rm -f "$lane_execution_expected_file" "$lane_execution_actual_file" "$lane_execution_sorted_expected" "$lane_execution_sorted_actual"' HUP INT TERM
+
+  while IFS= read -r lane_execution_inventory_lane || [ -n "$lane_execution_inventory_lane" ]; do
+    lane_execution_inventory_path=$(lane_manifest_lane_path "$lane_execution_manifest" "$lane_execution_inventory_lane") || {
+      lane_execution_inventory_rc=1
+      continue
+    }
+    lane_execution_inventory_physical=$(lane_execution__canonical_path "$lane_execution_inventory_path" || true)
+    [ -n "$lane_execution_inventory_physical" ] || {
+      lane_execution_inventory_rc=1
+      continue
+    }
+    printf '%s\n' "$lane_execution_inventory_physical" >> "$lane_execution_expected_file"
+  done <<EOF
+$(lane_manifest_all_lanes "$lane_execution_manifest")
+EOF
+
+  if awk 'seen[$0]++ {invalid=1} END {exit invalid}' "$lane_execution_expected_file"; then
+    :
+  else
+    echo '  inventory_state=BLOCKED reason=duplicate-configured-physical-path'
+    lane_execution_inventory_rc=1
+  fi
+
+  lane_execution_registered=$(git -C "$lane_execution_anchor" worktree list --porcelain 2>/dev/null |
+    sed -n 's/^worktree //p') || lane_execution_registered=
+  [ -n "$lane_execution_registered" ] || lane_execution_inventory_rc=1
+  while IFS= read -r lane_execution_registered_path || [ -n "$lane_execution_registered_path" ]; do
+    [ -n "$lane_execution_registered_path" ] || continue
+    lane_execution_registered_physical=$(lane_execution__canonical_path "$lane_execution_registered_path" || true)
+    if [ -z "$lane_execution_registered_physical" ]; then
+      echo "  inventory_state=BLOCKED reason=invalid-registered-worktree path=$lane_execution_registered_path"
+      lane_execution_inventory_rc=1
+    else
+      printf '%s\n' "$lane_execution_registered_physical" >> "$lane_execution_actual_file"
+    fi
+  done <<EOF
+$lane_execution_registered
+EOF
+
+  if awk 'seen[$0]++ {invalid=1} END {exit invalid}' "$lane_execution_actual_file"; then
+    :
+  else
+    echo '  inventory_state=BLOCKED reason=duplicate-registered-physical-path'
+    lane_execution_inventory_rc=1
+  fi
+
+  if [ -n "$lane_execution_forensic" ]; then
+    case "$lane_execution_forensic" in /*) ;; *) echo '  inventory_state=BLOCKED reason=forensic-path-not-absolute'; lane_execution_inventory_rc=1 ;; esac
+    lane_execution_forensic_physical=$(lane_execution__canonical_path "$lane_execution_forensic" || true)
+    if [ -z "$lane_execution_forensic_physical" ] || [ "$lane_execution_forensic_physical" != "$lane_execution_forensic" ]; then
+      echo '  inventory_state=BLOCKED reason=forensic-path-not-canonical'
+      lane_execution_inventory_rc=1
+    elif grep -Fqx "$lane_execution_forensic_physical" "$lane_execution_expected_file"; then
+      echo '  inventory_state=BLOCKED reason=forensic-path-is-declared-lane'
+      lane_execution_inventory_rc=1
+    else
+      printf '%s\n' "$lane_execution_forensic_physical" >> "$lane_execution_expected_file"
+      grep -Fqx "$lane_execution_forensic_physical" "$lane_execution_actual_file" || {
+        echo '  inventory_state=BLOCKED reason=forensic-path-not-registered'
+        lane_execution_inventory_rc=1
+      }
+    fi
+  fi
+
+  LC_ALL=C sort "$lane_execution_expected_file" > "$lane_execution_sorted_expected" || lane_execution_inventory_rc=1
+  LC_ALL=C sort "$lane_execution_actual_file" > "$lane_execution_sorted_actual" || lane_execution_inventory_rc=1
+  if ! cmp -s "$lane_execution_sorted_expected" "$lane_execution_sorted_actual"; then
+    echo '  inventory_state=BLOCKED reason=registered-worktree-set-mismatch'
+    lane_execution_inventory_rc=1
+  fi
+  echo '  registered_worktrees:'
+  while IFS= read -r lane_execution_registered_path || [ -n "$lane_execution_registered_path" ]; do
+    [ -n "$lane_execution_registered_path" ] || continue
+    printf '    path=%s\n' "$lane_execution_registered_path"
+  done <<EOF
+$lane_execution_registered
+EOF
+  [ "$lane_execution_inventory_rc" = 0 ] && echo '  inventory_state=PASS'
+  rm -f "$lane_execution_expected_file" "$lane_execution_actual_file" \
+    "$lane_execution_sorted_expected" "$lane_execution_sorted_actual"
+  trap - HUP INT TERM
+  return "$lane_execution_inventory_rc"
+}
+
+lane_execution__preflight_audit() {
+  [ "$#" = 2 ] || [ "$#" = 4 ] || return 2
+  lane_execution_audit_mode=$1
+  case "$lane_execution_audit_mode" in
+    full|implementation) ;;
+    *) return 2 ;;
+  esac
+  shift
+  [ "$#" = 1 ] || [ "$#" = 3 ] || return 2
+  lane_execution_manifest=$1
+  lane_execution_classification_manifest=$lane_execution_manifest
+  lane_execution_forensic=
+  if [ "$#" = 3 ]; then
+    [ "$2" = --forensic-worktree ] || return 2
+    lane_execution_forensic=$3
+  fi
+  printf '%s\n' '===== LANE PREFLIGHT RESULT ====='
+  printf 'manifest=%s\n' "$lane_execution_manifest"
+  if ! lane_manifest_validate "$lane_execution_manifest"; then
+    echo 'state=BLOCKED reason=invalid-manifest'
+    echo 'PREFLIGHT BLOCKED'
+    return 1
+  fi
+  printf 'repository=%s\ndefault_branch=%s\n' \
+    "$(lane_manifest_repository_identity "$lane_execution_manifest")" \
+    "$(lane_manifest_default_branch "$lane_execution_manifest")"
+  lane_execution_repository=$(lane_manifest_repository_identity "$lane_execution_manifest")
+  lane_execution_default_branch=$(lane_manifest_default_branch "$lane_execution_manifest")
+  lane_execution_result=0
+  lane_execution_anchor=
+  lane_execution_seen_paths=$(mktemp "${TMPDIR:-/tmp}/lane-seen.XXXXXX") || return 1
+  trap 'rm -f "$lane_execution_seen_paths"' HUP INT TERM
+
+  while IFS= read -r lane_execution_lane || [ -n "$lane_execution_lane" ]; do
+    lane_execution_role=$(lane_manifest_lane_role "$lane_execution_manifest" "$lane_execution_lane" || true)
+    lane_execution_declared_path=$(lane_manifest_lane_path "$lane_execution_manifest" "$lane_execution_lane" || true)
+    lane_execution_idle=$(lane_manifest_lane_idle_policy "$lane_execution_manifest" "$lane_execution_lane" || true)
+    lane_execution_physical=$(lane_execution__canonical_path "$lane_execution_declared_path" || true)
+    printf 'lane name=%s role=%s path=%s\n' "$lane_execution_lane" "$lane_execution_role" "${lane_execution_physical:-$lane_execution_declared_path}"
+    if [ -z "$lane_execution_physical" ]; then
+      echo '  state=BLOCKED reason=invalid-checkout-path'
+      lane_execution_result=1
+      continue
+    fi
+    if grep -Fqx "$lane_execution_physical" "$lane_execution_seen_paths"; then
+      echo '  state=BLOCKED reason=duplicate-configured-physical-path'
+      lane_execution_result=1
+    else
+      printf '%s\n' "$lane_execution_physical" >> "$lane_execution_seen_paths"
+    fi
+    [ -n "$lane_execution_anchor" ] || lane_execution_anchor=$lane_execution_physical
+    if ! git -C "$lane_execution_physical" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo '  state=BLOCKED reason=not-a-git-checkout'
+      lane_execution_result=1
+      continue
+    fi
+    if ! lane_execution__repository_matches "$lane_execution_physical" "$lane_execution_repository"; then
+      echo '  state=BLOCKED reason=repository-mismatch'
+      lane_execution_result=1
+      continue
+    fi
+    case "$lane_execution_role" in
+      implementation)
+        lane_execution__classify_implementation "$lane_execution_lane" \
+          "$lane_execution_physical" "$lane_execution_idle" "$lane_execution_default_branch" || lane_execution_result=1
+        ;;
+      human-test)
+        if lane_execution_human_test_preflight "$lane_execution_lane" \
+          "$lane_execution_physical" "$lane_execution_manifest"; then
+          :
+        elif [ "$lane_execution_audit_mode" = full ]; then
+          lane_execution_result=1
+        fi
+        ;;
+      *)
+        echo '  state=BLOCKED reason=invalid-role'
+        lane_execution_result=1
+        ;;
+    esac
+  done <<EOF
+$(lane_manifest_all_lanes "$lane_execution_manifest")
+EOF
+
+  if [ -n "$lane_execution_anchor" ]; then
+    lane_execution__inventory_check "$lane_execution_manifest" "$lane_execution_anchor" "$lane_execution_forensic" || lane_execution_result=1
+  else
+    echo '  inventory_state=BLOCKED reason=no-validated-checkout-anchor'
+    lane_execution_result=1
+  fi
+  rm -f "$lane_execution_seen_paths"
+  trap - HUP INT TERM
+  if [ "$lane_execution_result" = 0 ]; then
+    if [ "$lane_execution_audit_mode" = implementation ]; then
+      echo 'IMPLEMENTATION PREFLIGHT PASS'
+    else
+      echo 'PREFLIGHT PASS'
+    fi
+    return 0
+  fi
+  if [ "$lane_execution_audit_mode" = implementation ]; then
+    echo 'IMPLEMENTATION PREFLIGHT BLOCKED'
+  else
+    echo 'PREFLIGHT BLOCKED'
+  fi
+  return 1
+}
+
+lane_execution_preflight() {
+  lane_execution_audit_projection_operation=
+  lane_execution_audit_projection_generation=
+  lane_execution__preflight_audit full "$@"
+}
+
+lane_execution_implementation_preflight() {
+  lane_execution_audit_projection_operation=
+  lane_execution_audit_projection_generation=
+  lane_execution__preflight_audit implementation "$@"
+}
+
+lane_execution__preflight_with_audit_lock() {
+  [ "$#" = 3 ] || return 2
+  lane_execution_projection_manifest=$1
+  lane_execution_audit_projection_operation=$2
+  lane_execution_audit_projection_generation=$3
+  lane_execution__preflight_audit implementation "$lane_execution_projection_manifest"
+  lane_execution_projection_rc=$?
+  lane_execution_audit_projection_operation=
+  lane_execution_audit_projection_generation=
+  return "$lane_execution_projection_rc"
+}
+
+lane_execution_preflight_command() {
+  [ "$#" = 1 ] || [ "$#" = 3 ] || {
+    echo 'Usage: lane-execution-preflight <manifest> [--forensic-worktree <absolute-path>]' >&2
+    return 2
+  }
+  lane_execution_preflight "$@"
+}
+
+if [ "${LANE_EXECUTION_PREFLIGHT_EXECUTE:-0}" = 1 ] || [ "${0##*/}" = preflight.sh ]; then
+  lane_execution_preflight_command "$@"
+fi
+# Strict identity conversion for the inactive GitHub-native E2E candidate.
+
+nuinui_e2e_identity_number() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_identity_input=$1
+  case "$nuinui_e2e_identity_input" in
+    sayosomi/nuinuiCAD#*)
+      nuinui_e2e_identity_number=${nuinui_e2e_identity_input#sayosomi/nuinuiCAD#}
+      [ "$nuinui_e2e_identity_input" = \
+        "sayosomi/nuinuiCAD#$nuinui_e2e_identity_number" ] || return 1
+      ;;
+    https://github.com/sayosomi/nuinuiCAD/issues/*)
+      nuinui_e2e_identity_number=${nuinui_e2e_identity_input#https://github.com/sayosomi/nuinuiCAD/issues/}
+      [ "$nuinui_e2e_identity_input" = \
+        "https://github.com/sayosomi/nuinuiCAD/issues/$nuinui_e2e_identity_number" ] || return 1
+      ;;
+    GH-sayosomi-nuinuiCAD-*)
+      nuinui_e2e_identity_number=${nuinui_e2e_identity_input#GH-sayosomi-nuinuiCAD-}
+      [ "$nuinui_e2e_identity_input" = \
+        "GH-sayosomi-nuinuiCAD-$nuinui_e2e_identity_number" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  case "$nuinui_e2e_identity_number" in
+    ''|0|0*|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$nuinui_e2e_identity_number"
+}
+
+nuinui_e2e_identity_issue() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_identity_number=$(nuinui_e2e_identity_number "$1") || return 1
+  printf 'sayosomi/nuinuiCAD#%s\n' "$nuinui_e2e_identity_number"
+}
+
+nuinui_e2e_identity_url() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_identity_number=$(nuinui_e2e_identity_number "$1") || return 1
+  printf 'https://github.com/sayosomi/nuinuiCAD/issues/%s\n' \
+    "$nuinui_e2e_identity_number"
+}
+
+nuinui_e2e_identity_token() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_identity_number=$(nuinui_e2e_identity_number "$1") || return 1
+  printf 'GH-sayosomi-nuinuiCAD-%s\n' "$nuinui_e2e_identity_number"
+}
+
+nuinui_e2e_identity_resolve() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_identity_number=$(nuinui_e2e_identity_number "$1") || return 1
+  printf 'sayosomi/nuinuiCAD#%s\n' "$nuinui_e2e_identity_number"
+  printf 'https://github.com/sayosomi/nuinuiCAD/issues/%s\n' \
+    "$nuinui_e2e_identity_number"
+  printf 'GH-sayosomi-nuinuiCAD-%s\n' "$nuinui_e2e_identity_number"
+}
+
+nuinui_e2e_valid_sha() {
+  [ "$#" = 1 ] || return 2
+  printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{40}$'
+}
+
+nuinui_e2e_valid_generation() {
+  [ "$#" = 1 ] || return 2
+  case "$1" in
+    ''|.*|*..*|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  [ "${#1}" -ge 8 ] && [ "${#1}" -le 128 ]
+}
+
+nuinui_e2e_valid_digest() {
+  [ "$#" = 1 ] || return 2
+  printf '%s\n' "$1" | grep -Eq '^[0-9a-f]{64}$'
+}
+# Isolated, fixture-only native E2E ownership lifecycle.
+
+nuinui_e2e__exists() { [ -e "$1" ] || [ -L "$1" ]; }
+
+nuinui_e2e__regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
+
+nuinui_e2e__sha256() {
+  [ "$#" = 1 ] || return 2
+  shasum -a 256 "$1" 2>/dev/null | awk 'NR == 1 {print $1}'
+}
+
+nuinui_e2e__generation_hash() {
+  printf '%s\n' "$1" | shasum -a 256 2>/dev/null | awk 'NR == 1 {print $1}'
+}
+
+nuinui_e2e__under() {
+  case "$2" in
+    "$1"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_e2e__origin_identity() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_origin_repo=$1
+  nuinui_e2e_origin_fixture_root=$2
+  nuinui_e2e_origin=$(git -C "$nuinui_e2e_origin_repo" \
+    remote get-url origin 2>/dev/null) || return 1
+  case "$nuinui_e2e_origin" in
+    https://github.com/sayosomi/nuinuiCAD|https://github.com/sayosomi/nuinuiCAD.git|\
+    git@github.com:sayosomi/nuinuiCAD|git@github.com:sayosomi/nuinuiCAD.git|\
+    ssh://git@github.com/sayosomi/nuinuiCAD|ssh://git@github.com/sayosomi/nuinuiCAD.git)
+      return 0
+      ;;
+  esac
+  lane_execution__repository_matches "$nuinui_e2e_origin_repo" \
+    sayosomi/nuinuiCAD || return 1
+  nuinui_e2e_origin=${nuinui_e2e_origin%/}
+  case "$nuinui_e2e_origin" in
+    "$nuinui_e2e_origin_fixture_root"/sayosomi/nuinuiCAD|\
+    "$nuinui_e2e_origin_fixture_root"/sayosomi/nuinuiCAD.git|\
+    "$nuinui_e2e_origin_fixture_root"/*/sayosomi/nuinuiCAD|\
+    "$nuinui_e2e_origin_fixture_root"/*/sayosomi/nuinuiCAD.git) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_e2e__path_for() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_path_repo=$1
+  nuinui_e2e_path_kind=$2
+  nuinui_e2e_path_git_dir=$(lane_execution__git_dir "$nuinui_e2e_path_repo") || return 1
+  case "$nuinui_e2e_path_kind" in
+    active) printf '%s/nuinui-github-e2e-active-v1\n' "$nuinui_e2e_path_git_dir" ;;
+    starting) printf '%s/nuinui-github-e2e-starting-v1.%s\n' \
+      "$nuinui_e2e_path_git_dir" "$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation")" ;;
+    cleanup) printf '%s/nuinui-github-e2e-cleanup-v1.%s\n' \
+      "$nuinui_e2e_path_git_dir" "$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation")" ;;
+    release) printf '%s/nuinui-github-e2e-release-v1.%s\n' \
+      "$nuinui_e2e_path_git_dir" "$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation")" ;;
+    releasing) printf '%s/nuinui-github-e2e-releasing-v1.%s\n' \
+      "$nuinui_e2e_path_git_dir" "$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation")" ;;
+    *) return 2 ;;
+  esac
+}
+
+nuinui_e2e__read_record() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_record_path=$1
+  nuinui_e2e_record_kind=$2
+  nuinui_e2e_record_base_keys=schema_version,issue,issue_url,local_id,lane,repository,checkout,git_dir,manifest,manifest_sha256,default_branch,idle_policy,tested_sha,generation
+  case "$nuinui_e2e_record_kind" in
+    active) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys ;;
+    cleanup) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof ;;
+    starting|release|releasing) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state ;;
+    *) return 2 ;;
+  esac
+  nuinui_e2e__regular "$nuinui_e2e_record_path" || return 1
+  nuinui_ownership_validate_exact_file "$nuinui_e2e_record_path" \
+    "$nuinui_e2e_record_keys" || return 1
+  nuinui_e2e_r_schema=$(nuinui_ownership_field "$nuinui_e2e_record_path" schema_version) || return 1
+  nuinui_e2e_r_issue=$(nuinui_ownership_field "$nuinui_e2e_record_path" issue) || return 1
+  nuinui_e2e_r_url=$(nuinui_ownership_field "$nuinui_e2e_record_path" issue_url) || return 1
+  nuinui_e2e_r_token=$(nuinui_ownership_field "$nuinui_e2e_record_path" local_id) || return 1
+  nuinui_e2e_r_lane=$(nuinui_ownership_field "$nuinui_e2e_record_path" lane) || return 1
+  nuinui_e2e_r_repository=$(nuinui_ownership_field "$nuinui_e2e_record_path" repository) || return 1
+  nuinui_e2e_r_checkout=$(nuinui_ownership_field "$nuinui_e2e_record_path" checkout) || return 1
+  nuinui_e2e_r_git_dir=$(nuinui_ownership_field "$nuinui_e2e_record_path" git_dir) || return 1
+  nuinui_e2e_r_manifest=$(nuinui_ownership_field "$nuinui_e2e_record_path" manifest) || return 1
+  nuinui_e2e_r_manifest_sha=$(nuinui_ownership_field "$nuinui_e2e_record_path" manifest_sha256) || return 1
+  nuinui_e2e_r_default=$(nuinui_ownership_field "$nuinui_e2e_record_path" default_branch) || return 1
+  nuinui_e2e_r_idle=$(nuinui_ownership_field "$nuinui_e2e_record_path" idle_policy) || return 1
+  nuinui_e2e_r_tested=$(nuinui_ownership_field "$nuinui_e2e_record_path" tested_sha) || return 1
+  nuinui_e2e_r_generation=$(nuinui_ownership_field "$nuinui_e2e_record_path" generation) || return 1
+  [ "$nuinui_e2e_r_schema" = 1 ] || return 1
+  nuinui_e2e_r_number=$(nuinui_e2e_identity_number "$nuinui_e2e_r_issue") || return 1
+  [ "$nuinui_e2e_r_url" = "$(nuinui_e2e_identity_url "$nuinui_e2e_r_issue")" ] || return 1
+  [ "$nuinui_e2e_r_token" = "$(nuinui_e2e_identity_token "$nuinui_e2e_r_issue")" ] || return 1
+  lane_manifest_validate_lane_name "$nuinui_e2e_manifest_path" "$nuinui_e2e_r_lane" >/dev/null 2>&1 || return 1
+  [ "$nuinui_e2e_r_repository" = sayosomi/nuinuiCAD ] || return 1
+  nuinui_e2e_valid_digest "$nuinui_e2e_r_manifest_sha" || return 1
+  nuinui_e2e_valid_sha "$nuinui_e2e_r_tested" || return 1
+  nuinui_e2e_valid_generation "$nuinui_e2e_r_generation" || return 1
+  [ "$nuinui_e2e_r_default" = "$(lane_manifest_default_branch "$nuinui_e2e_manifest_path")" ] || return 1
+  [ "$nuinui_e2e_r_idle" = detached ] || return 1
+  case "$nuinui_e2e_r_checkout:$nuinui_e2e_r_git_dir:$nuinui_e2e_r_manifest" in
+    /*:/*:/*) ;;
+    *) return 1 ;;
+  esac
+  if [ "$nuinui_e2e_record_kind" = cleanup ]; then
+    nuinui_e2e_r_proof=$(nuinui_ownership_field "$nuinui_e2e_record_path" proof) || return 1
+    [ "$nuinui_e2e_r_proof" = fixture-no-host-session ] || return 1
+  elif [ "$nuinui_e2e_record_kind" = starting ] ||
+    [ "$nuinui_e2e_record_kind" = release ] ||
+    [ "$nuinui_e2e_record_kind" = releasing ]; then
+    nuinui_e2e_r_idle_sha=$(nuinui_ownership_field "$nuinui_e2e_record_path" idle_sha) || return 1
+    nuinui_e2e_r_state=$(nuinui_ownership_field "$nuinui_e2e_record_path" record_state) || return 1
+    nuinui_e2e_valid_sha "$nuinui_e2e_r_idle_sha" || return 1
+    if [ "$nuinui_e2e_record_kind" = starting ]; then
+      [ "$nuinui_e2e_r_state" = pending ] || return 1
+    elif [ "$nuinui_e2e_record_kind" = release ]; then
+      [ "$nuinui_e2e_r_state" = complete ] || return 1
+    else
+      [ "$nuinui_e2e_r_state" = pending ] || return 1
+    fi
+  fi
+  return 0
+}
+
+nuinui_e2e__record_matches_lane() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_match_lane=$1
+  nuinui_e2e_match_repo=$2
+  nuinui_e2e_match_manifest=$3
+  nuinui_e2e_match_path=$(lane_execution__canonical_path "$nuinui_e2e_match_repo") || return 1
+  nuinui_e2e_match_git_dir=$(lane_execution__git_dir "$nuinui_e2e_match_repo") || return 1
+  [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_match_lane" ] &&
+    [ "$nuinui_e2e_r_checkout" = "$nuinui_e2e_match_path" ] &&
+    [ "$nuinui_e2e_r_git_dir" = "$nuinui_e2e_match_git_dir" ] &&
+    [ "$nuinui_e2e_r_manifest" = "$nuinui_e2e_manifest_path" ] &&
+    [ "$nuinui_e2e_r_manifest_sha" = "$nuinui_e2e_manifest_sha" ] &&
+    [ "$nuinui_e2e_r_default" = "$nuinui_e2e_default_branch" ] &&
+    [ "$nuinui_e2e_match_manifest" = "$nuinui_e2e_manifest_path" ]
+}
+
+nuinui_e2e__read_expected_active() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e__read_record "$1" active || return 1
+  [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+    [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+    [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+    [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_expected_lane" ] &&
+    [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+    [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path"
+}
+
+nuinui_e2e__read_expected_starting() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e__read_record "$1" starting || return 1
+  [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+    [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+    [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+    [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_expected_lane" ] &&
+    [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+    [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path"
+}
+
+nuinui_e2e__read_expected_cleanup() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e__read_record "$1" cleanup || return 1
+  [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+    [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+    [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+    [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_expected_lane" ] &&
+    [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+    [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path"
+}
+
+nuinui_e2e__read_expected_release() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e__read_record "$1" release || return 1
+  [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+    [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+    [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+    [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_expected_lane" ] &&
+    [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+    [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path"
+}
+
+nuinui_e2e__read_expected_releasing() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e__read_record "$1" releasing || return 1
+  [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+    [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+    [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+    [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_expected_lane" ] &&
+    [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+    [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path"
+}
+
+nuinui_e2e__generation_seen() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_seen_generation=$1
+  while IFS= read -r nuinui_e2e_seen_lane || [ -n "$nuinui_e2e_seen_lane" ]; do
+    [ -n "$nuinui_e2e_seen_lane" ] || continue
+    [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
+      "$nuinui_e2e_seen_lane")" = human-test ] || continue
+    nuinui_e2e_seen_repo=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" \
+      "$nuinui_e2e_seen_lane") || return 1
+    nuinui_e2e_seen_git_dir=$(lane_execution__git_dir "$nuinui_e2e_seen_repo") || return 1
+    nuinui_e2e_seen_paths=$(find "$nuinui_e2e_seen_git_dir" -maxdepth 1 \
+      -name 'nuinui-github-e2e-*' -print 2>/dev/null) || return 1
+    while IFS= read -r nuinui_e2e_seen_path || [ -n "$nuinui_e2e_seen_path" ]; do
+      [ -n "$nuinui_e2e_seen_path" ] || continue
+      nuinui_e2e_seen_name=${nuinui_e2e_seen_path##*/}
+      case "$nuinui_e2e_seen_name" in
+        nuinui-github-e2e-active-v1) nuinui_e2e_seen_kind=active ;;
+        nuinui-github-e2e-starting-v1.*) nuinui_e2e_seen_kind=starting ;;
+        nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_seen_kind=cleanup ;;
+        nuinui-github-e2e-release-v1.*) nuinui_e2e_seen_kind=release ;;
+        nuinui-github-e2e-releasing-v1.*) nuinui_e2e_seen_kind=releasing ;;
+        *) return 1 ;;
+      esac
+      nuinui_e2e__read_record "$nuinui_e2e_seen_path" "$nuinui_e2e_seen_kind" || return 1
+      [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_seen_generation" ] && return 0
+    done <<EOF
+$nuinui_e2e_seen_paths
+EOF
+  done <<EOF
+$nuinui_e2e_human_lanes
+EOF
+  return 1
+}
+
+nuinui_e2e__record_base() {
+  printf 'schema_version=1\n'
+  printf 'issue=%s\n' "$nuinui_e2e_expected_issue"
+  printf 'issue_url=%s\n' "$nuinui_e2e_expected_url"
+  printf 'local_id=%s\n' "$nuinui_e2e_expected_token"
+  printf 'lane=%s\n' "$nuinui_e2e_expected_lane"
+  printf 'repository=sayosomi/nuinuiCAD\n'
+  printf 'checkout=%s\n' "$nuinui_e2e_checkout"
+  printf 'git_dir=%s\n' "$nuinui_e2e_git_dir"
+  printf 'manifest=%s\n' "$nuinui_e2e_manifest_path"
+  printf 'manifest_sha256=%s\n' "$nuinui_e2e_manifest_sha"
+  printf 'default_branch=%s\n' "$nuinui_e2e_default_branch"
+  printf 'idle_policy=detached\n'
+  printf 'tested_sha=%s\n' "$nuinui_e2e_expected_tested"
+  printf 'generation=%s\n' "$nuinui_e2e_expected_generation"
+}
+
+nuinui_e2e__atomic_create() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_write_path=$1
+  nuinui_e2e_write_content=$2
+  nuinui_e2e_write_dir=${nuinui_e2e_write_path%/*}
+  [ ! -e "$nuinui_e2e_write_path" ] && [ ! -L "$nuinui_e2e_write_path" ] || return 1
+  nuinui_e2e_write_tmp=$(mktemp "$nuinui_e2e_write_dir/.nuinui-github-e2e.tmp.XXXXXX") || return 1
+  if ! (umask 077; printf '%s' "$nuinui_e2e_write_content" > "$nuinui_e2e_write_tmp"); then
+    rm -f "$nuinui_e2e_write_tmp"
+    return 1
+  fi
+  if ! ln "$nuinui_e2e_write_tmp" "$nuinui_e2e_write_path"; then
+    rm -f "$nuinui_e2e_write_tmp"
+    return 1
+  fi
+  rm -f "$nuinui_e2e_write_tmp"
+  nuinui_e2e__regular "$nuinui_e2e_write_path"
+}
+
+nuinui_e2e__remove_exact() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_remove_path=$1
+  nuinui_e2e_remove_content=$2
+  nuinui_e2e_remove_dir=${nuinui_e2e_remove_path%/*}
+  nuinui_e2e__regular "$nuinui_e2e_remove_path" || return 1
+  nuinui_e2e_remove_tmp=$(mktemp "$nuinui_e2e_remove_dir/.nuinui-github-e2e.verify.XXXXXX") || return 1
+  if ! (umask 077; printf '%s' "$nuinui_e2e_remove_content" > "$nuinui_e2e_remove_tmp"); then
+    rm -f "$nuinui_e2e_remove_tmp"
+    return 1
+  fi
+  if ! cmp -s "$nuinui_e2e_remove_tmp" "$nuinui_e2e_remove_path"; then
+    rm -f "$nuinui_e2e_remove_tmp"
+    return 1
+  fi
+  rm -f "$nuinui_e2e_remove_tmp" && rm "$nuinui_e2e_remove_path"
+}
+
+nuinui_e2e__fixture_context() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_manifest_input=$1
+  nuinui_e2e_expected_lane=$2
+  nuinui_e2e_manifest_arg_issue=$3
+  [ -n "${nuinui_e2e_self_test:-}" ] || {
+    echo 'BLOCKED: candidate lifecycle is inactive outside explicit self-test mode'
+    return 1
+  }
+  case "$nuinui_e2e_manifest_input" in /*) ;; *) echo 'BLOCKED: manifest path must be absolute' ; return 1 ;; esac
+  nuinui_e2e__regular "$nuinui_e2e_manifest_input" || {
+    echo 'BLOCKED: self-test manifest must be a regular, non-symlink file'
+    return 1
+  }
+  nuinui_e2e_manifest_path=$(realpath "$nuinui_e2e_manifest_input" 2>/dev/null) || return 1
+  [ "$nuinui_e2e_manifest_path" = "$nuinui_e2e_manifest_input" ] || {
+    echo 'BLOCKED: self-test manifest path is not canonical'
+    return 1
+  }
+  [ "${nuinui_e2e_manifest_path##*/}" = LANES.conf ] || {
+    echo 'BLOCKED: self-test manifest must be named LANES.conf'
+    return 1
+  }
+  nuinui_e2e_fixture_root=${nuinui_e2e_manifest_path%/*}
+  nuinui_e2e_fixture_root=$(realpath "$nuinui_e2e_fixture_root" 2>/dev/null) || return 1
+  nuinui_e2e_temp_parent=$(realpath "${TMPDIR:-/tmp}" 2>/dev/null) || return 1
+  [ "${nuinui_e2e_fixture_root%/*}" = "$nuinui_e2e_temp_parent" ] || {
+    echo 'BLOCKED: self-test manifest is outside its disposable temporary root'
+    return 1
+  }
+  case "${nuinui_e2e_fixture_root##*/}" in nuinui-e2e-fixture.*) ;; *)
+    echo 'BLOCKED: self-test root does not have the disposable fixture identity'
+    return 1 ;;
+  esac
+  [ ! -L "$nuinui_e2e_fixture_root" ] && [ -d "$nuinui_e2e_fixture_root" ] || return 1
+  nuinui_e2e_fixture_marker=$nuinui_e2e_fixture_root/.nuinui-e2e-fixture
+  nuinui_e2e__regular "$nuinui_e2e_fixture_marker" || {
+    echo 'BLOCKED: disposable fixture marker is missing or unsafe'
+    return 1
+  }
+  [ "$(cat "$nuinui_e2e_fixture_marker" 2>/dev/null)" = 'schema_version=1' ] || {
+    echo 'BLOCKED: disposable fixture marker is malformed'
+    return 1
+  }
+  lane_manifest_validate "$nuinui_e2e_manifest_path" || return 1
+  nuinui_e2e_manifest_repository=$(lane_manifest_repository_identity "$nuinui_e2e_manifest_path") || return 1
+  [ "$nuinui_e2e_manifest_repository" = sayosomi/nuinuiCAD ] || {
+    echo 'BLOCKED: fixture manifest repository identity is not sayosomi/nuinuiCAD'
+    return 1
+  }
+  nuinui_e2e_default_branch=$(lane_manifest_default_branch "$nuinui_e2e_manifest_path") || return 1
+  nuinui_e2e_manifest_sha=$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path") || return 1
+  nuinui_e2e_valid_digest "$nuinui_e2e_manifest_sha" || return 1
+
+  nuinui_e2e_manifest_lanes=$(lane_manifest_all_lanes "$nuinui_e2e_manifest_path") || return 1
+  [ -n "$nuinui_e2e_manifest_lanes" ] || return 1
+  while IFS= read -r nuinui_e2e_manifest_lane || [ -n "$nuinui_e2e_manifest_lane" ]; do
+    [ -n "$nuinui_e2e_manifest_lane" ] || continue
+    nuinui_e2e_lane_path=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" \
+      "$nuinui_e2e_manifest_lane") || return 1
+    case "$nuinui_e2e_lane_path" in /*) ;; *) return 1 ;; esac
+    nuinui_e2e_lane_real=$(realpath "$nuinui_e2e_lane_path" 2>/dev/null) || return 1
+    [ "$nuinui_e2e_lane_real" = "$nuinui_e2e_lane_path" ] &&
+      nuinui_e2e__under "$nuinui_e2e_fixture_root" "$nuinui_e2e_lane_real" || {
+        echo "BLOCKED: declared fixture checkout is not a direct disposable target: $nuinui_e2e_manifest_lane"
+        return 1
+      }
+    [ -d "$nuinui_e2e_lane_real" ] && [ ! -L "$nuinui_e2e_lane_real" ] || return 1
+    git -C "$nuinui_e2e_lane_real" rev-parse --show-toplevel >/dev/null 2>&1 || return 1
+    lane_execution__repository_matches "$nuinui_e2e_lane_real" \
+      sayosomi/nuinuiCAD || return 1
+    nuinui_e2e__origin_identity "$nuinui_e2e_lane_real" \
+      "$nuinui_e2e_fixture_root" || {
+        echo "BLOCKED: fixture checkout has a foreign origin: $nuinui_e2e_manifest_lane"
+        return 1
+      }
+  done <<EOF
+$nuinui_e2e_manifest_lanes
+EOF
+
+  nuinui_e2e_human_lanes=$(lane_manifest_lanes_by_role \
+    "$nuinui_e2e_manifest_path" human-test) || return 1
+  [ -n "$nuinui_e2e_human_lanes" ] || {
+    echo 'BLOCKED: no Human-test lane is declared'
+    return 1
+  }
+  if [ -z "$nuinui_e2e_expected_lane" ]; then
+    nuinui_e2e_human_count=$(printf '%s\n' "$nuinui_e2e_human_lanes" | grep -c . || true)
+    [ "$nuinui_e2e_human_count" = 1 ] || {
+      echo 'BLOCKED: explicit lane is required unless exactly one Human-test lane exists'
+      return 1
+    }
+    nuinui_e2e_expected_lane=$nuinui_e2e_human_lanes
+  fi
+  lane_manifest_validate_lane_name "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_expected_lane" >/dev/null 2>&1 || return 1
+  [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_expected_lane")" = human-test ] || {
+    echo 'BLOCKED: selected lane is not a declared Human-test lane'
+    return 1
+  }
+  [ "$(lane_manifest_lane_idle_policy "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_expected_lane")" = detached ] || {
+    echo 'BLOCKED: native candidate requires a detached Human-test idle policy'
+    return 1
+  }
+  nuinui_e2e_expected_repo=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_expected_lane") || return 1
+  nuinui_e2e_checkout=$(realpath "$nuinui_e2e_expected_repo" 2>/dev/null) || return 1
+  [ "$nuinui_e2e_checkout" = "$nuinui_e2e_expected_repo" ] || return 1
+  nuinui_e2e_git_dir=$(lane_execution__git_dir "$nuinui_e2e_checkout") || return 1
+  [ -d "$nuinui_e2e_git_dir" ] && [ ! -L "$nuinui_e2e_git_dir" ] || return 1
+  nuinui_e2e_expected_issue=$(nuinui_e2e_identity_issue "$nuinui_e2e_manifest_arg_issue") || {
+    echo 'BLOCKED: Issue identity is not canonical for sayosomi/nuinuiCAD'
+    return 1
+  }
+  nuinui_e2e_expected_url=$(nuinui_e2e_identity_url "$nuinui_e2e_expected_issue") || return 1
+  nuinui_e2e_expected_token=$(nuinui_e2e_identity_token "$nuinui_e2e_expected_issue") || return 1
+  nuinui_e2e_valid_generation "$nuinui_e2e_expected_generation" || {
+    echo 'BLOCKED: generation must be a unique canonical caller-supplied token'
+    return 1
+  }
+  nuinui_e2e_valid_sha "$nuinui_e2e_expected_tested" || {
+    echo 'BLOCKED: tested commit must be an exact lowercase 40-character SHA'
+    return 1
+  }
+  [ "$nuinui_e2e_expected_lane" != '' ]
+}
+
+nuinui_e2e__lane_preflight_state() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_check_lane=$1
+  nuinui_e2e_check_repo=$2
+  nuinui_e2e_check_manifest=$3
+  nuinui_e2e_check_git_dir=$(lane_execution__git_dir "$nuinui_e2e_check_repo") || return 1
+  for nuinui_e2e_legacy_path in \
+    "$nuinui_e2e_check_git_dir/nuinui-slot" \
+    "$nuinui_e2e_check_git_dir/nuinui-e2e-session" \
+    "$nuinui_e2e_check_git_dir/nuinui-implementation-v1" \
+    "$nuinui_e2e_check_git_dir/nuinui-implementation-slot" \
+    "$nuinui_e2e_check_git_dir/nuinui-implementation-lock" \
+    "$nuinui_e2e_check_git_dir/nuinui-audit-reservation-v1" \
+    "$nuinui_e2e_check_git_dir/nuinui-implementation-release-receipt"; do
+    if nuinui_e2e__exists "$nuinui_e2e_legacy_path"; then
+      echo "  state=BLOCKED reason=foreign-or-legacy-ownership"
+      return 1
+    fi
+  done
+  nuinui_e2e_release_dirs=$(find "$nuinui_e2e_check_git_dir" -maxdepth 1 \
+    -type d -name 'nuinui-implementation-slot.releasing.*' -print 2>/dev/null) || return 1
+  [ -z "$nuinui_e2e_release_dirs" ] || {
+    echo '  state=BLOCKED reason=foreign-release-ownership'
+    return 1
+  }
+
+  nuinui_e2e_lane_active=no
+  nuinui_e2e_lane_starting=no
+  nuinui_e2e_lane_releasing=no
+  nuinui_e2e_native_paths=$(find "$nuinui_e2e_check_git_dir" -maxdepth 1 \
+    -name 'nuinui-github-e2e-*' -print 2>/dev/null) || return 1
+  while IFS= read -r nuinui_e2e_native_path || [ -n "$nuinui_e2e_native_path" ]; do
+    [ -n "$nuinui_e2e_native_path" ] || continue
+    nuinui_e2e_native_name=${nuinui_e2e_native_path##*/}
+    case "$nuinui_e2e_native_name" in
+      nuinui-github-e2e-active-v1) nuinui_e2e_native_kind=active ;;
+      nuinui-github-e2e-starting-v1.*) nuinui_e2e_native_kind=starting ;;
+      nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_native_kind=cleanup ;;
+      nuinui-github-e2e-release-v1.*) nuinui_e2e_native_kind=release ;;
+      nuinui-github-e2e-releasing-v1.*) nuinui_e2e_native_kind=releasing ;;
+      *) echo '  state=BLOCKED reason=unknown-native-metadata'; return 1 ;;
+    esac
+    nuinui_e2e__read_record "$nuinui_e2e_native_path" \
+      "$nuinui_e2e_native_kind" || {
+        echo '  state=BLOCKED reason=malformed-native-metadata'
+        return 1
+      }
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_check_lane" \
+      "$nuinui_e2e_check_repo" "$nuinui_e2e_manifest_path" || {
+        echo '  state=BLOCKED reason=native-metadata-context-mismatch'
+        return 1
+      }
+    nuinui_e2e_file_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation") || return 1
+    case "$nuinui_e2e_native_kind:$nuinui_e2e_native_name" in
+      cleanup:nuinui-github-e2e-cleanup-v1."$nuinui_e2e_file_hash"|\
+      starting:nuinui-github-e2e-starting-v1."$nuinui_e2e_file_hash"|\
+      release:nuinui-github-e2e-release-v1."$nuinui_e2e_file_hash"|\
+      releasing:nuinui-github-e2e-releasing-v1."$nuinui_e2e_file_hash"|\
+      active:nuinui-github-e2e-active-v1) ;;
+      *) echo '  state=BLOCKED reason=native-generation-path-mismatch'; return 1 ;;
+    esac
+    case "$nuinui_e2e_native_kind" in
+      active)
+        [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] &&
+          [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+          [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+          [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+          [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+          [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] || {
+            echo '  state=BLOCKED reason=foreign-or-mismatched-active-generation'
+            return 1
+          }
+        nuinui_e2e_lane_active=yes
+        ;;
+      starting)
+        [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] &&
+          [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+          [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+          [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+          { [ "$nuinui_e2e_operation" = recover ] ||
+            [ "$nuinui_e2e_operation" = status ] ||
+            [ "$nuinui_e2e_operation" = start ]; } || {
+            echo '  state=BLOCKED reason=start-recovery-required'
+            return 1
+          }
+        nuinui_e2e_lane_starting=yes
+        ;;
+      releasing)
+        [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] &&
+          [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+          [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+          [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+          { [ "$nuinui_e2e_operation" = recover ] || [ "$nuinui_e2e_operation" = status ]; } || {
+            echo '  state=BLOCKED reason=release-recovery-required'
+            return 1
+          }
+        nuinui_e2e_lane_releasing=yes
+        ;;
+    esac
+  done <<EOF
+$nuinui_e2e_native_paths
+EOF
+  if [ "$nuinui_e2e_lane_starting" = yes ] &&
+    [ "$nuinui_e2e_lane_releasing" = yes ]; then
+    echo '  state=BLOCKED reason=conflicting-start-and-release-intents'
+    return 1
+  fi
+  nuinui_e2e_branch=$(git -C "$nuinui_e2e_check_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  nuinui_e2e_head=$(git -C "$nuinui_e2e_check_repo" rev-parse HEAD 2>/dev/null) || return 1
+  nuinui_e2e_dirty=$(git -C "$nuinui_e2e_check_repo" status --porcelain 2>/dev/null) || return 1
+  [ -z "$nuinui_e2e_branch" ] && [ -z "$nuinui_e2e_dirty" ] || {
+    echo '  state=BLOCKED reason=Human-test-checkout-not-clean-detached'
+    return 1
+  }
+  if [ "$nuinui_e2e_lane_active" = yes ]; then
+    [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] || return 1
+    nuinui_e2e_active_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" active) || return 1
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active_path" || return 1
+    if [ "$nuinui_e2e_lane_starting" = yes ]; then
+      case "$nuinui_e2e_operation" in
+        status|start|recover) ;;
+        *) echo '  state=BLOCKED reason=start-recovery-required'; return 1 ;;
+      esac
+      nuinui_e2e_starting_path=$(nuinui_e2e__path_for \
+        "$nuinui_e2e_check_repo" starting) || return 1
+      nuinui_e2e__read_expected_starting "$nuinui_e2e_starting_path" || return 1
+      [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] &&
+        git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
+          "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested" || {
+            echo '  state=BLOCKED reason=start-intent-does-not-match-tested-checkout'
+            return 1
+          }
+    fi
+    if [ "$nuinui_e2e_lane_releasing" = yes ]; then
+      nuinui_e2e_releasing_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" releasing) || return 1
+      nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing_path" || return 1
+      nuinui_e2e_lane_intent_idle=$nuinui_e2e_r_idle_sha
+      nuinui_e2e_release_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" release) || return 1
+      if nuinui_e2e__exists "$nuinui_e2e_release_path"; then
+        nuinui_e2e__read_expected_release "$nuinui_e2e_release_path" &&
+          [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_lane_intent_idle" ] || return 1
+      fi
+      [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] ||
+        [ "$nuinui_e2e_head" = "$nuinui_e2e_r_idle_sha" ] || return 1
+      echo '  branch=DETACHED'
+      echo "  head=$nuinui_e2e_head"
+      echo '  clean=yes'
+      echo '  state=RELEASE-PENDING'
+      return 0
+    fi
+    nuinui_e2e_release_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" release) || return 1
+    if nuinui_e2e__exists "$nuinui_e2e_release_path"; then
+      echo '  state=BLOCKED reason=completed-receipt-precedes-active-marker-without-intent'
+      return 1
+    fi
+    [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] || return 1
+    case "$nuinui_e2e_operation" in
+      admit|status|start|cleanup-proof|release|recover) ;;
+      *) echo '  state=BLOCKED reason=active-generation'; return 1 ;;
+    esac
+    echo '  branch=DETACHED'
+    echo "  head=$nuinui_e2e_head"
+    echo '  clean=yes'
+    echo '  state=BUSY'
+    return 0
+  fi
+  [ "$nuinui_e2e_lane_releasing" = no ] || {
+    nuinui_e2e_releasing_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" releasing) || return 1
+    nuinui_e2e_release_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" release) || return 1
+    if ! nuinui_e2e__exists "$nuinui_e2e_release_path" ||
+      ! nuinui_e2e__read_expected_release "$nuinui_e2e_release_path"; then
+      echo '  state=BLOCKED reason=release-transition-without-verifiable-active-marker'
+      return 1
+    fi
+    [ "$nuinui_e2e_head" = "$nuinui_e2e_r_idle_sha" ] || return 1
+    echo '  branch=DETACHED'
+    echo "  head=$nuinui_e2e_head"
+    echo '  clean=yes'
+    echo '  state=RELEASE-PENDING'
+    return 0
+  }
+  if [ "$nuinui_e2e_lane_starting" = yes ]; then
+    nuinui_e2e_starting_path=$(nuinui_e2e__path_for \
+      "$nuinui_e2e_check_repo" starting) || return 1
+    nuinui_e2e__read_expected_starting "$nuinui_e2e_starting_path" || return 1
+    nuinui_e2e_release_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" release) || return 1
+    nuinui_e2e_cleanup_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" cleanup) || return 1
+    if nuinui_e2e__exists "$nuinui_e2e_release_path" ||
+      nuinui_e2e__exists "$nuinui_e2e_cleanup_path" ||
+      [ "$nuinui_e2e_head" != "$nuinui_e2e_r_idle_sha" -a \
+        "$nuinui_e2e_head" != "$nuinui_e2e_expected_tested" ] ||
+      ! git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
+        "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested"; then
+      echo '  state=BLOCKED reason=start-intent-does-not-match-recoverable-checkout'
+      return 1
+    fi
+    echo '  branch=DETACHED'
+    echo "  head=$nuinui_e2e_head"
+    echo '  clean=yes'
+    echo '  state=START-PENDING'
+    return 0
+  fi
+  echo '  branch=DETACHED'
+  echo "  head=$nuinui_e2e_head"
+  echo '  clean=yes'
+  echo '  state=FREE'
+  [ -n "$nuinui_e2e_head" ]
+}
+
+# The generic preflight owns manifest parsing and the complete registered
+# worktree comparison. This adapter adds only the native/legacy metadata rules.
+lane_execution_human_test_preflight() {
+  nuinui_e2e__lane_preflight_state "$1" "$2" "$3"
+}
+
+nuinui_e2e__preflight() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_preflight_tmp=$(mktemp "${TMPDIR:-/tmp}/nuinui-e2e-preflight.XXXXXX") || return 1
+  if ! lane_execution_preflight "$1" >"$nuinui_e2e_preflight_tmp" 2>&1; then
+    cat "$nuinui_e2e_preflight_tmp" >&2
+    rm -f "$nuinui_e2e_preflight_tmp"
+    echo 'BLOCKED: full candidate fixture preflight failed' >&2
+    return 1
+  fi
+  if ! awk '
+    /^lane name=/ {
+      role=""
+      for (i=1; i<=NF; i++) if ($i ~ /^role=/) { role=substr($i, 6) }
+    }
+    /^  state=/ && role == "implementation" {
+      state=$0
+      sub(/^  state=/, "", state)
+      sub(/[[:space:]].*$/, "", state)
+      if (state != "FREE") invalid=1
+    }
+    END { exit invalid }
+  ' "$nuinui_e2e_preflight_tmp"; then
+    cat "$nuinui_e2e_preflight_tmp" >&2
+    rm -f "$nuinui_e2e_preflight_tmp"
+    echo 'BLOCKED: implementation lane has active or pending ownership' >&2
+    return 1
+  fi
+  cat "$nuinui_e2e_preflight_tmp"
+  rm -f "$nuinui_e2e_preflight_tmp"
+}
+
+nuinui_e2e__checked_out() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_checkout_repo=$1
+  nuinui_e2e_checkout_sha=$2
+  [ -z "$(git -C "$nuinui_e2e_checkout_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+    [ -z "$(git -C "$nuinui_e2e_checkout_repo" status --porcelain 2>/dev/null)" ] &&
+    [ "$(git -C "$nuinui_e2e_checkout_repo" rev-parse HEAD 2>/dev/null)" = "$nuinui_e2e_checkout_sha" ]
+}
+
+nuinui_e2e__live_idle_sha() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_live_sha=$(lane_execution__origin_default "$1" "$nuinui_e2e_default_branch") || return 1
+  nuinui_e2e_valid_sha "$nuinui_e2e_live_sha" || return 1
+  printf '%s\n' "$nuinui_e2e_live_sha"
+}
+
+nuinui_e2e__failpoint() {
+  [ "${nuinui_e2e_test_failpoint:-}" = "$1" ]
+}
+
+nuinui_e2e__refresh_tested_ref() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_refresh_repo=$1
+  nuinui_e2e_refresh_tested=$2
+  git -C "$nuinui_e2e_refresh_repo" fetch origin --prune >/dev/null 2>&1 || {
+    echo 'BLOCKED: Human-test start fetch/prune failed'
+    return 1
+  }
+  nuinui_e2e_refresh_live=$(nuinui_e2e__live_idle_sha \
+    "$nuinui_e2e_refresh_repo") || {
+      echo 'BLOCKED: authoritative default revision is unavailable'
+      return 1
+    }
+  [ "$nuinui_e2e_refresh_live" = "$nuinui_e2e_refresh_tested" ] || {
+    echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
+    return 1
+  }
+  nuinui_e2e_refresh_commit=$(git -C "$nuinui_e2e_refresh_repo" \
+    rev-parse --verify "$nuinui_e2e_refresh_tested^{commit}" 2>/dev/null) || {
+      echo 'BLOCKED: tested SHA is not an existing commit in the Human-test checkout'
+      return 1
+    }
+  [ "$nuinui_e2e_refresh_commit" = "$nuinui_e2e_refresh_tested" ] || {
+    echo 'BLOCKED: tested SHA did not resolve to its exact commit'
+    return 1
+  }
+}
+
+nuinui_e2e__starting_content() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_starting_idle_sha=$1
+  nuinui_e2e__record_base
+  printf 'idle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_starting_idle_sha"
+}
+
+nuinui_e2e__finish_start() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_finish_starting=$1
+  nuinui_e2e_finish_active=$2
+  nuinui_e2e_finish_interrupted=$3
+  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" || {
+    echo 'BLOCKED: startup intent does not match the requested issue, lane, SHA, or generation'
+    return 1
+  }
+  nuinui_e2e_finish_idle_sha=$nuinui_e2e_r_idle_sha
+  nuinui_e2e_finish_start_content=$(nuinui_e2e__starting_content \
+    "$nuinui_e2e_finish_idle_sha") || return 1
+  nuinui_e2e_finish_active_content=$(nuinui_e2e__record_base) || return 1
+  nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_finish_active"; then
+    nuinui_e2e__read_expected_active "$nuinui_e2e_finish_active" &&
+      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+        "$nuinui_e2e_expected_tested" || {
+          echo 'BLOCKED: active marker does not verify the interrupted startup checkout'
+          return 1
+        }
+    nuinui_e2e__remove_exact "$nuinui_e2e_finish_starting" \
+      "$nuinui_e2e_finish_start_content" || {
+        echo 'BLOCKED: verified active marker remains with startup recovery evidence'
+        return 1
+      }
+    return 0
+  fi
+
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" || return 1
+  [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
+    git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
+      "$nuinui_e2e_finish_idle_sha" "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: startup idle revision cannot safely transition to tested SHA'
+        return 1
+      }
+  nuinui_e2e_finish_head=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  [ -z "$(git -C "$nuinui_e2e_expected_repo" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+    [ -z "$(git -C "$nuinui_e2e_expected_repo" status --porcelain 2>/dev/null)" ] &&
+    { [ "$nuinui_e2e_finish_head" = "$nuinui_e2e_finish_idle_sha" ] ||
+      [ "$nuinui_e2e_finish_head" = "$nuinui_e2e_expected_tested" ]; } || {
+        echo 'BLOCKED: startup interruption left an unrecognized Human-test checkout'
+        return 1
+      }
+  if [ "$nuinui_e2e_finish_head" != "$nuinui_e2e_expected_tested" ]; then
+    git -C "$nuinui_e2e_expected_repo" switch --detach \
+      "$nuinui_e2e_expected_tested" >/dev/null 2>&1 || {
+        echo 'BLOCKED: guarded fixture start could not detach to tested SHA; startup intent retained'
+        return 1
+      }
+  fi
+  if [ "$nuinui_e2e_finish_interrupted" = yes ] &&
+    nuinui_e2e__failpoint after-start-checkout; then
+    echo 'BLOCKED: injected interruption after tested checkout; startup recovery evidence retained'
+    return 1
+  fi
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" &&
+    nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: tested checkout verification failed; startup intent retained'
+        return 1
+      }
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" &&
+    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: startup fixation changed before active marker publication'
+        return 1
+      }
+  nuinui_e2e__atomic_create "$nuinui_e2e_finish_active" \
+    "$nuinui_e2e_finish_active_content" || {
+      echo 'BLOCKED: active marker already exists or could not be atomically published; startup intent retained'
+      return 1
+    }
+  nuinui_e2e__read_expected_active "$nuinui_e2e_finish_active" &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: active marker verification failed; exact startup evidence retained'
+        return 1
+      }
+  if [ "$nuinui_e2e_finish_interrupted" = yes ] &&
+    nuinui_e2e__failpoint after-start-active-marker; then
+    echo 'BLOCKED: injected interruption after active marker publication; startup recovery evidence retained'
+    return 1
+  fi
+  nuinui_e2e__remove_exact "$nuinui_e2e_finish_starting" \
+    "$nuinui_e2e_finish_start_content" || {
+      echo 'BLOCKED: verified active marker remains with startup recovery evidence'
+      return 1
+    }
+}
+
+nuinui_e2e_admit() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_operation=admit
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
+      echo 'BLOCKED: active native generation does not match admission request'
+      return 1
+    }
+    printf 'ADMISSION ALREADY ACTIVE\nissue=%s\nlane=%s\ngeneration=%s\nmutation=no-op\n' \
+      "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_generation"
+    return 0
+  fi
+  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+    "$nuinui_e2e_expected_tested" ] || {
+      echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
+      return 1
+    }
+  nuinui_e2e_idle_sha=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_idle_sha" || {
+      echo 'BLOCKED: Human-test lane is not FREE at its clean detached idle revision'
+      return 1
+    }
+  printf 'ADMISSION READY\nissue=%s\nurl=%s\nlocal_id=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nmutation=no\n' \
+    "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_url" \
+    "$nuinui_e2e_expected_token" "$nuinui_e2e_expected_lane" \
+    "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation"
+}
+
+nuinui_e2e_status() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_operation=status
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" || return 1
+    printf 'NATIVE E2E ACTIVE\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nmutation=no\n' \
+      "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation"
+    return 0
+  fi
+  nuinui_e2e_starting=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" starting) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    nuinui_e2e__read_expected_starting "$nuinui_e2e_starting" || return 1
+    printf 'NATIVE E2E START-PENDING\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nmutation=no\n' \
+      "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation"
+    return 0
+  fi
+  nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_releasing"; then
+    echo 'NATIVE E2E RELEASE-PENDING'
+    echo "generation=$nuinui_e2e_expected_generation"
+    echo 'mutation=no'
+    return 0
+  fi
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_release"; then
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_r_idle_sha" || {
+        echo 'BLOCKED: completed receipt does not match the detached idle checkout'
+        return 1
+      }
+    printf 'NATIVE E2E RELEASED\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nidle_sha=%s\nmutation=no\n' \
+      "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation" \
+      "$nuinui_e2e_r_idle_sha"
+    return 0
+  fi
+  printf 'NATIVE E2E FREE\nissue=%s\nlane=%s\nmutation=no\n' \
+    "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane"
+}
+
+nuinui_e2e_start() {
+  [ "$#" = 4 ] || return 2
+  nuinui_e2e_operation=start
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e_expected_tested=$4
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_starting=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" starting) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
+      echo 'BLOCKED: active native generation differs from exact duplicate request'
+      return 1
+    }
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_expected_tested" ] &&
+      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+        "$nuinui_e2e_expected_tested" || {
+          echo 'BLOCKED: exact duplicate is no longer fresh and verified'
+          return 1
+        }
+    echo 'NATIVE E2E ALREADY STARTED'
+    echo "issue=$nuinui_e2e_expected_issue"
+    echo "generation=$nuinui_e2e_expected_generation"
+    echo 'mutation=no-op'
+    return 0
+  fi
+  if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    echo 'BLOCKED: interrupted startup requires explicit recovery'
+    return 1
+  fi
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
+  for nuinui_e2e_old_path in "$nuinui_e2e_cleanup" "$nuinui_e2e_release" "$nuinui_e2e_releasing"; do
+    if nuinui_e2e__exists "$nuinui_e2e_old_path"; then
+      echo 'BLOCKED: generation identity has already been used or is incomplete'
+      return 1
+    fi
+  done
+  if nuinui_e2e__generation_seen "$nuinui_e2e_expected_generation"; then
+    echo 'BLOCKED: generation identity has already been used in this fixture topology'
+    return 1
+  fi
+  nuinui_e2e_idle_sha=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  nuinui_e2e_valid_sha "$nuinui_e2e_idle_sha" &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_idle_sha" || {
+        echo 'BLOCKED: start requires a FREE clean detached Human-test idle checkout'
+        return 1
+      }
+  nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" || return 1
+  git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
+    "$nuinui_e2e_idle_sha" "$nuinui_e2e_expected_tested" || {
+      echo 'BLOCKED: Human-test idle checkout cannot safely transition to tested SHA'
+      return 1
+    }
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  [ "$(git -C "$nuinui_e2e_expected_repo" rev-parse HEAD 2>/dev/null)" = \
+    "$nuinui_e2e_idle_sha" ] &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_idle_sha" &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_expected_tested" ] || {
+        echo 'BLOCKED: freshness or checkout topology changed before startup intent'
+        return 1
+      }
+  nuinui_e2e_starting_content=$(nuinui_e2e__starting_content \
+    "$nuinui_e2e_idle_sha") || return 1
+  nuinui_e2e__atomic_create "$nuinui_e2e_starting" \
+    "$nuinui_e2e_starting_content" || {
+      echo 'BLOCKED: startup intent could not be atomically published'
+      return 1
+    }
+  nuinui_e2e__failpoint after-start-intent && {
+    echo 'BLOCKED: injected interruption after startup intent; recovery evidence retained'
+    return 1
+  }
+  nuinui_e2e__finish_start "$nuinui_e2e_starting" \
+    "$nuinui_e2e_active" yes || return 1
+  echo 'NATIVE E2E FIXTURE STARTED'
+  echo "issue=$nuinui_e2e_expected_issue"
+  echo "url=$nuinui_e2e_expected_url"
+  echo "local_id=$nuinui_e2e_expected_token"
+  echo "lane=$nuinui_e2e_expected_lane"
+  echo "tested_sha=$nuinui_e2e_expected_tested"
+  echo "generation=$nuinui_e2e_expected_generation"
+  echo 'mutation=yes'
+}
+
+nuinui_e2e_cleanup_proof() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_operation=cleanup-proof
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
+    echo 'BLOCKED: cleanup proof requires the exact active generation'
+    return 1
+  }
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" || {
+      echo 'BLOCKED: fixture cleanup proof requires a clean detached tested checkout'
+      return 1
+    }
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e_cleanup_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_cleanup_content=$nuinui_e2e_cleanup_content$(printf '\nproof=fixture-no-host-session\n')
+  if nuinui_e2e__exists "$nuinui_e2e_cleanup"; then
+    nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || return 1
+    echo 'NATIVE E2E CLEANUP PROOF ALREADY RECORDED'
+    echo 'mutation=no-op'
+    return 0
+  fi
+  nuinui_e2e__atomic_create "$nuinui_e2e_cleanup" "$nuinui_e2e_cleanup_content" || {
+    echo 'BLOCKED: cleanup proof could not be atomically published'
+    return 1
+  }
+  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || return 1
+  echo 'NATIVE E2E FIXTURE CLEANUP PROVED'
+  echo 'proof=fixture-no-host-session'
+  echo "generation=$nuinui_e2e_expected_generation"
+  echo 'mutation=yes'
+}
+
+nuinui_e2e_release() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_operation=release
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  if ! nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+    nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" &&
+      nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
+      [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+        "$nuinui_e2e_r_idle_sha" ] &&
+      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+        "$nuinui_e2e_r_idle_sha" || {
+          echo 'BLOCKED: repeated release has no exact verified receipt or idle checkout'
+          return 1
+        }
+    echo 'NATIVE E2E ALREADY RELEASED'
+    echo 'mutation=no-op'
+    return 0
+  fi
+  nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
+    echo 'BLOCKED: release requires the exact active generation'
+    return 1
+  }
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || {
+    echo 'BLOCKED: generation-matched fixture cleanup evidence is required'
+    return 1
+  }
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" || {
+      echo 'BLOCKED: release requires the clean detached tested checkout'
+      return 1
+    }
+  nuinui_e2e_marker_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_idle_sha=$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo") || {
+    echo 'BLOCKED: authoritative detached idle revision is unavailable'
+    return 1
+  }
+  git -C "$nuinui_e2e_expected_repo" cat-file -e \
+    "$nuinui_e2e_idle_sha^{commit}" 2>/dev/null || {
+      echo 'BLOCKED: authoritative idle revision is absent from the fixture object store'
+      return 1
+    }
+  nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  nuinui_e2e_releasing_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_releasing_content=$nuinui_e2e_releasing_content$(printf '\nidle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_idle_sha")
+  nuinui_e2e_release_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_release_content=$nuinui_e2e_release_content$(printf '\nidle_sha=%s\nrecord_state=complete\n' "$nuinui_e2e_idle_sha")
+  if nuinui_e2e__exists "$nuinui_e2e_release"; then
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
+    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_idle_sha" ] || return 1
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_idle_sha" || return 1
+    echo 'NATIVE E2E ALREADY RELEASED'
+    echo 'mutation=no-op'
+    return 0
+  fi
+  nuinui_e2e__exists "$nuinui_e2e_releasing" && {
+    echo 'BLOCKED: interrupted release requires explicit recovery'
+    return 1
+  }
+  # Durable intent is published before any checkout change. It records the
+  # exact generation and target idle SHA needed by narrowly bounded recovery.
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+    "$nuinui_e2e_idle_sha" ] &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: release freshness changed at its mutation boundary'
+        return 1
+      }
+  nuinui_e2e__atomic_create "$nuinui_e2e_releasing" \
+    "$nuinui_e2e_releasing_content" || {
+      echo 'BLOCKED: release intent could not be atomically published'
+      return 1
+    }
+  nuinui_e2e__failpoint after-intent && {
+    echo 'BLOCKED: injected interruption after release intent; recovery evidence retained'
+    return 1
+  }
+  nuinui_e2e__read_expected_active "$nuinui_e2e_active" &&
+    nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" &&
+    nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing" &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_idle_sha" ] &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: release mutation boundary no longer matches its exact intent'
+        return 1
+      }
+  if [ "$nuinui_e2e_expected_tested" != "$nuinui_e2e_idle_sha" ]; then
+    git -C "$nuinui_e2e_expected_repo" switch --detach \
+      "$nuinui_e2e_idle_sha" >/dev/null 2>&1 || {
+        echo 'BLOCKED: checkout could not return to authoritative detached idle revision; intent retained'
+        return 1
+      }
+  fi
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_idle_sha" &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_idle_sha" ] || {
+        echo 'BLOCKED: detached idle checkout verification failed; intent retained'
+        return 1
+      }
+  nuinui_e2e__failpoint after-idle-checkout && {
+    echo 'BLOCKED: injected interruption after idle checkout; recovery evidence retained'
+    return 1
+  }
+  nuinui_e2e__atomic_create "$nuinui_e2e_release" \
+    "$nuinui_e2e_release_content" || {
+      echo 'BLOCKED: release receipt could not be published; active marker and intent retained'
+      return 1
+    }
+  nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
+    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_idle_sha" ] || {
+      echo 'BLOCKED: release receipt verification failed; active marker retained'
+      return 1
+    }
+  nuinui_e2e__failpoint after-receipt && {
+    echo 'BLOCKED: injected interruption after verified receipt; active marker retained'
+    return 1
+  }
+  nuinui_e2e__remove_exact "$nuinui_e2e_active" "$nuinui_e2e_marker_content" || {
+    echo 'BLOCKED: active marker changed; verified receipt and recovery intent retained'
+    return 1
+  }
+  nuinui_e2e__failpoint after-active-removal && {
+    echo 'BLOCKED: injected interruption after active marker removal; receipt and intent retained'
+    return 1
+  }
+  nuinui_e2e__remove_exact "$nuinui_e2e_releasing" \
+    "$nuinui_e2e_releasing_content" || {
+      echo 'BLOCKED: release intent changed after marker removal; receipt retained'
+      return 1
+    }
+  echo 'NATIVE E2E FIXTURE RELEASED'
+  echo "issue=$nuinui_e2e_expected_issue"
+  echo "tested_sha=$nuinui_e2e_expected_tested"
+  echo "idle_sha=$nuinui_e2e_idle_sha"
+  echo "generation=$nuinui_e2e_expected_generation"
+  echo 'receipt=verified-before-active-marker-removal'
+  echo 'mutation=yes'
+}
+
+nuinui_e2e_recover() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_operation=recover
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
+  nuinui_e2e_starting=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" starting) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    nuinui_e2e__finish_start "$nuinui_e2e_starting" "$nuinui_e2e_active" no || return 1
+    echo 'NATIVE E2E START RECOVERED'
+    echo "issue=$nuinui_e2e_expected_issue"
+    echo "tested_sha=$nuinui_e2e_expected_tested"
+    echo "generation=$nuinui_e2e_expected_generation"
+    echo 'marker=verified-after-tested-checkout'
+    echo 'mutation=yes'
+    return 0
+  fi
+  if ! nuinui_e2e__exists "$nuinui_e2e_releasing"; then
+    if ! nuinui_e2e__exists "$nuinui_e2e_active" &&
+      nuinui_e2e__exists "$nuinui_e2e_release" &&
+      nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
+      [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+        "$nuinui_e2e_r_idle_sha" ] &&
+      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_r_idle_sha"; then
+      echo 'NATIVE E2E RECOVERY ALREADY COMPLETE'
+      echo 'mutation=no-op'
+      return 0
+    fi
+    echo 'BLOCKED: no exact interrupted release is available for recovery'
+    return 1
+  fi
+  nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing" || {
+    echo 'BLOCKED: release intent does not match the requested issue, lane, SHA, or generation'
+    return 1
+  }
+  nuinui_e2e_recovery_idle_sha=$nuinui_e2e_r_idle_sha
+  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || {
+    echo 'BLOCKED: exact generation-matched cleanup evidence is missing'
+    return 1
+  }
+  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+    "$nuinui_e2e_recovery_idle_sha" ] || {
+      echo 'BLOCKED: authoritative idle SHA changed after release interruption'
+      return 1
+    }
+  nuinui_e2e_expected_head=$(git -C "$nuinui_e2e_expected_repo" rev-parse HEAD 2>/dev/null) || return 1
+  [ -z "$(git -C "$nuinui_e2e_expected_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+    [ -z "$(git -C "$nuinui_e2e_expected_repo" status --porcelain 2>/dev/null)" ] &&
+    { [ "$nuinui_e2e_expected_head" = "$nuinui_e2e_expected_tested" ] ||
+      [ "$nuinui_e2e_expected_head" = "$nuinui_e2e_recovery_idle_sha" ]; } || {
+        echo 'BLOCKED: interrupted checkout is not in an exact recoverable detached state'
+        return 1
+      }
+  if nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" || return 1
+    nuinui_e2e_marker_content=$(nuinui_e2e__record_base)
+  else
+    [ "$nuinui_e2e_expected_head" = "$nuinui_e2e_recovery_idle_sha" ] || {
+      echo 'BLOCKED: active marker is absent before the idle checkout was verified'
+      return 1
+    }
+  fi
+  nuinui_e2e_releasing_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_releasing_content=$nuinui_e2e_releasing_content$(printf '\nidle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_recovery_idle_sha")
+  nuinui_e2e_release_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_release_content=$nuinui_e2e_release_content$(printf '\nidle_sha=%s\nrecord_state=complete\n' "$nuinui_e2e_recovery_idle_sha")
+  if [ "$nuinui_e2e_expected_head" = "$nuinui_e2e_expected_tested" ]; then
+    git -C "$nuinui_e2e_expected_repo" switch --detach \
+      "$nuinui_e2e_recovery_idle_sha" >/dev/null 2>&1 || {
+        echo 'BLOCKED: exact recovery could not restore detached idle checkout; evidence retained'
+        return 1
+      }
+  fi
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_recovery_idle_sha" &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_recovery_idle_sha" ] || {
+        echo 'BLOCKED: exact recovery could not verify authoritative detached idle checkout'
+        return 1
+      }
+  if nuinui_e2e__exists "$nuinui_e2e_release"; then
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
+      [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_recovery_idle_sha" ] || {
+        echo 'BLOCKED: existing release receipt conflicts with recovery intent'
+        return 1
+      }
+  else
+    nuinui_e2e__atomic_create "$nuinui_e2e_release" \
+      "$nuinui_e2e_release_content" || {
+        echo 'BLOCKED: recovered release receipt could not be published'
+        return 1
+      }
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
+  fi
+  if nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e__remove_exact "$nuinui_e2e_active" "$nuinui_e2e_marker_content" || {
+      echo 'BLOCKED: exact active marker changed during recovery; receipt retained'
+      return 1
+    }
+  fi
+  nuinui_e2e__remove_exact "$nuinui_e2e_releasing" \
+    "$nuinui_e2e_releasing_content" || {
+      echo 'BLOCKED: exact recovery intent changed after marker resolution'
+      return 1
+    }
+  echo 'NATIVE E2E RELEASE RECOVERED'
+  echo "generation=$nuinui_e2e_expected_generation"
+  echo "idle_sha=$nuinui_e2e_recovery_idle_sha"
+  echo 'receipt=verified-before-active-marker-removal'
+  echo 'mutation=yes'
+}
+
+nuinui_e2e_closure() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_operation=closure
+  nuinui_e2e_manifest_arg=$1
+  nuinui_e2e_lane_arg=$2
+  nuinui_e2e_issue_arg=$3
+  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+    "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_active" || nuinui_e2e__exists "$nuinui_e2e_releasing"; then
+    echo 'BLOCKED: final closure requires no active marker or pending release intent'
+    return 1
+  fi
+  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || {
+    echo 'BLOCKED: final closure requires exact generation-matched cleanup evidence'
+    return 1
+  }
+  nuinui_e2e__read_expected_release "$nuinui_e2e_release" || {
+    echo 'BLOCKED: final closure requires the exact completed release receipt'
+    return 1
+  }
+  nuinui_e2e_closure_idle_sha=$nuinui_e2e_r_idle_sha
+  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+    "$nuinui_e2e_closure_idle_sha" ] &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_closure_idle_sha" || {
+        echo 'BLOCKED: final detached checkout or authoritative idle revision is not verified'
+        return 1
+      }
+  echo 'NATIVE E2E FINAL CLOSURE VERIFIED'
+  echo "issue=$nuinui_e2e_expected_issue"
+  echo "lane=$nuinui_e2e_expected_lane"
+  echo "tested_sha=$nuinui_e2e_expected_tested"
+  echo "idle_sha=$nuinui_e2e_closure_idle_sha"
+  echo "generation=$nuinui_e2e_expected_generation"
+  echo 'clean=yes'
+  echo 'detached=yes'
+  echo 'registered_topology=verified'
+  echo 'mutation=no'
+}
+# Public dispatcher for the inactive fixture candidate. Every operation is
+# self-test-only; this executable has no production manifest fallback.
+
+nuinui_e2e_usage() {
+  cat >&2 <<'USAGE'
+Usage: nuinui-e2e {admit|status|start|cleanup-proof|release|recover|closure} \
+  --self-test --manifest <disposable-LANES.conf> --issue <canonical-identity> \
+  --generation <caller-token> --tested-sha <40-lowercase-hex> [--lane <name>]
+
+Accepted Issue identities are exactly:
+  sayosomi/nuinuiCAD#N
+  https://github.com/sayosomi/nuinuiCAD/issues/N
+  GH-sayosomi-nuinuiCAD-N
+
+This inactive candidate cannot operate on a production checkout.
+USAGE
+}
+
+nuinui_e2e_cli_main() {
+  [ "$#" -ge 1 ] || { nuinui_e2e_usage; return 2; }
+  nuinui_e2e_command=$1
+  shift
+  nuinui_e2e_cli_manifest=
+  nuinui_e2e_cli_issue=
+  nuinui_e2e_cli_lane=
+  nuinui_e2e_cli_generation=
+  nuinui_e2e_cli_tested=
+  nuinui_e2e_cli_self_test=no
+  nuinui_e2e_cli_seen_self_test=no
+  nuinui_e2e_cli_seen_manifest=no
+  nuinui_e2e_cli_seen_issue=no
+  nuinui_e2e_cli_seen_lane=no
+  nuinui_e2e_cli_seen_generation=no
+  nuinui_e2e_cli_seen_tested=no
+  while [ "$#" -gt 0 ]; do
+    nuinui_e2e_cli_option=$1
+    shift
+    case "$nuinui_e2e_cli_option" in
+      --self-test)
+        [ "$nuinui_e2e_cli_seen_self_test" = no ] || {
+          echo 'ERROR: duplicate --self-test option' >&2
+          return 2
+        }
+        nuinui_e2e_cli_seen_self_test=yes
+        nuinui_e2e_cli_self_test=yes
+        ;;
+      --manifest|--issue|--lane|--generation|--tested-sha)
+        [ "$#" -gt 0 ] || { echo "ERROR: $nuinui_e2e_cli_option requires a value" >&2; return 2; }
+        nuinui_e2e_cli_value=$1
+        shift
+        [ -n "$nuinui_e2e_cli_value" ] &&
+          case "$nuinui_e2e_cli_value" in -*|--*) false ;; *) true ;; esac || {
+            echo "ERROR: $nuinui_e2e_cli_option requires a non-option value" >&2
+            return 2
+          }
+        case "$nuinui_e2e_cli_option" in
+          --manifest)
+            [ "$nuinui_e2e_cli_seen_manifest" = no ] || { echo 'ERROR: duplicate --manifest option' >&2; return 2; }
+            nuinui_e2e_cli_seen_manifest=yes
+            nuinui_e2e_cli_manifest=$nuinui_e2e_cli_value
+            ;;
+          --issue)
+            [ "$nuinui_e2e_cli_seen_issue" = no ] || { echo 'ERROR: duplicate --issue option' >&2; return 2; }
+            nuinui_e2e_cli_seen_issue=yes
+            nuinui_e2e_cli_issue=$nuinui_e2e_cli_value
+            ;;
+          --lane)
+            [ "$nuinui_e2e_cli_seen_lane" = no ] || { echo 'ERROR: duplicate --lane option' >&2; return 2; }
+            nuinui_e2e_cli_seen_lane=yes
+            nuinui_e2e_cli_lane=$nuinui_e2e_cli_value
+            ;;
+          --generation)
+            [ "$nuinui_e2e_cli_seen_generation" = no ] || { echo 'ERROR: duplicate --generation option' >&2; return 2; }
+            nuinui_e2e_cli_seen_generation=yes
+            nuinui_e2e_cli_generation=$nuinui_e2e_cli_value
+            ;;
+          --tested-sha)
+            [ "$nuinui_e2e_cli_seen_tested" = no ] || { echo 'ERROR: duplicate --tested-sha option' >&2; return 2; }
+            nuinui_e2e_cli_seen_tested=yes
+            nuinui_e2e_cli_tested=$nuinui_e2e_cli_value
+            ;;
+        esac
+        ;;
+      -h|--help|help)
+        nuinui_e2e_usage
+        return 0
+        ;;
+      *)
+        echo "ERROR: unknown option or command argument: $nuinui_e2e_cli_option" >&2
+        return 2
+        ;;
+    esac
+  done
+  [ "$nuinui_e2e_cli_self_test" = yes ] || {
+    echo 'BLOCKED: explicit --self-test is required; production activation is not implemented' >&2
+    return 1
+  }
+  [ "$nuinui_e2e_cli_seen_manifest" = yes ] || { echo 'ERROR: --manifest is required' >&2; return 2; }
+  [ "$nuinui_e2e_cli_seen_issue" = yes ] || { echo 'ERROR: --issue is required' >&2; return 2; }
+  [ "$nuinui_e2e_cli_seen_generation" = yes ] || { echo 'ERROR: --generation is required' >&2; return 2; }
+  [ "$nuinui_e2e_cli_seen_tested" = yes ] || { echo 'ERROR: --tested-sha is required' >&2; return 2; }
+  nuinui_e2e_self_test=yes
+  nuinui_e2e_operation=$nuinui_e2e_command
+  nuinui_e2e_manifest_arg=$nuinui_e2e_cli_manifest
+  nuinui_e2e_lane_arg=$nuinui_e2e_cli_lane
+  nuinui_e2e_issue_arg=$nuinui_e2e_cli_issue
+  nuinui_e2e_expected_generation=$nuinui_e2e_cli_generation
+  nuinui_e2e_expected_tested=$nuinui_e2e_cli_tested
+  nuinui_e2e_test_failpoint=${NUINUI_E2E_TEST_FAILPOINT:-}
+  case "$nuinui_e2e_command" in
+    admit)
+      [ "$nuinui_e2e_cli_seen_tested" = yes ] || return 2
+      nuinui_e2e_admit "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"
+      ;;
+    status)
+      nuinui_e2e_status "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"
+      ;;
+    start)
+      nuinui_e2e_start "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" \
+        "$nuinui_e2e_cli_issue" "$nuinui_e2e_cli_tested"
+      ;;
+    cleanup-proof)
+      nuinui_e2e_cleanup_proof "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"
+      ;;
+    release)
+      nuinui_e2e_release "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"
+      ;;
+    recover)
+      nuinui_e2e_recover "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"
+      ;;
+    closure)
+      nuinui_e2e_closure "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"
+      ;;
+    *)
+      echo 'BLOCKED: unsupported candidate operation; live E2E preparation and execution are not implemented' >&2
+      nuinui_e2e_usage
+      return 2
+      ;;
+  esac
+}
+
+if [ "${NUINUI_E2E_LIBRARY_ONLY:-0}" != 1 ]; then
+  nuinui_e2e_cli_main "$@"
+fi

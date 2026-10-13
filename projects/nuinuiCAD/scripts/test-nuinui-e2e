@@ -1,0 +1,487 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
+helper=$script_dir/nuinui-e2e
+output=
+fixture_root=
+fixture_manifest=
+fixture_impl=
+fixture_human=
+fixture_remote=
+fixture_tested_sha=
+fixture_issue=sayosomi/nuinuiCAD#268
+fixture_generation=fixture-gen-0001
+
+fail() {
+  echo "SELFTEST FAIL: $*" >&2
+  [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  exit 1
+}
+
+cleanup() {
+  [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+}
+trap cleanup EXIT HUP INT TERM
+
+assert_contains() {
+  grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"
+}
+
+assert_file_contains() {
+  grep -Fqx -- "$1" "$2" || fail "expected $2 to contain: $1"
+}
+
+invoke() {
+  invoke_command=$1
+  invoke_issue=$2
+  invoke_generation=$3
+  invoke_lane=$4
+  invoke_tested=$5
+  if [ -n "$invoke_lane" ]; then
+    "$helper" "$invoke_command" --self-test --manifest "$fixture_manifest" \
+      --issue "$invoke_issue" --generation "$invoke_generation" \
+      --tested-sha "$invoke_tested" --lane "$invoke_lane" >"$output" 2>&1
+  else
+    "$helper" "$invoke_command" --self-test --manifest "$fixture_manifest" \
+      --issue "$invoke_issue" --generation "$invoke_generation" \
+      --tested-sha "$invoke_tested" >"$output" 2>&1
+  fi
+}
+
+expect_ok() {
+  if ! invoke "$@"; then
+    cat "$output" >&2
+    fail "command unexpectedly blocked: $1"
+  fi
+}
+
+expect_block() {
+  if invoke "$@"; then
+    cat "$output" >&2
+    fail "command unexpectedly succeeded: $1"
+  fi
+  grep -Eq 'BLOCKED|blocked' "$output" || {
+    cat "$output" >&2
+    fail "blocked command did not explain the refusal: $1"
+  }
+}
+
+new_fixture() {
+  fixture_mode=$1
+  [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-e2e-fixture.XXXXXX") || fail 'temporary fixture root'
+  fixture_root=$(realpath "$fixture_root") || fail 'canonical fixture root'
+  fixture_impl=$fixture_root/implementation
+  fixture_human=$fixture_root/human
+  fixture_remote=$fixture_root/remote/sayosomi/nuinuiCAD.git
+  fixture_manifest=$fixture_root/LANES.conf
+  output=$fixture_root/command.out
+  mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
+  printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
+  git init --bare --initial-branch=main -q "$fixture_remote" || fail 'bare fixture repository'
+  git init -b main -q "$fixture_impl" || fail 'implementation checkout'
+  git -C "$fixture_impl" config user.name 'nuinui-e2e fixture'
+  git -C "$fixture_impl" config user.email 'nuinui-e2e-fixture@example.invalid'
+  printf 'fixture base\n' > "$fixture_impl/fixture.txt"
+  git -C "$fixture_impl" add fixture.txt
+  git -C "$fixture_impl" commit -q -m 'fixture base' || fail 'fixture commit'
+  git -C "$fixture_impl" remote add origin "$fixture_remote"
+  git -C "$fixture_impl" push -q origin main || fail 'fixture push'
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+  printf 'version=1\n' > "$(git -C "$fixture_impl" rev-parse --absolute-git-dir)/nuinui-implementation-v1"
+  if [ "$fixture_mode" = one ]; then
+    git -C "$fixture_impl" worktree add --detach -q "$fixture_human" "$fixture_tested_sha" || fail 'Human-test worktree'
+  fi
+  {
+    printf 'version=1\nrepository=sayosomi/nuinuiCAD\ndefault_branch=main\n'
+    printf '\n[lane implementation]\nrole=implementation\npath=%s\nidle=branch\n' "$fixture_impl"
+    if [ "$fixture_mode" = one ]; then
+      printf '\n[lane human]\nrole=human-test\npath=%s\nidle=detached\n' "$fixture_human"
+    fi
+  } > "$fixture_manifest"
+}
+
+active_path() {
+  printf '%s/nuinui-github-e2e-active-v1\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)"
+}
+
+generation_hash() {
+  printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}'
+}
+
+metadata_path() {
+  metadata_kind=$1
+  metadata_generation=$2
+  printf '%s/nuinui-github-e2e-%s-v1.%s\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" \
+    "$metadata_kind" "$(generation_hash "$metadata_generation")"
+}
+
+state_fingerprint() {
+  state_git_dir=$(git -C "$fixture_human" rev-parse --absolute-git-dir)
+  find "$state_git_dir" -maxdepth 1 -name 'nuinui-github-e2e-*' -type f -print |
+    LC_ALL=C sort | while IFS= read -r state_path; do shasum -a 256 "$state_path"; done
+}
+
+advance_default() {
+  printf 'advance %s\n' "$1" >> "$fixture_impl/fixture.txt"
+  git -C "$fixture_impl" add fixture.txt
+  git -C "$fixture_impl" commit -q -m "advance $1" || fail 'advance fixture main'
+  git -C "$fixture_impl" push -q origin main || fail 'push advanced fixture main'
+}
+
+# Candidate identity conversions must be reversible and reject aliases.
+NUINUI_E2E_LIBRARY_ONLY=1
+export NUINUI_E2E_LIBRARY_ONLY
+. "$helper"
+unset NUINUI_E2E_LIBRARY_ONLY
+identity_expected=$(printf '%s\n%s\n%s' \
+  'sayosomi/nuinuiCAD#268' \
+  'https://github.com/sayosomi/nuinuiCAD/issues/268' \
+  'GH-sayosomi-nuinuiCAD-268')
+[ "$(nuinui_e2e_identity_resolve 'https://github.com/sayosomi/nuinuiCAD/issues/268')" = \
+  "$identity_expected" ] || fail 'canonical identity conversion'
+for identity_invalid in \
+  SAY-268 \
+  sayosomi/nuinuiCAD#0 \
+  sayosomi/nuinuiCAD#-1 \
+  sayosomi/nuinuiCAD#0268 \
+  SAYOSOMI/nuinuiCAD#268 \
+  sayosomi/NuinuiCAD#268 \
+  https://github.com/sayosomi/nuinuiCAD/issues/268/ \
+  https://github.com/sayosomi/nuinuiCAD/issues/268?x=1 \
+  GH-sayosomi-nuinuiCAD-0268 \
+  other/repo#268; do
+  if nuinui_e2e_identity_number "$identity_invalid" >/dev/null 2>&1; then
+    fail "invalid identity was accepted: $identity_invalid"
+  fi
+done
+
+# No-Human-test capacity blocks the candidate startup.
+new_fixture zero
+expect_block start "$fixture_issue" "$fixture_generation" '' "$fixture_tested_sha"
+
+# One declared Human-test lane admits an exact, fresh fixture generation.
+new_fixture one
+fixture_idle_sha=$(git -C "$fixture_human" rev-parse HEAD)
+fixture_stale_sha=$fixture_tested_sha
+advance_default tested-generation
+fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+[ "$fixture_idle_sha" != "$fixture_tested_sha" ] || fail 'startup fixture did not begin at a different idle SHA'
+if "$helper" status --manifest "$fixture_manifest" --issue "$fixture_issue" \
+  --generation "$fixture_generation" --tested-sha "$fixture_tested_sha" \
+  --lane human > "$output" 2>&1; then
+  fail 'candidate status ran without explicit self-test mode'
+fi
+assert_contains 'explicit --self-test is required'
+expect_block admit "$fixture_issue" "$fixture_generation" human "$fixture_stale_sha"
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_stale_sha"
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_idle_sha" ] ||
+  fail 'stale tested SHA changed idle checkout'
+[ ! -e "$(active_path)" ] &&
+  [ ! -e "$(metadata_path starting "$fixture_generation")" ] ||
+  fail 'stale tested SHA published startup metadata'
+expect_ok admit "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'ADMISSION READY'
+expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'NATIVE E2E FIXTURE STARTED'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_tested_sha" ] || fail 'start did not fix tested SHA'
+[ ! -e "$(metadata_path starting "$fixture_generation")" ] || fail 'successful start retained startup intent'
+assert_file_contains "issue=$fixture_issue" "$(active_path)"
+assert_file_contains 'issue_url=https://github.com/sayosomi/nuinuiCAD/issues/268' "$(active_path)"
+assert_file_contains 'local_id=GH-sayosomi-nuinuiCAD-268' "$(active_path)"
+assert_file_contains "tested_sha=$fixture_tested_sha" "$(active_path)"
+assert_file_contains "generation=$fixture_generation" "$(active_path)"
+
+# Exact duplicate start is read-only.
+before_fingerprint=$(state_fingerprint)
+before_head=$(git -C "$fixture_human" rev-parse HEAD)
+expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'mutation=no-op'
+[ "$(state_fingerprint)" = "$before_fingerprint" ] || fail 'duplicate start mutated candidate metadata'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$before_head" ] || fail 'duplicate start moved HEAD'
+
+# Wrong issue, generation, lane, or tested SHA never matches the active record.
+expect_block start 'sayosomi/nuinuiCAD#269' "$fixture_generation" human "$fixture_tested_sha"
+expect_block start "$fixture_issue" 'fixture-gen-9999' human "$fixture_tested_sha"
+expect_block start "$fixture_issue" "$fixture_generation" implementation "$fixture_tested_sha"
+expect_block start "$fixture_issue" "$fixture_generation" human '0000000000000000000000000000000000000000'
+expect_block cleanup-proof "$fixture_issue" 'fixture-gen-9999' human "$fixture_tested_sha"
+expect_block cleanup-proof "$fixture_issue" "$fixture_generation" human '0000000000000000000000000000000000000000'
+expect_block release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# Fixture cleanup evidence is generation-bound; release returns to authoritative detached main.
+expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'fixture-no-host-session'
+advance_default after-start
+fixture_idle_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+expect_ok release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'receipt=verified-before-active-marker-removal'
+[ ! -e "$(active_path)" ] || fail 'release left active marker after success'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_idle_sha" ] || fail 'release did not reach latest detached main'
+[ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'release left named branch'
+expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'registered_topology=verified'
+before_fingerprint=$(state_fingerprint)
+before_head=$(git -C "$fixture_human" rev-parse HEAD)
+expect_ok release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'mutation=no-op'
+[ "$(state_fingerprint)" = "$before_fingerprint" ] || fail 'repeated release changed metadata'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$before_head" ] || fail 'repeated release moved HEAD'
+
+# Interrupted startup remains pending and can recover only for the exact generation.
+assert_start_recovery() {
+  startup_failpoint=$1
+  startup_expected_state=$2
+  new_fixture one
+  startup_idle_sha=$(git -C "$fixture_human" rev-parse HEAD)
+  advance_default "startup-$startup_failpoint"
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+  case "$startup_expected_state" in
+    idle) startup_expected_head=$startup_idle_sha ;;
+    tested) startup_expected_head=$fixture_tested_sha ;;
+    active) startup_expected_head=$fixture_tested_sha ;;
+    *) fail "unknown startup recovery fixture state: $startup_expected_state" ;;
+  esac
+  if NUINUI_E2E_TEST_FAILPOINT=$startup_failpoint invoke start \
+    "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+    fail "startup failpoint did not interrupt: $startup_failpoint"
+  fi
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$startup_expected_head" ] ||
+    fail "startup interruption left an unexpected checkout: $startup_failpoint"
+  [ -f "$(metadata_path starting "$fixture_generation")" ] ||
+    fail "startup interruption lost its durable intent: $startup_failpoint"
+  if [ "$startup_expected_state" = active ]; then
+    [ -f "$(active_path)" ] || fail "active marker was lost after publication interruption: $startup_failpoint"
+  else
+    [ ! -e "$(active_path)" ] || fail "startup published an active marker before verified checkout: $startup_failpoint"
+  fi
+  expect_ok status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  if [ "$startup_expected_state" = active ]; then
+    assert_contains 'NATIVE E2E ACTIVE'
+  else
+    assert_contains 'NATIVE E2E START-PENDING'
+  fi
+  if grep -Fq 'NATIVE E2E FREE' "$output"; then
+    fail "interrupted startup was classified FREE: $startup_failpoint"
+  fi
+  if [ "$startup_expected_state" = active ]; then
+    startup_state_before=$(state_fingerprint)
+    startup_head_before=$(git -C "$fixture_human" rev-parse HEAD)
+    expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+    assert_contains 'mutation=no-op'
+    [ "$(state_fingerprint)" = "$startup_state_before" ] ||
+      fail 'duplicate start changed active-plus-starting metadata'
+    [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$startup_head_before" ] ||
+      fail 'duplicate start moved active tested checkout'
+  else
+    expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  fi
+  expect_block recover "$fixture_issue" 'fixture-gen-9999' human "$fixture_tested_sha"
+  expect_ok recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  assert_contains 'NATIVE E2E START RECOVERED'
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_tested_sha" ] ||
+    fail "startup recovery did not reach tested checkout: $startup_failpoint"
+  [ -f "$(active_path)" ] &&
+    [ ! -e "$(metadata_path starting "$fixture_generation")" ] ||
+    fail "startup recovery did not leave only the active marker: $startup_failpoint"
+  assert_file_contains "tested_sha=$fixture_tested_sha" "$(active_path)"
+}
+
+assert_start_recovery after-start-intent idle
+assert_start_recovery after-start-checkout tested
+assert_start_recovery after-start-active-marker active
+
+# Canonical identity failures, including SAY aliases, block fixture admission.
+new_fixture one
+for identity_invalid in \
+  SAY-268 \
+  sayosomi/nuinuiCAD#0 \
+  sayosomi/nuinuiCAD#-1 \
+  sayosomi/nuinuiCAD#0268 \
+  SAYOSOMI/nuinuiCAD#268 \
+  sayosomi/NuinuiCAD#268 \
+  https://github.com/sayosomi/nuinuiCAD/issues/268/ \
+  GH-sayosomi-nuinuiCAD-0 \
+  other/repo#268; do
+  expect_block admit "$identity_invalid" "$fixture_generation" human "$fixture_tested_sha"
+done
+
+# Existing SAY marker/session ownership is never adopted or rewritten.
+new_fixture one
+legacy_marker=$(git -C "$fixture_human" rev-parse --absolute-git-dir)/nuinui-slot
+printf 'issue=SAY-268\nref=%s\n' "$fixture_tested_sha" > "$legacy_marker"
+legacy_before=$(shasum -a 256 "$legacy_marker")
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ "$(shasum -a 256 "$legacy_marker")" = "$legacy_before" ] || fail 'legacy SAY marker was modified'
+[ ! -e "$(active_path)" ] || fail 'legacy SAY marker was adopted'
+
+# Malformed, partial, symlinked, and unknown native metadata all fail closed.
+new_fixture one
+printf 'schema_version=1\n' > "$(active_path)"
+expect_block status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+new_fixture one
+printf 'partial\n' > "$fixture_root/partial"
+ln -s "$fixture_root/partial" "$(active_path)"
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+new_fixture one
+printf 'foreign\n' > "$(git -C "$fixture_human" rev-parse --absolute-git-dir)/nuinui-github-e2e-foreign"
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# Unexpected legacy sessions and foreign ownership on the Human-test lane block.
+new_fixture one
+printf 'issue=SAY-1\nref=%s\n' "$fixture_tested_sha" > \
+  "$(git -C "$fixture_human" rev-parse --absolute-git-dir)/nuinui-e2e-session"
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+new_fixture one
+mkdir "$(git -C "$fixture_human" rev-parse --absolute-git-dir)/nuinui-implementation-slot"
+expect_block admit "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# Dirty, named, and unregistered Human-test checkouts are not admitted.
+new_fixture one
+printf 'dirty\n' > "$fixture_human/untracked.txt"
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+new_fixture one
+git -C "$fixture_human" switch -c fixture-named >/dev/null 2>&1 || fail 'named checkout fixture'
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+new_fixture one
+fixture_stale_sha=$fixture_tested_sha
+advance_default stale-human
+fixture_latest_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_stale_sha"
+new_fixture one
+fixture_extra=$fixture_root/unregistered
+git -C "$fixture_impl" worktree add --detach -q "$fixture_extra" "$fixture_tested_sha" || fail 'unregistered worktree fixture'
+expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# Interrupted release before receipt: mismatch cannot recover; exact generation can.
+new_fixture one
+expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+advance_default interrupted-before-receipt
+fixture_idle_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+if NUINUI_E2E_TEST_FAILPOINT=after-intent invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+  fail 'release failpoint did not interrupt after intent'
+fi
+assert_contains 'recovery evidence retained'
+release_intent=$(metadata_path releasing "$fixture_generation")
+release_receipt=$(metadata_path release "$fixture_generation")
+[ -f "$release_intent" ] || fail 'interrupted release intent is missing'
+[ ! -e "$release_receipt" ] || fail 'receipt was published before idle checkout verification'
+expect_block recover "$fixture_issue" 'fixture-gen-9999' human "$fixture_tested_sha"
+expect_block recover 'sayosomi/nuinuiCAD#269' "$fixture_generation" human "$fixture_tested_sha"
+expect_ok recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'NATIVE E2E RELEASE RECOVERED'
+expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# A stale idle target keeps exact recovery evidence and blocks repair.
+new_fixture one
+expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+advance_default interrupted-stale-target
+if NUINUI_E2E_TEST_FAILPOINT=after-intent invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+  fail 'stale-target fixture did not interrupt release'
+fi
+advance_default advance-after-intent
+expect_block recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ -f "$(metadata_path releasing "$fixture_generation")" ] || fail 'stale recovery discarded intent'
+[ -f "$(active_path)" ] || fail 'stale recovery discarded active marker'
+
+# Verified receipt is published before active-marker removal and retains precedence.
+new_fixture one
+expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+advance_default interrupted-after-receipt
+fixture_idle_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+if NUINUI_E2E_TEST_FAILPOINT=after-receipt invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+  fail 'receipt failpoint did not interrupt release'
+fi
+release_receipt=$(metadata_path release "$fixture_generation")
+release_intent=$(metadata_path releasing "$fixture_generation")
+[ -f "$release_receipt" ] && [ -f "$release_intent" ] && [ -f "$(active_path)" ] ||
+  fail 'active marker, verified receipt, and recovery intent ordering was not preserved'
+expect_ok status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'NATIVE E2E ACTIVE'
+assert_file_contains 'record_state=complete' "$release_receipt"
+expect_block closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# Generator is deterministic, the checked-in candidate is current, and unsafe artifact links are rejected.
+"$script_dir/generate-nuinui-e2e" --check > "$output" 2>&1 || {
+  cat "$output" >&2
+  fail 'deterministic generation check'
+}
+assert_contains 'generation check PASS'
+unsafe_root=$fixture_root/generator-safety
+unsafe_script_dir=$unsafe_root/projects/nuinuiCAD/scripts
+mkdir -p "$unsafe_script_dir/nuinui-e2e-src" "$unsafe_root/shared/local-tools/lane-execution"
+cp "$script_dir/generate-nuinui-e2e" "$unsafe_script_dir/"
+cp "$script_dir/nuinui-e2e-src/identity.sh" "$script_dir/nuinui-e2e-src/lifecycle.sh" \
+  "$script_dir/nuinui-e2e-src/cli.sh" "$unsafe_script_dir/nuinui-e2e-src/"
+cp "$repo_root/shared/local-tools/lane-execution/manifest.sh" \
+  "$repo_root/shared/local-tools/lane-execution/ownership.sh" \
+  "$repo_root/shared/local-tools/lane-execution/runtime.sh" \
+  "$repo_root/shared/local-tools/lane-execution/preflight.sh" \
+  "$unsafe_root/shared/local-tools/lane-execution/"
+printf 'keep\n' > "$unsafe_root/keep"
+ln -s "$unsafe_root/keep" "$unsafe_script_dir/nuinui-e2e"
+if "$unsafe_script_dir/generate-nuinui-e2e" > "$output" 2>&1; then
+  fail 'generator followed or replaced an unsafe artifact symlink'
+fi
+[ -L "$unsafe_script_dir/nuinui-e2e" ] &&
+  [ "$(cat "$unsafe_script_dir/nuinui-e2e")" = keep ] || fail 'unsafe artifact symlink target changed'
+
+# Legacy production-facing generated artifacts remain byte-identical to base.
+for preserved_path in \
+  projects/nuinuiCAD/scripts/nuinui \
+  projects/nuinuiCAD/scripts/nuinui-context \
+  projects/nuinuiCAD/scripts/nuinui-e2e-prepare; do
+  git -C "$repo_root" diff --quiet HEAD -- "$preserved_path" ||
+    fail "legacy artifact changed: $preserved_path"
+  current_blob=$(git -C "$repo_root" hash-object "$repo_root/$preserved_path")
+  base_blob=$(git -C "$repo_root" rev-parse "HEAD:$preserved_path")
+  [ "$current_blob" = "$base_blob" ] || fail "legacy artifact blob changed: $preserved_path"
+done
+
+# Verify the authorized implementation scope from committed base-to-target Git evidence.
+expected_inventory=$(printf '%s\n' \
+  projects/nuinuiCAD/scripts/generate-nuinui-e2e \
+  projects/nuinuiCAD/scripts/nuinui-e2e \
+  projects/nuinuiCAD/scripts/nuinui-e2e-src/cli.sh \
+  projects/nuinuiCAD/scripts/nuinui-e2e-src/identity.sh \
+  projects/nuinuiCAD/scripts/nuinui-e2e-src/lifecycle.sh \
+  projects/nuinuiCAD/scripts/test-nuinui-e2e | LC_ALL=C sort)
+scope_base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null) || {
+  fail 'cannot resolve the approved base from HEAD and origin/main'
+}
+committed_inventory=$(git -C "$repo_root" diff --name-only "$scope_base" HEAD | LC_ALL=C sort)
+[ "$committed_inventory" = "$expected_inventory" ] || {
+  echo "expected inventory:" >&2
+  printf '%s\n' "$expected_inventory" >&2
+  echo "committed base-to-target inventory:" >&2
+  printf '%s\n' "$committed_inventory" >&2
+  fail 'exact committed implementation scope'
+}
+dirty_inventory=$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all |
+  awk '{print substr($0, 4)}' | LC_ALL=C sort -u)
+for dirty_path in $dirty_inventory; do
+  case "$dirty_path" in
+    projects/nuinuiCAD/scripts/generate-nuinui-e2e|\
+    projects/nuinuiCAD/scripts/nuinui-e2e|\
+    projects/nuinuiCAD/scripts/nuinui-e2e-src/cli.sh|\
+    projects/nuinuiCAD/scripts/nuinui-e2e-src/identity.sh|\
+    projects/nuinuiCAD/scripts/nuinui-e2e-src/lifecycle.sh|\
+    projects/nuinuiCAD/scripts/test-nuinui-e2e) ;;
+    *) fail "unexpected dirty path outside authorized implementation scope: $dirty_path" ;;
+  esac
+done
+if [ -n "$dirty_inventory" ]; then
+  echo 'authorized dirty paths:' >&2
+  printf '%s\n' "$dirty_inventory" >&2
+fi
+
+echo 'SELFTEST PASS'
