@@ -888,8 +888,15 @@ state:
 - the complete registered-worktree topology for the repository is inventoried
   and reconciled with declared lanes; no checkout has an unknown or competing
   owner;
-- the tested commit is authoritative, and the checkout is clean, detached, and
-  at the exact fixed tested ref before startup and throughout the run;
+- the authoritative tested commit and exact tested ref are fixed before
+  startup. For a new generation, require an independently proven FREE,
+  clean, detached Human-test checkout in its manifest-declared idle form.
+  Do not require that idle checkout to already be at the tested ref: only
+  the separately approved guarded start mutation may detach it to that
+  exact ref, verify the clean tested-ref HEAD, and establish the active
+  generation marker. Throughout the active generation, keep HEAD fixed
+  at the tested ref. An exact duplicate start instead proves the existing
+  marker and tested-ref checkout without changing either;
 - the product implementation checkout has a separately verified safe return
   to its idle state, with no competing implementation or evaluator audit;
 - the current Issue acceptance, Manual E2E eligibility, Human-only executor,
