@@ -11,12 +11,13 @@ preflight=$repo_root/shared/local-tools/lane-execution/preflight.sh
 identity=$script_dir/nuinui-e2e-src/identity.sh
 lifecycle=$script_dir/nuinui-e2e-src/lifecycle.sh
 host_fixture=$script_dir/nuinui-e2e-src/host-fixture.sh
+host_vscode=$script_dir/nuinui-e2e-src/host-vscode.sh
 host_session=$script_dir/nuinui-e2e-src/host-session.sh
 host_closure=$script_dir/nuinui-e2e-src/host-closure.sh
 cli=$script_dir/nuinui-e2e-src/cli.sh
 
 for source in "$manifest" "$ownership" "$runtime" "$preflight" \
-  "$identity" "$lifecycle" "$host_fixture" "$host_session" \
+  "$identity" "$lifecycle" "$host_fixture" "$host_vscode" "$host_session" \
   "$host_closure" "$cli"; do
   [ -f "$source" ] && [ ! -L "$source" ] || {
     echo "generate-nuinui-e2e: unsafe or missing source: $source" >&2
@@ -25,7 +26,7 @@ for source in "$manifest" "$ownership" "$runtime" "$preflight" \
 done
 
 for source in "$manifest" "$ownership" "$runtime" "$preflight" \
-  "$identity" "$lifecycle" "$host_fixture" "$host_session" \
+  "$identity" "$lifecycle" "$host_fixture" "$host_vscode" "$host_session" \
   "$host_closure" "$cli"; do
   case "$artifact" in
     "$source") echo 'generate-nuinui-e2e: artifact aliases a source' >&2; exit 1 ;;
@@ -61,7 +62,7 @@ trap cleanup EXIT HUP INT TERM
 {
   printf '%s\n' '#!/bin/sh'
   cat "$manifest" "$ownership" "$runtime" "$preflight" \
-    "$identity" "$lifecycle" "$host_fixture" "$host_session" \
+    "$identity" "$lifecycle" "$host_fixture" "$host_vscode" "$host_session" \
     "$host_closure" "$cli"
 } > "$temporary"
 chmod 755 "$temporary"

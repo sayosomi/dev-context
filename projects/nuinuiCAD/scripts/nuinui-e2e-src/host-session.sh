@@ -1,4 +1,40 @@
-# Durable generation-bound host-session records. The adapter is fixture-only.
+# Durable generation-bound native host-session records.
+
+nuinui_e2e_host__adapter_owner_content() {
+  case "${nuinui_e2e_host_adapter:-fixture-no-process}" in
+    fixture-no-process) nuinui_e2e_host__owner_content ;;
+    vscode-isolated)
+      nuinui_e2e_host__owner_content | sed 's/^adapter=fixture-no-process$/adapter=vscode-isolated/'
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_e2e_host__adapter_verify_root() {
+  [ "$#" = 2 ] || return 2
+  case "$nuinui_e2e_host_adapter" in
+    fixture-no-process) nuinui_e2e_host__verify_root "$1" "$2" ;;
+    vscode-isolated)
+      nuinui_e2e_host_vscode__configure_paths || return 1
+      nuinui_e2e_host_vscode__verify_root "$1" "$2" || return 1
+      case "$nuinui_e2e_host_state" in
+        READY) nuinui_e2e_host_vscode__verify_process_state ready ;;
+        CLEANUP-PENDING) nuinui_e2e_host_vscode__verify_process_state cleanup-pending ;;
+        *) nuinui_e2e_host_vscode__verify_process_state preparing ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_e2e_host__adapter_remove_root() {
+  [ "$#" = 1 ] || return 2
+  case "$nuinui_e2e_host_adapter" in
+    fixture-no-process) nuinui_e2e_host__remove_root "$1" ;;
+    vscode-isolated) nuinui_e2e_host_vscode__remove_root "$1" ;;
+    *) return 1 ;;
+  esac
+}
 
 nuinui_e2e_host__metadata_path() {
   [ "$#" = 2 ] || return 2
@@ -30,7 +66,7 @@ nuinui_e2e_host__record_content() {
   nuinui_e2e_host_content_state=$1
   nuinui_e2e_host_content_root_identity=$2
   nuinui_e2e_host_root_identity=$nuinui_e2e_host_content_root_identity
-  nuinui_e2e_host__owner_content
+  nuinui_e2e_host__adapter_owner_content
   printf 'record_state=%s\n' "$nuinui_e2e_host_content_state"
   if [ "$nuinui_e2e_host_content_state" = CLEANED ]; then
     if [ -n "$nuinui_e2e_host_cleanup_handoff_sha" ]; then
@@ -105,7 +141,10 @@ nuinui_e2e_host__read_record() {
     nuinui_e2e_valid_digest "$nuinui_e2e_host_r_fixture_sha" || return 1
   nuinui_e2e_host__valid_port "$nuinui_e2e_host_r_port" || return 1
   case "$nuinui_e2e_host_r_locale" in default|ja) ;; *) return 1 ;; esac
-  [ "$nuinui_e2e_host_r_adapter" = fixture-no-process ] || return 1
+  case "$nuinui_e2e_host_r_adapter" in
+    fixture-no-process|vscode-isolated) ;;
+    *) return 1 ;;
+  esac
   [ "$nuinui_e2e_host_r_root" = "$(nuinui_e2e_host__root_for "$nuinui_e2e_host_r_generation")" ] || return 1
   case "$nuinui_e2e_host_r_root_identity" in
     pending)
@@ -166,6 +205,7 @@ nuinui_e2e_host__read_record() {
 }
 
 nuinui_e2e_host__load_state() {
+  nuinui_e2e_host_adapter=${nuinui_e2e_host_adapter:-fixture-no-process}
   nuinui_e2e_host_intent=$(nuinui_e2e_host__metadata_path "$nuinui_e2e_expected_repo" intent) || return 1
   nuinui_e2e_host_handoff=$(nuinui_e2e_host__metadata_path "$nuinui_e2e_expected_repo" handoff) || return 1
   nuinui_e2e_host_ready=$(nuinui_e2e_host__metadata_path "$nuinui_e2e_expected_repo" ready) || return 1
@@ -226,8 +266,22 @@ nuinui_e2e_host__load_state() {
   nuinui_e2e_host_fixture_sha=$nuinui_e2e_host_r_fixture_sha
   nuinui_e2e_host_port=$nuinui_e2e_host_r_port
   nuinui_e2e_host_locale=$nuinui_e2e_host_r_locale
+  nuinui_e2e_host_adapter=$nuinui_e2e_host_r_adapter
   nuinui_e2e_host_root=$nuinui_e2e_host_r_root
   nuinui_e2e_host_root_identity=$nuinui_e2e_host_r_root_identity
+  case "$nuinui_e2e_host_adapter" in
+    fixture-no-process) ;;
+    vscode-isolated)
+      if [ "$nuinui_e2e_host_has_cleanup" = no ]; then
+        nuinui_e2e_host_vscode__validate_artifacts \
+          "$nuinui_e2e_host_tested" "$nuinui_e2e_host_fixture" \
+          "$nuinui_e2e_host_port" "$nuinui_e2e_host_locale" || return 1
+        [ "$nuinui_e2e_vscode_fixture_sha" = "$nuinui_e2e_host_fixture_sha" ] || return 1
+        nuinui_e2e_host_vscode__configure_paths || return 1
+      fi
+      ;;
+    *) return 1 ;;
+  esac
   nuinui_e2e_host_payload=$(nuinui_e2e_host__record_payload "$nuinui_e2e_host_intent") || return 1
   nuinui_e2e_host_identity_pending=$nuinui_e2e_host_r_root_identity
   nuinui_e2e_host_compare_files=
@@ -271,24 +325,34 @@ nuinui_e2e_host__load_state() {
       nuinui_e2e_host_actual_identity=$(nuinui_e2e_host__root_identity "$nuinui_e2e_host_root") || return 1
       nuinui_e2e_host__read_record "$nuinui_e2e_host_intent" intent || return 1
       nuinui_e2e_host_root_identity=$nuinui_e2e_host_actual_identity
-      nuinui_e2e_host_owner=$(nuinui_e2e_host__owner_path "$nuinui_e2e_host_root")
-      nuinui_e2e__regular "$nuinui_e2e_host_owner" || return 1
-      nuinui_e2e_host_owner_expected=$(nuinui_e2e_host__owner_content)
-      printf '%s' "$nuinui_e2e_host_owner_expected" |
-        cmp -s - "$nuinui_e2e_host_owner" || return 1
-      nuinui_e2e_host_file=$(nuinui_e2e_host__fixture_copy_path "$nuinui_e2e_host_root")
-      if nuinui_e2e__exists "$nuinui_e2e_host_file"; then
-        nuinui_e2e__regular "$nuinui_e2e_host_file" &&
-          [ "$(nuinui_e2e__sha256 "$nuinui_e2e_host_file")" = "$nuinui_e2e_host_fixture_sha" ] || return 1
-      fi
-      nuinui_e2e_host_entries=$(find "$nuinui_e2e_host_root" -mindepth 1 -maxdepth 1 -print 2>/dev/null) || return 1
-      while IFS= read -r nuinui_e2e_host_entry || [ -n "$nuinui_e2e_host_entry" ]; do
-        [ -n "$nuinui_e2e_host_entry" ] || continue
-        case "$nuinui_e2e_host_entry" in "$nuinui_e2e_host_owner"|"$nuinui_e2e_host_file") ;; *) return 1 ;; esac
-        [ ! -L "$nuinui_e2e_host_entry" ] || return 1
-      done <<EOF
+      case "$nuinui_e2e_host_adapter" in
+        fixture-no-process)
+          nuinui_e2e_host_owner=$(nuinui_e2e_host__owner_path "$nuinui_e2e_host_root")
+          nuinui_e2e__regular "$nuinui_e2e_host_owner" || return 1
+          nuinui_e2e_host_owner_expected=$(nuinui_e2e_host__owner_content)
+          printf '%s' "$nuinui_e2e_host_owner_expected" |
+            cmp -s - "$nuinui_e2e_host_owner" || return 1
+          nuinui_e2e_host_file=$(nuinui_e2e_host__fixture_copy_path "$nuinui_e2e_host_root")
+          if nuinui_e2e__exists "$nuinui_e2e_host_file"; then
+            nuinui_e2e__regular "$nuinui_e2e_host_file" &&
+              [ "$(nuinui_e2e__sha256 "$nuinui_e2e_host_file")" = "$nuinui_e2e_host_fixture_sha" ] || return 1
+          fi
+          nuinui_e2e_host_entries=$(find "$nuinui_e2e_host_root" -mindepth 1 -maxdepth 1 -print 2>/dev/null) || return 1
+          while IFS= read -r nuinui_e2e_host_entry || [ -n "$nuinui_e2e_host_entry" ]; do
+            [ -n "$nuinui_e2e_host_entry" ] || continue
+            case "$nuinui_e2e_host_entry" in "$nuinui_e2e_host_owner"|"$nuinui_e2e_host_file") ;; *) return 1 ;; esac
+            [ ! -L "$nuinui_e2e_host_entry" ] || return 1
+          done <<EOF
 $nuinui_e2e_host_entries
 EOF
+          ;;
+        vscode-isolated)
+          nuinui_e2e_host_vscode__configure_paths || return 1
+          nuinui_e2e_host_vscode__verify_root "$nuinui_e2e_host_root" partial || return 1
+          nuinui_e2e_host_vscode__verify_process_state preparing || return 1
+          ;;
+        *) return 1 ;;
+      esac
     fi
   else
     nuinui_e2e_host_root_identity=$nuinui_e2e_host_identity_pending
@@ -296,14 +360,17 @@ EOF
       nuinui_e2e__exists "$nuinui_e2e_host_root" && return 1
     elif [ "$nuinui_e2e_host_has_pending" = yes ]; then
       if nuinui_e2e__exists "$nuinui_e2e_host_root"; then
-        nuinui_e2e_host__verify_root "$nuinui_e2e_host_root" partial || return 1
+        nuinui_e2e_host_state=CLEANUP-PENDING
+        nuinui_e2e_host__adapter_verify_root "$nuinui_e2e_host_root" partial || return 1
       fi
     elif [ "$nuinui_e2e_host_has_ready" = yes ]; then
       nuinui_e2e_host__read_record "$nuinui_e2e_host_ready" ready || return 1
-      nuinui_e2e_host__verify_root "$nuinui_e2e_host_root" complete || return 1
+      nuinui_e2e_host_state=READY
+      nuinui_e2e_host__adapter_verify_root "$nuinui_e2e_host_root" complete || return 1
     elif [ "$nuinui_e2e_host_has_handoff" = yes ]; then
       nuinui_e2e_host__read_record "$nuinui_e2e_host_handoff" handoff || return 1
-      nuinui_e2e_host__verify_root "$nuinui_e2e_host_root" complete || return 1
+      nuinui_e2e_host_state=PREPARING
+      nuinui_e2e_host__adapter_verify_root "$nuinui_e2e_host_root" complete || return 1
     else
       return 1
     fi
@@ -557,6 +624,11 @@ nuinui_e2e_host__cleanup_proof_matches() {
     "$nuinui_e2e_host_proof_sha" ] || return 1
   nuinui_e2e_host__read_record "$nuinui_e2e_host_proof_path" cleanup \
     "$nuinui_e2e_host_proof_fixture_policy" || return 1
+  case "$nuinui_e2e_host_r_adapter" in
+    fixture-no-process) [ "$nuinui_e2e_host_proof_adapter" = fixture-no-process ] || return 1 ;;
+    vscode-isolated) [ "$nuinui_e2e_host_proof_adapter" = vscode-isolated ] || return 1 ;;
+    *) return 1 ;;
+  esac
   [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_host_proof_issue" ] &&
     [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_proof_lane" ] &&
     [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_host_proof_generation" ] &&
@@ -567,19 +639,24 @@ nuinui_e2e_host__native_cleanup_proof() {
   nuinui_e2e_host_native_cleanup=$(nuinui_e2e__path_for \
     "$nuinui_e2e_expected_repo" cleanup) || return 1
   nuinui_e2e_host_cleanup_hash=$(nuinui_e2e__sha256 "$nuinui_e2e_host_cleanup_receipt") || return 1
+  case "$nuinui_e2e_host_adapter" in
+    fixture-no-process) nuinui_e2e_host_native_proof=fixture-host-session-cleaned ;;
+    vscode-isolated) nuinui_e2e_host_native_proof=vscode-isolated-host-session-cleaned ;;
+    *) return 1 ;;
+  esac
   if nuinui_e2e__exists "$nuinui_e2e_host_native_cleanup"; then
     nuinui_e2e__read_expected_cleanup "$nuinui_e2e_host_native_cleanup" || return 1
-    [ "$nuinui_e2e_r_proof" = fixture-host-session-cleaned ] &&
+    [ "$nuinui_e2e_r_proof" = "$nuinui_e2e_host_native_proof" ] &&
       [ "$nuinui_e2e_r_host_cleanup_sha" = "$nuinui_e2e_host_cleanup_hash" ] || return 1
     return 0
   fi
   nuinui_e2e_host_native_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_host_native_content=$nuinui_e2e_host_native_content$(printf '\nproof=fixture-host-session-cleaned\nhost_cleanup_sha256=%s\n' \
-    "$nuinui_e2e_host_cleanup_hash")
+  nuinui_e2e_host_native_content=$nuinui_e2e_host_native_content$(printf '\nproof=%s\nhost_cleanup_sha256=%s\n' \
+    "$nuinui_e2e_host_native_proof" "$nuinui_e2e_host_cleanup_hash")
   nuinui_e2e__atomic_create "$nuinui_e2e_host_native_cleanup" \
     "$nuinui_e2e_host_native_content" || return 1
   nuinui_e2e__read_expected_cleanup "$nuinui_e2e_host_native_cleanup" || return 1
-  [ "$nuinui_e2e_r_proof" = fixture-host-session-cleaned ] &&
+  [ "$nuinui_e2e_r_proof" = "$nuinui_e2e_host_native_proof" ] &&
     [ "$nuinui_e2e_r_host_cleanup_sha" = "$nuinui_e2e_host_cleanup_hash" ]
 }
 
@@ -637,6 +714,7 @@ nuinui_e2e_host__assert_input_match() {
   nuinui_e2e_host__input_parameters "$1" "$2" "$3" || return 1
   [ "$nuinui_e2e_host_state" = ABSENT ] || {
     nuinui_e2e_host__read_record "$nuinui_e2e_host_intent" intent || return 1
+    [ "$nuinui_e2e_host_r_adapter" = "$nuinui_e2e_host_requested_adapter" ] &&
     [ "$nuinui_e2e_host_r_fixture" = "$nuinui_e2e_host_fixture" ] &&
       [ "$nuinui_e2e_host_r_fixture_sha" = "$nuinui_e2e_host_fixture_sha" ] &&
       [ "$nuinui_e2e_host_r_port" = "$nuinui_e2e_host_port" ] &&
@@ -646,7 +724,14 @@ nuinui_e2e_host__assert_input_match() {
 
 nuinui_e2e_host_check() {
   [ "$#" = 6 ] || return 2
+  nuinui_e2e_host_requested_adapter=${nuinui_e2e_host_adapter_arg:-fixture-no-process}
+  case "$nuinui_e2e_host_requested_adapter" in fixture-no-process|vscode-isolated) ;; *) return 2 ;; esac
+  nuinui_e2e_host_adapter=$nuinui_e2e_host_requested_adapter
   nuinui_e2e_host__operation_context host-check "$1" "$2" "$3" || return 1
+  if [ "$nuinui_e2e_host_requested_adapter" = vscode-isolated ]; then
+    nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
+      "$4" "$5" "$6" || return 1
+  fi
   nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || {
     echo 'BLOCKED: host check requires the exact active native generation'
     return 1
@@ -660,6 +745,10 @@ nuinui_e2e_host_check() {
     echo 'BLOCKED: host-session metadata or resources are conflicting or malformed'
     return 1
   }
+  if [ "$nuinui_e2e_host_requested_adapter" = vscode-isolated ] &&
+    [ "$nuinui_e2e_host_state" = ABSENT ]; then
+    nuinui_e2e_host_vscode__port_free "$5" || return 1
+  fi
   nuinui_e2e_host__assert_input_match "$4" "$5" "$6" || {
     echo 'BLOCKED: host fixture request differs from the exact recorded session'
     return 1
@@ -668,21 +757,32 @@ nuinui_e2e_host_check() {
     ABSENT|READY) ;;
     *) echo "BLOCKED: host session is $nuinui_e2e_host_state"; return 1 ;;
   esac
-  printf 'HOST FIXTURE CHECK READY\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nfixture=%s\nport=%s\nlocale=%s\nadapter=fixture-no-process\nstate=%s\nmutation=no\n' \
+  printf 'HOST FIXTURE CHECK READY\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nfixture=%s\nport=%s\nlocale=%s\nadapter=%s\nstate=%s\nmutation=no\n' \
     "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
     "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation" \
     "$nuinui_e2e_host_fixture" "$nuinui_e2e_host_port" \
-    "$nuinui_e2e_host_locale" "$nuinui_e2e_host_state"
+    "$nuinui_e2e_host_locale" "$nuinui_e2e_host_adapter" "$nuinui_e2e_host_state"
 }
 
 nuinui_e2e_host_prepare() {
   [ "$#" = 6 ] || return 2
+  nuinui_e2e_host_requested_adapter=${nuinui_e2e_host_adapter_arg:-fixture-no-process}
+  case "$nuinui_e2e_host_requested_adapter" in fixture-no-process|vscode-isolated) ;; *) return 2 ;; esac
   nuinui_e2e_host_check_output=$(nuinui_e2e_host_check \
     "$1" "$2" "$3" "$4" "$5" "$6") || {
       printf '%s\n' "$nuinui_e2e_host_check_output"
       return 1
     }
   nuinui_e2e_host__operation_context host-prepare "$1" "$2" "$3" || return 1
+  nuinui_e2e_host_adapter=$nuinui_e2e_host_requested_adapter
+  if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
+    nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
+      "$4" "$5" "$6" || return 1
+    [ "$nuinui_e2e_vscode_fake_app" = yes ] || {
+      echo 'BLOCKED: actual VS Code host activation is deferred to D3-C2c2'
+      return 1
+    }
+  fi
   nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || {
     echo 'BLOCKED: host preparation requires the exact active native generation'
     return 1
@@ -695,7 +795,11 @@ nuinui_e2e_host_prepare() {
     return 1
   }
   if [ "$nuinui_e2e_host_state" = READY ]; then
-    echo 'HOST FIXTURE ALREADY READY (fixture-no-process)'
+    if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
+      echo 'HOST FIXTURE ALREADY READY (fixture-no-process)'
+    else
+      printf 'HOST SESSION ALREADY READY (adapter=%s)\n' "$nuinui_e2e_host_adapter"
+    fi
     echo 'mutation=no-op'
     return 0
   fi
@@ -716,6 +820,9 @@ nuinui_e2e_host_prepare() {
       echo 'BLOCKED: host session or fixture parameters changed before PREPARING intent'
       return 1
     }
+  if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
+    nuinui_e2e_host_vscode__port_free "$nuinui_e2e_host_port" || return 1
+  fi
   nuinui_e2e_host_root=$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation") || return 1
   nuinui_e2e__exists "$nuinui_e2e_host_root" && {
     echo 'BLOCKED: generation-specific host root already exists without matching durable records'
@@ -739,23 +846,40 @@ nuinui_e2e_host_prepare() {
     return 1
   }
   nuinui_e2e_host_root_identity=$(nuinui_e2e_host__root_identity "$nuinui_e2e_host_root") || return 1
-  nuinui_e2e_host_owner=$(nuinui_e2e_host__owner_path "$nuinui_e2e_host_root")
-  nuinui_e2e_host_owner_content=$(nuinui_e2e_host__owner_content)
-  nuinui_e2e__atomic_create "$nuinui_e2e_host_owner" \
-    "$nuinui_e2e_host_owner_content" || {
-      echo 'BLOCKED: exact fixture root owner record could not be created'
-      return 1
-    }
-  nuinui_e2e_host_fixture_copy=$(nuinui_e2e_host__fixture_copy_path "$nuinui_e2e_host_root")
-  nuinui_e2e_host__atomic_copy "$nuinui_e2e_host_fixture" \
-    "$nuinui_e2e_host_fixture_copy" "$nuinui_e2e_host_fixture_sha" || {
-      echo 'BLOCKED: fixture resource could not be atomically created and verified'
-      return 1
-    }
+  case "$nuinui_e2e_host_adapter" in
+    fixture-no-process)
+      nuinui_e2e_host_owner=$(nuinui_e2e_host__owner_path "$nuinui_e2e_host_root")
+      nuinui_e2e_host_owner_content=$(nuinui_e2e_host__owner_content)
+      nuinui_e2e__atomic_create "$nuinui_e2e_host_owner" \
+        "$nuinui_e2e_host_owner_content" || {
+          echo 'BLOCKED: exact fixture root owner record could not be created'
+          return 1
+        }
+      nuinui_e2e_host_fixture_copy=$(nuinui_e2e_host__fixture_copy_path "$nuinui_e2e_host_root")
+      nuinui_e2e_host__atomic_copy "$nuinui_e2e_host_fixture" \
+        "$nuinui_e2e_host_fixture_copy" "$nuinui_e2e_host_fixture_sha" || {
+          echo 'BLOCKED: fixture resource could not be atomically created and verified'
+          return 1
+        }
+      ;;
+    vscode-isolated)
+      nuinui_e2e_host_vscode__create_resources || {
+        echo 'BLOCKED: isolated VS Code host resources could not be created and verified'
+        return 1
+      }
+      ;;
+    *) return 1 ;;
+  esac
   nuinui_e2e__failpoint after-host-resources && {
     echo 'BLOCKED: injected interruption after owned fixture resources; recovery evidence retained'
     return 1
   }
+  if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
+    nuinui_e2e_host_vscode__launch_and_ready || {
+      echo 'BLOCKED: isolated VS Code host launch or CDP readiness failed; recovery evidence retained'
+      return 1
+    }
+  fi
   nuinui_e2e_host_handoff_content=$(nuinui_e2e_host__record_content HANDOFF \
     "$nuinui_e2e_host_root_identity")
   nuinui_e2e_host_handoff=$(nuinui_e2e_host__metadata_path \
@@ -769,7 +893,7 @@ nuinui_e2e_host_prepare() {
     echo 'BLOCKED: injected interruption after handoff; recovery evidence retained'
     return 1
   }
-  nuinui_e2e_host__verify_root "$nuinui_e2e_host_root" complete || {
+  nuinui_e2e_host__adapter_verify_root "$nuinui_e2e_host_root" complete || {
     echo 'BLOCKED: fixture resources or ownership changed before READY'
     return 1
   }
@@ -787,8 +911,12 @@ nuinui_e2e_host_prepare() {
       return 1
     }
   nuinui_e2e_host__read_record "$nuinui_e2e_host_ready" ready &&
-    nuinui_e2e_host__verify_root "$nuinui_e2e_host_root" complete || return 1
-  echo 'HOST FIXTURE READY (fixture-no-process; no Human Manual E2E was run)'
+    nuinui_e2e_host__adapter_verify_root "$nuinui_e2e_host_root" complete || return 1
+  if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
+    echo 'HOST FIXTURE READY (fixture-no-process; no Human Manual E2E was run)'
+  else
+    printf 'HOST SESSION READY (adapter=%s; no Manual E2E was run)\n' "$nuinui_e2e_host_adapter"
+  fi
   echo "issue=$nuinui_e2e_expected_issue"
   echo "lane=$nuinui_e2e_expected_lane"
   echo "tested_sha=$nuinui_e2e_expected_tested"
@@ -810,10 +938,10 @@ nuinui_e2e_host_status() {
       return 1
     }
   fi
-  printf 'HOST SESSION %s\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nadapter=fixture-no-process\nmutation=no\n' \
+  printf 'HOST SESSION %s\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nadapter=%s\nmutation=no\n' \
     "$nuinui_e2e_host_state" "$nuinui_e2e_expected_issue" \
     "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_tested" \
-    "$nuinui_e2e_expected_generation"
+    "$nuinui_e2e_expected_generation" "$nuinui_e2e_host_adapter"
 }
 
 nuinui_e2e_host_cleanup() {
@@ -856,7 +984,13 @@ nuinui_e2e_host_cleanup() {
     echo 'BLOCKED: injected interruption after CLEANUP-PENDING; recovery evidence retained'
     return 1
   }
-  nuinui_e2e_host__remove_root partial || {
+  if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
+    nuinui_e2e_host_vscode__stop_owned_process || {
+      echo 'BLOCKED: isolated host process ownership or shutdown could not be verified; resources retained'
+      return 1
+    }
+  fi
+  nuinui_e2e_host__adapter_remove_root partial || {
     echo 'BLOCKED: host fixture root contains foreign or uncertain resources; retained'
     return 1
   }
@@ -895,7 +1029,11 @@ nuinui_e2e_host_cleanup() {
     echo 'BLOCKED: native cleanup proof could not bind the verified host cleanup receipt'
     return 1
   }
-  echo 'HOST FIXTURE CLEANUP VERIFIED (fixture-no-process)'
+  if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
+    echo 'HOST FIXTURE CLEANUP VERIFIED (fixture-no-process)'
+  else
+    printf 'HOST SESSION CLEANUP VERIFIED (adapter=%s)\n' "$nuinui_e2e_host_adapter"
+  fi
   echo "generation=$nuinui_e2e_expected_generation"
   echo 'state=CLEANED'
   echo 'native_cleanup_proof=host-receipt-bound'

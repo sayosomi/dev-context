@@ -99,6 +99,7 @@ nuinui_e2e_host_closure() {
   echo "tested_sha=$nuinui_e2e_expected_tested"
   echo "idle_sha=$nuinui_e2e_r_idle_sha"
   echo "generation=$nuinui_e2e_expected_generation"
+  echo "adapter=$nuinui_e2e_host_adapter"
   echo 'host_state=RELEASED'
   echo 'clean=yes'
   echo 'detached=yes'
