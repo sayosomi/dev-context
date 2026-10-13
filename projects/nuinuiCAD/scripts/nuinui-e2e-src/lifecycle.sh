@@ -52,6 +52,8 @@ nuinui_e2e__path_for() {
   nuinui_e2e_path_git_dir=$(lane_execution__git_dir "$nuinui_e2e_path_repo") || return 1
   case "$nuinui_e2e_path_kind" in
     active) printf '%s/nuinui-github-e2e-active-v1\n' "$nuinui_e2e_path_git_dir" ;;
+    starting) printf '%s/nuinui-github-e2e-starting-v1.%s\n' \
+      "$nuinui_e2e_path_git_dir" "$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation")" ;;
     cleanup) printf '%s/nuinui-github-e2e-cleanup-v1.%s\n' \
       "$nuinui_e2e_path_git_dir" "$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation")" ;;
     release) printf '%s/nuinui-github-e2e-release-v1.%s\n' \
@@ -70,7 +72,7 @@ nuinui_e2e__read_record() {
   case "$nuinui_e2e_record_kind" in
     active) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys ;;
     cleanup) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof ;;
-    release|releasing) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state ;;
+    starting|release|releasing) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state ;;
     *) return 2 ;;
   esac
   nuinui_e2e__regular "$nuinui_e2e_record_path" || return 1
@@ -108,12 +110,15 @@ nuinui_e2e__read_record() {
   if [ "$nuinui_e2e_record_kind" = cleanup ]; then
     nuinui_e2e_r_proof=$(nuinui_ownership_field "$nuinui_e2e_record_path" proof) || return 1
     [ "$nuinui_e2e_r_proof" = fixture-no-host-session ] || return 1
-  elif [ "$nuinui_e2e_record_kind" = release ] ||
+  elif [ "$nuinui_e2e_record_kind" = starting ] ||
+    [ "$nuinui_e2e_record_kind" = release ] ||
     [ "$nuinui_e2e_record_kind" = releasing ]; then
     nuinui_e2e_r_idle_sha=$(nuinui_ownership_field "$nuinui_e2e_record_path" idle_sha) || return 1
     nuinui_e2e_r_state=$(nuinui_ownership_field "$nuinui_e2e_record_path" record_state) || return 1
     nuinui_e2e_valid_sha "$nuinui_e2e_r_idle_sha" || return 1
-    if [ "$nuinui_e2e_record_kind" = release ]; then
+    if [ "$nuinui_e2e_record_kind" = starting ]; then
+      [ "$nuinui_e2e_r_state" = pending ] || return 1
+    elif [ "$nuinui_e2e_record_kind" = release ]; then
       [ "$nuinui_e2e_r_state" = complete ] || return 1
     else
       [ "$nuinui_e2e_r_state" = pending ] || return 1
@@ -141,6 +146,19 @@ nuinui_e2e__record_matches_lane() {
 nuinui_e2e__read_expected_active() {
   [ "$#" = 1 ] || return 2
   nuinui_e2e__read_record "$1" active || return 1
+  [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+    [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
+    [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
+    [ "$nuinui_e2e_r_lane" = "$nuinui_e2e_expected_lane" ] &&
+    [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+    [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path"
+}
+
+nuinui_e2e__read_expected_starting() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e__read_record "$1" starting || return 1
   [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
     [ "$nuinui_e2e_r_url" = "$nuinui_e2e_expected_url" ] &&
     [ "$nuinui_e2e_r_token" = "$nuinui_e2e_expected_token" ] &&
@@ -207,6 +225,7 @@ nuinui_e2e__generation_seen() {
       nuinui_e2e_seen_name=${nuinui_e2e_seen_path##*/}
       case "$nuinui_e2e_seen_name" in
         nuinui-github-e2e-active-v1) nuinui_e2e_seen_kind=active ;;
+        nuinui-github-e2e-starting-v1.*) nuinui_e2e_seen_kind=starting ;;
         nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_seen_kind=cleanup ;;
         nuinui-github-e2e-release-v1.*) nuinui_e2e_seen_kind=release ;;
         nuinui-github-e2e-releasing-v1.*) nuinui_e2e_seen_kind=releasing ;;
@@ -433,6 +452,7 @@ nuinui_e2e__lane_preflight_state() {
   }
 
   nuinui_e2e_lane_active=no
+  nuinui_e2e_lane_starting=no
   nuinui_e2e_lane_releasing=no
   nuinui_e2e_native_paths=$(find "$nuinui_e2e_check_git_dir" -maxdepth 1 \
     -name 'nuinui-github-e2e-*' -print 2>/dev/null) || return 1
@@ -441,6 +461,7 @@ nuinui_e2e__lane_preflight_state() {
     nuinui_e2e_native_name=${nuinui_e2e_native_path##*/}
     case "$nuinui_e2e_native_name" in
       nuinui-github-e2e-active-v1) nuinui_e2e_native_kind=active ;;
+      nuinui-github-e2e-starting-v1.*) nuinui_e2e_native_kind=starting ;;
       nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_native_kind=cleanup ;;
       nuinui-github-e2e-release-v1.*) nuinui_e2e_native_kind=release ;;
       nuinui-github-e2e-releasing-v1.*) nuinui_e2e_native_kind=releasing ;;
@@ -459,6 +480,7 @@ nuinui_e2e__lane_preflight_state() {
     nuinui_e2e_file_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation") || return 1
     case "$nuinui_e2e_native_kind:$nuinui_e2e_native_name" in
       cleanup:nuinui-github-e2e-cleanup-v1."$nuinui_e2e_file_hash"|\
+      starting:nuinui-github-e2e-starting-v1."$nuinui_e2e_file_hash"|\
       release:nuinui-github-e2e-release-v1."$nuinui_e2e_file_hash"|\
       releasing:nuinui-github-e2e-releasing-v1."$nuinui_e2e_file_hash"|\
       active:nuinui-github-e2e-active-v1) ;;
@@ -477,6 +499,19 @@ nuinui_e2e__lane_preflight_state() {
           }
         nuinui_e2e_lane_active=yes
         ;;
+      starting)
+        [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] &&
+          [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+          [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] &&
+          [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+          { [ "$nuinui_e2e_operation" = recover ] ||
+            [ "$nuinui_e2e_operation" = status ] ||
+            [ "$nuinui_e2e_operation" = start ]; } || {
+            echo '  state=BLOCKED reason=start-recovery-required'
+            return 1
+          }
+        nuinui_e2e_lane_starting=yes
+        ;;
       releasing)
         [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] &&
           [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
@@ -492,6 +527,11 @@ nuinui_e2e__lane_preflight_state() {
   done <<EOF
 $nuinui_e2e_native_paths
 EOF
+  if [ "$nuinui_e2e_lane_starting" = yes ] &&
+    [ "$nuinui_e2e_lane_releasing" = yes ]; then
+    echo '  state=BLOCKED reason=conflicting-start-and-release-intents'
+    return 1
+  fi
   nuinui_e2e_branch=$(git -C "$nuinui_e2e_check_repo" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   nuinui_e2e_head=$(git -C "$nuinui_e2e_check_repo" rev-parse HEAD 2>/dev/null) || return 1
   nuinui_e2e_dirty=$(git -C "$nuinui_e2e_check_repo" status --porcelain 2>/dev/null) || return 1
@@ -503,6 +543,21 @@ EOF
     [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] || return 1
     nuinui_e2e_active_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" active) || return 1
     nuinui_e2e__read_expected_active "$nuinui_e2e_active_path" || return 1
+    if [ "$nuinui_e2e_lane_starting" = yes ]; then
+      case "$nuinui_e2e_operation" in
+        status|start|recover) ;;
+        *) echo '  state=BLOCKED reason=start-recovery-required'; return 1 ;;
+      esac
+      nuinui_e2e_starting_path=$(nuinui_e2e__path_for \
+        "$nuinui_e2e_check_repo" starting) || return 1
+      nuinui_e2e__read_expected_starting "$nuinui_e2e_starting_path" || return 1
+      [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] &&
+        git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
+          "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested" || {
+            echo '  state=BLOCKED reason=start-intent-does-not-match-tested-checkout'
+            return 1
+          }
+    fi
     if [ "$nuinui_e2e_lane_releasing" = yes ]; then
       nuinui_e2e_releasing_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" releasing) || return 1
       nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing_path" || return 1
@@ -551,6 +606,27 @@ EOF
     echo '  state=RELEASE-PENDING'
     return 0
   }
+  if [ "$nuinui_e2e_lane_starting" = yes ]; then
+    nuinui_e2e_starting_path=$(nuinui_e2e__path_for \
+      "$nuinui_e2e_check_repo" starting) || return 1
+    nuinui_e2e__read_expected_starting "$nuinui_e2e_starting_path" || return 1
+    nuinui_e2e_release_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" release) || return 1
+    nuinui_e2e_cleanup_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" cleanup) || return 1
+    if nuinui_e2e__exists "$nuinui_e2e_release_path" ||
+      nuinui_e2e__exists "$nuinui_e2e_cleanup_path" ||
+      [ "$nuinui_e2e_head" != "$nuinui_e2e_r_idle_sha" -a \
+        "$nuinui_e2e_head" != "$nuinui_e2e_expected_tested" ] ||
+      ! git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
+        "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested"; then
+      echo '  state=BLOCKED reason=start-intent-does-not-match-recoverable-checkout'
+      return 1
+    fi
+    echo '  branch=DETACHED'
+    echo "  head=$nuinui_e2e_head"
+    echo '  clean=yes'
+    echo '  state=START-PENDING'
+    return 0
+  fi
   echo '  branch=DETACHED'
   echo "  head=$nuinui_e2e_head"
   echo '  clean=yes'
@@ -615,6 +691,139 @@ nuinui_e2e__failpoint() {
   [ "${nuinui_e2e_test_failpoint:-}" = "$1" ]
 }
 
+nuinui_e2e__refresh_tested_ref() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_refresh_repo=$1
+  nuinui_e2e_refresh_tested=$2
+  git -C "$nuinui_e2e_refresh_repo" fetch origin --prune >/dev/null 2>&1 || {
+    echo 'BLOCKED: Human-test start fetch/prune failed'
+    return 1
+  }
+  nuinui_e2e_refresh_live=$(nuinui_e2e__live_idle_sha \
+    "$nuinui_e2e_refresh_repo") || {
+      echo 'BLOCKED: authoritative default revision is unavailable'
+      return 1
+    }
+  [ "$nuinui_e2e_refresh_live" = "$nuinui_e2e_refresh_tested" ] || {
+    echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
+    return 1
+  }
+  nuinui_e2e_refresh_commit=$(git -C "$nuinui_e2e_refresh_repo" \
+    rev-parse --verify "$nuinui_e2e_refresh_tested^{commit}" 2>/dev/null) || {
+      echo 'BLOCKED: tested SHA is not an existing commit in the Human-test checkout'
+      return 1
+    }
+  [ "$nuinui_e2e_refresh_commit" = "$nuinui_e2e_refresh_tested" ] || {
+    echo 'BLOCKED: tested SHA did not resolve to its exact commit'
+    return 1
+  }
+}
+
+nuinui_e2e__starting_content() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_starting_idle_sha=$1
+  nuinui_e2e__record_base
+  printf 'idle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_starting_idle_sha"
+}
+
+nuinui_e2e__finish_start() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_finish_starting=$1
+  nuinui_e2e_finish_active=$2
+  nuinui_e2e_finish_interrupted=$3
+  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" || {
+    echo 'BLOCKED: startup intent does not match the requested issue, lane, SHA, or generation'
+    return 1
+  }
+  nuinui_e2e_finish_idle_sha=$nuinui_e2e_r_idle_sha
+  nuinui_e2e_finish_start_content=$(nuinui_e2e__starting_content \
+    "$nuinui_e2e_finish_idle_sha") || return 1
+  nuinui_e2e_finish_active_content=$(nuinui_e2e__record_base) || return 1
+  nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_finish_active"; then
+    nuinui_e2e__read_expected_active "$nuinui_e2e_finish_active" &&
+      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+        "$nuinui_e2e_expected_tested" || {
+          echo 'BLOCKED: active marker does not verify the interrupted startup checkout'
+          return 1
+        }
+    nuinui_e2e__remove_exact "$nuinui_e2e_finish_starting" \
+      "$nuinui_e2e_finish_start_content" || {
+        echo 'BLOCKED: verified active marker remains with startup recovery evidence'
+        return 1
+      }
+    return 0
+  fi
+
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" || return 1
+  [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
+    git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
+      "$nuinui_e2e_finish_idle_sha" "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: startup idle revision cannot safely transition to tested SHA'
+        return 1
+      }
+  nuinui_e2e_finish_head=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  [ -z "$(git -C "$nuinui_e2e_expected_repo" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+    [ -z "$(git -C "$nuinui_e2e_expected_repo" status --porcelain 2>/dev/null)" ] &&
+    { [ "$nuinui_e2e_finish_head" = "$nuinui_e2e_finish_idle_sha" ] ||
+      [ "$nuinui_e2e_finish_head" = "$nuinui_e2e_expected_tested" ]; } || {
+        echo 'BLOCKED: startup interruption left an unrecognized Human-test checkout'
+        return 1
+      }
+  if [ "$nuinui_e2e_finish_head" != "$nuinui_e2e_expected_tested" ]; then
+    git -C "$nuinui_e2e_expected_repo" switch --detach \
+      "$nuinui_e2e_expected_tested" >/dev/null 2>&1 || {
+        echo 'BLOCKED: guarded fixture start could not detach to tested SHA; startup intent retained'
+        return 1
+      }
+  fi
+  if [ "$nuinui_e2e_finish_interrupted" = yes ] &&
+    nuinui_e2e__failpoint after-start-checkout; then
+    echo 'BLOCKED: injected interruption after tested checkout; startup recovery evidence retained'
+    return 1
+  fi
+  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" &&
+    nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: tested checkout verification failed; startup intent retained'
+        return 1
+      }
+  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" &&
+    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: startup fixation changed before active marker publication'
+        return 1
+      }
+  nuinui_e2e__atomic_create "$nuinui_e2e_finish_active" \
+    "$nuinui_e2e_finish_active_content" || {
+      echo 'BLOCKED: active marker already exists or could not be atomically published; startup intent retained'
+      return 1
+    }
+  nuinui_e2e__read_expected_active "$nuinui_e2e_finish_active" &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: active marker verification failed; exact startup evidence retained'
+        return 1
+      }
+  if [ "$nuinui_e2e_finish_interrupted" = yes ] &&
+    nuinui_e2e__failpoint after-start-active-marker; then
+    echo 'BLOCKED: injected interruption after active marker publication; startup recovery evidence retained'
+    return 1
+  fi
+  nuinui_e2e__remove_exact "$nuinui_e2e_finish_starting" \
+    "$nuinui_e2e_finish_start_content" || {
+      echo 'BLOCKED: verified active marker remains with startup recovery evidence'
+      return 1
+    }
+}
+
 nuinui_e2e_admit() {
   [ "$#" = 3 ] || return 2
   nuinui_e2e_operation=admit
@@ -640,9 +849,11 @@ nuinui_e2e_admit() {
       echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
       return 1
     }
+  nuinui_e2e_idle_sha=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-    "$nuinui_e2e_expected_tested" || {
-      echo 'BLOCKED: Human-test lane is not FREE at the exact detached tested SHA'
+    "$nuinui_e2e_idle_sha" || {
+      echo 'BLOCKED: Human-test lane is not FREE at its clean detached idle revision'
       return 1
     }
   printf 'ADMISSION READY\nissue=%s\nurl=%s\nlocal_id=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nmutation=no\n' \
@@ -664,6 +875,15 @@ nuinui_e2e_status() {
   if nuinui_e2e__exists "$nuinui_e2e_active"; then
     nuinui_e2e__read_expected_active "$nuinui_e2e_active" || return 1
     printf 'NATIVE E2E ACTIVE\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nmutation=no\n' \
+      "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation"
+    return 0
+  fi
+  nuinui_e2e_starting=$(nuinui_e2e__path_for \
+    "$nuinui_e2e_expected_repo" starting) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    nuinui_e2e__read_expected_starting "$nuinui_e2e_starting" || return 1
+    printf 'NATIVE E2E START-PENDING\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nmutation=no\n' \
       "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
       "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation"
     return 0
@@ -703,6 +923,7 @@ nuinui_e2e_start() {
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_starting=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" starting) || return 1
   if nuinui_e2e__exists "$nuinui_e2e_active"; then
     nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
       echo 'BLOCKED: active native generation differs from exact duplicate request'
@@ -721,6 +942,10 @@ nuinui_e2e_start() {
     echo 'mutation=no-op'
     return 0
   fi
+  if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    echo 'BLOCKED: interrupted startup requires explicit recovery'
+    return 1
+  fi
   nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
   nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
   nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
@@ -734,38 +959,44 @@ nuinui_e2e_start() {
     echo 'BLOCKED: generation identity has already been used in this fixture topology'
     return 1
   fi
-  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_expected_tested" ] || {
-      echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
+  nuinui_e2e_idle_sha=$(git -C "$nuinui_e2e_expected_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  nuinui_e2e_valid_sha "$nuinui_e2e_idle_sha" &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_idle_sha" || {
+        echo 'BLOCKED: start requires a FREE clean detached Human-test idle checkout'
+        return 1
+      }
+  nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+    "$nuinui_e2e_expected_tested" || return 1
+  git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
+    "$nuinui_e2e_idle_sha" "$nuinui_e2e_expected_tested" || {
+      echo 'BLOCKED: Human-test idle checkout cannot safely transition to tested SHA'
       return 1
     }
-  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-    "$nuinui_e2e_expected_tested" || {
-      echo 'BLOCKED: start requires a FREE clean detached checkout at tested SHA'
-      return 1
-    }
-  # Revalidate the read-only topology and freshness immediately before the
-  # create-only atomic marker publication. Start never changes HEAD.
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
-  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_expected_tested" ] &&
+  [ "$(git -C "$nuinui_e2e_expected_repo" rev-parse HEAD 2>/dev/null)" = \
+    "$nuinui_e2e_idle_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-      "$nuinui_e2e_expected_tested" || {
-        echo 'BLOCKED: freshness changed at the start mutation boundary'
+      "$nuinui_e2e_idle_sha" &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_expected_tested" ] || {
+        echo 'BLOCKED: freshness or checkout topology changed before startup intent'
         return 1
       }
-  nuinui_e2e_marker_content=$(nuinui_e2e__record_base)
-  nuinui_e2e__atomic_create "$nuinui_e2e_active" \
-    "$nuinui_e2e_marker_content" || {
-      echo 'BLOCKED: active marker already exists or could not be atomically published'
+  nuinui_e2e_starting_content=$(nuinui_e2e__starting_content \
+    "$nuinui_e2e_idle_sha") || return 1
+  nuinui_e2e__atomic_create "$nuinui_e2e_starting" \
+    "$nuinui_e2e_starting_content" || {
+      echo 'BLOCKED: startup intent could not be atomically published'
       return 1
     }
-  nuinui_e2e__read_expected_active "$nuinui_e2e_active" &&
-    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-      "$nuinui_e2e_expected_tested" || {
-        echo 'BLOCKED: start marker verification failed; exact marker retained'
-        return 1
-      }
+  nuinui_e2e__failpoint after-start-intent && {
+    echo 'BLOCKED: injected interruption after startup intent; recovery evidence retained'
+    return 1
+  }
+  nuinui_e2e__finish_start "$nuinui_e2e_starting" \
+    "$nuinui_e2e_active" yes || return 1
   echo 'NATIVE E2E FIXTURE STARTED'
   echo "issue=$nuinui_e2e_expected_issue"
   echo "url=$nuinui_e2e_expected_url"
@@ -979,6 +1210,17 @@ nuinui_e2e_recover() {
   nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
   nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
   nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
+  nuinui_e2e_starting=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" starting) || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    nuinui_e2e__finish_start "$nuinui_e2e_starting" "$nuinui_e2e_active" no || return 1
+    echo 'NATIVE E2E START RECOVERED'
+    echo "issue=$nuinui_e2e_expected_issue"
+    echo "tested_sha=$nuinui_e2e_expected_tested"
+    echo "generation=$nuinui_e2e_expected_generation"
+    echo 'marker=verified-after-tested-checkout'
+    echo 'mutation=yes'
+    return 0
+  fi
   if ! nuinui_e2e__exists "$nuinui_e2e_releasing"; then
     if ! nuinui_e2e__exists "$nuinui_e2e_active" &&
       nuinui_e2e__exists "$nuinui_e2e_release" &&
