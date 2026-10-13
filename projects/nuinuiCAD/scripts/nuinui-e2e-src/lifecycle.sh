@@ -78,6 +78,7 @@ nuinui_e2e__read_record() {
       case "$nuinui_e2e_record_proof" in
         fixture-no-host-session) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof ;;
         fixture-host-session-cleaned) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof,host_cleanup_sha256 ;;
+        vscode-isolated-host-session-cleaned) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof,host_cleanup_sha256 ;;
         *) return 1 ;;
       esac
       ;;
@@ -121,6 +122,17 @@ nuinui_e2e__read_record() {
     case "$nuinui_e2e_r_proof" in
       fixture-no-host-session) ;;
       fixture-host-session-cleaned)
+        nuinui_e2e_host_proof_adapter=fixture-no-process
+        nuinui_e2e_r_host_cleanup_sha=$(nuinui_ownership_field \
+          "$nuinui_e2e_record_path" host_cleanup_sha256) || return 1
+        nuinui_e2e_valid_digest "$nuinui_e2e_r_host_cleanup_sha" &&
+          nuinui_e2e_host__cleanup_proof_matches \
+            "$nuinui_e2e_r_host_cleanup_sha" "$nuinui_e2e_r_issue" \
+            "$nuinui_e2e_r_lane" "$nuinui_e2e_r_generation" \
+            "$nuinui_e2e_r_tested" "$nuinui_e2e_record_fixture_policy" || return 1
+        ;;
+      vscode-isolated-host-session-cleaned)
+        nuinui_e2e_host_proof_adapter=vscode-isolated
         nuinui_e2e_r_host_cleanup_sha=$(nuinui_ownership_field \
           "$nuinui_e2e_record_path" host_cleanup_sha256) || return 1
         nuinui_e2e_valid_digest "$nuinui_e2e_r_host_cleanup_sha" &&

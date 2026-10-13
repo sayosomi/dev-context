@@ -1,0 +1,628 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+helper=$script_dir/nuinui-e2e
+fixture_root=
+fixture_impl=
+fixture_human=
+fixture_manifest=
+fixture_remote=
+fixture_file=
+fixture_dogfood=
+fixture_snapshot=
+fixture_app=
+fixture_tested_sha=
+fixture_issue=sayosomi/nuinuiCAD#268
+fixture_generation=
+fixture_port=
+fixture_cdp_kind=fake
+output=
+foreign_pid=
+fake_pid=
+
+cleanup() {
+  cleanup_status=$?
+  trap - EXIT HUP INT TERM
+  cleanup_preserve_fixture=no
+  if [ -n "$foreign_pid" ]; then
+    kill -TERM "$foreign_pid" 2>/dev/null || true
+    wait "$foreign_pid" 2>/dev/null || true
+  fi
+  if [ -n "$fixture_root" ] && [ -d "$fixture_root" ]; then
+    if [ -n "$fixture_generation" ] && [ -f "$fixture_manifest" ] &&
+      command -v invoke_host >/dev/null 2>&1; then
+      cleanup_host_root=$(host_root_path "$fixture_generation") || cleanup_host_root=
+      if [ -n "$cleanup_host_root" ] &&
+        { [ -e "$cleanup_host_root" ] || [ -L "$cleanup_host_root" ]; }; then
+        if invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human \
+          "$fixture_tested_sha" ||
+          invoke_host host-recover "$fixture_issue" "$fixture_generation" human \
+            "$fixture_tested_sha"; then
+          fake_pid=
+        else
+          echo 'VSCODE HOST SELFTEST CLEANUP BLOCKED: preserving fixture because exact host recovery failed' >&2
+          [ -z "$output" ] || { [ ! -f "$output" ] || cat "$output" >&2; }
+          cleanup_preserve_fixture=yes
+        fi
+      fi
+    fi
+    if [ -n "$fake_pid" ] && kill -0 "$fake_pid" 2>/dev/null; then
+      echo 'VSCODE HOST SELFTEST CLEANUP BLOCKED: preserving fixture because a fake process may remain' >&2
+      cleanup_preserve_fixture=yes
+    fi
+    if [ "$cleanup_preserve_fixture" = no ]; then
+      find "$fixture_root" -maxdepth 1 -type d -name '.nuinui-e2e-host-*' -print |
+        while IFS= read -r cleanup_host_root; do
+          chmod -R u+rwx "$cleanup_host_root" 2>/dev/null || true
+        done
+      rm -rf "$fixture_root"
+    else
+      echo "VSCODE HOST SELFTEST: retained fixture root $fixture_root for safe recovery" >&2
+      cleanup_status=1
+    fi
+  fi
+  exit "$cleanup_status"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "VSCODE HOST SELFTEST FAIL: $*" >&2
+  [ -z "$output" ] || { [ ! -f "$output" ] || cat "$output" >&2; }
+  exit 1
+}
+
+contains() { grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"; }
+
+new_fixture() {
+  mode=$1
+  if [ -n "$fake_pid" ]; then
+    fail 'previous fake process is still recorded; refusing to signal it outside adapter cleanup'
+  fi
+  [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-e2e-fixture.XXXXXX") || fail 'temporary root'
+  fixture_root=$(realpath "$fixture_root") || fail 'canonical temporary root'
+  fixture_impl=$fixture_root/implementation
+  fixture_human=$fixture_root/human
+  fixture_remote=$fixture_root/remote/sayosomi/nuinuiCAD.git
+  fixture_manifest=$fixture_root/LANES.conf
+  fixture_file=$fixture_root/host-fixture.html
+  fixture_dogfood=$fixture_root/dogfood
+  fixture_app=$fixture_root/fake-vscode/'Visual Studio Code.app'
+  output=$fixture_root/command.out
+  mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
+  printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
+  printf '<!doctype html><title>disposable fixture</title>\n' > "$fixture_file"
+  git init --bare --initial-branch=main -q "$fixture_remote" || fail 'bare fixture repository'
+  git init -b main -q "$fixture_impl" || fail 'implementation repository'
+  git -C "$fixture_impl" config user.name 'nuinui-e2e VS Code fixture'
+  git -C "$fixture_impl" config user.email 'nuinui-e2e-vscode-fixture@example.invalid'
+  printf 'base\n' > "$fixture_impl/fixture.txt"
+  git -C "$fixture_impl" add fixture.txt
+  git -C "$fixture_impl" commit -q -m 'fixture base' || fail 'fixture commit'
+  git -C "$fixture_impl" remote add origin "$fixture_remote"
+  git -C "$fixture_impl" push -q origin main || fail 'fixture push'
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+  printf 'version=1\n' > "$(git -C "$fixture_impl" rev-parse --absolute-git-dir)/nuinui-implementation-v1"
+  if [ "$mode" = one ]; then
+    git -C "$fixture_impl" worktree add --detach -q "$fixture_human" "$fixture_tested_sha" || fail 'Human-test checkout'
+  fi
+  {
+    printf 'version=1\nrepository=sayosomi/nuinuiCAD\ndefault_branch=main\n'
+    printf '\n[lane implementation]\nrole=implementation\npath=%s\nidle=branch\n' "$fixture_impl"
+    if [ "$mode" = one ]; then
+      printf '\n[lane human]\nrole=human-test\npath=%s\nidle=detached\n' "$fixture_human"
+    fi
+  } > "$fixture_manifest"
+  fixture_snapshot=
+}
+
+advance_default() {
+  printf 'advance %s\n' "$1" >> "$fixture_impl/fixture.txt"
+  git -C "$fixture_impl" add fixture.txt
+  git -C "$fixture_impl" commit -q -m "fixture advance $1" || fail 'advance default branch'
+  git -C "$fixture_impl" push -q origin main || fail 'push default branch'
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+  fixture_snapshot=
+}
+
+setup_vscode_artifacts() {
+  [ -n "$fixture_snapshot" ] && return 0
+  mkdir -p "$fixture_dogfood/snapshots" \
+    "$fixture_root/fake-extension/extension/dist" \
+    "$fixture_root/fake-extension/extension/syntaxes" \
+    "$fixture_root/fake-extension/bin" \
+    "$fixture_app/Contents/MacOS"
+  printf '{"main":"./dist/extension.js"}\n' > "$fixture_root/fake-extension/extension/package.json"
+  printf '{"comments":[],"brackets":[]}\n' > "$fixture_root/fake-extension/extension/language-configuration.json"
+  printf 'extension-stub\n' > "$fixture_root/fake-extension/extension/dist/extension.js"
+  printf 'webview-stub\n' > "$fixture_root/fake-extension/extension/dist/webview.js"
+  printf 'body{}\n' > "$fixture_root/fake-extension/extension/dist/webview.css"
+  printf 'syntax-stub\n' > "$fixture_root/fake-extension/extension/syntaxes/nuinui.tmLanguage.json"
+  printf '#!/bin/sh\nexit 0\n' > "$fixture_root/fake-extension/bin/evaluation_stdio"
+  chmod 755 "$fixture_root/fake-extension/bin/evaluation_stdio"
+  nuinui_e2e_host_vscode__fake_launcher_content > "$fixture_app/Contents/MacOS/Code"
+  chmod 755 "$fixture_app/Contents/MacOS/Code"
+  cat > "$fixture_app/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.microsoft.VSCode</string>
+<key>CFBundleExecutable</key><string>Code</string>
+</dict></plist>
+PLIST
+  arch=$(uname -m)
+  case "$arch" in x86_64) arch_name=x64 ;; aarch64|arm64) arch_name=arm64 ;; *) fail 'unsupported Mac architecture' ;; esac
+  identity=$fixture_tested_sha-darwin-$arch_name
+  fixture_snapshot=$fixture_dogfood/snapshots/$identity
+  mkdir -p "$fixture_snapshot"
+  cp -R "$fixture_root/fake-extension/extension" "$fixture_snapshot/extension"
+  mkdir -p "$fixture_snapshot/bin"
+  cp "$fixture_root/fake-extension/bin/evaluation_stdio" "$fixture_snapshot/bin/evaluation_stdio"
+  python3 - "$fixture_snapshot" "$identity" "$fixture_tested_sha" <<'PY'
+import hashlib, json, os, sys
+root, identity, sha = sys.argv[1:]
+files = {}
+for current, dirs, names in os.walk(root):
+    dirs.sort()
+    for name in sorted(names):
+        path = os.path.join(current, name)
+        relative = os.path.relpath(path, root).replace(os.sep, "/")
+        with open(path, "rb") as stream:
+            files[relative] = hashlib.sha256(stream.read()).hexdigest()
+meta = {
+    "schemaVersion": 1,
+    "identity": identity,
+    "gitSha": sha,
+    "platform": "darwin",
+    "architecture": identity.rsplit("-", 1)[1],
+    "extensionPath": "extension",
+    "evaluatorPath": "bin/evaluation_stdio",
+    "files": dict(sorted(files.items())),
+}
+with open(os.path.join(root, "snapshot.json"), "w", encoding="utf-8") as stream:
+    json.dump(meta, stream, separators=(",", ":"))
+    stream.write("\n")
+with open(os.path.join(os.path.dirname(root), "..", "current.json"), "w", encoding="utf-8") as stream:
+    json.dump({"schemaVersion": 1, "identity": identity}, stream, separators=(",", ":"))
+    stream.write("\n")
+PY
+}
+
+choose_port() {
+  python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'
+}
+
+invoke() {
+  command_name=$1 issue=$2 generation=$3 lane=$4 tested=$5
+  shift 5
+  host_fixture_arg=${1-}
+  host_port_arg=${2-}
+  host_locale_arg=${3:-default}
+  host_adapter_arg=${4:-fixture-no-process}
+  set -- "$command_name" --self-test --manifest "$fixture_manifest" \
+    --issue "$issue" --generation "$generation" --tested-sha "$tested"
+  [ -z "$lane" ] || set -- "$@" --lane "$lane"
+  if [ "$command_name" = host-check ] || [ "$command_name" = host-prepare ]; then
+    set -- "$@" --fixture "$host_fixture_arg" --port "$host_port_arg" \
+      --locale "$host_locale_arg" --adapter "$host_adapter_arg"
+  fi
+  env NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
+    NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+    NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+    "$helper" "$@" > "$output" 2>&1
+}
+
+invoke_host() {
+  command_name=$1 issue=$2 generation=$3 lane=$4 tested=$5
+  fixture=${6-}
+  port=${7-}
+  locale=${8:-default}
+  adapter=${9:-fixture-no-process}
+  if [ "$command_name" = host-check ] || [ "$command_name" = host-prepare ]; then
+    invoke "$command_name" "$issue" "$generation" "$lane" "$tested" \
+      "$fixture" "$port" "$locale" "$adapter"
+  else
+    invoke "$command_name" "$issue" "$generation" "$lane" "$tested"
+  fi
+}
+
+ok() {
+  if ! invoke_host "$@"; then
+    cat "$output" >&2
+    fail "command failed: $1"
+  fi
+}
+
+blocked() {
+  echo "expect-blocked: $*" >&2
+  if invoke_host "$@"; then
+    fail "command unexpectedly succeeded: $1"
+  fi
+  grep -Eq 'BLOCKED|blocked|ERROR:' "$output" || fail "refusal was unexplained: $1"
+}
+
+start_test_listener() {
+  mode=$1
+  port=$2
+  listener_ready=$fixture_root/test-listener-ready-$port-$mode
+  node -e 'const fs=require("node:fs"); const http=require("node:http"); const port=Number(process.argv[1]); const mode=process.argv[2]; const ready=process.argv[3]; const server=http.createServer((request,response)=>{if(mode==="plausible"){const body=JSON.stringify({Browser:"FakeVSCode/1.0","Protocol-Version":"1.3",webSocketDebuggerUrl:`ws://127.0.0.1:${port}/devtools/browser/foreign`});response.writeHead(200,{"Content-Type":"application/json","Content-Length":Buffer.byteLength(body)});response.end(body);}else{response.writeHead(200);response.end("busy");}});server.listen(port,"127.0.0.1",()=>fs.writeFileSync(ready,"ready\\n",{flag:"wx",mode:0o600}));' \
+    "$port" "$mode" "$listener_ready" >"$fixture_root/test-listener.log" 2>&1 &
+  foreign_pid=$!
+  listener_attempt=0
+  while [ ! -f "$listener_ready" ] && [ "$listener_attempt" -lt 50 ]; do
+    kill -0 "$foreign_pid" 2>/dev/null || {
+      [ ! -f "$fixture_root/test-listener.log" ] || cat "$fixture_root/test-listener.log" >&2
+      fail 'test listener exited before the check'
+    }
+    listener_attempt=$((listener_attempt + 1))
+    sleep 0.1
+  done
+  [ -f "$listener_ready" ] || fail 'test listener did not bind the requested port'
+  listener_pids=$(nuinui_e2e_host_vscode__listener_pids "$port") || {
+    echo "test listener lsof diagnostics (pid=$foreign_pid port=$port):" >&2
+    /usr/sbin/lsof -nP -iTCP:"$port" -sTCP:LISTEN -Fp 2>&1 >&2 || true
+    [ ! -f "$fixture_root/test-listener.log" ] || cat "$fixture_root/test-listener.log" >&2
+    fail 'inspect test listener'
+  }
+  [ "$listener_pids" = "$foreign_pid" ] || fail 'test listener PID did not own its requested port'
+}
+
+native_path() {
+  kind=$1 generation=$2
+  printf '%s/nuinui-github-e2e-%s-v1.%s\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$kind" \
+    "$(printf '%s\n' "$generation" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
+host_path() {
+  kind=$1 generation=$2
+  printf '%s/nuinui-github-e2e-host-%s-v1.%s\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$kind" \
+    "$(printf '%s\n' "$generation" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
+host_root_path() {
+  printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \
+    "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
+fingerprint() {
+  python3 - "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$(host_root_path "$fixture_generation")" <<'PY'
+import hashlib, os, stat, sys
+h = hashlib.sha256()
+for root in sys.argv[1:]:
+    h.update(root.encode() + b"\0")
+    if not os.path.lexists(root):
+        h.update(b"ABSENT\0")
+        continue
+    for current, dirs, files in os.walk(root, followlinks=False):
+        dirs.sort(); files.sort()
+        for name in dirs + files:
+            path = os.path.join(current, name)
+            s = os.lstat(path)
+            rel = os.path.relpath(path, root).encode()
+            h.update(rel + b"\0" + str(s.st_mode).encode() + b"\0")
+            if stat.S_ISLNK(s.st_mode): h.update(os.readlink(path).encode())
+            elif stat.S_ISREG(s.st_mode):
+                with open(path, "rb") as stream:
+                    for block in iter(lambda: stream.read(65536), b""): h.update(block)
+            h.update(b"\0")
+print(h.hexdigest())
+PY
+}
+
+fingerprint_before_denial() { before_fingerprint=$(fingerprint); }
+assert_no_mutation() { [ "$(fingerprint)" = "$before_fingerprint" ] || fail 'denied or read-only operation mutated protected metadata or host resources'; }
+
+prepare_generation() {
+  fixture_generation=$1
+  invoke admit "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" || { cat "$output" >&2; fail 'native admission'; }
+  invoke start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" || { cat "$output" >&2; fail 'native start'; }
+}
+
+test_zero_human_lanes() {
+  new_fixture zero
+  fixture_generation=vscode-zero-lanes-0001
+  fixture_port=$(choose_port)
+  fingerprint_before_denial
+  blocked host-check "$fixture_issue" "$fixture_generation" implementation "$fixture_tested_sha" \
+    "$fixture_file" "$fixture_port" default fixture-no-process
+  assert_no_mutation
+}
+
+test_cdp_shapes() {
+  test_port=$(choose_port)
+  fake_body=$(printf '{"Browser":"FakeVSCode/1.0","Protocol-Version":"1.3","webSocketDebuggerUrl":"ws://127.0.0.1:%s/devtools/browser/disposable"}' "$test_port")
+  electron_body=$(printf '{"Browser":"Chrome/134.0.6998.205","Protocol-Version":"1.3","User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.6998.205 Electron/35.1.5 Safari/537.36","V8-Version":"13.5.212.10-electron.0","WebKit-Version":"537.36 (@disposable)","webSocketDebuggerUrl":"ws://127.0.0.1:%s/devtools/browser/disposable-electron"}' "$test_port")
+  electron_minimal_body=$(printf '{"Browser":"Chrome/134.0.6998.205","Protocol-Version":"1.3","webSocketDebuggerUrl":"ws://localhost:%s/devtools/browser/minimal-electron"}' "$test_port")
+  nuinui_e2e_host_vscode__validate_cdp_response fake "$test_port" "$fake_body" || fail 'explicit fake CDP response shape was rejected'
+  nuinui_e2e_host_vscode__validate_cdp_response electron "$test_port" "$electron_body" || fail 'Electron CDP response shape was rejected'
+  nuinui_e2e_host_vscode__validate_cdp_response electron "$test_port" "$electron_minimal_body" || fail 'minimal Chromium/Electron /json/version response was rejected'
+  for invalid_body in \
+    "$(printf '%s' "$electron_body" | sed 's/Chrome\/134.0.6998.205 Electron/Chrome\/133.0.0.0 Electron/')" \
+    "$(printf '%s' "$electron_body" | sed "s#127.0.0.1:$test_port#127.0.0.1:$((test_port + 1))#")" \
+    "$(printf '%s' "$electron_body" | sed 's#ws://127.0.0.1:#ws://127.0.0.1.evil:#')" \
+    '{"Browser":"Chrome/134.0.6998.205","Protocol-Version":"1.3","User-Agent":42,"webSocketDebuggerUrl":"ws://127.0.0.1:1/devtools/browser/bad"}' \
+    '{"Browser":"FakeVSCode/1.0","Protocol-Version":"1.3","webSocketDebuggerUrl":"ws://127.0.0.1:1/devtools/browser/fake","Browser":"Chrome/134.0.0.1"}' \
+    '{"Browser":"Chrome/134.0.6998.205","Protocol-Version":"1.2","User-Agent":"Chrome/134.0.6998.205 Electron/35.1.5","webSocketDebuggerUrl":"ws://127.0.0.1:1/devtools/browser/bad"}' \
+    'not-json'; do
+    if nuinui_e2e_host_vscode__validate_cdp_response electron "$test_port" "$invalid_body" >/dev/null 2>&1; then
+      fail 'malformed or mismatched Electron CDP response was accepted'
+    fi
+  done
+  if nuinui_e2e_host_vscode__validate_cdp_response fake "$test_port" "$electron_body" >/dev/null 2>&1; then
+    fail 'Electron CDP response was conflated with the explicit fake shape'
+  fi
+}
+
+[ "$(uname -s)" = Darwin ] || fail 'VS Code adapter tests require macOS'
+[ -n "$(command -v node || true)" ] || fail 'VS Code adapter tests require Node.js for disposable local host stubs'
+[ -x "$helper" ] || fail 'generated nuinui-e2e candidate is missing'
+NUINUI_E2E_LIBRARY_ONLY=1 . "$helper"
+unset NUINUI_E2E_LIBRARY_ONLY
+test_cdp_shapes
+
+new_fixture one
+fixture_generation=vscode-fixture-cross-0001
+fixture_port=$(choose_port)
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+
+fingerprint_before_denial
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default fixture-no-process
+contains 'adapter=fixture-no-process'
+assert_no_mutation
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default fixture-no-process
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+advance_default vscode-generation-2
+fixture_generation=vscode-ready-gen-0002
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+
+fingerprint_before_denial
+blocked host-check sayosomi/nuinuiCAD#269 "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+fingerprint_before_denial
+blocked host-check "$fixture_issue" vscode-wrong-generation-0002 human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" implementation "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+wrong_sha=$(printf '%040d' 7)
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$wrong_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+
+# A plausible CDP response from an unrelated local listener is refused before PREPARING.
+fixture_port=$(choose_port)
+start_test_listener plausible "$fixture_port"
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+kill -TERM "$foreign_pid" 2>/dev/null || true
+wait "$foreign_pid" 2>/dev/null || true
+foreign_pid=
+
+# Artifact and application tampering are rejected before any host-session mutation.
+setup_vscode_artifacts
+extension_file=$fixture_snapshot/extension/dist/extension.js
+cp "$extension_file" "$fixture_root/extension.js.saved"
+printf 'tampered\n' >> "$extension_file"
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+mv "$fixture_root/extension.js.saved" "$extension_file"
+rust_binary=$fixture_snapshot/bin/evaluation_stdio
+cp "$rust_binary" "$fixture_root/evaluation_stdio.saved"
+printf 'tampered\n' >> "$rust_binary"
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+mv "$fixture_root/evaluation_stdio.saved" "$rust_binary"
+app_binary=$fixture_app/Contents/MacOS/Code
+cp "$app_binary" "$fixture_root/Code.saved"
+printf 'tampered\n' >> "$app_binary"
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+mv "$fixture_root/Code.saved" "$app_binary"
+
+# An occupied port also blocks without creating metadata or root resources.
+fixture_port=$(choose_port)
+start_test_listener plain "$fixture_port"
+fingerprint_before_denial
+blocked host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+kill -TERM "$foreign_pid" 2>/dev/null || true
+wait "$foreign_pid" 2>/dev/null || true
+foreign_pid=
+
+fixture_port=$(choose_port)
+fingerprint_before_denial
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" ja vscode-isolated
+contains 'adapter=vscode-isolated'
+assert_no_mutation
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" ja vscode-isolated
+contains 'HOST SESSION READY (adapter=vscode-isolated'
+fake_root=$(host_root_path "$fixture_generation")
+fake_pid=$(sed -n 's/^pid=//p' "$fake_root/process-owner-v1")
+case "$fake_pid" in ''|*[!0-9]*) fail 'fake host PID record' ;; esac
+kill -0 "$fake_pid" 2>/dev/null || fail 'fake host process did not remain ready'
+for profile_file in \
+  "$fake_root/user-data/User/globalStorage/state.vscdb" \
+  "$fake_root/user-data/User/workspaceStorage/fixture-workspace/workspace.json" \
+  "$fake_root/user-data/logs/2026-10-13/window1/exthost/extension.log" \
+  "$fake_root/user-data/CachedData/disposable/session.json" \
+  "$fake_root/extensions/extensions.json" \
+  "$fake_root/extensions/publisher.extension-1.0.0/package.json"; do
+  [ -f "$profile_file" ] || fail "fake host did not create expected isolated profile file: $profile_file"
+done
+
+# Exact duplicate checks and preparation are read-only no-ops.
+fingerprint_before_denial
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" ja vscode-isolated
+assert_no_mutation
+fingerprint_before_denial
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" ja vscode-isolated
+contains 'mutation=no-op'
+assert_no_mutation
+
+# Cross-adapter requests and a changed process start identity cannot adopt or signal the host.
+fingerprint_before_denial
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" ja fixture-no-process
+assert_no_mutation
+process_record=$fake_root/process-owner-v1
+cp "$process_record" "$fixture_root/process-owner.saved"
+python3 - "$process_record" <<'PY'
+import sys
+path = sys.argv[1]
+data = open(path, encoding="utf-8").read()
+before = next(line for line in data.splitlines() if line.startswith("process_start="))
+open(path, "w", encoding="utf-8").write(data.replace(before, "process_start=1.000001", 1))
+PY
+fingerprint_before_denial
+blocked host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+kill -0 "$fake_pid" 2>/dev/null || fail 'denied cleanup signaled the fake host process'
+mv "$fixture_root/process-owner.saved" "$process_record"
+
+# A foreign file in the generation root is preserved and blocks verification.
+printf 'foreign\n' > "$fake_root/foreign-resource"
+fingerprint_before_denial
+blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+[ -f "$fake_root/foreign-resource" ] || fail 'foreign root resource was removed'
+rm "$fake_root/foreign-resource"
+
+# Legitimate profile trees are accepted, while profile symlinks remain foreign and block cleanup.
+profile_target=$fixture_root/foreign-profile-target
+printf 'preserve me\n' > "$profile_target"
+profile_link=$fake_root/user-data/User/globalStorage/unowned-link
+ln -s "$profile_target" "$profile_link"
+fingerprint_before_denial
+blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+profile_root_identity=$(stat -f '%d:%i' "$fake_root")
+if nuinui_e2e_host_vscode__root_tree "$fake_root" "$profile_root_identity" partial clean-profiles >/dev/null 2>&1; then
+  fail 'profile cleanup accepted a symlinked descendant'
+fi
+assert_no_mutation
+[ -f "$profile_target" ] || fail 'profile symlink target was removed'
+[ -L "$profile_link" ] || fail 'denied profile validation removed the symlink'
+rm "$profile_link"
+
+# Symlinked or tampered session and handoff records fail closed without changing them.
+intent_record=$(host_path intent "$fixture_generation")
+handoff_record=$(host_path handoff "$fixture_generation")
+for record in "$intent_record" "$handoff_record"; do
+  saved=$record.test-backup
+  mv "$record" "$saved"
+  ln -s "${saved##*/}" "$record"
+  fingerprint_before_denial
+  blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  assert_no_mutation
+  rm "$record"
+  mv "$saved" "$record"
+done
+
+# A symlinked root cannot be followed or removed by cleanup.
+root_saved=$fixture_root/root-held
+mv "$fake_root" "$root_saved"
+ln -s "${root_saved##*/}" "$fake_root"
+fingerprint_before_denial
+blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+rm "$fake_root"
+mv "$root_saved" "$fake_root"
+
+# Interrupted cleanup retains ownership evidence and recovers through the same lifecycle.
+if ( NUINUI_E2E_TEST_FAILPOINT=after-host-cleanup-pending \
+  invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
+  fail 'cleanup interruption failpoint did not interrupt'
+fi
+contains 'interruption'
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fake_pid=
+[ ! -e "$fake_root" ] || fail 'recovered cleanup left the generation root'
+
+# The durable receipt rejects symlink substitution; restore it before independent closure.
+receipt=$(host_path cleanup "$fixture_generation")
+receipt_saved=$receipt.test-backup
+mv "$receipt" "$receipt_saved"
+ln -s "${receipt_saved##*/}" "$receipt"
+fingerprint_before_denial
+blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+rm "$receipt"
+mv "$receipt_saved" "$receipt"
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+
+# Electron-shaped /json/version readiness is accepted only with the owned fake process and listener.
+advance_default vscode-electron-generation
+fixture_generation=vscode-electron-cdp-0004
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+fixture_cdp_kind=electron
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+contains 'HOST SESSION READY (adapter=vscode-isolated'
+electron_root=$(host_root_path "$fixture_generation")
+grep -q '^response_kind=electron$' "$electron_root/cdp-response-sha256" || fail 'Electron response kind was not durably recorded'
+for profile_file in \
+  "$electron_root/user-data/User/globalStorage/state.vscdb" \
+  "$electron_root/user-data/logs/2026-10-13/window1/exthost/extension.log" \
+  "$electron_root/extensions/extensions.json"; do
+  [ -f "$profile_file" ] || fail 'Electron-shaped fake host profile write was not retained'
+done
+ok host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ ! -e "$electron_root" ] || fail 'owned VS Code profile data was not recursively cleaned'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_cdp_kind=fake
+
+# Historical released records remain valid while a later generation is admitted.
+advance_default vscode-generation-3
+fixture_generation=vscode-recovery-gen-0003
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+if ( NUINUI_E2E_TEST_FAILPOINT=after-host-resources \
+  invoke_host host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+    "$fixture_file" "$fixture_port" default vscode-isolated ); then
+  fail 'preparation interruption failpoint did not interrupt'
+fi
+contains 'interruption'
+fingerprint_before_denial
+blocked admit "$fixture_issue" vscode-next-generation-0004 human "$fixture_tested_sha"
+assert_no_mutation
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+test_zero_human_lanes
+echo 'VSCODE HOST SELFTEST PASS (fixture-only; no Visual Studio Code application launched)'

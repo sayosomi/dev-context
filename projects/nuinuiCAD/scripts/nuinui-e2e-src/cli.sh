@@ -6,7 +6,8 @@ nuinui_e2e_usage() {
 Usage: nuinui-e2e {admit|status|start|cleanup-proof|release|recover|closure|host-check|host-prepare|host-status|host-cleanup|host-recover|host-closure} \
   --self-test --manifest <disposable-LANES.conf> --issue <canonical-identity> \
   --generation <caller-token> --tested-sha <40-lowercase-hex> [--lane <name>] \
-  [--fixture <absolute-canonical-external-file> --port <1-65535> [--locale default|ja]]
+  [--fixture <absolute-canonical-external-file> --port <1-65535> \
+   [--locale default|ja] [--adapter fixture-no-process|vscode-isolated]]
 
 Accepted Issue identities are exactly:
   sayosomi/nuinuiCAD#N
@@ -29,6 +30,7 @@ nuinui_e2e_cli_main() {
   nuinui_e2e_cli_fixture=
   nuinui_e2e_cli_port=
   nuinui_e2e_cli_locale=default
+  nuinui_e2e_cli_adapter=fixture-no-process
   nuinui_e2e_cli_self_test=no
   nuinui_e2e_cli_seen_self_test=no
   nuinui_e2e_cli_seen_manifest=no
@@ -39,6 +41,7 @@ nuinui_e2e_cli_main() {
   nuinui_e2e_cli_seen_fixture=no
   nuinui_e2e_cli_seen_port=no
   nuinui_e2e_cli_seen_locale=no
+  nuinui_e2e_cli_seen_adapter=no
   while [ "$#" -gt 0 ]; do
     nuinui_e2e_cli_option=$1
     shift
@@ -51,7 +54,7 @@ nuinui_e2e_cli_main() {
         nuinui_e2e_cli_seen_self_test=yes
         nuinui_e2e_cli_self_test=yes
         ;;
-      --manifest|--issue|--lane|--generation|--tested-sha|--fixture|--port|--locale)
+      --manifest|--issue|--lane|--generation|--tested-sha|--fixture|--port|--locale|--adapter)
         [ "$#" -gt 0 ] || { echo "ERROR: $nuinui_e2e_cli_option requires a value" >&2; return 2; }
         nuinui_e2e_cli_value=$1
         shift
@@ -101,6 +104,11 @@ nuinui_e2e_cli_main() {
             nuinui_e2e_cli_seen_locale=yes
             nuinui_e2e_cli_locale=$nuinui_e2e_cli_value
             ;;
+          --adapter)
+            [ "$nuinui_e2e_cli_seen_adapter" = no ] || { echo 'ERROR: duplicate --adapter option' >&2; return 2; }
+            nuinui_e2e_cli_seen_adapter=yes
+            nuinui_e2e_cli_adapter=$nuinui_e2e_cli_value
+            ;;
         esac
         ;;
       -h|--help|help)
@@ -126,6 +134,7 @@ nuinui_e2e_cli_main() {
       [ "$nuinui_e2e_cli_seen_fixture" = yes ] || { echo 'ERROR: --fixture is required for this command' >&2; return 2; }
       [ "$nuinui_e2e_cli_seen_port" = yes ] || { echo 'ERROR: --port is required for this command' >&2; return 2; }
       case "$nuinui_e2e_cli_locale" in default|ja) ;; *) echo 'ERROR: --locale must be default or ja' >&2; return 2 ;; esac
+      case "$nuinui_e2e_cli_adapter" in fixture-no-process|vscode-isolated) ;; *) echo 'ERROR: --adapter must be fixture-no-process or vscode-isolated' >&2; return 2 ;; esac
       ;;
     *)
       [ "$nuinui_e2e_cli_seen_fixture" = no ] &&
@@ -134,6 +143,10 @@ nuinui_e2e_cli_main() {
           echo 'ERROR: --fixture, --port, and --locale are only valid for host-check and host-prepare' >&2
           return 2
         }
+      [ "$nuinui_e2e_cli_seen_adapter" = no ] || {
+        echo 'ERROR: --adapter is only valid for host-check and host-prepare' >&2
+        return 2
+      }
       ;;
   esac
   nuinui_e2e_self_test=yes
@@ -144,6 +157,7 @@ nuinui_e2e_cli_main() {
   nuinui_e2e_expected_generation=$nuinui_e2e_cli_generation
   nuinui_e2e_expected_tested=$nuinui_e2e_cli_tested
   nuinui_e2e_test_failpoint=${NUINUI_E2E_TEST_FAILPOINT:-}
+  nuinui_e2e_host_adapter_arg=$nuinui_e2e_cli_adapter
   case "$nuinui_e2e_command" in
     admit)
       [ "$nuinui_e2e_cli_seen_tested" = yes ] || return 2
