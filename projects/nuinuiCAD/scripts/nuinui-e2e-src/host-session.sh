@@ -778,8 +778,10 @@ nuinui_e2e_host_prepare() {
   if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
     nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
       "$4" "$5" "$6" || return 1
-    [ "$nuinui_e2e_vscode_fake_app" = yes ] || {
-      echo 'BLOCKED: actual VS Code host activation is deferred to D3-C2c2'
+    { [ "$nuinui_e2e_vscode_fake_app" = yes ] ||
+      { [ "$nuinui_e2e_self_test" = yes ] &&
+        [ "$nuinui_e2e_vscode_test_app" = yes ]; }; } || {
+      echo 'BLOCKED: real VS Code activation requires the separately approved D3-C2c2-B pilot'
       return 1
     }
   fi

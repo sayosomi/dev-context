@@ -17,6 +17,10 @@ fixture_issue=sayosomi/nuinuiCAD#268
 fixture_generation=
 fixture_port=
 fixture_cdp_kind=fake
+fixture_app_mode=launcher
+fixture_app_sha=
+fixture_direct_child=no
+fixture_direct_pid_file=
 output=
 foreign_pid=
 fake_pid=
@@ -89,6 +93,10 @@ new_fixture() {
   fixture_file=$fixture_root/host-fixture.html
   fixture_dogfood=$fixture_root/dogfood
   fixture_app=$fixture_root/fake-vscode/'Visual Studio Code.app'
+  fixture_app_mode=launcher
+  fixture_app_sha=
+  fixture_direct_child=no
+  fixture_direct_pid_file=$fixture_root/direct-child.pid
   output=$fixture_root/command.out
   mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
   printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
@@ -141,8 +149,130 @@ setup_vscode_artifacts() {
   printf 'syntax-stub\n' > "$fixture_root/fake-extension/extension/syntaxes/nuinui.tmLanguage.json"
   printf '#!/bin/sh\nexit 0\n' > "$fixture_root/fake-extension/bin/evaluation_stdio"
   chmod 755 "$fixture_root/fake-extension/bin/evaluation_stdio"
-  nuinui_e2e_host_vscode__fake_launcher_content > "$fixture_app/Contents/MacOS/Code"
-  chmod 755 "$fixture_app/Contents/MacOS/Code"
+  case "$fixture_app_mode" in
+    launcher)
+      nuinui_e2e_host_vscode__fake_launcher_content > "$fixture_app/Contents/MacOS/Code"
+      chmod 755 "$fixture_app/Contents/MacOS/Code"
+      ;;
+    direct)
+      cat > "$fixture_root/disposable-vscode-host.c" <<'C'
+#include <arpa/inet.h>
+#include <errno.h>
+#include <limits.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+static void make_dirs(const char *path) {
+  char copy[PATH_MAX];
+  if (strlen(path) >= sizeof(copy)) _exit(2);
+  strcpy(copy, path);
+  for (char *p = copy + 1; *p; p++) {
+    if (*p == '/') { *p = '\0'; mkdir(copy, 0700); *p = '/'; }
+  }
+  if (mkdir(copy, 0700) != 0 && errno != EEXIST) _exit(2);
+}
+
+static void write_file(const char *path, const char *content) {
+  FILE *stream;
+  char parent[PATH_MAX];
+  if (strlen(path) >= sizeof(parent)) _exit(2);
+  strcpy(parent, path);
+  char *slash = strrchr(parent, '/');
+  if (!slash) _exit(2);
+  *slash = '\0';
+  make_dirs(parent);
+  stream = fopen(path, "w");
+  if (!stream) _exit(2);
+  fputs(content, stream);
+  if (fclose(stream) != 0) _exit(2);
+}
+
+static const char *arg_value(int argc, char **argv, const char *prefix) {
+  size_t length = strlen(prefix);
+  for (int i = 1; i < argc; i++) if (strncmp(argv[i], prefix, length) == 0) return argv[i] + length;
+  return NULL;
+}
+
+static void create_profile(const char *user_data, const char *extensions) {
+  char path[PATH_MAX];
+  snprintf(path, sizeof(path), "%s/User/globalStorage/state.vscdb", user_data);
+  write_file(path, "disposable direct host storage\n");
+  snprintf(path, sizeof(path), "%s/User/workspaceStorage/direct/workspace.json", user_data);
+  write_file(path, "{}\n");
+  snprintf(path, sizeof(path), "%s/logs/direct/window1/exthost/extension.log", user_data);
+  write_file(path, "disposable extension log\n");
+  snprintf(path, sizeof(path), "%s/CachedData/direct/session.json", user_data);
+  write_file(path, "{}\n");
+  snprintf(path, sizeof(path), "%s/extensions.json", extensions);
+  write_file(path, "[]\n");
+  snprintf(path, sizeof(path), "%s/publisher.extension-1.0.0/package.json", extensions);
+  write_file(path, "{}\n");
+}
+
+static int serve(int port) {
+  int server = socket(AF_INET, SOCK_STREAM, 0);
+  struct sockaddr_in address;
+  if (server < 0) return 2;
+  memset(&address, 0, sizeof(address));
+  address.sin_family = AF_INET;
+  address.sin_port = htons((unsigned short)port);
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  if (bind(server, (struct sockaddr *)&address, sizeof(address)) != 0 || listen(server, 8) != 0) return 2;
+  for (;;) {
+    int client = accept(server, NULL, NULL);
+    if (client < 0) { if (errno == EINTR) continue; return 2; }
+    char request[2048];
+    (void)read(client, request, sizeof(request));
+    char body[512];
+    int body_size = snprintf(body, sizeof(body),
+      "{\"Browser\":\"Chrome/134.0.6998.205\",\"Protocol-Version\":\"1.3\",\"User-Agent\":\"Chrome/134.0.6998.205 Electron/35.1.5\",\"webSocketDebuggerUrl\":\"ws://127.0.0.1:%d/devtools/browser/disposable-direct\"}", port);
+    char response[1024];
+    int response_size = snprintf(response, sizeof(response),
+      "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s", body_size, body);
+    (void)write(client, response, (size_t)response_size);
+    close(client);
+  }
+}
+
+int main(int argc, char **argv) {
+  const char *port_arg = arg_value(argc, argv, "--remote-debugging-port=");
+  const char *user_data = arg_value(argc, argv, "--user-data-dir=");
+  const char *extensions = arg_value(argc, argv, "--extensions-dir=");
+  const char *rust = getenv("NUINUICAD_RUST_EVALUATION_BINARY");
+  int port = port_arg ? atoi(port_arg) : 0;
+  if (!port_arg || !user_data || !extensions || !rust || access(rust, X_OK) != 0) return 2;
+  create_profile(user_data, extensions);
+  if (strcmp(getenv("NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER") ?
+      getenv("NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER") : "no", "yes") == 0) {
+    pid_t child = fork();
+    if (child < 0) return 2;
+    if (child == 0) _exit(serve(port));
+    const char *pid_file = getenv("NUINUI_E2E_TEST_DIRECT_PID_FILE");
+    if (!pid_file) return 2;
+    FILE *stream = fopen(pid_file, "w");
+    if (!stream) return 2;
+    fprintf(stream, "%d\n", (int)child);
+    fclose(stream);
+    for (;;) pause();
+  }
+  return serve(port);
+}
+C
+      /usr/bin/clang -O2 -Wall -Wextra -Werror \
+        "$fixture_root/disposable-vscode-host.c" -o "$fixture_app/Contents/MacOS/Code" ||
+        fail 'compile disposable direct VS Code-shaped host'
+      fixture_app_sha=$(shasum -a 256 "$fixture_app/Contents/MacOS/Code" | awk 'NR == 1 {print $1}')
+      ;;
+    *) fail 'unsupported disposable application mode' ;;
+  esac
+  [ -n "$fixture_app_sha" ] || fixture_app_sha=$(shasum -a 256 "$fixture_app/Contents/MacOS/Code" | awk 'NR == 1 {print $1}')
   cat > "$fixture_app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -209,7 +339,11 @@ invoke() {
   fi
   env NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
     NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+    NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
+    NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
     NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+    NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
+    NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
     "$helper" "$@" > "$output" 2>&1
 }
 
@@ -329,6 +463,10 @@ test_zero_human_lanes() {
   blocked host-check "$fixture_issue" "$fixture_generation" implementation "$fixture_tested_sha" \
     "$fixture_file" "$fixture_port" default fixture-no-process
   assert_no_mutation
+  fingerprint_before_denial
+  blocked host-prepare "$fixture_issue" "$fixture_generation" implementation "$fixture_tested_sha" \
+    "$fixture_file" "$fixture_port" default vscode-isolated
+  assert_no_mutation
 }
 
 test_cdp_shapes() {
@@ -443,6 +581,9 @@ blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested
   "$fixture_file" "$fixture_port" default vscode-isolated
 assert_no_mutation
 mv "$fixture_root/Code.saved" "$app_binary"
+if ( nuinui_e2e_host_vscode__app_info "$fixture_app" >/dev/null 2>&1 ); then
+  fail 'unsigned disposable VS Code-shaped app crossed the signed-app boundary without test-only identity'
+fi
 
 # An occupied port also blocks without creating metadata or root resources.
 fixture_port=$(choose_port)
@@ -495,6 +636,28 @@ blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested
   "$fixture_file" "$fixture_port" ja fixture-no-process
 assert_no_mutation
 process_record=$fake_root/process-owner-v1
+cp "$process_record" "$fixture_root/process-owner.saved"
+# A reused PID that now names a foreign process must never be mistaken for the generation owner.
+reuse_port=$(choose_port)
+start_test_listener plain "$reuse_port"
+python3 - "$process_record" "$foreign_pid" <<'PY'
+import sys
+path, replacement = sys.argv[1:]
+data = open(path, encoding="utf-8").read()
+data = "\n".join((
+    "pid=" + replacement if line.startswith("pid=") else
+    "process_group=" + replacement if line.startswith("process_group=") else line
+) for line in data.splitlines()) + "\n"
+open(path, "w", encoding="utf-8").write(data)
+PY
+fingerprint_before_denial
+blocked host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+kill -0 "$foreign_pid" 2>/dev/null || fail 'PID-reuse denial signaled the foreign process'
+mv "$fixture_root/process-owner.saved" "$process_record"
+kill -TERM "$foreign_pid" 2>/dev/null || true
+wait "$foreign_pid" 2>/dev/null || true
+foreign_pid=
 cp "$process_record" "$fixture_root/process-owner.saved"
 python3 - "$process_record" <<'PY'
 import sys
@@ -604,6 +767,71 @@ done
 ok host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 [ ! -e "$electron_root" ] || fail 'owned VS Code profile data was not recursively cleaned'
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_cdp_kind=fake
+
+# A direct executable test double exercises the real application argv/process shape,
+# including a proven VS Code-style child listener in the isolated generation group.
+fixture_app_mode=direct
+fixture_direct_child=yes
+fixture_cdp_kind=electron
+advance_default vscode-direct-startup-interruption
+fixture_generation=vscode-direct-startup-0005
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+rm -f "$fixture_direct_pid_file"
+if ( NUINUI_E2E_TEST_FAILPOINT=after-vscode-process-record \
+  invoke_host host-prepare "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$fixture_file" "$fixture_port" default vscode-isolated ); then
+  fail 'direct-host startup interruption failpoint did not interrupt'
+fi
+contains 'interruption after verified VS Code process'
+direct_root=$(host_root_path "$fixture_generation")
+direct_pid=$(sed -n 's/^pid=//p' "$direct_root/process-owner-v1")
+direct_group=$(sed -n 's/^process_group=//p' "$direct_root/process-owner-v1")
+direct_child_attempt=0
+while [ ! -f "$fixture_direct_pid_file" ] &&
+  [ "$direct_child_attempt" -lt 100 ]; do
+  kill -0 "$direct_pid" 2>/dev/null || fail 'direct-host stopped before recording its child listener'
+  direct_child_attempt=$((direct_child_attempt + 1))
+  sleep 0.05
+done
+[ -f "$fixture_direct_pid_file" ] || fail 'direct-host child listener identity was not recorded'
+direct_child_pid=$(cat "$fixture_direct_pid_file")
+[ "$direct_pid" = "$direct_group" ] || fail 'direct-host process group is not generation-bound'
+[ "$direct_child_pid" != "$direct_pid" ] || fail 'direct-host child listener PID was not distinct'
+[ "$(sed -n 's/^process_executable=//p' "$direct_root/process-owner-v1")" = \
+  "$fixture_app/Contents/MacOS/Code" ] || fail 'direct-host process did not execute the verified app binary'
+kill -0 "$direct_child_pid" 2>/dev/null || fail 'direct-host child listener did not start'
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ ! -e "$direct_root" ] || fail 'interrupted direct-host startup recovery left owned profile data'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+advance_default vscode-direct-shutdown-interruption
+fixture_generation=vscode-direct-shutdown-0006
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+rm -f "$fixture_direct_pid_file"
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+direct_root=$(host_root_path "$fixture_generation")
+direct_pid=$(sed -n 's/^pid=//p' "$direct_root/process-owner-v1")
+direct_child_pid=$(cat "$fixture_direct_pid_file")
+[ "$direct_child_pid" != "$direct_pid" ] || fail 'ready direct-host did not use a child listener process'
+if ( NUINUI_E2E_TEST_FAILPOINT=after-vscode-stop-signal \
+  invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
+  fail 'direct-host shutdown interruption failpoint did not interrupt'
+fi
+contains 'interruption after generation-scoped shutdown signal'
+[ -e "$direct_root/process-owner-v1" ] || fail 'interrupted shutdown removed process ownership evidence'
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ ! -e "$direct_root" ] || fail 'interrupted direct-host shutdown recovery left owned profile data'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_app_mode=launcher
+fixture_direct_child=no
 fixture_cdp_kind=fake
 
 # Historical released records remain valid while a later generation is admitted.
