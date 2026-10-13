@@ -71,7 +71,14 @@ nuinui_e2e__read_record() {
   nuinui_e2e_record_base_keys=schema_version,issue,issue_url,local_id,lane,repository,checkout,git_dir,manifest,manifest_sha256,default_branch,idle_policy,tested_sha,generation
   case "$nuinui_e2e_record_kind" in
     active) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys ;;
-    cleanup) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof ;;
+    cleanup)
+      nuinui_e2e_record_proof=$(nuinui_ownership_field "$nuinui_e2e_record_path" proof) || return 1
+      case "$nuinui_e2e_record_proof" in
+        fixture-no-host-session) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof ;;
+        fixture-host-session-cleaned) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,proof,host_cleanup_sha256 ;;
+        *) return 1 ;;
+      esac
+      ;;
     starting|release|releasing) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state ;;
     *) return 2 ;;
   esac
@@ -109,7 +116,16 @@ nuinui_e2e__read_record() {
   esac
   if [ "$nuinui_e2e_record_kind" = cleanup ]; then
     nuinui_e2e_r_proof=$(nuinui_ownership_field "$nuinui_e2e_record_path" proof) || return 1
-    [ "$nuinui_e2e_r_proof" = fixture-no-host-session ] || return 1
+    case "$nuinui_e2e_r_proof" in
+      fixture-no-host-session) ;;
+      fixture-host-session-cleaned)
+        nuinui_e2e_r_host_cleanup_sha=$(nuinui_ownership_field \
+          "$nuinui_e2e_record_path" host_cleanup_sha256) || return 1
+        nuinui_e2e_valid_digest "$nuinui_e2e_r_host_cleanup_sha" &&
+          nuinui_e2e_host__cleanup_proof_matches "$nuinui_e2e_r_host_cleanup_sha" || return 1
+        ;;
+      *) return 1 ;;
+    esac
   elif [ "$nuinui_e2e_record_kind" = starting ] ||
     [ "$nuinui_e2e_record_kind" = release ] ||
     [ "$nuinui_e2e_record_kind" = releasing ]; then
@@ -229,6 +245,12 @@ nuinui_e2e__generation_seen() {
         nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_seen_kind=cleanup ;;
         nuinui-github-e2e-release-v1.*) nuinui_e2e_seen_kind=release ;;
         nuinui-github-e2e-releasing-v1.*) nuinui_e2e_seen_kind=releasing ;;
+        nuinui-github-e2e-host-*)
+          nuinui_e2e_seen_kind=$(nuinui_e2e_host__kind_from_name "$nuinui_e2e_seen_name") || return 1
+          nuinui_e2e_host__read_record "$nuinui_e2e_seen_path" "$nuinui_e2e_seen_kind" || return 1
+          [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_seen_generation" ] && return 0
+          continue
+          ;;
         *) return 1 ;;
       esac
       nuinui_e2e__read_record "$nuinui_e2e_seen_path" "$nuinui_e2e_seen_kind" || return 1
@@ -464,7 +486,35 @@ nuinui_e2e__lane_preflight_state() {
       nuinui-github-e2e-starting-v1.*) nuinui_e2e_native_kind=starting ;;
       nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_native_kind=cleanup ;;
       nuinui-github-e2e-release-v1.*) nuinui_e2e_native_kind=release ;;
-      nuinui-github-e2e-releasing-v1.*) nuinui_e2e_native_kind=releasing ;;
+        nuinui-github-e2e-releasing-v1.*) nuinui_e2e_native_kind=releasing ;;
+        nuinui-github-e2e-host-*)
+          nuinui_e2e_native_kind=$(nuinui_e2e_host__kind_from_name "$nuinui_e2e_native_name") || {
+            echo '  state=BLOCKED reason=unknown-host-metadata'
+            return 1
+          }
+          nuinui_e2e_host__read_record "$nuinui_e2e_native_path" "$nuinui_e2e_native_kind" || {
+            echo '  state=BLOCKED reason=malformed-host-metadata'
+            return 1
+          }
+          nuinui_e2e__record_matches_lane "$nuinui_e2e_check_lane" \
+            "$nuinui_e2e_check_repo" "$nuinui_e2e_manifest_path" || return 1
+          nuinui_e2e_native_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation") || return 1
+          case "$nuinui_e2e_native_name" in
+            nuinui-github-e2e-host-intent-v1."$nuinui_e2e_native_hash"|\
+            nuinui-github-e2e-host-handoff-v1."$nuinui_e2e_native_hash"|\
+            nuinui-github-e2e-host-ready-v1."$nuinui_e2e_native_hash"|\
+            nuinui-github-e2e-host-cleanup-pending-v1."$nuinui_e2e_native_hash"|\
+            nuinui-github-e2e-host-cleanup-v1."$nuinui_e2e_native_hash") ;;
+            *) echo '  state=BLOCKED reason=host-generation-path-mismatch'; return 1 ;;
+          esac
+          [ "$nuinui_e2e_r_issue" = "$nuinui_e2e_expected_issue" ] &&
+            [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_expected_generation" ] &&
+            [ "$nuinui_e2e_r_tested" = "$nuinui_e2e_expected_tested" ] || {
+              echo '  state=BLOCKED reason=foreign-or-mismatched-host-generation'
+              return 1
+            }
+          continue
+          ;;
       *) echo '  state=BLOCKED reason=unknown-native-metadata'; return 1 ;;
     esac
     nuinui_e2e__read_record "$nuinui_e2e_native_path" \
@@ -527,6 +577,11 @@ nuinui_e2e__lane_preflight_state() {
   done <<EOF
 $nuinui_e2e_native_paths
 EOF
+  nuinui_e2e_host__preflight_scan "$nuinui_e2e_check_git_dir" \
+    "$nuinui_e2e_check_lane" || {
+      echo '  state=BLOCKED reason=host-session-state-conflict'
+      return 1
+    }
   if [ "$nuinui_e2e_lane_starting" = yes ] &&
     [ "$nuinui_e2e_lane_releasing" = yes ]; then
     echo '  state=BLOCKED reason=conflicting-start-and-release-intents'
@@ -582,7 +637,7 @@ EOF
     fi
     [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] || return 1
     case "$nuinui_e2e_operation" in
-      admit|status|start|cleanup-proof|release|recover) ;;
+      admit|status|start|cleanup-proof|release|recover|host-check|host-prepare|host-status|host-cleanup|host-recover|host-closure) ;;
       *) echo '  state=BLOCKED reason=active-generation'; return 1 ;;
     esac
     echo '  branch=DETACHED'
@@ -1017,6 +1072,11 @@ nuinui_e2e_cleanup_proof() {
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_host_state=${nuinui_e2e_host_state:-ABSENT}
+  [ "$nuinui_e2e_host_state" = ABSENT ] || {
+    echo 'BLOCKED: bare cleanup-proof cannot bypass a host-session record'
+    return 1
+  }
   nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
   nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
     echo 'BLOCKED: cleanup proof requires the exact active generation'

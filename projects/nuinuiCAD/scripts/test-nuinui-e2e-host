@@ -1,0 +1,385 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd -P)
+helper=$script_dir/nuinui-e2e
+fixture_root=
+fixture_impl=
+fixture_human=
+fixture_manifest=
+fixture_remote=
+fixture_tested_sha=
+fixture_issue=sayosomi/nuinuiCAD#268
+fixture_generation=host-fixture-gen-0001
+fixture_file=
+output=
+
+cleanup() {
+  cleanup_status=$?
+  trap - EXIT HUP INT TERM
+  [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  return "$cleanup_status"
+}
+trap cleanup EXIT HUP INT TERM
+
+fail() {
+  echo "HOST SELFTEST FAIL: $*" >&2
+  [ -z "$output" ] || { [ ! -f "$output" ] || cat "$output" >&2; }
+  exit 1
+}
+
+contains() { grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"; }
+
+new_fixture() {
+  mode=$1
+  [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-e2e-fixture.XXXXXX") || fail 'temporary root'
+  fixture_root=$(realpath "$fixture_root") || fail 'canonical temporary root'
+  fixture_impl=$fixture_root/implementation
+  fixture_human=$fixture_root/human
+  fixture_remote=$fixture_root/remote/sayosomi/nuinuiCAD.git
+  fixture_manifest=$fixture_root/LANES.conf
+  fixture_file=$fixture_root/host-fixture.html
+  output=$fixture_root/command.out
+  mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
+  printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
+  printf '<!doctype html><title>fixture only</title>\n' > "$fixture_file"
+  git init --bare --initial-branch=main -q "$fixture_remote" || fail 'bare fixture repository'
+  git init -b main -q "$fixture_impl" || fail 'implementation repository'
+  git -C "$fixture_impl" config user.name 'nuinui-e2e host fixture'
+  git -C "$fixture_impl" config user.email 'nuinui-e2e-host-fixture@example.invalid'
+  printf 'base\n' > "$fixture_impl/fixture.txt"
+  git -C "$fixture_impl" add fixture.txt
+  git -C "$fixture_impl" commit -q -m 'fixture base' || fail 'fixture commit'
+  git -C "$fixture_impl" remote add origin "$fixture_remote"
+  git -C "$fixture_impl" push -q origin main || fail 'fixture push'
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+  printf 'version=1\n' > "$(git -C "$fixture_impl" rev-parse --absolute-git-dir)/nuinui-implementation-v1"
+  if [ "$mode" = one ]; then
+    git -C "$fixture_impl" worktree add --detach -q "$fixture_human" "$fixture_tested_sha" || fail 'Human-test worktree'
+  fi
+  {
+    printf 'version=1\nrepository=sayosomi/nuinuiCAD\ndefault_branch=main\n'
+    printf '\n[lane implementation]\nrole=implementation\npath=%s\nidle=branch\n' "$fixture_impl"
+    if [ "$mode" = one ]; then
+      printf '\n[lane human]\nrole=human-test\npath=%s\nidle=detached\n' "$fixture_human"
+    fi
+  } > "$fixture_manifest"
+}
+
+advance_default() {
+  printf 'advance %s\n' "$1" >> "$fixture_impl/fixture.txt"
+  git -C "$fixture_impl" add fixture.txt
+  git -C "$fixture_impl" commit -q -m "fixture advance $1" || fail 'advance fixture default'
+  git -C "$fixture_impl" push -q origin main || fail 'push fixture default'
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+}
+
+invoke() {
+  command_name=$1
+  issue=$2
+  generation=$3
+  lane=$4
+  tested=$5
+  if [ -n "$lane" ]; then
+    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+      --issue "$issue" --generation "$generation" --tested-sha "$tested" \
+      --lane "$lane" >"$output" 2>&1
+  else
+    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+      --issue "$issue" --generation "$generation" --tested-sha "$tested" \
+      >"$output" 2>&1
+  fi
+}
+
+invoke_host() {
+  command_name=$1
+  issue=$2
+  generation=$3
+  lane=$4
+  tested=$5
+  if [ "$command_name" = host-check ] || [ "$command_name" = host-prepare ]; then
+    fixture=$6
+    port=$7
+    locale=${8:-default}
+    if [ -n "$lane" ]; then
+      "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+        --issue "$issue" --generation "$generation" --tested-sha "$tested" \
+        --lane "$lane" --fixture "$fixture" --port "$port" --locale "$locale" \
+        >"$output" 2>&1
+    else
+      "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+        --issue "$issue" --generation "$generation" --tested-sha "$tested" \
+        --fixture "$fixture" --port "$port" --locale "$locale" >"$output" 2>&1
+    fi
+  elif [ -n "$lane" ]; then
+    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+      --issue "$issue" --generation "$generation" --tested-sha "$tested" \
+      --lane "$lane" >"$output" 2>&1
+  else
+    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+      --issue "$issue" --generation "$generation" --tested-sha "$tested" \
+      >"$output" 2>&1
+  fi
+}
+
+ok() {
+  if ! invoke "$@"; then
+    cat "$output" >&2
+    fail "command failed: $1"
+  fi
+}
+
+host_ok() {
+  if ! invoke_host "$@"; then
+    cat "$output" >&2
+    fail "host command failed: $1"
+  fi
+}
+
+blocked() {
+  if invoke "$@"; then
+    fail "command unexpectedly succeeded: $1"
+  fi
+  grep -Eq 'BLOCKED|blocked|ERROR:' "$output" || fail "refusal was unexplained: $1"
+}
+
+host_blocked() {
+  if invoke_host "$@"; then
+    fail "host command unexpectedly succeeded: $1"
+  fi
+  grep -Eq 'BLOCKED|blocked|ERROR:' "$output" || fail "host refusal was unexplained: $1"
+}
+
+host_failpoint() {
+  failpoint=$1
+  shift
+  if NUINUI_E2E_TEST_FAILPOINT=$failpoint invoke_host "$@"; then
+    fail "host failpoint did not interrupt: $failpoint"
+  fi
+  contains 'interruption'
+}
+
+active_path() {
+  printf '%s/nuinui-github-e2e-active-v1\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)"
+}
+
+host_path() {
+  kind=$1
+  generation=$2
+  printf '%s/nuinui-github-e2e-host-%s-v1.%s\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$kind" \
+    "$(printf '%s\n' "$generation" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
+fingerprint() {
+  git_dir=$(git -C "$fixture_human" rev-parse --absolute-git-dir)
+  find "$git_dir" -maxdepth 1 -name 'nuinui-github-e2e-*' -type f -print |
+    LC_ALL=C sort | while IFS= read -r path; do shasum -a 256 "$path"; done
+}
+
+# Zero Human-test lanes and strict host-specific CLI parsing.
+new_fixture zero
+host_blocked host-check "$fixture_issue" "$fixture_generation" '' \
+  "$fixture_tested_sha" "$fixture_file" 43123
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" '' \
+  "$fixture_tested_sha" "$fixture_file" 43123
+if "$helper" host-check --self-test --manifest "$fixture_manifest" \
+  --issue "$fixture_issue" --generation "$fixture_generation" \
+  --tested-sha "$fixture_tested_sha" --fixture "$fixture_file" >"$output" 2>&1; then
+  fail 'host-check accepted a missing explicit port'
+fi
+contains '--port is required'
+if "$helper" host-status --self-test --manifest "$fixture_manifest" \
+  --issue "$fixture_issue" --generation "$fixture_generation" \
+  --tested-sha "$fixture_tested_sha" --fixture "$fixture_file" >"$output" 2>&1; then
+  fail 'host-status accepted contradictory host-only options'
+fi
+contains 'only valid for host-check and host-prepare'
+
+# Exact admission and read-only host-check, including fixture and port checks.
+new_fixture one
+stale_checkout_sha=$fixture_tested_sha
+advance_default host-tested-revision
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+ln -s "$fixture_file" "$fixture_root/fixture-link.html"
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_root/fixture-link.html" 43123
+printf '<html>inside checkout</html>\n' > "$fixture_human/inside.html"
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_human/inside.html" 43123
+rm "$fixture_human/inside.html"
+for invalid_port in 0 0001 65536 999999999999999; do
+  host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$fixture_file" "$invalid_port"
+done
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123 invalid-locale
+
+before=$(fingerprint)
+host_ok host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+contains 'state=ABSENT'
+[ "$(fingerprint)" = "$before" ] || fail 'host-check mutated metadata'
+host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+contains 'fixture-no-process'
+contains 'no Human Manual E2E was run'
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION READY'
+intent=$(host_path intent "$fixture_generation")
+handoff=$(host_path handoff "$fixture_generation")
+ready=$(host_path ready "$fixture_generation")
+for record in "$intent" "$handoff" "$ready"; do
+  [ -f "$record" ] && [ ! -L "$record" ] || fail "missing strict host record: $record"
+  grep -Fqx "issue=$fixture_issue" "$record" || fail 'canonical Issue binding missing'
+  grep -Fqx 'local_id=GH-sayosomi-nuinuiCAD-268' "$record" || fail 'native token binding missing'
+  grep -Fqx "tested_sha=$fixture_tested_sha" "$record" || fail 'tested SHA binding missing'
+  grep -Fqx "generation=$fixture_generation" "$record" || fail 'generation binding missing'
+  grep -Fqx 'adapter=fixture-no-process' "$record" || fail 'fixture-only adapter mode missing'
+done
+grep -Fqx "fixture_path=$fixture_file" "$handoff" || fail 'handoff fixture identity missing'
+grep -Fqx 'port=43123' "$handoff" || fail 'handoff port missing'
+grep -Fqx 'locale=default' "$handoff" || fail 'default locale was not explicit'
+grep -Fqx 'record_state=READY' "$ready" || fail 'READY state missing'
+
+# Duplicate prepare is a verified read-only no-op; mismatched identity is isolated.
+before=$(fingerprint)
+host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+contains 'mutation=no-op'
+[ "$(fingerprint)" = "$before" ] || fail 'duplicate host-prepare mutated records'
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43124
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123 ja
+
+# A malformed READY record is rejected read-only and cannot be repaired or adopted.
+ready=$(host_path ready "$fixture_generation")
+ready_backup=$fixture_root/ready.backup
+cp "$ready" "$ready_backup"
+before=$(fingerprint)
+printf 'schema_version=foreign\n' > "$ready"
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+cp "$ready_backup" "$ready"
+[ "$(fingerprint)" = "$before" ] || fail 'malformed metadata was changed or silently repaired'
+rm "$ready_backup"
+host_blocked host-status 'sayosomi/nuinuiCAD#269' "$fixture_generation" human "$fixture_tested_sha"
+host_blocked host-status "$fixture_issue" 'other-generation-0001' human "$fixture_tested_sha"
+before=$(fingerprint)
+host_blocked host-status "$fixture_issue" 'other-generation-0001' human "$fixture_tested_sha"
+[ "$(fingerprint)" = "$before" ] || fail 'unrelated generation changed host artifacts'
+if invoke host-status "$fixture_issue" "$fixture_generation" human \
+  '0000000000000000000000000000000000000000'; then
+  fail 'wrong tested SHA matched active host generation'
+fi
+
+# Legacy ownership and unsafe checkout/resource states block without adoption or deletion.
+git_dir=$(git -C "$fixture_human" rev-parse --absolute-git-dir)
+printf 'issue=SAY-268\n' > "$git_dir/nuinui-slot"
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ "$(cat "$git_dir/nuinui-slot")" = 'issue=SAY-268' ] || fail 'legacy SAY metadata changed'
+rm "$git_dir/nuinui-slot"
+printf 'dirty\n' >> "$fixture_human/fixture.txt"
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+git -C "$fixture_human" checkout -- fixture.txt
+git -C "$fixture_human" switch -c fixture-named-branch >/dev/null 2>&1
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+git -C "$fixture_human" switch --detach "$fixture_tested_sha" >/dev/null 2>&1
+git -C "$fixture_human" switch --detach "$stale_checkout_sha" >/dev/null 2>&1
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+git -C "$fixture_human" switch --detach "$fixture_tested_sha" >/dev/null 2>&1
+host_root=$(awk -F= '$1 == "root" {print substr($0, 6)}' "$ready")
+printf 'foreign\n' > "$host_root/foreign.txt"
+host_blocked host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ -f "$host_root/foreign.txt" ] || fail 'cleanup deleted an unexpected resource'
+rm "$host_root/foreign.txt"
+ln -s "$fixture_file" "$host_root/foreign-link"
+host_blocked host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ -L "$host_root/foreign-link" ] || fail 'cleanup removed an unowned symlink'
+rm "$host_root/foreign-link"
+blocked cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# Cleanup intent precedes deletion; its receipt is bound into native cleanup evidence.
+host_ok host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST FIXTURE CLEANUP VERIFIED'
+[ ! -e "$host_root" ] && [ ! -L "$host_root" ] || fail 'host root remains after verified cleanup'
+cleanup_receipt=$(host_path cleanup "$fixture_generation")
+[ -f "$cleanup_receipt" ] || fail 'durable host cleanup receipt missing'
+native_cleanup=$(printf '%s/nuinui-github-e2e-cleanup-v1.%s\n' "$git_dir" \
+  "$(printf '%s\n' "$fixture_generation" | shasum -a 256 | awk 'NR == 1 {print $1}')")
+grep -Fqx 'proof=fixture-host-session-cleaned' "$native_cleanup" || fail 'native proof did not bind host cleanup'
+host_ok host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'mutation=no-op'
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION CLEANED'
+
+# host-closure runs host cleanup, native release, then final native closure.
+if ! invoke host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+  cat "$output" >&2
+  fail 'checked host closure failed'
+fi
+cleanup_line=$(grep -n 'HOST FIXTURE ALREADY CLEANED' "$output" | cut -d: -f1)
+release_line=$(grep -n 'NATIVE E2E FIXTURE RELEASED' "$output" | cut -d: -f1)
+closure_line=$(grep -n 'NATIVE E2E FINAL CLOSURE VERIFIED' "$output" | cut -d: -f1)
+[ -n "$cleanup_line" ] && [ -n "$release_line" ] && [ -n "$closure_line" ] &&
+  [ "$cleanup_line" -lt "$release_line" ] && [ "$release_line" -lt "$closure_line" ] ||
+  fail 'host closure stages ran out of order'
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION RELEASED'
+[ ! -e "$(active_path)" ] || fail 'released generation retained active marker'
+[ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] ||
+  fail 'closure left the checkout on a named branch'
+[ -z "$(git -C "$fixture_human" status --porcelain)" ] || fail 'closure left a dirty checkout'
+
+# Safe recovery from an interrupted PREPARING state and a pending cleanup.
+new_fixture one
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+host_failpoint after-host-resources host-prepare "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha" "$fixture_file" 43123
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION PREPARING'
+host_ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST FIXTURE RECOVERED FROM PREPARING'
+contains 'state=CLEANED'
+
+new_fixture one
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+host_failpoint after-host-cleanup-pending host-cleanup "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha"
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION CLEANUP-PENDING'
+host_failpoint after-host-resource-removal host-cleanup "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha"
+host_ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST FIXTURE RECOVERED FROM CLEANUP-PENDING'
+host_ok release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+host_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# A foreign root at the deterministic path is never adopted or removed.
+new_fixture one
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+host_failpoint after-host-intent host-prepare "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha" "$fixture_file" 43123
+orphan_root=$fixture_root/.nuinui-e2e-host-$(printf '%s\n' "$fixture_generation" |
+  shasum -a 256 | awk 'NR == 1 {print $1}')
+mkdir "$orphan_root"
+printf 'foreign\n' > "$orphan_root/foreign.txt"
+before=$(fingerprint)
+blocked host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ -f "$orphan_root/foreign.txt" ] || fail 'unsafe recovery removed foreign root contents'
+[ "$(fingerprint)" = "$before" ] || fail 'unsafe recovery mutated host evidence'
+
+if grep -Eq '(^|[;&|[:space:]])(code|open|kill|pkill|pgrep)([[:space:]]|$)' \
+  "$script_dir/nuinui-e2e-src/host-fixture.sh" \
+  "$script_dir/nuinui-e2e-src/host-session.sh" \
+  "$script_dir/nuinui-e2e-src/host-closure.sh"; then
+  fail 'fixture adapter contains a host-launch or process-control command'
+fi
+
+echo 'HOST SELFTEST PASS'

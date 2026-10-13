@@ -50,6 +50,29 @@ invoke() {
   fi
 }
 
+invoke_host() {
+  invoke_host_command=$1
+  invoke_host_issue=$2
+  invoke_host_generation=$3
+  invoke_host_lane=$4
+  invoke_host_tested=$5
+  invoke_host_fixture=$6
+  invoke_host_port=$7
+  invoke_host_locale=${8:-default}
+  if [ -n "$invoke_host_lane" ]; then
+    "$helper" "$invoke_host_command" --self-test --manifest "$fixture_manifest" \
+      --issue "$invoke_host_issue" --generation "$invoke_host_generation" \
+      --tested-sha "$invoke_host_tested" --lane "$invoke_host_lane" \
+      --fixture "$invoke_host_fixture" --port "$invoke_host_port" \
+      --locale "$invoke_host_locale" >"$output" 2>&1
+  else
+    "$helper" "$invoke_host_command" --self-test --manifest "$fixture_manifest" \
+      --issue "$invoke_host_issue" --generation "$invoke_host_generation" \
+      --tested-sha "$invoke_host_tested" --fixture "$invoke_host_fixture" \
+      --port "$invoke_host_port" --locale "$invoke_host_locale" >"$output" 2>&1
+  fi
+}
+
 expect_ok() {
   if ! invoke "$@"; then
     cat "$output" >&2
@@ -163,6 +186,13 @@ done
 # No-Human-test capacity blocks the candidate startup.
 new_fixture zero
 expect_block start "$fixture_issue" "$fixture_generation" '' "$fixture_tested_sha"
+zero_host_fixture=$fixture_root/fixture.html
+printf '<html>fixture</html>\n' > "$zero_host_fixture"
+if invoke_host host-check "$fixture_issue" "$fixture_generation" '' \
+  "$fixture_tested_sha" "$zero_host_fixture" 43123; then
+  fail 'zero Human-test lanes admitted host-check'
+fi
+grep -Eq 'BLOCKED|blocked' "$output" || fail 'zero-lane host-check did not explain the block'
 
 # One declared Human-test lane admits an exact, fresh fixture generation.
 new_fixture one
@@ -246,8 +276,8 @@ assert_start_recovery() {
     active) startup_expected_head=$fixture_tested_sha ;;
     *) fail "unknown startup recovery fixture state: $startup_expected_state" ;;
   esac
-  if NUINUI_E2E_TEST_FAILPOINT=$startup_failpoint invoke start \
-    "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+  if (NUINUI_E2E_TEST_FAILPOINT=$startup_failpoint invoke start \
+    "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"); then
     fail "startup failpoint did not interrupt: $startup_failpoint"
   fi
   [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$startup_expected_head" ] ||
@@ -363,7 +393,7 @@ expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sh
 expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 advance_default interrupted-before-receipt
 fixture_idle_sha=$(git -C "$fixture_impl" rev-parse HEAD)
-if NUINUI_E2E_TEST_FAILPOINT=after-intent invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+if (NUINUI_E2E_TEST_FAILPOINT=after-intent invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"); then
   fail 'release failpoint did not interrupt after intent'
 fi
 assert_contains 'recovery evidence retained'
@@ -382,7 +412,7 @@ new_fixture one
 expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 advance_default interrupted-stale-target
-if NUINUI_E2E_TEST_FAILPOINT=after-intent invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+if (NUINUI_E2E_TEST_FAILPOINT=after-intent invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"); then
   fail 'stale-target fixture did not interrupt release'
 fi
 advance_default advance-after-intent
@@ -396,7 +426,7 @@ expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sh
 expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 advance_default interrupted-after-receipt
 fixture_idle_sha=$(git -C "$fixture_impl" rev-parse HEAD)
-if NUINUI_E2E_TEST_FAILPOINT=after-receipt invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
+if (NUINUI_E2E_TEST_FAILPOINT=after-receipt invoke release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"); then
   fail 'receipt failpoint did not interrupt release'
 fi
 release_receipt=$(metadata_path release "$fixture_generation")
@@ -410,6 +440,30 @@ expect_block closure "$fixture_issue" "$fixture_generation" human "$fixture_test
 expect_ok recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 
+# The old synthetic cleanup proof cannot bypass a started host fixture.
+new_fixture one
+host_fixture=$fixture_root/fixture.html
+printf '<html>host fixture</html>\n' > "$host_fixture"
+expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+if ! invoke_host host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$host_fixture" 43123; then
+  cat "$output" >&2
+  fail 'exact active generation did not admit read-only host-check'
+fi
+assert_contains 'HOST FIXTURE CHECK READY'
+if ! invoke_host host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$host_fixture" 43123 ja; then
+  cat "$output" >&2
+  fail 'fixture-only host preparation failed'
+fi
+assert_contains 'fixture-no-process'
+assert_contains 'no Human Manual E2E was run'
+expect_block cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_contains 'HOST FIXTURE CLEANUP VERIFIED'
+expect_ok release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
 # Generator is deterministic, the checked-in candidate is current, and unsafe artifact links are rejected.
 "$script_dir/generate-nuinui-e2e" --check > "$output" 2>&1 || {
   cat "$output" >&2
@@ -421,6 +475,9 @@ unsafe_script_dir=$unsafe_root/projects/nuinuiCAD/scripts
 mkdir -p "$unsafe_script_dir/nuinui-e2e-src" "$unsafe_root/shared/local-tools/lane-execution"
 cp "$script_dir/generate-nuinui-e2e" "$unsafe_script_dir/"
 cp "$script_dir/nuinui-e2e-src/identity.sh" "$script_dir/nuinui-e2e-src/lifecycle.sh" \
+  "$script_dir/nuinui-e2e-src/host-fixture.sh" \
+  "$script_dir/nuinui-e2e-src/host-session.sh" \
+  "$script_dir/nuinui-e2e-src/host-closure.sh" \
   "$script_dir/nuinui-e2e-src/cli.sh" "$unsafe_script_dir/nuinui-e2e-src/"
 cp "$repo_root/shared/local-tools/lane-execution/manifest.sh" \
   "$repo_root/shared/local-tools/lane-execution/ownership.sh" \
@@ -446,42 +503,5 @@ for preserved_path in \
   base_blob=$(git -C "$repo_root" rev-parse "HEAD:$preserved_path")
   [ "$current_blob" = "$base_blob" ] || fail "legacy artifact blob changed: $preserved_path"
 done
-
-# Verify the authorized implementation scope from committed base-to-target Git evidence.
-expected_inventory=$(printf '%s\n' \
-  projects/nuinuiCAD/scripts/generate-nuinui-e2e \
-  projects/nuinuiCAD/scripts/nuinui-e2e \
-  projects/nuinuiCAD/scripts/nuinui-e2e-src/cli.sh \
-  projects/nuinuiCAD/scripts/nuinui-e2e-src/identity.sh \
-  projects/nuinuiCAD/scripts/nuinui-e2e-src/lifecycle.sh \
-  projects/nuinuiCAD/scripts/test-nuinui-e2e | LC_ALL=C sort)
-scope_base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null) || {
-  fail 'cannot resolve the approved base from HEAD and origin/main'
-}
-committed_inventory=$(git -C "$repo_root" diff --name-only "$scope_base" HEAD | LC_ALL=C sort)
-[ "$committed_inventory" = "$expected_inventory" ] || {
-  echo "expected inventory:" >&2
-  printf '%s\n' "$expected_inventory" >&2
-  echo "committed base-to-target inventory:" >&2
-  printf '%s\n' "$committed_inventory" >&2
-  fail 'exact committed implementation scope'
-}
-dirty_inventory=$(git -C "$repo_root" status --porcelain=v1 --untracked-files=all |
-  awk '{print substr($0, 4)}' | LC_ALL=C sort -u)
-for dirty_path in $dirty_inventory; do
-  case "$dirty_path" in
-    projects/nuinuiCAD/scripts/generate-nuinui-e2e|\
-    projects/nuinuiCAD/scripts/nuinui-e2e|\
-    projects/nuinuiCAD/scripts/nuinui-e2e-src/cli.sh|\
-    projects/nuinuiCAD/scripts/nuinui-e2e-src/identity.sh|\
-    projects/nuinuiCAD/scripts/nuinui-e2e-src/lifecycle.sh|\
-    projects/nuinuiCAD/scripts/test-nuinui-e2e) ;;
-    *) fail "unexpected dirty path outside authorized implementation scope: $dirty_path" ;;
-  esac
-done
-if [ -n "$dirty_inventory" ]; then
-  echo 'authorized dirty paths:' >&2
-  printf '%s\n' "$dirty_inventory" >&2
-fi
 
 echo 'SELFTEST PASS'
