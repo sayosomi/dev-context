@@ -3385,9 +3385,29 @@ nuinui_e2e_host__verify_released_history() (
   nuinui_e2e_host_history_payload=
   nuinui_e2e_host_history_root_identity=
   nuinui_e2e_host_history_cleanup_handoff_sha=
+  nuinui_e2e_host_history_has_handoff=no
+  nuinui_e2e_host_history_has_ready=no
+  nuinui_e2e_host_history_handoff=$(nuinui_e2e_host__metadata_path \
+    "$nuinui_e2e_expected_repo" handoff) || exit 1
+  nuinui_e2e_host_history_ready=$(nuinui_e2e_host__metadata_path \
+    "$nuinui_e2e_expected_repo" ready) || exit 1
+  if nuinui_e2e__exists "$nuinui_e2e_host_history_handoff"; then
+    nuinui_e2e_host_history_has_handoff=yes
+  fi
+  if nuinui_e2e__exists "$nuinui_e2e_host_history_ready"; then
+    nuinui_e2e_host_history_has_ready=yes
+  fi
+  [ "$nuinui_e2e_host_history_has_ready" = no ] ||
+    [ "$nuinui_e2e_host_history_has_handoff" = yes ] || exit 1
   for nuinui_e2e_host_history_kind in intent handoff ready cleanup-pending cleanup; do
     nuinui_e2e_host_history_path=$(nuinui_e2e_host__metadata_path \
       "$nuinui_e2e_expected_repo" "$nuinui_e2e_host_history_kind") || exit 1
+    if ! nuinui_e2e__exists "$nuinui_e2e_host_history_path"; then
+      case "$nuinui_e2e_host_history_kind" in
+        handoff|ready) continue ;;
+        *) exit 1 ;;
+      esac
+    fi
     nuinui_e2e__regular "$nuinui_e2e_host_history_path" || exit 1
     nuinui_e2e_host__read_record "$nuinui_e2e_host_history_path" \
       "$nuinui_e2e_host_history_kind" historical || exit 1
@@ -3408,7 +3428,6 @@ nuinui_e2e_host__verify_released_history() (
     if [ "$nuinui_e2e_host_history_kind" = intent ]; then
       [ "$nuinui_e2e_host_r_root_identity" = pending ] || exit 1
     else
-      [ "$nuinui_e2e_host_r_root_identity" != pending ] || exit 1
       if [ -z "$nuinui_e2e_host_history_root_identity" ]; then
         nuinui_e2e_host_history_root_identity=$nuinui_e2e_host_r_root_identity
       else
@@ -3421,14 +3440,22 @@ nuinui_e2e_host__verify_released_history() (
     fi
   done
   [ -n "$nuinui_e2e_host_history_root_identity" ] || exit 1
+  if [ "$nuinui_e2e_host_history_root_identity" = pending ]; then
+    [ "$nuinui_e2e_host_history_has_handoff" = no ] &&
+      [ "$nuinui_e2e_host_history_has_ready" = no ] || exit 1
+  fi
   nuinui_e2e_host_history_root=$(nuinui_e2e_host__root_for \
     "$nuinui_e2e_host_history_generation") || exit 1
   [ ! -e "$nuinui_e2e_host_history_root" ] &&
     [ ! -L "$nuinui_e2e_host_history_root" ] || exit 1
-  nuinui_e2e_host_history_handoff=$(nuinui_e2e_host__metadata_path \
-    "$nuinui_e2e_expected_repo" handoff) || exit 1
+  if [ "$nuinui_e2e_host_history_has_handoff" = yes ]; then
+    nuinui_e2e_host_history_expected_handoff_sha=$(nuinui_e2e__sha256 \
+      "$nuinui_e2e_host_history_handoff") || exit 1
+  else
+    nuinui_e2e_host_history_expected_handoff_sha=none
+  fi
   [ "$nuinui_e2e_host_history_cleanup_handoff_sha" = \
-    "$(nuinui_e2e__sha256 "$nuinui_e2e_host_history_handoff")" ] || exit 1
+    "$nuinui_e2e_host_history_expected_handoff_sha" ] || exit 1
 
   nuinui_e2e_host_history_starting=$(nuinui_e2e__path_for \
     "$nuinui_e2e_expected_repo" starting) || exit 1
