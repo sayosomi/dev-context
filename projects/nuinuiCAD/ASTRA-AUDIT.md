@@ -19,6 +19,8 @@ The reservation-free route is the normal route for new GitHub-native evaluator a
 
 Neither Sol nor Astra implements fixes.
 
+ChatGPT reads the latest dev-context Project Context and relevant audit policy before writing a Sol audit prompt, then supplies a self-contained execution contract. Do not routinely send Sol to repeat general dev-context policy research already completed by ChatGPT. This does not waive mandatory current README checks, clarification of missing or conflicting rules, or Sol's own checkout admission, product source/spec verification, audit execution, and evidence duties.
+
 ## Default Sol first pass
 
 All new bounded evaluator exploration starts with GPT-6.1 Sol at High reasoning unless the Human explicitly overrides the model for a particular run.
