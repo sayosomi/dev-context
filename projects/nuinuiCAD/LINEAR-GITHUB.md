@@ -84,6 +84,7 @@ review=PASS
 - `review=PASS`はChatGPTが**そのexact HEADのblocking reviewを実施しPASSと判断した**旨のattestationであり、文字列自体がreviewの代替になるわけではない。commentは`sayosomi`本人のowner権限から投稿する。実装Agentや未検証のPR投稿者へこのcommentを委譲しない。
 - 対象は`sayosomi/nuinuiCAD`のopen / non-draft、base=`main`、head / baseがsame repositoryのPR。current authoritative `main`が`base`にexact一致し、reviewed HEADがcurrent `main`をancestorとして取り込んでいること、mergeabilityがunambiguous、既存reservationがないことを確認する。単なるPRの`baseRefOid`はcurrent-main freshness proofとみなさない。
 - required protectionはGitHub Actions Appの`CI`であり、reviewed HEADに対応するpull_request CI runがqueued / in_progressかつfailureなし、required aggregatorも未完了であることを確認する。CI runの多重性、check / job状態、head、main、GitHub API、permissionに曖昧さがあればfail closedする。
+  集約 `CI` チェックが未作成でも、対象HEADのCIが進行中で既存の安全条件を満たしていれば自動マージを予約し、チェック未作成だけを理由にHumanへ差し戻さない。
 - owner commentで`.github/workflows/auto-merge-reviewed.yml`が動く。workflowがmutation直前にも上記identity・main・required CIを再検証し、`enablePullRequestAutoMerge(expectedHeadOid, mergeMethod: MERGE)`で**予約だけ**を行う。workflowは`mergePullRequest`、`gh pr merge --auto`、admin / force / bypassや直接mergeへのfallbackを使わない。
 - Actionsの成功outputとfreshなPR read-backの両方で`auto_merge.merge_method=merge`および`enabled_by=github-actions[bot]`を証明できた場合だけ「予約完了」とする。comment投稿やworkflow開始だけでは予約成功と呼ばない。失敗・途中state・予期しないreservationは原因を確認するまで再投稿/取消/置換しない。
 - **blocking review時点でrequired CIがすべてsuccess**なら予約commentを投稿せず、PR / exact HEAD / fresh main / drift / required CI / mergeability / authorizationを改めて確認し、ordinary merge routeで進める。CI失敗・unresolved / canceled / skippedならmergeしない。必要なcheckが未証明なら停止する。
