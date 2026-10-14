@@ -24,6 +24,8 @@ fixture_direct_pid_file=
 output=
 foreign_pid=
 fake_pid=
+host_test_root_mode=fixture
+host_test_home=
 
 cleanup() {
   cleanup_status=$?
@@ -56,7 +58,7 @@ cleanup() {
       cleanup_preserve_fixture=yes
     fi
     if [ "$cleanup_preserve_fixture" = no ]; then
-      find "$fixture_root" -maxdepth 1 -type d -name '.nuinui-e2e-host-*' -print |
+      find "$fixture_root" -type d -name '.nuinui-e2e-host-*' -print |
         while IFS= read -r cleanup_host_root; do
           chmod -R u+rwx "$cleanup_host_root" 2>/dev/null || true
         done
@@ -80,6 +82,8 @@ contains() { grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"
 
 new_fixture() {
   mode=$1
+  host_test_root_mode=fixture
+  host_test_home=
   if [ -n "$fake_pid" ]; then
     fail 'previous fake process is still recorded; refusing to signal it outside adapter cleanup'
   fi
@@ -337,14 +341,26 @@ invoke() {
     set -- "$@" --fixture "$host_fixture_arg" --port "$host_port_arg" \
       --locale "$host_locale_arg" --adapter "$host_adapter_arg"
   fi
-  env NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
-    NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
-    NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
-    NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
-    NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
-    NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
-    NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
-    "$helper" "$@" > "$output" 2>&1
+  if [ "$host_test_root_mode" = production ]; then
+    env HOME="$host_test_home" NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT=yes \
+      NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
+      NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+      NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
+      NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
+      NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+      NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
+      NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
+      "$helper" "$@" > "$output" 2>&1
+  else
+    env NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
+      NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+      NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
+      NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
+      NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+      NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
+      NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
+      "$helper" "$@" > "$output" 2>&1
+  fi
 }
 
 invoke_host() {
@@ -374,6 +390,15 @@ blocked() {
     fail "command unexpectedly succeeded: $1"
   fi
   grep -Eq 'BLOCKED|blocked|ERROR:' "$output" || fail "refusal was unexplained: $1"
+}
+
+host_failpoint() {
+  failpoint=$1
+  shift
+  if ( NUINUI_E2E_TEST_FAILPOINT=$failpoint invoke_host "$@" ); then
+    fail "host failpoint did not interrupt: $failpoint"
+  fi
+  contains 'interruption'
 }
 
 start_test_listener() {
@@ -416,9 +441,38 @@ host_path() {
     "$(printf '%s\n' "$generation" | shasum -a 256 | awk 'NR == 1 {print $1}')"
 }
 
+released_history_fingerprint() {
+  history_generation=$1
+  {
+    for history_kind in intent handoff ready cleanup-pending cleanup; do
+      history_record=$(host_path "$history_kind" "$history_generation")
+      if [ -f "$history_record" ]; then
+        printf 'host:%s=' "$history_kind"
+        shasum -a 256 "$history_record" | awk 'NR == 1 {print $1}'
+      else
+        printf 'host:%s=ABSENT\n' "$history_kind"
+      fi
+    done
+    for history_kind in cleanup release starting releasing; do
+      history_record=$(native_path "$history_kind" "$history_generation")
+      if [ -f "$history_record" ]; then
+        printf 'native:%s=' "$history_kind"
+        shasum -a 256 "$history_record" | awk 'NR == 1 {print $1}'
+      else
+        printf 'native:%s=ABSENT\n' "$history_kind"
+      fi
+    done
+  } | shasum -a 256 | awk 'NR == 1 {print $1}'
+}
+
 host_root_path() {
-  printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \
-    "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+  if [ "$host_test_root_mode" = production ]; then
+    printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%s\n' "$host_test_home" \
+      "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+  else
+    printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \
+      "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+  fi
 }
 
 fingerprint() {
@@ -851,6 +905,98 @@ blocked admit "$fixture_issue" vscode-next-generation-0004 human "$fixture_teste
 assert_no_mutation
 ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+
+# The isolated VS Code adapter uses a private HOME-backed production-root
+# layout in fixture mode, and its normal closure/recovery lifecycle is intact.
+new_fixture one
+host_test_root_mode=production
+host_test_home=$fixture_root/private-home
+mkdir -m 0700 "$host_test_home" || fail 'production-root VS Code test HOME'
+fixture_generation=vscode-production-root-0007
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+contains 'HOST SESSION READY (adapter=vscode-isolated'
+production_root=$(host_root_path "$fixture_generation")
+production_parent=$host_test_home/.nuinuicad/e2e-hosts
+[ "$(stat -f '%Lp' "$production_parent")" = 700 ] ||
+  fail 'VS Code production host parent mode is not 0700'
+[ "$(stat -f '%Lp' "$production_root")" = 700 ] ||
+  fail 'VS Code production generation root mode is not 0700'
+[ "$(stat -f '%u' "$production_root")" = "$(command id -u)" ] ||
+  fail 'VS Code production generation root is not owned by the current user'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+[ ! -e "$production_root" ] && [ ! -L "$production_root" ] ||
+  fail 'VS Code production-root closure left its generation directory'
+
+# Convert this disposable, fully released VS Code generation to the previous
+# implementation's /.nuinui-e2e-host-<hash> metadata. Rebind cleanup hashes to
+# the exact fixture records, then prove a later admission reads those records
+# without changing them. No legacy filesystem root is created.
+legacy_root=$(printf '/.nuinui-e2e-host-%s\n' \
+  "$(printf '%s\n' "$fixture_generation" | shasum -a 256 | awk 'NR == 1 {print $1}')")
+[ ! -e "$legacy_root" ] && [ ! -L "$legacy_root" ] ||
+  fail 'legacy production root unexpectedly exists before history fixture setup'
+for history_kind in intent handoff ready cleanup-pending cleanup; do
+  history_record=$(host_path "$history_kind" "$fixture_generation")
+  [ -f "$history_record" ] || continue
+  history_tmp=$history_record.legacy-fixture
+  awk -F= -v root="$legacy_root" \
+    '$1 == "root" {print "root=" root; next} {print}' \
+    "$history_record" > "$history_tmp" || fail 'legacy VS Code history root rewrite'
+  chmod 600 "$history_tmp"
+  mv "$history_tmp" "$history_record"
+done
+history_handoff_sha=$(shasum -a 256 "$(host_path handoff "$fixture_generation")" |
+  awk 'NR == 1 {print $1}')
+history_cleanup_record=$(host_path cleanup "$fixture_generation")
+history_cleanup_tmp=$history_cleanup_record.legacy-fixture
+awk -F= -v sha="$history_handoff_sha" \
+  '$1 == "cleanup_handoff_sha256" {print "cleanup_handoff_sha256=" sha; next} {print}' \
+  "$history_cleanup_record" > "$history_cleanup_tmp" || fail 'legacy VS Code handoff proof rebinding'
+chmod 600 "$history_cleanup_tmp"
+mv "$history_cleanup_tmp" "$history_cleanup_record"
+history_native_cleanup=$(native_path cleanup "$fixture_generation")
+history_host_cleanup_sha=$(shasum -a 256 "$history_cleanup_record" |
+  awk 'NR == 1 {print $1}')
+history_native_cleanup_tmp=$history_native_cleanup.legacy-fixture
+awk -F= -v sha="$history_host_cleanup_sha" \
+  '$1 == "host_cleanup_sha256" {print "host_cleanup_sha256=" sha; next} {print}' \
+  "$history_native_cleanup" > "$history_native_cleanup_tmp" || fail 'legacy VS Code native cleanup proof rebinding'
+chmod 600 "$history_native_cleanup_tmp"
+mv "$history_native_cleanup_tmp" "$history_native_cleanup"
+legacy_history_records=$(released_history_fingerprint "$fixture_generation")
+
+advance_default vscode-production-after-legacy-history
+fixture_generation=vscode-production-after-legacy-0008
+prepare_generation "$fixture_generation"
+contains 'NATIVE E2E FIXTURE STARTED'
+[ "$(released_history_fingerprint vscode-production-root-0007)" = \
+  "$legacy_history_records" ] || fail 'legacy VS Code history changed during later admission'
+ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION ABSENT'
+
+# Continue the still-active generation through the interrupted production-root
+# preparation so its native lifecycle can be closed with exact evidence.
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+host_failpoint after-host-intent host-prepare "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha" "$fixture_file" \
+  "$fixture_port" default vscode-isolated
+contains 'interruption after PREPARING intent'
+ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION PREPARING'
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION RECOVERED FROM PREPARING'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+[ ! -e "$(host_root_path "$fixture_generation")" ] ||
+  fail 'recovered VS Code production root remains'
 
 test_zero_human_lanes
 echo 'VSCODE HOST SELFTEST PASS (fixture-only; no Visual Studio Code application launched)'

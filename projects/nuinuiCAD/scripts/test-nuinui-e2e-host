@@ -13,12 +13,14 @@ fixture_issue=sayosomi/nuinuiCAD#268
 fixture_generation=host-fixture-gen-0001
 fixture_file=
 output=
+host_test_root_mode=fixture
+host_test_home=
 
 cleanup() {
   cleanup_status=$?
   trap - EXIT HUP INT TERM
   if [ -n "$fixture_root" ] && [ -d "$fixture_root" ]; then
-    find "$fixture_root" -maxdepth 1 -type d -name '.nuinui-e2e-host-*' -print |
+    find "$fixture_root" -type d -name '.nuinui-e2e-host-*' -print |
       while IFS= read -r cleanup_host_root; do
         chmod u+rwx "$cleanup_host_root" 2>/dev/null || true
       done
@@ -38,6 +40,8 @@ contains() { grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"
 
 new_fixture() {
   mode=$1
+  host_test_root_mode=fixture
+  host_test_home=
   [ -z "$fixture_root" ] || rm -rf "$fixture_root"
   fixture_root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-e2e-fixture.XXXXXX") || fail 'temporary root'
   fixture_root=$(realpath "$fixture_root") || fail 'canonical temporary root'
@@ -73,6 +77,22 @@ new_fixture() {
   } > "$fixture_manifest"
 }
 
+new_production_root_fixture() {
+  new_fixture one
+  host_test_root_mode=production
+  host_test_home=$fixture_root/private-home
+  mkdir -m 0700 "$host_test_home" || fail 'production-root test HOME'
+}
+
+call_helper() {
+  if [ "$host_test_root_mode" = production ]; then
+    env HOME="$host_test_home" NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT=yes \
+      "$helper" "$@"
+  else
+    "$helper" "$@"
+  fi
+}
+
 advance_default() {
   printf 'advance %s\n' "$1" >> "$fixture_impl/fixture.txt"
   git -C "$fixture_impl" add fixture.txt
@@ -88,11 +108,11 @@ invoke() {
   lane=$4
   tested=$5
   if [ -n "$lane" ]; then
-    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+    call_helper "$command_name" --self-test --manifest "$fixture_manifest" \
       --issue "$issue" --generation "$generation" --tested-sha "$tested" \
       --lane "$lane" >"$output" 2>&1
   else
-    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+    call_helper "$command_name" --self-test --manifest "$fixture_manifest" \
       --issue "$issue" --generation "$generation" --tested-sha "$tested" \
       >"$output" 2>&1
   fi
@@ -109,21 +129,21 @@ invoke_host() {
     port=$7
     locale=${8:-default}
     if [ -n "$lane" ]; then
-      "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+      call_helper "$command_name" --self-test --manifest "$fixture_manifest" \
         --issue "$issue" --generation "$generation" --tested-sha "$tested" \
         --lane "$lane" --fixture "$fixture" --port "$port" --locale "$locale" \
         >"$output" 2>&1
     else
-      "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+      call_helper "$command_name" --self-test --manifest "$fixture_manifest" \
         --issue "$issue" --generation "$generation" --tested-sha "$tested" \
         --fixture "$fixture" --port "$port" --locale "$locale" >"$output" 2>&1
     fi
   elif [ -n "$lane" ]; then
-    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+    call_helper "$command_name" --self-test --manifest "$fixture_manifest" \
       --issue "$issue" --generation "$generation" --tested-sha "$tested" \
       --lane "$lane" >"$output" 2>&1
   else
-    "$helper" "$command_name" --self-test --manifest "$fixture_manifest" \
+    call_helper "$command_name" --self-test --manifest "$fixture_manifest" \
       --issue "$issue" --generation "$generation" --tested-sha "$tested" \
       >"$output" 2>&1
   fi
@@ -188,8 +208,13 @@ native_path() {
 }
 
 host_root_path() {
-  printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \
-    "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+  if [ "$host_test_root_mode" = production ]; then
+    printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%s\n' "$host_test_home" \
+      "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+  else
+    printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \
+      "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+  fi
 }
 
 host_generation_fingerprint() {
@@ -247,7 +272,7 @@ complete_recovered_generation() {
 }
 
 host_root_inventory() {
-  find "$fixture_root" -maxdepth 1 -name '.nuinui-e2e-host-*' -print |
+  find "$fixture_root" -name '.nuinui-e2e-host-*' -print |
     LC_ALL=C sort | while IFS= read -r inventory_root; do
       [ -n "$inventory_root" ] || continue
       if [ -L "$inventory_root" ]; then
@@ -472,6 +497,10 @@ contains 'HOST SESSION RELEASED'
 [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] ||
   fail 'closure left the checkout on a named branch'
 [ -z "$(git -C "$fixture_human" status --porcelain)" ] || fail 'closure left a dirty checkout'
+case "$(host_root_path "$fixture_generation")" in
+  "$fixture_root"/.nuinui-e2e-host-*) ;;
+  *) fail 'self-test host root no longer uses its disposable fixture root' ;;
+esac
 
 # A completed generation remains historical evidence while the same lane starts B.
 # Its external fixture may be gone after closure; its durable cleanup/release proof remains.
@@ -616,6 +645,117 @@ before=$(fingerprint)
 blocked host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 [ -f "$orphan_root/foreign.txt" ] || fail 'unsafe recovery removed foreign root contents'
 [ "$(fingerprint)" = "$before" ] || fail 'unsafe recovery mutated host evidence'
+
+# Production host roots use the private HOME parent; PREPARING recovery and
+# completed history must preserve exact generation evidence.
+new_production_root_fixture
+fixture_generation=host-production-root-0001
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+production_parent=$host_test_home/.nuinuicad/e2e-hosts
+production_root=$(host_root_path "$fixture_generation")
+host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+contains "root=$production_root"
+[ "$(stat -f '%Lp' "$production_parent")" = 700 ] ||
+  fail 'production host parent mode is not 0700'
+[ "$(stat -f '%Lp' "$production_root")" = 700 ] ||
+  fail 'production generation root mode is not 0700'
+[ "$(stat -f '%u' "$production_root")" = "$(id -u)" ] ||
+  fail 'production generation root is not owned by the current user'
+if ! invoke host-closure "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha"; then
+  cat "$output" >&2
+  fail 'production-root host closure failed'
+fi
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+[ ! -e "$production_root" ] && [ ! -L "$production_root" ] ||
+  fail 'production-root closure left a generation directory'
+
+advance_default after-production-root-closure
+fixture_generation=host-production-preparing-0002
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+host_failpoint after-host-intent host-prepare "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha" "$fixture_file" 43123
+production_preparing_intent=$(host_path intent "$fixture_generation")
+production_preparing_root=$(host_root_path "$fixture_generation")
+grep -Fqx "root=$production_preparing_root" "$production_preparing_intent" ||
+  fail 'production PREPARING intent did not record the HOME host root'
+[ ! -e "$production_preparing_root" ] && [ ! -L "$production_preparing_root" ] ||
+  fail 'interrupted production PREPARING intent created an unowned root'
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION PREPARING'
+host_ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST FIXTURE RECOVERED FROM PREPARING'
+host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+
+# A legacy / root record without exact completed cleanup and release evidence
+# is never accepted as an active or recoverable production host session.
+new_production_root_fixture
+fixture_generation=host-production-legacy-active-0001
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+host_failpoint after-host-intent host-prepare "$fixture_issue" \
+  "$fixture_generation" human "$fixture_tested_sha" "$fixture_file" 43123
+active_intent=$(host_path intent "$fixture_generation")
+active_legacy_root=$(printf '/.nuinui-e2e-host-%s\n' \
+  "$(printf '%s\n' "$fixture_generation" | shasum -a 256 | awk 'NR == 1 {print $1}')")
+active_intent_tmp=$active_intent.legacy-fixture
+awk -F= -v root="$active_legacy_root" \
+  '$1 == "root" {print "root=" root; next} {print}' \
+  "$active_intent" > "$active_intent_tmp" || fail 'active legacy-root fixture setup'
+chmod 600 "$active_intent_tmp"
+mv "$active_intent_tmp" "$active_intent"
+before=$(fingerprint)
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ "$(fingerprint)" = "$before" ] || fail 'active legacy-root record was mutated during refusal'
+
+# Parent attacks and an existing generation path fail before publishing intent.
+new_production_root_fixture
+fixture_generation=host-production-symlink-parent-0001
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+mkdir -m 0700 "$fixture_root/foreign-home-target"
+ln -s "$fixture_root/foreign-home-target" "$host_test_home/.nuinuicad"
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+[ ! -e "$(host_path intent "$fixture_generation")" ] ||
+  fail 'symlink parent was rejected after publishing PREPARING intent'
+[ -L "$host_test_home/.nuinuicad" ] || fail 'symlink parent was removed during refusal'
+
+new_production_root_fixture
+fixture_generation=host-production-insecure-parent-0001
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+mkdir -m 0700 "$host_test_home/.nuinuicad"
+mkdir -m 0755 "$host_test_home/.nuinuicad/e2e-hosts"
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+[ ! -e "$(host_path intent "$fixture_generation")" ] ||
+  fail 'insecure production parent was rejected after PREPARING intent'
+
+new_production_root_fixture
+fixture_generation=host-production-preexisting-root-0001
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+mkdir -m 0700 "$host_test_home/.nuinuicad"
+mkdir -m 0700 "$host_test_home/.nuinuicad/e2e-hosts"
+preexisting_root=$(host_root_path "$fixture_generation")
+ln -s "$fixture_file" "$preexisting_root"
+before=$(fingerprint)
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+[ ! -e "$(host_path intent "$fixture_generation")" ] ||
+  fail 'preexisting production root was rejected after PREPARING intent'
+[ -L "$preexisting_root" ] || fail 'preexisting generation symlink was removed'
+[ "$(fingerprint)" = "$before" ] || fail 'preexisting generation root changed on refusal'
+
+new_production_root_fixture
+fixture_generation=host-production-readonly-home-0001
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+chmod 0500 "$host_test_home"
+if [ ! -w "$host_test_home" ]; then
+  host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$fixture_file" 43123
+  [ ! -e "$(host_path intent "$fixture_generation")" ] ||
+    fail 'read-only HOME was rejected after publishing PREPARING intent'
+fi
 
 if grep -Eq '(^|[;&|[:space:]])(code|open|kill|pkill|pgrep)([[:space:]]|$)' \
   "$script_dir/nuinui-e2e-src/host-fixture.sh" \
