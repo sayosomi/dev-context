@@ -91,7 +91,7 @@ Humanはtested stateやoracleを設計しない。Human terminal stepはChatGPT�
 
 ## Human terminal setup contract
 
-Compatible pre-existing SAY Manual E2Eのhost-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。GitHub-native Issue pathは、別途activation checkpointが記録された後にだけ、canonical `nuinui-e2e --production` lifecycleを使う。
+Compatible pre-existing SAY Manual E2Eのhost-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。GitHub-native Issue pathのうち、dev-context #286でHuman承認済みのbounded real-host pilotでは、review / merge / authoritative read-back / guarded sync、登録済みHuman-test checkout、fresh production admissionを満たした場合に限り、general activationより前でもcanonical `nuinui-e2e --production` lifecycleを使える。通常のGitHub-native Manual E2E運用では、別途general native activation checkpointが必要である。
 
 current local dev-context cloneでhelperが利用可能でcurrent operationをsupportしている場合:
 
@@ -113,7 +113,7 @@ The helper resolves fresh lane, tested ref, and E2E root from local marker/sessi
 
 helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
 
-Native production `nuinui-e2e`では手書きlauncherへのfallbackを行わない。`host-check` / `host-prepare`は既存 `npm run dogfood:build` ownerが作るexact SHAのimmutable snapshotと署名済みMicrosoft VS Codeだけを使う。Buildはdogfood ownerのclean `main` gateで行い、別のartifact-generation systemを作らない。`host-prepare`のreadinessはHumanへのhandoff準備であり、Manual E2E resultではない。Issue #286のreview / merge / read-back、Human checkout registration、explicit activation checkpointが完了するまではnative production pathを実行しない。
+Native production `nuinui-e2e`では手書きlauncherへのfallbackを行わない。`host-check` / `host-prepare`は既存 `npm run dogfood:build` ownerが作るexact SHAのimmutable snapshotと署名済みMicrosoft VS Codeだけを使う。Buildはdogfood ownerのclean `main` gateで行い、別のartifact-generation systemを作らない。`host-prepare`のreadinessはHumanへのhandoff準備であり、Manual E2E resultではない。Issue #286のreview / merge / read-back / guarded syncとHuman checkout registrationは完了済みだが、各bounded pilotではcurrent IssueのHuman承認、fresh exact-SHA production admission、immutable artifact / signed VS Code / host ownershipの検証を省略しない。一般native Manual E2Eのactivation checkpointは実際のHuman GUI PASS、独立したhost / checkout closure、別途明示された有効化判断の後にだけ成立する。この一般activation gateは承認済みbounded pilotの開始を禁止せず、pilot承認を一般有効化やHuman E2E PASSとみなさない。
 
 fallback inline setupが必要な場合も、Human向け準備は可能な限り**1つのcopy/paste block**へまとめる。
 

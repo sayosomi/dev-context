@@ -44,9 +44,11 @@ candidate source / edit / test / promotionは次のpersistent single-track devel
 ChatGPTが承認済みdev-context create / update / deleteをGitHubへ反映した場合、GitHub authoritative read-backで確定したexpected valuesを使い、versioned helperでlocal cloneを同期する。
 
 ```bash
-nuinui context-audit <expected-main> <expected-artifact-blob>
-nuinui context-sync <expected-main> <expected-artifact-blob>
+nuinui-context context-audit <expected-main> <expected-artifact-blob>
+nuinui-context context-sync <expected-main> <expected-artifact-blob>
 ```
+
+`<expected-artifact-blob>` is the `projects/nuinuiCAD/scripts/nuinui-context` blob at the expected authoritative `main`; the standalone helper checks its installed executable identity separately. The legacy `nuinui` helper and its own expected blob / result store remain available for compatible SAY operations. Do not substitute those identities for current context operations.
 
 cloneがないことが分かっている場合だけ初回cloneを案内する。
 
@@ -54,7 +56,8 @@ cloneがないことが分かっている場合だけ初回cloneを案内する�
 git clone https://github.com/sayosomi/dev-context.git /Users/yosomi/Code/dev-context
 ```
 
-Humanが実行する前にlocal sync済みとみなさない。versioned helperが未install、stale、broken、またはcurrent operationをsupportしていない場合だけ、同じGitHub read-backとmanual safety checkを満たしたfallbackとして次を提示する。
+Humanが実行する前にlocal sync済みとみなさない。The pre-activation `nuinui` bootstrap and `git pull --ff-only` fallback are retained as historical compatibility guidance; current standalone operations use `nuinui-context` and do not fall back automatically after a failed or ambiguous operation.
+Historical pre-activation fallback (not the current standalone route):
 
 ```bash
 git -C /Users/yosomi/Code/dev-context pull --ff-only
@@ -62,9 +65,9 @@ git -C /Users/yosomi/Code/dev-context pull --ff-only
 
 local cloneがdirty、`main`以外、またはfast-forward不可能ならreset / stash / forceせず`BLOCKED:`で停止する。
 
-## Standalone context CLI migration — activation pending
+## Standalone context CLI — active independent route
 
-`nuinui-context` is a standalone executable whose sole role is the independent dev-context context operations: standard-clone audit and guarded sync, persistent dev-context worktree audit and guarded transition, context checks, and its own result read-back. It does not own nuinuiCAD implementation lifecycle, audit reservations, or E2E operations. Its implementation is being completed under dev-context [Issue #286](https://github.com/sayosomi/dev-context/issues/286); the production route remains on `nuinui` until merge, authoritative read-back, guarded bootstrap sync, independent canary, and a separate activation checkpoint.
+`nuinui-context` is the active standalone executable for independent dev-context operations: standard-clone audit and guarded sync, persistent dev-context worktree audit and guarded transition, context checks, and its own result read-back. It does not own nuinuiCAD implementation lifecycle, audit reservations, or E2E operations. The route was explicitly activated under historical dev-context [#268](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6137262760); its standalone implementation and actual standard/development checkout operations were independently verified under [#286](https://github.com/sayosomi/dev-context/issues/286). Current operation requires fresh exact artifact / installed executable identity checks. Policy wording changes do not restart the accepted activation or canary gates; live operations still verify artifact and installed-executable identity.
 
 The standalone command surface is:
 
@@ -78,19 +81,19 @@ nuinui-context context-check
 nuinui-context last-result
 ```
 
-`nuinui context-audit/context-sync` continues to expect the blob for `projects/nuinuiCAD/scripts/nuinui`. `nuinui-context context-audit/context-sync` expects the blob for `projects/nuinuiCAD/scripts/nuinui-context` at the expected authoritative revision. Resolve each from current GitHub `main`; do not pass one executable's blob to the other helper.
+The legacy `nuinui context-audit/context-sync` continues to expect the blob for `projects/nuinuiCAD/scripts/nuinui`; it remains available for compatible SAY work. Current independent context operations use `nuinui-context context-audit/context-sync`, with the separate `projects/nuinuiCAD/scripts/nuinui-context` blob from fresh authoritative `main`. Resolve the active helper's expected blob from current GitHub `main`; do not pass one executable's blob to the other helper.
 
 The standalone commands separately report the installed executable identity and Git artifact identity. A read-only audit shows the caller's expected artifact blob, local checked-in blob, and installed executable blob. A behind standard clone may have a local artifact blob different from the caller's expected target. Guarded `context-sync` verifies the expected target blob after fetch and the artifact blob again after fast-forward. `context-check` also requires the installed executable at the canonical standard-clone path to match its checked-in blob.
 
-Activation requires merge and authoritative read-back, standard-clone synchronization through the existing production `nuinui` bootstrap route, an independent read-only canary of the real standard / development checkouts and candidate identities, and a separate explicit checkpoint in dev-context #286. Merge or sync alone does not activate the candidate.
+The current standalone route is active under the #268 checkpoint and its #286 operation verification. Subsequent guarded standard-clone syncs use `nuinui-context` with its own expected Git artifact blob and separately verified installed executable. The pre-activation `nuinui` bootstrap sequence is historical; it is not the current route.
 
-Keep the existing production `nuinui` as the bootstrap tool through activation. Use its existing `context-audit` / `context-sync` procedure for the guarded standard-clone sync of the merged policy state. Before using `nuinui-context`, independently derive the expected candidate Git blob from authoritative GitHub `main` and compare it with both the checked-in candidate and the on-disk executable. Verify the old `nuinui` artifact separately; executable name, self-reported version, and rendered output do not establish artifact identity.
+The accepted pre-activation bootstrap used `nuinui` to synchronize the merged policy state before the explicit #268 activation. For current `nuinui-context` use, derive the expected standalone Git blob from authoritative GitHub `main` and verify it separately from the installed executable identity. The old `nuinui` artifact remains independently identified for its compatible legacy operations.
 
-The tools keep separate durable mutation result stores in the resolved repository Git directory: `nuinui` uses `nuinui-command-result-v1`, while `nuinui-context` uses `nuinui-context-command-result-v1`. Each tool's `last-result` reads only its own store. Original `nuinui` records are not `nuinui-context` execution results, and candidate records are not `nuinui` results. For an interrupted or ambiguous mutation, inspect the result store belonging to the executable that actually ran and reconcile its evidence with current checkout state. Do not blindly retry the mutation, switch to the other tool as an automatic fallback, or treat the other tool's result store as proof.
+The tools keep separate durable mutation result stores in the resolved repository Git directory: `nuinui` uses `nuinui-command-result-v1`, while `nuinui-context` uses `nuinui-context-command-result-v1`. Each tool's `last-result` reads only its own store. `nuinui` records are not `nuinui-context` execution results. For an interrupted or ambiguous mutation, inspect the result store belonging to the executable that actually ran and reconcile its evidence with current checkout state. Do not blindly retry the mutation, switch to the other tool as an automatic fallback, or treat the other tool's result store as proof.
 
-The prior D3-B read-only canary was recorded under Issue #268 and is historical. It does not prove the current standalone artifact's identity or the #286 migration; repeat the canary after synchronizing this implementation.
+The D3-B activation and canary evidence is retained under #268. The #286 standalone operation evidence independently verified the current route. Continue checking the active artifact and installed executable identities at guarded operations; policy wording changes do not restart the accepted canary gate.
 
-After activation, only these independent context operations move to `nuinui-context`. Existing `nuinui` lifecycle commands, compatible legacy audit reservations, E2E operations, and their recovery remain on `nuinui`. Preserve `nuinui` until the replacement passes operational verification. If candidate identity, checkout state, or mutation outcome is stale, interrupted, or ambiguous, stop and fail closed at that boundary for a separately reviewed recovery.
+Current independent context operations use `nuinui-context`. Existing `nuinui` lifecycle commands, compatible legacy audit reservations, E2E operations, and their recovery remain on `nuinui`; preserve the executable and its durable records. If standalone executable identity, checkout state, or mutation outcome is stale, interrupted, or ambiguous, stop and fail closed at that boundary for separately reviewed recovery using that helper's own result store.
 
 ## Versioned `nuinui` helper
 
@@ -437,9 +440,9 @@ duplicate successは`IMPLEMENTATION ALREADY STARTED`とlane / issue / branch / b
 
 `nuinui self-test`はmanifest-driven isolated runtime regressionでcomplete inventory admission、renamed lanes、wrong-role rejection、Human-test short/explicit selection、manifest resolution/security、uncertain mutation recovery、release receipt、topology-only helper byte identityを検証し、`scripts/test-nuinui-command-result`、`scripts/test-nuinui-integration-clean`、`scripts/test-nuinui-pr-auto-merge-retired`、`scripts/test-nuinui-context-sync`、およびsource-budget regressionを集約する。
 
-### Inactive context CLI candidate
+### Independent context helper and legacy compatibility
 
-`scripts/nuinui-context` is implemented but remains activation-gated; until the Issue #286 checkpoint, use `nuinui` for real-clone context operations and run candidate mutation regressions only on disposable fixtures. The candidate documents `nuinui-context context-audit`, `nuinui-context context-sync`, `nuinui-context context-dev-audit`, `nuinui-context context-dev-transition`, `nuinui-context context-dev-next`, `nuinui-context context-check`, and `nuinui-context last-result`. The legacy `scripts/nuinui` continues to own its lifecycle, reservation, and E2E roles and is preserved through operational verification.
+`scripts/nuinui-context` is the active standalone owner of context-only audit / sync / development-worktree transition / check operations and its own last-result read-back. `nuinui` retains compatible context command behavior but remains the owner of its existing lifecycle, audit reservation, and E2E roles. Keep both helpers' artifact identities and result stores independent.
 
 成功outputはcallerが別preflightなしにmanagement synchronizationへ進めるためのstate envelopeである。`begin`は`IMPLEMENTATION STARTED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY` / manifest-derived complete inventory fields / `preflight=PASS`を返す。`resume`は`IMPLEMENTATION RESUMED`とlane / issue / branch / base / checkpoint / claim / `clean=yes` / `state=BUSY`を返す。通常の`release`は`IMPLEMENTATION RELEASED`とIssue / saved checkpoint / released claim / released branch / idle branch / idle HEAD / authoritative default / `clean=yes` / `state=FREE`を返し、exact duplicateは`IMPLEMENTATION ALREADY RELEASED`とlane / Issue / Base / saved checkpoint / released claim / released branch / authoritative default / `clean=yes` / `mutation=no-op` / `state=FREE`を返す。
 
@@ -491,15 +494,15 @@ clean=yes
 
 ### Standalone non-lane mechanics
 
-Until activation, E2E, `nuinui context-audit`, `nuinui context-sync`, `nuinui context-dev-audit`, `nuinui context-dev-transition`, `nuinui context-dev-next`, doctor, transition-audit, and `nuinui context-check` remain routed through the existing `nuinui` executable. After activation, route only the independent context operations listed above through `nuinui-context`; `nuinui` continues to own its lifecycle, compatible audit reservations, E2E, doctor, and transition-audit commands. The migration preserves legacy commands and the two independent result stores.
+Route current independent context-only operations through `nuinui-context`. Keep E2E, doctor, transition-audit, the compatible legacy lifecycle and audit reservations, and their recovery on `nuinui`; its older context commands and independent result store remain available for compatibility. The two helpers' artifact identities and last-result stores are never interchangeable.
 
 旧`nuinui pr-auto-merge` CLIは1.14.0で廃止した。新規PRは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のowner-comment GitHub Actions方式を使う。旧予約の専用runtime・GitHub PR補助・required-check判定・生成入力・CLI dispatchと旧専用回帰テストは削除済み。過去のvalidな`nuinui last-result` version=1 recordsはread-onlyで保持し、廃止済みCLIの再実行は拒否する。`test-nuinui-pr-auto-merge-retired`がCLI拒否・GitHub呼出し不在を確認する。
 
-Legacy `nuinui doctor --full`, `nuinui transition-audit`, `nuinui context-check`, `nuinui context-audit`, and `nuinui context-dev-audit` are read-only. Its `context-sync` validates the expected-main tree artifact and performs only a guarded ff-only mutation; `context-dev-transition` and `context-dev-next` revalidate the exact old state and perform only ordinary detach/switch plus branch create/switch. After activation, the candidate's `context-check`, `context-audit`, and `context-dev-audit` remain read-only, while its `context-sync`, `context-dev-transition`, and `context-dev-next` preserve those same exact-SHA and fail-closed boundaries. Neither route performs cleanup, process stop, Issue selection, GitHub updates, merge decisions, one-time worktree migration, or generic worktree cleanup.
+Legacy `nuinui doctor --full`, `nuinui transition-audit`, `nuinui context-check`, `nuinui context-audit`, and `nuinui context-dev-audit` remain available with their existing read-only or guarded-mutation contracts for compatible historical operations. Current independent context work uses the standalone `nuinui-context` commands above; its audit / check operations remain read-only and its sync / transition commands preserve the existing exact-SHA and fail-closed boundaries. Neither helper performs cleanup, process stop, Issue selection, GitHub updates, merge decisions, one-time worktree migration, or generic worktree cleanup.
 
-## Native GitHub Manual E2E helper — activation pending
+## Native GitHub Manual E2E helper — bounded pilot permitted; general activation pending
 
-`scripts/nuinui-e2e` is the generated native Human E2E helper assembled from `nuinui-e2e-src/` by `generate-nuinui-e2e`. Its fixture-only regression mode requires explicit `--self-test --manifest`; live operations require explicit `--production` and automatically select the canonical versioned `LANES.conf` plus the signed Microsoft `vscode-isolated` adapter.
+`scripts/nuinui-e2e` is the generated native Human E2E helper assembled from `nuinui-e2e-src/` by `generate-nuinui-e2e`. The Human-test checkout is registered, and the existing #286 approval permits its bounded real-host pilot after fresh exact production admission. The first attempt was blocked before GUI, recovered, and fully released; the host-root defect was fixed by PR [#290](https://github.com/sayosomi/dev-context/pull/290) and synchronized. No Human GUI outcome or Manual E2E PASS is established. General native activation remains pending an actual Human-operated macOS VS Code GUI PASS, independently verified checkout closure, and a separate explicit checkpoint. This general gate does not prohibit the already approved bounded pilot. The fixture-only regression mode requires explicit `--self-test --manifest`; live operations require explicit `--production` and automatically select the canonical versioned `LANES.conf` plus the signed Microsoft `vscode-isolated` adapter.
 
 ```text
 nuinui-e2e admit --production --issue <canonical-GitHub-Issue> --generation <token> --tested-sha <40-lowercase-sha> [--lane human-e2e]
@@ -520,7 +523,7 @@ Production authority is limited to the canonical installed helper, a clean stand
 
 Use `host-closure` for the checked host cleanup, native release, and final read-only closure sequence. `host-recover` and `recover` handle only their exact recorded interruption cases; any mismatch remains blocked for bounded diagnosis. The full lifecycle owner and checkout-registration gate are in [`CHECKOUTS.md`](./CHECKOUTS.md); VS Code launch requirements remain in [`VS-CODE-E2E.md`](./VS-CODE-E2E.md).
 
-Although the policy manifest now declares `/Users/yosomi/Code/nuinuiCAD-e2e`, that checkout is not registered or activated by this change. Do not create or register it before this policy is reviewed, merged, read back, and separately activated. Until then, production operations fail closed. Do not start a Human pilot automatically.
+The `human-e2e` checkout at `/Users/yosomi/Code/nuinuiCAD-e2e` is already registered under #286; do not create, remove, or register it again. The existing bounded-pilot permission remains available after the full fresh production admission above. General native Manual E2E remains gated on a genuine Human GUI PASS, independent checkout closure, and explicit activation; that general gate does not prohibit this bounded pilot. Its approval does not start the pilot automatically.
 
 ## Human Manual E2E preparation helper
 

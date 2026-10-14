@@ -156,13 +156,20 @@ E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読�
 
 このdocumentはE2E chat固有のlifecycle boundaryだけをownerする。Manual E2E semantics、Human production-host setup、checkout detailはそれぞれのowner documentへ置く。Inactive Luna E2E materialは`LUNA-E2E-PLAYBOOK.md`だけに隔離する。
 
-## Native GitHub Manual E2E route (activation pending)
+## Native GitHub Manual E2E route — bounded pilot permitted; general activation pending
 
-The native `nuinui-e2e --production` lifecycle is implemented, but is not an
-active Human route yet. Compatible pre-existing SAY procedures above continue
-to use their existing helper. Do not start a native generation until the
-reviewed policy is merged and read back, the dedicated Human-test checkout is
-safely registered, and the separate activation checkpoint is recorded.
+The native `nuinui-e2e --production` lifecycle is implemented and synchronized.
+The Human-test checkout was physically registered under dev-context #286, and
+the already approved bounded real-host pilot is permitted under its fresh
+production admission gates. Its first attempt was blocked before GUI, recovered
+and fully released; the host-root defect was fixed by PR
+[#290](https://github.com/sayosomi/dev-context/pull/290) and synchronized.
+No Human GUI outcome or Manual E2E PASS is established. General native Manual
+E2E activation remains pending a genuine Human-operated macOS VS Code GUI PASS,
+independently verified checkout closure, and a separate explicit activation
+checkpoint. That general gate does not prohibit the already approved bounded
+pilot. Compatible pre-existing SAY procedures above continue to use their
+existing helper.
 
 A native GitHub Issue has no legacy `nuinui` implementation generation or
 claim. Native Manual E2E admission must not require `IMPLEMENTATION RELEASED`,
@@ -180,10 +187,12 @@ must be rechecked, and all of these facts must be proved together:
   ownership admission in [`CHECKOUTS.md`](./CHECKOUTS.md);
 - the exact Issue, lane, tested ref, generation, and recovery evidence agree.
 
-The manifest declares `human-e2e` at `/Users/yosomi/Code/nuinuiCAD-e2e`, but the
-checkout is not registered. Native production startup therefore remains
-blocked before mutation. Fixture-only `--self-test` regression mode does not
-authorize that path. A Required Manual E2E remains governed by
+The manifest declares the already registered `human-e2e` lane at
+`/Users/yosomi/Code/nuinuiCAD-e2e`; do not register, remove, or recreate this
+checkout. Its registration does not activate the general native route. The
+existing bounded-pilot permission remains subject to the full fresh admission
+above and in [`CHECKOUTS.md`](./CHECKOUTS.md). Fixture-only `--self-test`
+regression mode does not authorize production operation. A Required Manual E2E remains governed by
 [`MANUAL-E2E.md`](./MANUAL-E2E.md); this route does not waive its acceptance or
 change its Human-only executor, oracle, result, stabilization, actual-host
 evidence, or post-merge verification rules.
@@ -196,8 +205,9 @@ then independently prove the final checkout state. An interrupted or ambiguous
 generation remains blocked until its exact recovery evidence is independently
 resolved; do not infer closure from a merge, result comment, or stale receipt.
 
-After activation, use the production command contract and exact checkout gates
+For the approved bounded pilot, use the production command contract and exact checkout gates
 owned by [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) and
-[`CHECKOUTS.md`](./CHECKOUTS.md). A native host-ready result remains setup
-evidence; only the Human operates and judges Manual E2E. This policy change
-does not start the pilot automatically.
+[`CHECKOUTS.md`](./CHECKOUTS.md); use that same contract for the general native
+route after its separate activation checkpoint. A native host-ready result
+remains setup evidence; only the Human operates and judges Manual E2E. The
+existing approval permits the bounded pilot and does not report it as passed.

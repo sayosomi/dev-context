@@ -12,7 +12,7 @@ Evaluator auditのexecutor selection、finding threshold、Sol-first / Astra-esc
 
 ## Declared lanes
 
-The checked-in manifest declares one implementation lane and one Human-test lane; the names and paths are data, not the capacity model. Both declared checkouts are registered. Registration does not activate the native Manual E2E lifecycle, which remains behind its separate activation gate.
+The checked-in manifest declares one implementation lane and one Human-test lane; the names and paths are data, not the capacity model. Both declared checkouts are registered. The existing #286 approval permits its bounded real-host pilot after fresh production admission. General native Manual E2E activation remains gated on a genuine Human GUI PASS, independently verified checkout closure, and a separate explicit checkpoint; that general gate does not prohibit the bounded pilot.
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Capacity and routing rules:
 
 - implementation capacity is the number of declared `role=implementation` lanes.
 - Human-test capacity is the number of declared `role=human-test` lanes.
-- A declared Human-test lane supplies capacity only when its exact real checkout is registered and passes complete topology / idle-state admission. `/Users/yosomi/Code/nuinuiCAD-e2e` is registered; native Manual E2E startup remains blocked until its separate activation gate is complete. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done.
+- A declared Human-test lane supplies capacity only when its exact real checkout is registered and passes complete topology / idle-state admission. `/Users/yosomi/Code/nuinuiCAD-e2e` is registered. The already approved bounded pilot may proceed under fresh exact admission; general native Manual E2E remains pending its separate activation gate. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done.
 - a lane is never reassigned across roles, and declared paths are not inferred from lane names.
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
@@ -885,9 +885,9 @@ CI reproductionも追加のexecution laneを作らない。必要ならFREEなde
 
 並列性はmanifestに宣言されたimplementation lane数で表現する。それ以上のdynamic laneを作らず、全laneを同時に使うこと自体も目的にしない。
 
-## Native GitHub Manual E2E checkout contract (activation pending)
+## Native GitHub Manual E2E checkout contract — bounded pilot permitted; general activation pending
 
-The native `nuinui-e2e` production lifecycle is implemented in this policy change, but is not yet active and does not authorize creating or registering the Human-test checkout. Before any live generation, this change must be independently reviewed and merged, read back from authoritative `main`, and separately activated after safe checkout registration. The compatible legacy SAY lifecycle above keeps its current helper, marker/session/receipt authority, and exact recovery behavior.
+The native `nuinui-e2e` production lifecycle is implemented and synchronized. The Human-test checkout is physically registered under dev-context #286, and the existing approval permits the bounded real-host pilot after fresh exact production admission. Its first attempt was blocked before GUI, recovered and fully released; the host-root defect was fixed by PR [#290](https://github.com/sayosomi/dev-context/pull/290) and synchronized. No Human GUI outcome or Manual E2E PASS is established. General native activation remains pending an actual Human-operated macOS VS Code GUI PASS, independently verified checkout closure, and a separate explicit checkpoint. This general gate does not prohibit the already approved bounded pilot. Compatible legacy SAY operations, records, ownership, and recovery retain their existing contract.
 
 ### Production lifecycle
 
@@ -930,11 +930,13 @@ choose an oracle, operate the GUI, or judge product behavior.
 The current [`LANES.conf`](./LANES.conf) declares exactly one `role=human-test`
 lane named `human-e2e`, with `idle=detached` at
 `/Users/yosomi/Code/nuinuiCAD-e2e`. This checkout was authorized and registered
-under dev-context #286. Registration does not activate native Manual E2E; the
-separate activation checkpoint remains pending. Do not register or recreate
-the existing checkout again, reuse the implementation lane, invent another
-checkout, or start a native E2E generation before activation. A Required
-Manual E2E cannot be waived or reported PASS while native startup is blocked.
+under dev-context #286. Registration does not activate general native Manual
+E2E; the separate general activation checkpoint remains pending. The existing
+bounded-pilot approval is valid before that general checkpoint and requires
+the full fresh admission above. Do not register, remove, or recreate the
+existing checkout, reuse the implementation lane, or invent another
+checkout. A Required Manual E2E cannot be waived or reported PASS without the
+Human's actual result.
 
 ### Historical one-time Human-test checkout registration and recovery
 
