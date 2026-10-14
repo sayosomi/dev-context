@@ -17,7 +17,7 @@ Use one sequential implementation track and the ordinary shared primary-checkout
 
 Compilation and builds are allowed. Physical firmware flashing, partition changes, filesystem formatting or upload, destructive device operations, and replacement of existing LittleFS avatar or audio data each require separate, explicit, narrowly scoped Human authorization for the specific action and target. A build result proves only that the build passed; never report it as a device or hardware PASS.
 
-When local macOS Arduino CLI or M5Stack toolchain/device diagnostics are needed, use the installed `m5stack-arduino-cli` skill if available, within these project authorization limits. The skill does not authorize flashing or other device changes.
+When using any optional local Arduino CLI, M5Stack, or other agent skill, first inspect its actual installed contract and confirm it applies to the current task. No skill may override the explicit device authorization boundaries above.
 
 ## Voice data and publication
 
