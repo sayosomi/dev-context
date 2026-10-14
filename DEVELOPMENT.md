@@ -144,13 +144,13 @@ Human terminal routeはpersistent worktreeをedit pathとして使わず、GitHu
 
 Task間でworktreeをremove / recreateしない。persistent worktreeをmerge後に`main`へ戻すことは必須ではなく、merged prior topic branchがnormal safe branch transitionまでlocalに残ることも許容する。next Taskを開始するためだけのbranch cleanupも要求しない。
 
-Until the standalone context migration is activated, recurring transition checks remain on the existing production `nuinui` helper. For that helper, `<expected-artifact-blob>` is the blob for `projects/nuinuiCAD/scripts/nuinui` at the expected authoritative `main`. After activation, the independent context commands move to `nuinui-context`; its expected artifact blob is instead `projects/nuinuiCAD/scripts/nuinui-context`. The standalone helper proves its installed executable blob separately from the expected / synchronized Git artifact. For the persistent worktree's normal sequential Task handoff, use the active helper's `context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>` with caller expectations fixed by ChatGPT. It proceeds only after the existing `context_dev_audit_prove` read-only audit succeeds, then reruns the same transition owner's fresh mutation-boundary validation. Keep `context-dev-audit <expected-branch> <expected-head>` for diagnosis / explicit audit and `context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` as the underlying / explicit public transition boundary. The transition keeps the same registered worktree and performs only an ordinary detach/switch to exact `main` followed by fresh branch create/switch.
+Current independent context operations and the normal sequential Task handoff use the activated `nuinui-context` route. Its expected context artifact is the `projects/nuinuiCAD/scripts/nuinui-context` blob at fresh authoritative `main`; the helper checks its installed executable identity separately. Use `nuinui-context context-dev-next --old-branch <expected-old-branch> --old-head <expected-old-head> --main <expected-main> --new-branch <new-branch>` with caller expectations fixed by ChatGPT. The façade proceeds only after the existing `context_dev_audit_prove` read-only audit succeeds, then reruns the transition owner's fresh mutation-boundary validation. Keep `context-dev-audit <expected-branch> <expected-head>` for diagnosis / explicit audit and `context-dev-transition <expected-old-branch> <expected-old-head> <expected-main> <new-branch>` as the underlying public boundary. The transition keeps the same registered worktree and performs only an ordinary detach/switch to exact `main` followed by fresh branch create/switch. The pre-activation `nuinui` bootstrap sequence is historical; compatible legacy lifecycle, audit reservation, and E2E operations remain on `nuinui` with its own artifact identity and result store.
 
 `context-dev-transition`、およびそれへ委譲する`context-dev-next`がexact immediate duplicateとして`DEV-CONTEXT ALREADY TRANSITIONED`と`mutation=no-op`を返した場合、そのenvelopeはrequested transitionが安全に完了済みであるterminal proofである。ChatGPTはその結果からcurrent Taskのnormal workflowへ直接継続する。duplicate invocationだけを理由に、追加の`context-dev-audit`、branch / HEAD / worktree-registration paste、最初のtransitionの確認、同じtransitionの再実行、またはgeneric diagnosisを求めない。current branchが進行済み、mismatched、またはambiguousな場合はalready-transitionedとは扱わず、従来どおりfail-closedしてnormal fresh-state routeを使う。このclarificationはsingle-track policyと通常のtransition safety rulesを変更しない。
 
-#### Standalone context CLI migration (#286; activation pending)
+#### Standalone context CLI route (active)
 
-The standalone context-only route is:
+The independent context-only route was activated by the historical [#268 checkpoint](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6137262760) and its current standalone operations were independently verified under [#286](https://github.com/sayosomi/dev-context/issues/286). Use this route for current context operations. The accepted activation and canary evidence remains valid; policy wording changes do not restart those gates, while live operations still verify fresh artifact and installed-executable identities.
 
 ```text
 nuinui-context context-audit <expected-main> <expected-artifact-blob>
@@ -162,11 +162,11 @@ nuinui-context context-check
 nuinui-context last-result
 ```
 
-`nuinui context-audit/context-sync` still expects the `scripts/nuinui` blob. `nuinui-context context-audit/context-sync` expects the independent `scripts/nuinui-context` blob at the authoritative revision. Resolve each expected blob from the current GitHub `main`; never substitute one executable's blob for the other.
+The compatible legacy `nuinui context-audit/context-sync` commands continue to expect the `scripts/nuinui` blob. Current independent context operations use `nuinui-context context-audit/context-sync`, which expects the separate `scripts/nuinui-context` blob at fresh authoritative `main`. Resolve the active helper's expected blob from current GitHub `main`; never substitute one executable's blob for the other.
 
 The standalone helper separately reports the invoked installed executable blob and the expected / synchronized Git artifact blob. `context-audit` reports the local checked-in artifact and installed executable identity; a behind checkout may have a different local artifact from the caller's expected target. `context-sync` verifies the expected target blob in the fetched target tree, then verifies the synchronized artifact after the guarded fast-forward. Keep the result stores independent: `nuinui` uses `nuinui-command-result-v1`, and `nuinui-context` uses `nuinui-context-command-result-v1`.
 
-The migration is implemented under dev-context [Issue #286](https://github.com/sayosomi/dev-context/issues/286), but the context route is not active until its change is independently reviewed and merged, read back from authoritative GitHub `main`, safely synchronized with the existing production `nuinui` bootstrap route, and an independent read-only canary verifies the actual standard / development checkouts plus the candidate's installed and Git artifact identities. A separate explicit activation checkpoint in #286 is still required. Until then, use the existing `nuinui` context commands. Do not remove or deprecate `nuinui` before operational verification. The migration preserves sequential development, canonical worktree identity, caller-supplied exact SHA expectations, guarded fast-forward, transition recovery evidence, and fail-closed semantics.
+The standalone route is active. The #286 verification established guarded standard-clone operations, persistent development-worktree audit / transition behavior, and separate installed-executable and Git-artifact identities. Do not remove or deprecate `nuinui`: its compatible SAY lifecycle, audit reservations, E2E operations, recovery behavior, and independent result store remain available. The context route preserves sequential development, canonical worktree identity, caller-supplied exact SHA expectations, guarded fast-forward, transition recovery evidence, and fail-closed semantics.
 
 #### Fail-closed reuse
 
@@ -184,7 +184,8 @@ resource modelを混ぜない。
 
 ```text
 sayosomi/nuinuiCAD product manifest-declared lanes (current configuration):
-  /Users/yosomi/Code/nuinuiCAD  implementation (main); no Human-test lanes
+  /Users/yosomi/Code/nuinuiCAD       main (role=implementation, idle=branch)
+  /Users/yosomi/Code/nuinuiCAD-e2e  human-e2e (role=human-test, idle=detached)
 
 sayosomi/dev-context repository:
   /Users/yosomi/Code/dev-context        production/cache/toolbox clone
@@ -241,14 +242,14 @@ merge後は、最初にauthoritative GitHub `main`をread backし、意図した
 
 persistent development worktreeはmerge後もremoveしない。next sequential Taskに利用可能な状態として保持し、次のTask自身がfresh remote/bootstrapとsafe branch transitionを行う。mergeごとに直ちに`main`をcheckoutすることは、後続のsafe operationに必要な場合を除いて要求しない。
 
-Standalone context activationまでのstandard-clone bootstrap syncは、現在のproduction `nuinui` routeで行い、その既存policyとfallbackを維持する。activation後は、[Standalone context CLI migration](#standalone-context-cli-migration-286-activation-pending)の`nuinui-context` routeを使う。後者は`nuinui-context` artifact / installed-executable identity確認を必要とし、interruptedまたはambiguousなmutationの後にblind retryや別helperへのautomatic fallbackを行わない。
+Current standard-clone audit / sync uses the active standalone `nuinui-context` route after authoritative GitHub `main` read-back. Its artifact and installed-executable identity checks are separate, and interrupted or ambiguous mutations do not trigger blind retry or automatic fallback to another helper. The pre-activation `nuinui` bootstrap and fallback details are retained as historical compatibility guidance in [`LOCAL-TOOLS.md`](./projects/nuinuiCAD/LOCAL-TOOLS.md).
 
 ```bash
-nuinui context-audit <expected-main> <expected-artifact-blob>
-nuinui context-sync <expected-main> <expected-artifact-blob>
+nuinui-context context-audit <expected-main> <expected-artifact-blob>
+nuinui-context context-sync <expected-main> <expected-artifact-blob>
 ```
 
-Pre-activationのlegacy `context-audit`はmutation-freeであり、production cloneがexpected mainよりbehindでもlocal artifact blobをtargetと一致させることは要求しない。legacy `context-sync`はfresh fetch後にauthoritative main、ancestry、expected-main treeのartifact blobを再検証し、fast-forward後もHEAD / artifact / clean stateをread backする。standard cloneがdirty、`main`以外、またはfast-forward不能なら`BLOCKED`として停止する。旧versioned helperが未install、stale、broken、またはcurrent operationをsupportしていない場合に限り、activation前は同じread-backとmanual safety checkを満たした既存fallbackとして`git -C /Users/yosomi/Code/dev-context pull --ff-only`を提示する。reset、stash、force-switch、force-updateで修復しない。Human / local executionが実際に成功するまでsyncedと呼ばない。Candidate起動後のrecoveryは、そのcandidate自身のresult storeとcurrent checkout stateを確認して行い、legacy helperやmanual pullへ自動fallbackしない。
+`nuinui-context context-audit` is read-only and reports the local artifact and installed executable identities against caller-supplied fresh expectations. `nuinui-context context-sync` verifies the expected artifact in the fetched target tree and again after guarded fast-forward, then reads back HEAD, artifact, and clean state. A dirty, non-`main`, or non-fast-forwardable standard clone remains `BLOCKED`. The older `nuinui` bootstrap procedure and its `git pull --ff-only` fallback apply only to the historical pre-activation transition; they are not automatic fallbacks for the active standalone route. If a standalone mutation is interrupted or ambiguous, inspect only `nuinui-context last-result` and current checkout state before separately reviewed recovery.
 
 ## Ownership boundaries
 

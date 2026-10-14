@@ -34,25 +34,35 @@ is historical operational proof at the revision recorded in its
 That SHA is not a fixed revision for future audits. General use still requires
 the separate D2-C activation checkpoint in #268.
 
-## Standalone dev-context context migration — activation pending
+## Standalone dev-context context operations — active
 
-The standalone `nuinui-context` route owns context audit, guarded sync,
-dev-worktree audit and transition, checks, and its own result read-back. Its
-implementation is being completed under dev-context
-[Issue #286](https://github.com/sayosomi/dev-context/issues/286); it becomes
-the production route only after independent review / merge, authoritative
-read-back, guarded standard-clone sync through the existing `nuinui` bootstrap,
-an independent read-only canary, and a separate explicit activation checkpoint
-in #286. Until then, use `nuinui` for real-clone context operations and keep
-the legacy executable. See
+The standalone `nuinui-context` route is the current authority for independent
+context audit / sync, dev-worktree audit / transition, checks, and its own
+result read-back. The route was explicitly activated under historical dev-context
+[#268](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6137262760)
+and independently verified under [#286](https://github.com/sayosomi/dev-context/issues/286).
+Use [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) for current operation and recovery details. Derive its
+expected Git artifact from fresh authoritative `main` and verify the installed
+executable identity separately. Policy wording changes do not restart the
+accepted activation or canary gates; current operations still verify the
+executable and Git artifact identities separately.
+Keep legacy `nuinui` lifecycle, audit reservation, and E2E operations and
+their result store available for compatible SAY work. See
 [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) for rollout and recovery boundaries and
 [dev-context `DEVELOPMENT.md`](../../DEVELOPMENT.md) for sequential worktree
 transition rules.
 
 Native GitHub Manual E2E lifecycle and the registered Human-test lane are owned
-by [`CHECKOUTS.md`](./CHECKOUTS.md). The checkout registration was completed
-under dev-context #286; registration is not activation, and native E2E remains
-behind its separate activation checkpoint. Host setup constraints are in
+by [`CHECKOUTS.md`](./CHECKOUTS.md). The Human-test checkout is physically
+registered under dev-context #286, and the already approved bounded real-host
+pilot remains permitted under fresh production admission. Its first attempt
+was blocked before GUI, recovered, and fully released; the host-root defect
+was fixed by PR [#290](https://github.com/sayosomi/dev-context/pull/290) and
+synchronized. No Human GUI outcome or Manual E2E PASS is established. General
+native activation remains pending a genuine Human-operated macOS VS Code
+Manual E2E PASS, independently verified checkout closure, and a separate
+explicit checkpoint. That general activation gate does not prohibit the
+already approved bounded pilot. Host setup constraints are in
 [`VS-CODE-E2E.md`](./VS-CODE-E2E.md); Human execution and judgment remain in
 [`MANUAL-E2E.md`](./MANUAL-E2E.md).
 
@@ -147,7 +157,7 @@ Hard rule:
 
 - implementation capacity is the count of declared `role=implementation` lanes;
 - Human-test capacity is the count of declared `role=human-test` lanes;
-- Human-test laneは1つ宣言され、checkoutも登録済みだが、native Manual E2E activationはpendingである。activation前にManual E2Eを開始できない。Manual E2EがRequiredのIssueは検証を省略・PASS扱いせず、laneを再宣言・再登録して代用しない;
+- The `human-e2e` Human-test lane is declared and registered. Its existing bounded-pilot authorization under #286 remains usable with fresh exact production admission; general native Manual E2E activation remains pending a genuine Human GUI PASS, independent checkout closure, and an explicit activation checkpoint. Do not treat the general gate as a ban on the approved pilot. Required Manual E2E cannot be skipped or marked PASS without Human judgment, and no additional lane or checkout registration is authorized;
 - Manual E2EのExecutorはHumanのみ。implementation Coding AgentをE2E executionに使わない;
 - Human-authorized forensic worktreeは[`CHECKOUTS.md`](./CHECKOUTS.md)の明示的なone-shot inventory exceptionで認識される場合に限り1つだけ存在でき、lane capacityを追加しない;
 - active implementation sliceはBase checkpoint SHAを固定し、integration checkpointまで他lane / remote mainの変更を取り込まない;
