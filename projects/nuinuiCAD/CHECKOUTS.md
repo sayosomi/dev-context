@@ -353,31 +353,85 @@ evidence. Defer any synchronization until the audit has safely completed.
 
 ### Completion and interruption recovery
 
-After audit execution stops, prove and record that all audit processes have
-fully stopped; `/Users/yosomi/Code/nuinuiCAD` remains on branch `main` at the
-original fixed SHA with tracked and untracked state clean; and the complete
-two-checkout registered topology, paths, repository identities, roles, and
-idle policies match admission. Prove that `/Users/yosomi/Code/nuinuiCAD-e2e`
-is still registered, clean, detached, idle, and unchanged from its admission
-HEAD and state; that no competing E2E generation, host session, process,
-cleanup, or release operation exists; and that legacy ownership metadata is
-identical to its admission fingerprint. Retain external evidence and residual
-findings. A newer remote `main` is allowed and must not be incorporated during
-completion. The next implementation Task uses the existing D1 freshness and
-safe fast-forward procedure.
+After audit execution stops, Sol records the stop and executor final checkout
+proof in the current Research Issue using [`ISSUES.md`](./ISSUES.md). The proof
+must establish that all audit execution stopped and that
+`/Users/yosomi/Code/nuinuiCAD` remains on branch `main` at the original fixed
+audit SHA with tracked and untracked state clean. It also records the complete
+declared and registered two-checkout topology, including both repository
+identities, paths, roles, idle policies, and the exact Human-test checkout
+state. `/Users/yosomi/Code/nuinuiCAD-e2e` must remain registered, clean,
+detached, idle, and unchanged from its admission HEAD and state; no competing
+E2E generation, marker, session, host ownership, process, cleanup, or release
+operation may exist. The proof identifies the run's external evidence and
+checkpoints, residual findings, and unchanged legacy metadata baseline. A
+newer remote `main` is allowed and must not be incorporated during completion.
 
-An independent verifier must compare the final Issue checkpoint with both
-actual checkouts, the complete registered-worktree inventory and occupancy,
-stopped-process evidence, the legacy metadata baseline, and retained external
-evidence. No implementation, Manual E2E, other audit, or checkout transition
-may begin until this independent final checkout verification passes. An
-audit-stop checkpoint alone does not release either checkout.
+The normal independent physical verification route is exactly one
+self-contained, read-only Mac terminal block prepared by ChatGPT after it has
+received Sol's final audit report and executor checkout proof. ChatGPT applies
+the existing [`human-terminal-instructions` skill](../../shared/skills/human-terminal-instructions/SKILL.md)
+when producing the block. The block is tailored to the current audit run's
+external evidence directory and original fixed SHA; it must not hardcode
+historical run-specific values or metadata counts. The Human executes it once
+and returns its complete output. ChatGPT independently assesses that output
+against the current Issue checkpoints and physical evidence; Sol's executor
+proof supports the assessment but is not independent verification. ChatGPT
+must not claim to have run the Human's local checker or ask for approval to run
+this normal read-only check.
 
-If execution is interrupted, final state is ambiguous, or any required proof
-is missing, preserve both checkouts and report `BLOCKED`. An unmatched audit
-start is not proof of safe release. Investigate it explicitly and require the
-complete post-audit proof above before permitting another execution. Never
-reset, clean, stash, delete, auto-release, or repair ambiguous state.
+That one invocation verifies all of the following without changing local
+state. It must not fetch, switch or detach a checkout, reset, stash, clean,
+mutate a worktree, stop a process, change metadata, invoke a release command,
+or terminate the Human's shell:
+
+- The exact product repository and canonical origin / Git directory, plus the
+  complete current `LANES.conf` declared-checkout set against all registered
+  worktrees. Both the implementation `main` checkout and detached Human E2E
+  checkout must be present exactly once with their declared paths, shared
+  repository identity, roles, and idle policies; missing, extra, duplicate,
+  foreign, or ambiguous topology blocks PASS.
+- The implementation checkout is on `main` at the original fixed audit SHA
+  with tracked and untracked state clean. Do not require that SHA to equal a
+  newer remote `main`.
+- The Human E2E checkout is still detached, clean, and at its exact admission
+  HEAD, with its idle state unchanged and no active or pending E2E generation,
+  marker, session, host ownership, cleanup, or release operation.
+- The complete recursive legacy ownership and audit metadata inventory
+  matches the external admission baseline by path, type, and content
+  fingerprint. Validate the baseline and records against their actual
+  existing schema, including the schema's real top-level shape; reject missing,
+  extra, malformed, inconsistent, or symlinked metadata. Do not infer integrity
+  from a count or assume a schema shape.
+- The current run's external report, evidence, applicable start/progress/stop
+  checkpoint records, and executor final checkout proof are present and agree
+  on the audit identity, evidence directory, and original fixed SHA. ChatGPT
+  compares the returned results with the current Issue checkpoints. Preserve
+  residual findings and dispositions.
+- Audit-owned processes have stopped, and current process and occupancy
+  candidates show no audit-owned or conflicting implementation, evaluator
+  audit, Manual E2E, checkout transition, E2E host session, or other execution
+  involving either declared checkout. Reconcile candidates with the run's
+  evidence, including its evidence marker; unexplained candidates or occupancy
+  block PASS.
+
+On independently verified PASS, ChatGPT immediately posts the
+`Independent final checkout verification PASS` checkpoint defined in
+[`ISSUES.md`](./ISSUES.md). That GitHub checkpoint ends the audit-specific
+exclusion for both declared checkouts. No additional verifier agent, Human
+approval round, release command, local mutation, persistent reservation, new
+tool, script, helper, lock, checkout, or runtime behavior is part of this
+closeout. Checkout reuse eligibility only permits a later operation to seek
+its own separate fresh admission; it does not admit an implementation, another
+audit, or Manual E2E run. The next implementation Task uses the existing D1
+freshness and safe fast-forward procedure.
+
+If the Human output is incomplete, blocked, erroneous, or ambiguous; any
+required proof is missing; or ChatGPT cannot reconcile the current Issue and
+physical evidence, preserve both checkouts and evidence, report `BLOCKED`, and
+do not post PASS or lift the exclusion. An audit-stop or executor-proof
+checkpoint alone does not release either checkout. Never reset, clean, stash,
+delete, auto-release, or repair ambiguous state.
 
 Compatible pre-existing SAY audit reservations remain governed by the
 existing lifecycle in [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) and
