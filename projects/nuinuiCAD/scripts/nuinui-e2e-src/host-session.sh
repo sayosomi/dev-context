@@ -666,7 +666,7 @@ nuinui_e2e_host__operation_context() {
   nuinui_e2e_host_manifest_arg=$2
   nuinui_e2e_host_lane_arg=$3
   nuinui_e2e_host_issue_arg=$4
-  nuinui_e2e__fixture_context "$nuinui_e2e_host_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_host_manifest_arg" \
     "$nuinui_e2e_host_lane_arg" "$nuinui_e2e_host_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_host_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -757,7 +757,13 @@ nuinui_e2e_host_check() {
     ABSENT|READY) ;;
     *) echo "BLOCKED: host session is $nuinui_e2e_host_state"; return 1 ;;
   esac
-  printf 'HOST FIXTURE CHECK READY\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nfixture=%s\nport=%s\nlocale=%s\nadapter=%s\nstate=%s\nmutation=no\n' \
+  if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
+    nuinui_e2e_host_check_heading='HOST FIXTURE CHECK READY'
+  else
+    nuinui_e2e_host_check_heading='HOST SESSION CHECK READY'
+  fi
+  printf '%s\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nfixture=%s\nport=%s\nlocale=%s\nadapter=%s\nstate=%s\nmutation=no\n' \
+    "$nuinui_e2e_host_check_heading" \
     "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
     "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation" \
     "$nuinui_e2e_host_fixture" "$nuinui_e2e_host_port" \
@@ -780,8 +786,9 @@ nuinui_e2e_host_prepare() {
       "$4" "$5" "$6" || return 1
     { [ "$nuinui_e2e_vscode_fake_app" = yes ] ||
       { [ "$nuinui_e2e_self_test" = yes ] &&
-        [ "$nuinui_e2e_vscode_test_app" = yes ]; }; } || {
-      echo 'BLOCKED: real VS Code activation requires the separately approved D3-C2c2-B pilot'
+        [ "$nuinui_e2e_vscode_test_app" = yes ]; } ||
+      [ "${nuinui_e2e_production:-no}" = yes ]; } || {
+      echo 'BLOCKED: real VS Code activation requires explicit production mode'
       return 1
     }
   fi
@@ -819,7 +826,7 @@ nuinui_e2e_host_prepare() {
   nuinui_e2e_host__load_state || return 1
   [ "$nuinui_e2e_host_state" = ABSENT ] &&
     nuinui_e2e_host__assert_input_match "$4" "$5" "$6" || {
-      echo 'BLOCKED: host session or fixture parameters changed before PREPARING intent'
+      echo 'BLOCKED: host session or task input parameters changed before PREPARING intent'
       return 1
     }
   if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
@@ -1060,12 +1067,20 @@ nuinui_e2e_host_recover() {
         return 1
       }
       printf '%s\n' "$nuinui_e2e_host_recovered"
-      echo "HOST FIXTURE RECOVERED FROM $nuinui_e2e_host_operation_before"
+      if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
+        echo "HOST FIXTURE RECOVERED FROM $nuinui_e2e_host_operation_before"
+      else
+        echo "HOST SESSION RECOVERED FROM $nuinui_e2e_host_operation_before"
+      fi
       echo 'mutation=yes'
       ;;
     CLEANED|RELEASED)
       nuinui_e2e_host__native_cleanup_proof || return 1
-      echo 'HOST FIXTURE RECOVERY ALREADY COMPLETE'
+      if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
+        echo 'HOST FIXTURE RECOVERY ALREADY COMPLETE'
+      else
+        echo 'HOST SESSION RECOVERY ALREADY COMPLETE'
+      fi
       echo 'mutation=no-op'
       ;;
     *)

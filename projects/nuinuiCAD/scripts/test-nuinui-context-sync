@@ -1,12 +1,17 @@
 #!/bin/sh
 set -eu
 
-HELPER=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/nuinui}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HELPER=${1:-$SCRIPT_DIR/nuinui-context}
+case "${HELPER##*/}" in
+  nuinui) DEFAULT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui ;;
+  *) DEFAULT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui-context ;;
+esac
 REAL_PATH=$PATH
 REAL_GIT=$(command -v git)
 ROOT=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-context-sync.XXXXXX")
 WRAPPER=$ROOT/git
-ARTIFACT=projects/nuinuiCAD/scripts/nuinui
+ARTIFACT=${2:-$DEFAULT_ARTIFACT}
 OLD_BRANCH=sayosomi/previous-task
 NEW_BRANCH=sayosomi/follow-up-task
 BASE_BRANCH=sayosomi/base-task
@@ -234,6 +239,12 @@ assert_contains "$output" 'AUDIT COMPLETE' 'valid behind audit'
 assert_contains "$output" "head=$BASE" 'valid behind audit'
 assert_contains "$output" "origin_main=$TARGET" 'valid behind audit'
 assert_contains "$output" "artifact_blob=$BLOB_OLD" 'valid behind audit'
+case "$ARTIFACT" in
+  projects/nuinuiCAD/scripts/nuinui-context)
+    assert_contains "$output" "expected_artifact_blob=$BLOB_NEW" 'valid behind audit'
+    assert_contains "$output" "installed_executable_blob=self-test" 'valid behind audit'
+    ;;
+esac
 assert_contains "$output" 'clean=yes' 'valid behind audit'
 
 before=$(fixture_state)
@@ -280,6 +291,12 @@ output=$(call_helper context-sync "$TARGET" "$BLOB_NEW") || fail "valid sync fai
 assert_line "$output" '🔄 CONTEXT SYNCED' 'valid sync Human heading'
 assert_contains "$output" 'CONTEXT SYNCED' 'valid sync'
 assert_contains "$output" "head=$TARGET" 'valid sync'
+case "$ARTIFACT" in
+  projects/nuinuiCAD/scripts/nuinui-context)
+    assert_contains "$output" "expected_artifact_blob=$BLOB_NEW" 'valid sync'
+    assert_contains "$output" 'installed_executable_blob_before_sync=self-test' 'valid sync'
+    ;;
+esac
 assert_contains "$output" "artifact_blob=$BLOB_NEW" 'valid sync'
 assert_contains "$output" 'clean=yes' 'valid sync'
 assert_eq "$(git -C "$PROD" rev-parse HEAD)" "$TARGET" 'post-sync head'

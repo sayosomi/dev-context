@@ -185,6 +185,41 @@ done
 
 # No-Human-test capacity blocks the candidate startup.
 new_fixture zero
+# Production authority is reachable only from the installed canonical helper.
+# Exercise all parser boundaries here without activating the Human checkout.
+production_issue=sayosomi/nuinuiCAD#268
+production_generation=production-boundary-0001
+production_tested_sha=0123456789012345678901234567890123456789
+if "$helper" status --issue "$production_issue" --generation "$production_generation" \
+  --tested-sha "$production_tested_sha" >"$output" 2>&1; then
+  fail 'native E2E command ran without an explicit authority mode'
+fi
+assert_contains 'explicit --production or --self-test is required'
+if "$helper" admit --production --manifest "$fixture_manifest" \
+  --issue "$production_issue" --generation "$production_generation" \
+  --tested-sha "$production_tested_sha" >"$output" 2>&1; then
+  fail 'production mode accepted a caller-supplied fixture manifest'
+fi
+assert_contains '--manifest is unavailable in production mode'
+if "$helper" host-check --production --adapter fixture-no-process \
+  --issue "$production_issue" --generation "$production_generation" \
+  --tested-sha "$production_tested_sha" --fixture "$fixture_root/fixture.html" \
+  --port 43123 >"$output" 2>&1; then
+  fail 'production mode accepted the fixture host adapter'
+fi
+assert_contains '--adapter is unavailable in production mode'
+if env NUINUI_E2E_TEST_FAILPOINT=after-intent "$helper" admit --production \
+  --issue "$production_issue" --generation "$production_generation" \
+  --tested-sha "$production_tested_sha" >"$output" 2>&1; then
+  fail 'production mode accepted a self-test environment override'
+fi
+assert_contains 'self-test environment overrides are forbidden in production mode'
+if "$helper" admit --production --issue "$production_issue" \
+  --generation "$production_generation" --tested-sha "$production_tested_sha" \
+  >"$output" 2>&1; then
+  fail 'development-worktree executable acquired live production authority'
+fi
+assert_contains 'installed canonical nuinui-e2e executable'
 expect_block start "$fixture_issue" "$fixture_generation" '' "$fixture_tested_sha"
 zero_host_fixture=$fixture_root/fixture.html
 printf '<html>fixture</html>\n' > "$zero_host_fixture"
@@ -206,7 +241,7 @@ if "$helper" status --manifest "$fixture_manifest" --issue "$fixture_issue" \
   --lane human > "$output" 2>&1; then
   fail 'candidate status ran without explicit self-test mode'
 fi
-assert_contains 'explicit --self-test is required'
+assert_contains 'explicit --production or --self-test is required'
 expect_block admit "$fixture_issue" "$fixture_generation" human "$fixture_stale_sha"
 expect_block start "$fixture_issue" "$fixture_generation" human "$fixture_stale_sha"
 [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_idle_sha" ] ||
@@ -493,9 +528,10 @@ fi
   [ "$(cat "$unsafe_script_dir/nuinui-e2e")" = keep ] || fail 'unsafe artifact symlink target changed'
 
 # Legacy production-facing generated artifacts remain byte-identical to base.
+# The standalone context candidate is updated by this migration and is checked
+# independently by its own generation and context-sync regressions.
 for preserved_path in \
   projects/nuinuiCAD/scripts/nuinui \
-  projects/nuinuiCAD/scripts/nuinui-context \
   projects/nuinuiCAD/scripts/nuinui-e2e-prepare; do
   git -C "$repo_root" diff --quiet HEAD -- "$preserved_path" ||
     fail "legacy artifact changed: $preserved_path"

@@ -98,7 +98,7 @@ source_budget_check() {
   if ! while IFS= read -r source_path || [ -n "$source_path" ]; do
     source_name=${source_path##*/}
     case "$source_name" in
-      nuinui|nuinui-handoff-check|nuinui-e2e-prepare|generate-*|test-*)
+      nuinui|nuinui-context|nuinui-e2e|nuinui-handoff-check|nuinui-e2e-prepare|generate-*|test-*)
         continue
         ;;
     esac
@@ -299,7 +299,7 @@ run_expected_discovery_failure 'guarded discovery failure is fail-closed' \
   "$discovery_fixture/scripts/nuinui-src"
 
 exclusion_fixture=$(make_fixture exclusions)
-for excluded_name in nuinui nuinui-handoff-check generate-synthetic test-synthetic; do
+for excluded_name in nuinui nuinui-context nuinui-e2e nuinui-handoff-check generate-synthetic test-synthetic; do
   make_bytes 32769 "$exclusion_fixture/scripts/$excluded_name"
 done
 run_expected_pass 'generated artifacts, generators, and focused tests excluded' "$exclusion_fixture/scripts/test-nuinui-source-budget"
