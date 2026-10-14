@@ -49,8 +49,10 @@ the legacy executable. See
 [dev-context `DEVELOPMENT.md`](../../DEVELOPMENT.md) for sequential worktree
 transition rules.
 
-Native GitHub Manual E2E lifecycle and the not-yet-registered Human-test lane
-are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Host setup constraints are in
+Native GitHub Manual E2E lifecycle and the registered Human-test lane are owned
+by [`CHECKOUTS.md`](./CHECKOUTS.md). The checkout registration was completed
+under dev-context #286; registration is not activation, and native E2E remains
+behind its separate activation checkpoint. Host setup constraints are in
 [`VS-CODE-E2E.md`](./VS-CODE-E2E.md); Human execution and judgment remain in
 [`MANUAL-E2E.md`](./MANUAL-E2E.md).
 
@@ -136,15 +138,16 @@ replacement for the normal implementation-agent route.
 
 nuinuiCADのlocal executionはversioned [`LANES.conf`](./LANES.conf)に宣言されたlaneだけを使う。generic execution semanticsは [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md)、project-specific checkout policyは [`CHECKOUTS.md`](./CHECKOUTS.md) がownerする。
 
-The checked-in manifest currently declares one implementation lane and no Human-test lanes; lane names and paths are data and do not define capacity.
+The checked-in manifest currently declares one implementation lane and one Human-test lane; both declared checkout paths are registered. Lane names and paths are data and do not define capacity.
 
-- `main` implementation lane: `/Users/yosomi/Code/nuinuiCAD`
+- `main` implementation lane (`idle=branch`): `/Users/yosomi/Code/nuinuiCAD`
+- `human-e2e` Human-test lane (`idle=detached`): `/Users/yosomi/Code/nuinuiCAD-e2e`
 
 Hard rule:
 
 - implementation capacity is the count of declared `role=implementation` lanes;
 - Human-test capacity is the count of declared `role=human-test` lanes;
-- Human-test capacityが0の間はManual E2Eを開始できない。Manual E2EがRequiredのIssueは検証を省略・PASS扱いせず、実行前に専用Human-test laneをmanifestへ再宣言し、安全確認する;
+- Human-test laneは1つ宣言され、checkoutも登録済みだが、native Manual E2E activationはpendingである。activation前にManual E2Eを開始できない。Manual E2EがRequiredのIssueは検証を省略・PASS扱いせず、laneを再宣言・再登録して代用しない;
 - Manual E2EのExecutorはHumanのみ。implementation Coding AgentをE2E executionに使わない;
 - Human-authorized forensic worktreeは[`CHECKOUTS.md`](./CHECKOUTS.md)の明示的なone-shot inventory exceptionで認識される場合に限り1つだけ存在でき、lane capacityを追加しない;
 - active implementation sliceはBase checkpoint SHAを固定し、integration checkpointまで他lane / remote mainの変更を取り込まない;
