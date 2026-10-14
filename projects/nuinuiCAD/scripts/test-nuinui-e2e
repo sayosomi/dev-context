@@ -11,17 +11,20 @@ fixture_impl=
 fixture_human=
 fixture_remote=
 fixture_tested_sha=
+production_root=
 fixture_issue=sayosomi/nuinuiCAD#268
 fixture_generation=fixture-gen-0001
 
 fail() {
   echo "SELFTEST FAIL: $*" >&2
   [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  [ -z "$production_root" ] || rm -rf "$production_root"
   exit 1
 }
 
 cleanup() {
   [ -z "$fixture_root" ] || rm -rf "$fixture_root"
+  [ -z "$production_root" ] || rm -rf "$production_root"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -31,6 +34,199 @@ assert_contains() {
 
 assert_file_contains() {
   grep -Fqx -- "$1" "$2" || fail "expected $2 to contain: $1"
+}
+
+production_admit() {
+  PATH="$production_git_bin:$PATH" "$production_helper" admit --production --issue "$production_issue" \
+    --generation "$production_generation" --tested-sha "$production_tested_sha" \
+    >"$production_output" 2>&1
+}
+
+production_expect_block() {
+  production_expected=$1
+  shift
+  if PATH="$production_git_bin:$PATH" "$production_helper" "$@" \
+    >"$production_output" 2>&1; then
+    cat "$production_output" >&2
+    fail "production command unexpectedly succeeded: $*"
+  fi
+  grep -Fq -- "$production_expected" "$production_output" || {
+    cat "$production_output" >&2
+    fail "production refusal did not explain: $production_expected"
+  }
+}
+
+write_production_manifest() {
+  production_manifest_mode=$1
+  {
+    printf 'version=1\nrepository=sayosomi/nuinuiCAD\ndefault_branch=main\n'
+    printf '\n[lane main]\nrole=implementation\npath=%s\nidle=branch\n' \
+      "$production_impl"
+    if [ "$production_manifest_mode" != missing-human-lane ]; then
+      printf '\n[lane human-e2e]\nrole=human-test\npath=%s\nidle=detached\n' \
+        "$production_human"
+    fi
+  } > "$production_manifest"
+}
+
+commit_production_manifest() {
+  git -C "$production_context" add projects/nuinuiCAD/LANES.conf ||
+    fail 'stage temporary production manifest'
+  git -C "$production_context" commit -q -m 'temporary production manifest case' ||
+    fail 'commit temporary production manifest'
+  git -C "$production_context" push -q "$production_context_remote" main ||
+    fail 'synchronize temporary production context clone'
+  git -C "$production_context" update-ref refs/remotes/origin/main \
+    "$(git -C "$production_context" rev-parse HEAD)" ||
+    fail 'refresh temporary production main'
+}
+
+# Production-path regression harness. Its copied generated helper has the
+# canonical absolute paths redirected to disposable, real Git repositories.
+# The CLI still selects --production itself and exercises the normal context,
+# manifest, lane, origin, clean-clone, and dispatch checks. No live checkout,
+# GUI application, or pilot is involved.
+new_production_fixture() {
+  production_root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-e2e-production.XXXXXX") ||
+    fail 'temporary production harness root'
+  production_root=$(realpath "$production_root") ||
+    fail 'canonical production harness root'
+  production_context=$production_root/dev-context
+  production_repo_root=$production_context/projects/nuinuiCAD
+  production_helper=$production_repo_root/scripts/nuinui-e2e
+  production_manifest=$production_repo_root/LANES.conf
+  production_output=$production_root/command.out
+  production_git_bin=$production_root/test-bin
+  production_impl=$production_root/product/implementation
+  production_human=$production_root/product/human-e2e
+  production_remote=$production_root/remotes/nuinuiCAD.git
+  production_context_remote=$production_root/remotes/dev-context.git
+  production_issue=sayosomi/nuinuiCAD#286
+  production_generation=production-boundary-0001
+
+  mkdir -p "$production_repo_root/scripts" "$production_root/remotes" \
+    "$production_impl"
+  git init -q --bare "$production_remote" || fail 'temporary product remote'
+  git init -q -b main "$production_impl" || fail 'temporary product checkout'
+  git -C "$production_impl" config user.name 'nuinui-e2e fixture'
+  git -C "$production_impl" config user.email 'nuinui-e2e-fixture@example.invalid'
+  printf 'temporary production authority fixture\n' > "$production_impl/fixture.txt"
+  git -C "$production_impl" add fixture.txt
+  git -C "$production_impl" commit -q -m 'temporary production authority fixture' ||
+    fail 'temporary product commit'
+  production_tested_sha=$(git -C "$production_impl" rev-parse HEAD) ||
+    fail 'temporary product SHA'
+  printf 'version=1\n' > "$(git -C "$production_impl" rev-parse --absolute-git-dir)/nuinui-implementation-v1"
+  git -C "$production_impl" remote add origin "$production_remote" ||
+    fail 'temporary product origin'
+  git -C "$production_impl" push -q -u origin main ||
+    fail 'publish temporary product main'
+  git -C "$production_impl" fetch -q origin \
+    main:refs/remotes/origin/main || fail 'track temporary product main'
+  git -C "$production_impl" update-ref refs/remotes/origin/main \
+    "$production_tested_sha" || fail 'temporary product tracking ref'
+  git -C "$production_impl" worktree add -q --detach "$production_human" \
+    "$production_tested_sha" || fail 'temporary Human-test worktree'
+
+  # Add a real repository origin for the temporary standard-clone authority.
+  git init -q --bare "$production_context_remote" || fail 'temporary dev-context remote'
+  git -C "$production_context" init -q -b main || fail 'temporary dev-context clone'
+  git -C "$production_context" config user.name 'nuinui-e2e fixture'
+  git -C "$production_context" config user.email 'nuinui-e2e-fixture@example.invalid'
+  git -C "$production_context" remote add origin \
+    https://github.com/sayosomi/dev-context.git || fail 'temporary dev-context origin'
+  git --git-dir="$production_context_remote" symbolic-ref HEAD refs/heads/main
+  production_real_git=$(command -v git)
+  mkdir -p "$production_git_bin"
+  cat > "$production_git_bin/git" <<EOF
+#!/bin/sh
+if [ "\${1-}" = '-C' ] &&
+  { [ "\${2-}" = '$production_impl' ] || [ "\${2-}" = '$production_human' ]; } &&
+  [ "\${3-}" = remote ] && [ "\${4-}" = get-url ] &&
+  [ "\${5-}" = origin ]; then
+  printf '%s\\n' 'https://github.com/sayosomi/nuinuiCAD.git'
+  exit 0
+fi
+exec '$production_real_git' "\$@"
+EOF
+  chmod 755 "$production_git_bin/git"
+  sed \
+    -e "s|/Users/yosomi/Code/nuinuiCAD-e2e|$production_human|g" \
+    -e "s|/Users/yosomi/Code/nuinuiCAD|$production_impl|g" \
+    -e "s|/Users/yosomi/Code/dev-context|$production_context|g" \
+    "$helper" > "$production_helper" || fail 'temporary production helper copy'
+  chmod 755 "$production_helper"
+  write_production_manifest valid
+  git -C "$production_context" add projects/nuinuiCAD/LANES.conf \
+    projects/nuinuiCAD/scripts/nuinui-e2e
+  git -C "$production_context" commit -q -m 'temporary production authority artifacts' ||
+    fail 'temporary production authority commit'
+  git -C "$production_context" push -q "$production_context_remote" main ||
+    fail 'publish temporary dev-context main'
+  git -C "$production_context" update-ref refs/remotes/origin/main \
+    "$(git -C "$production_context" rev-parse HEAD)" ||
+    fail 'track temporary dev-context main'
+
+  # A fully valid production dispatch is read-only and must reach ADMISSION
+  # READY through the CLI's production selection and authority context.
+  if ! production_admit; then
+    cat "$production_output" >&2
+    fail 'valid isolated production admission was blocked'
+  fi
+  grep -Fq 'ADMISSION READY' "$production_output" || {
+    cat "$production_output" >&2
+    fail 'valid isolated production dispatch did not reach admission readiness'
+  }
+  grep -Fq 'mutation=no' "$production_output" ||
+    fail 'isolated production admission did not remain read-only'
+
+  # A well-formed but stale tested SHA must reach the production context and
+  # be refused by the live-default freshness check.
+  production_tested_sha=0000000000000000000000000000000000000000
+  production_expect_block 'tested SHA is not the authoritative default-branch commit' \
+    admit --production --issue "$production_issue" \
+    --generation "$production_generation" --tested-sha "$production_tested_sha"
+  production_tested_sha=$(git -C "$production_impl" rev-parse HEAD)
+
+  # The locked production topology refuses both a missing human-e2e lane and
+  # a declared lane whose checkout is unavailable.
+  write_production_manifest missing-human-lane
+  commit_production_manifest
+  production_expect_block 'exactly one human-e2e lane' \
+    admit --production --issue "$production_issue" \
+    --generation "$production_generation" --tested-sha "$production_tested_sha"
+  write_production_manifest valid
+  commit_production_manifest
+  mv "$production_human" "$production_root/product/human-e2e.saved" ||
+    fail 'temporarily hide isolated Human-test checkout'
+  production_expect_block 'declared production checkout is missing, symlinked, or non-canonical' \
+    admit --production --issue "$production_issue" \
+    --generation "$production_generation" --tested-sha "$production_tested_sha"
+  mv "$production_root/product/human-e2e.saved" "$production_human" ||
+    fail 'restore isolated Human-test checkout'
+
+  # A fixture marker anywhere above a configured product checkout blocks
+  # production authority, even when every manifest and repository is valid.
+  printf 'schema_version=1\n' > "$production_root/product/.nuinui-e2e-fixture"
+  production_expect_block 'disposable E2E fixture cannot provide production checkout authority' \
+    admit --production --issue "$production_issue" \
+    --generation "$production_generation" --tested-sha "$production_tested_sha"
+  rm -f "$production_root/product/.nuinui-e2e-fixture"
+
+  # Test-only overrides remain forbidden even when the copied helper passes
+  # every canonical executable and synchronized-clone check.
+  if env NUINUI_E2E_TEST_FAILPOINT=after-intent \
+    PATH="$production_git_bin:$PATH" "$production_helper" admit --production --issue "$production_issue" \
+      --generation "$production_generation" --tested-sha "$production_tested_sha" \
+      > "$production_output" 2>&1; then
+    cat "$production_output" >&2
+    fail 'isolated production CLI accepted a self-test environment override'
+  fi
+  grep -Fq 'self-test environment overrides are forbidden in production mode' \
+    "$production_output" || {
+      cat "$production_output" >&2
+      fail 'isolated production environment refusal did not explain the boundary'
+    }
 }
 
 invoke() {
@@ -220,6 +416,7 @@ if "$helper" admit --production --issue "$production_issue" \
   fail 'development-worktree executable acquired live production authority'
 fi
 assert_contains 'installed canonical nuinui-e2e executable'
+new_production_fixture
 expect_block start "$fixture_issue" "$fixture_generation" '' "$fixture_tested_sha"
 zero_host_fixture=$fixture_root/fixture.html
 printf '<html>fixture</html>\n' > "$zero_host_fixture"
