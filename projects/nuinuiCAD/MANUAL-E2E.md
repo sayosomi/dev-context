@@ -42,6 +42,8 @@ For these checks:
 
 Client/MCP path itself remains part of acceptance only when the Task explicitly tests that boundary, such as MCP registration / startup / interoperability or attached production-host observation.
 
+Native E2E admission, dogfood snapshot/hash validation, signed VS Code validation, host readiness, and fixture/self-test success are preparation or automated evidence. None of them is a Human Manual E2E execution or PASS; only the Human operates and judges the declared product action in the actual host.
+
 ## Timing relative to merge
 
 Required Manual E2E is **after merge by default**.

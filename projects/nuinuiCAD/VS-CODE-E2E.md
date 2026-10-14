@@ -81,7 +81,7 @@ ChatGPT / Sol HighがHuman向けsetup commandを生成する前に:
 
 1. latest remote stateを確認する。
 2. testするexact commitを決める。
-3. moving default branchからtest evidenceを隔離する必要があればstable remote E2E refを固定する。
+3. native `nuinui-e2e --production` pathでは、production lifecycleが要求するexact authoritative `main` SHAを固定する。既存SAY / `nuinui-e2e-prepare` routeでのみ、必要に応じてstable remote E2E refを使う。
 4. fixture sourceとrequired binaries / extension bundleを決める。
 5. locale-specific verificationが必要ならlocaleを固定する。
 6. selected Human-test topologyにexplicit portが必要ならcaller-controlled portを固定する。
@@ -91,7 +91,7 @@ Humanはtested stateやoracleを設計しない。Human terminal stepはChatGPT�
 
 ## Human terminal setup contract
 
-VS Code Human Manual E2Eの標準host-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。
+Compatible pre-existing SAY Manual E2Eのhost-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。GitHub-native Issue pathは、別途activation checkpointが記録された後にだけ、canonical `nuinui-e2e --production` lifecycleを使う。
 
 current local dev-context cloneでhelperが利用可能でcurrent operationをsupportしている場合:
 
@@ -112,6 +112,8 @@ nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
 The helper resolves fresh lane, tested ref, and E2E root from local marker/session/receipt authority and serializes existing `cleanup -> e2e-release -> closure-check` public boundaries. Humanはlane、ref、rootを手でsubstituteしない。Exact duplicate success continues immediately; `BLOCKED` / `ERROR` stops later stages and returns to ChatGPT for bounded diagnosis. Existing cleanup, release, closure-check mutation/read-back ownership, PASS / FAIL judgment, and Human stop / pause semantics remain unchanged.
 
 helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
+
+Native production `nuinui-e2e`では手書きlauncherへのfallbackを行わない。`host-check` / `host-prepare`は既存 `npm run dogfood:build` ownerが作るexact SHAのimmutable snapshotと署名済みMicrosoft VS Codeだけを使う。Buildはdogfood ownerのclean `main` gateで行い、別のartifact-generation systemを作らない。`host-prepare`のreadinessはHumanへのhandoff準備であり、Manual E2E resultではない。Issue #286のreview / merge / read-back、Human checkout registration、explicit activation checkpointが完了するまではnative production pathを実行しない。
 
 fallback inline setupが必要な場合も、Human向け準備は可能な限り**1つのcopy/paste block**へまとめる。
 
@@ -198,7 +200,7 @@ Human Manual E2E hostはproduction user profileと分離する。versioned prepa
 - normal user VS Code processを「Manual E2Eだから」という理由だけで無条件に全終了するruleは置かない;
 - current Taskがhost isolationのためにdedicated process policyを必要とする場合は、そのrequirementをplan / helper authorityで明示する。
 
-## Reference / fallback Human launch shape
+## Legacy reference / fallback Human launch shape
 
 以下はhost-preparation contractのreference implementationであり、versioned `nuinui-e2e-prepare` が利用可能な通常のHuman handoffでChatGPTが再生成するtemplateではない。
 
@@ -265,11 +267,11 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 
 ## Versioned helper failure routing
 
-`nuinui-e2e-prepare prepare`がunexpected error、hang、session/state mismatchで完了しない場合は、次の順序を固定する。
+`nuinui-e2e-prepare prepare`または、activation後のnative `nuinui-e2e host-prepare`がunexpected error、hang、session/state mismatchで完了しない場合は、次の順序を固定する。
 
 1. product FAILとして扱わない。
-2. `nuinui-e2e-prepare status <human-test-lane>`でselected Human-test checkout / marker / session metadata / recorded root / launch PIDをread-only確認する。
-3. valid sessionが残りcleanupが必要なら、`LOCAL-TOOLS.md`とhelper contractに従って`cleanup`する。
+2. Legacy runでは`nuinui-e2e-prepare status <human-test-lane>`、native runでは`nuinui-e2e host-status --production --issue <Issue> --generation <token> --tested-sha <sha>`を使い、selected checkout / marker / session metadata / recorded root / launch PIDをread-only確認する。
+3. valid sessionが残りcleanupが必要なら、そのhelperが所有する exact-generation cleanup / recovery commandだけを使う。
 4. helper defect / stale local clone / unsupported operation / environment blockerを分類し、`LOCAL-TOOLS.md`のrepair / fallback ruleへ進む。
 
 失敗したprepareの復旧で次を行わない。
@@ -279,7 +281,7 @@ macOSでshellの`code` commandがunavailableでも、app bundle内のexecutable�
 - helper failure直後に別のad-hoc VS Code launcherを生成して同じrunを継続する;
 - marker / checkout mismatchを手書きscriptでrepairする。
 
-helper自体が未install、stale / broken、またはcurrent operationをsupportしないと確認された場合だけ、`LOCAL-TOOLS.md`のformal fallback条件へ移る。
+Legacy helper自体が未install、stale / broken、またはcurrent operationをsupportしないと確認された場合だけ、`LOCAL-TOOLS.md`のformal fallback条件へ移る。Native production helperのambiguous stateはfail closedし、manual launchやlegacy SAY helperへfallbackしない。
 
 ## Environment blockers
 

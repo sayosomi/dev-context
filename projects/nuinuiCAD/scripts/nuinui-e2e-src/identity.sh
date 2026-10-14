@@ -1,4 +1,4 @@
-# Strict identity conversion for the inactive GitHub-native E2E candidate.
+# Strict identity conversion for canonical GitHub-native E2E Issues.
 
 nuinui_e2e_identity_number() {
   [ "$#" = 1 ] || return 2

@@ -1473,9 +1473,10 @@ EOF
 nuinui_e2e_host_vscode__launch_and_ready() {
   [ "$#" = 0 ] || return 2
   if [ "$nuinui_e2e_vscode_fake_app" != yes ] &&
+    [ "${nuinui_e2e_production:-no}" != yes ] &&
     { [ "$nuinui_e2e_self_test" != yes ] ||
       [ "$nuinui_e2e_vscode_test_app" != yes ]; }; then
-    echo 'BLOCKED: real VS Code activation requires the separately approved D3-C2c2-B pilot'
+    echo 'BLOCKED: real VS Code activation requires explicit production mode'
     return 1
   fi
   nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_host_tested" \
@@ -1562,8 +1563,9 @@ PY
 
 nuinui_e2e_host_vscode__stop_owned_process() {
   [ "$#" = 0 ] || return 2
-  [ "$nuinui_e2e_vscode_test_app" = yes ] || {
-    echo 'BLOCKED: real VS Code shutdown requires the separately approved D3-C2c2-B pilot'
+  [ "$nuinui_e2e_vscode_test_app" = yes ] ||
+    [ "${nuinui_e2e_production:-no}" = yes ] || {
+    echo 'BLOCKED: real VS Code shutdown requires explicit production mode'
     return 1
   }
   nuinui_e2e_host_vscode__verify_process_state cleanup-pending || {

@@ -1,5 +1,5 @@
-# Public dispatcher for the inactive fixture candidate. Every operation is
-# self-test-only; this executable has no production manifest fallback.
+# Public dispatcher for native Human E2E. Fixture regression mode and live
+# production mode are explicit and have separate authority boundaries.
 
 nuinui_e2e_usage() {
   cat >&2 <<'USAGE'
@@ -14,12 +14,31 @@ Accepted Issue identities are exactly:
   https://github.com/sayosomi/nuinuiCAD/issues/N
   GH-sayosomi-nuinuiCAD-N
 
-This inactive candidate cannot operate on a production checkout.
+Usage: nuinui-e2e {admit|status|start|release|recover|closure|host-check|host-prepare|host-status|host-cleanup|host-recover|host-closure} \
+  --production --issue <canonical-identity> --generation <caller-token> \
+  --tested-sha <40-lowercase-hex> [--lane human-e2e] \
+  [--fixture <absolute-canonical-external-file> --port <1-65535> [--locale default|ja]]
+
+Production mode uses only the canonical versioned LANES.conf and always uses
+the signed Microsoft VS Code adapter. Host readiness is not product PASS.
 USAGE
+}
+
+nuinui_e2e_cli_resolve_program() {
+  nuinui_e2e_cli_program=$0
+  case "$nuinui_e2e_cli_program" in
+    */*) ;;
+    *) nuinui_e2e_cli_program=$(command -v -- "$nuinui_e2e_cli_program" 2>/dev/null || true) ;;
+  esac
+  [ -n "$nuinui_e2e_cli_program" ] || return 1
+  nuinui_e2e_cli_program_path=$(realpath "$nuinui_e2e_cli_program" 2>/dev/null) || return 1
 }
 
 nuinui_e2e_cli_main() {
   [ "$#" -ge 1 ] || { nuinui_e2e_usage; return 2; }
+  nuinui_e2e_self_test=no
+  nuinui_e2e_production=no
+  nuinui_e2e_test_failpoint=
   nuinui_e2e_command=$1
   shift
   nuinui_e2e_cli_manifest=
@@ -32,7 +51,9 @@ nuinui_e2e_cli_main() {
   nuinui_e2e_cli_locale=default
   nuinui_e2e_cli_adapter=fixture-no-process
   nuinui_e2e_cli_self_test=no
+  nuinui_e2e_cli_production=no
   nuinui_e2e_cli_seen_self_test=no
+  nuinui_e2e_cli_seen_production=no
   nuinui_e2e_cli_seen_manifest=no
   nuinui_e2e_cli_seen_issue=no
   nuinui_e2e_cli_seen_lane=no
@@ -53,6 +74,14 @@ nuinui_e2e_cli_main() {
         }
         nuinui_e2e_cli_seen_self_test=yes
         nuinui_e2e_cli_self_test=yes
+        ;;
+      --production)
+        [ "$nuinui_e2e_cli_seen_production" = no ] || {
+          echo 'ERROR: duplicate --production option' >&2
+          return 2
+        }
+        nuinui_e2e_cli_seen_production=yes
+        nuinui_e2e_cli_production=yes
         ;;
       --manifest|--issue|--lane|--generation|--tested-sha|--fixture|--port|--locale|--adapter)
         [ "$#" -gt 0 ] || { echo "ERROR: $nuinui_e2e_cli_option requires a value" >&2; return 2; }
@@ -121,14 +150,65 @@ nuinui_e2e_cli_main() {
         ;;
     esac
   done
-  [ "$nuinui_e2e_cli_self_test" = yes ] || {
-    echo 'BLOCKED: explicit --self-test is required; production activation is not implemented' >&2
+  [ "$nuinui_e2e_cli_self_test" = no ] || [ "$nuinui_e2e_cli_production" = no ] || {
+    echo 'ERROR: choose exactly one of --self-test or --production' >&2
+    return 2
+  }
+  [ "$nuinui_e2e_cli_self_test" = yes ] || [ "$nuinui_e2e_cli_production" = yes ] || {
+    echo 'BLOCKED: explicit --production or --self-test is required' >&2
     return 1
   }
-  [ "$nuinui_e2e_cli_seen_manifest" = yes ] || { echo 'ERROR: --manifest is required' >&2; return 2; }
   [ "$nuinui_e2e_cli_seen_issue" = yes ] || { echo 'ERROR: --issue is required' >&2; return 2; }
   [ "$nuinui_e2e_cli_seen_generation" = yes ] || { echo 'ERROR: --generation is required' >&2; return 2; }
   [ "$nuinui_e2e_cli_seen_tested" = yes ] || { echo 'ERROR: --tested-sha is required' >&2; return 2; }
+
+  if [ "$nuinui_e2e_cli_production" = yes ]; then
+    [ "$nuinui_e2e_cli_seen_manifest" = no ] || {
+      echo 'ERROR: --manifest is unavailable in production mode; the canonical versioned LANES.conf is selected automatically' >&2
+      return 2
+    }
+    [ "$nuinui_e2e_cli_seen_adapter" = no ] || {
+      echo 'ERROR: --adapter is unavailable in production mode; vscode-isolated is mandatory' >&2
+      return 2
+    }
+    case "$nuinui_e2e_command" in
+      cleanup-proof)
+        echo 'BLOCKED: fixture-only cleanup-proof cannot be used in production mode' >&2
+        return 1
+        ;;
+      host-check|host-prepare)
+        [ "$nuinui_e2e_cli_seen_fixture" = yes ] || { echo 'ERROR: --fixture is required for this host command' >&2; return 2; }
+        [ "$nuinui_e2e_cli_seen_port" = yes ] || { echo 'ERROR: --port is required for this host command' >&2; return 2; }
+        case "$nuinui_e2e_cli_locale" in default|ja) ;; *) echo 'ERROR: --locale must be default or ja' >&2; return 2 ;; esac
+        ;;
+      *)
+        [ "$nuinui_e2e_cli_seen_fixture" = no ] &&
+          [ "$nuinui_e2e_cli_seen_port" = no ] &&
+          [ "$nuinui_e2e_cli_seen_locale" = no ] || {
+            echo 'ERROR: --fixture, --port, and --locale are only valid for host-check and host-prepare' >&2
+            return 2
+          }
+        ;;
+    esac
+    [ -z "$(env | sed -n '/^NUINUI_E2E_TEST_/p' | sed -n '1p')" ] || {
+      echo 'BLOCKED: self-test environment overrides are forbidden in production mode' >&2
+      return 1
+    }
+    nuinui_e2e_cli_resolve_program || {
+      echo 'BLOCKED: production executable path cannot be independently resolved' >&2
+      return 1
+    }
+    nuinui_e2e_production=yes
+    nuinui_e2e_self_test=no
+    nuinui_e2e_cli_manifest=/Users/yosomi/Code/dev-context/projects/nuinuiCAD/LANES.conf
+    nuinui_e2e_cli_adapter=vscode-isolated
+  else
+    [ "$nuinui_e2e_cli_seen_manifest" = yes ] || { echo 'ERROR: --manifest is required in self-test mode' >&2; return 2; }
+    nuinui_e2e_self_test=yes
+    nuinui_e2e_production=no
+    nuinui_e2e_test_failpoint=${NUINUI_E2E_TEST_FAILPOINT:-}
+  fi
+
   case "$nuinui_e2e_command" in
     host-check|host-prepare)
       [ "$nuinui_e2e_cli_seen_fixture" = yes ] || { echo 'ERROR: --fixture is required for this command' >&2; return 2; }
@@ -149,14 +229,12 @@ nuinui_e2e_cli_main() {
       }
       ;;
   esac
-  nuinui_e2e_self_test=yes
   nuinui_e2e_operation=$nuinui_e2e_command
   nuinui_e2e_manifest_arg=$nuinui_e2e_cli_manifest
   nuinui_e2e_lane_arg=$nuinui_e2e_cli_lane
   nuinui_e2e_issue_arg=$nuinui_e2e_cli_issue
   nuinui_e2e_expected_generation=$nuinui_e2e_cli_generation
   nuinui_e2e_expected_tested=$nuinui_e2e_cli_tested
-  nuinui_e2e_test_failpoint=${NUINUI_E2E_TEST_FAILPOINT:-}
   nuinui_e2e_host_adapter_arg=$nuinui_e2e_cli_adapter
   case "$nuinui_e2e_command" in
     admit)

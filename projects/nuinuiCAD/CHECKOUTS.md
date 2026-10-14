@@ -12,11 +12,12 @@ Evaluator auditのexecutor selection、finding threshold、Sol-first / Astra-esc
 
 ## Declared lanes
 
-The checked-in manifest currently declares one implementation lane and zero Human-test lanes; the names and paths are data, not the capacity model.
+The checked-in manifest declares one implementation lane and one Human-test lane; the names and paths are data, not the capacity model. The Human-test path is not yet registered, so it does not provide usable Manual E2E capacity until the reviewed policy is activated and the checkout is safely registered.
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
 | `main` | `/Users/yosomi/Code/nuinuiCAD` | Luna implementation / blocking fix / implementation-side diagnosis |
+| `human-e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Human-only native Manual E2E |
 
 Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
 
@@ -24,7 +25,7 @@ Capacity and routing rules:
 
 - implementation capacity is the number of declared `role=implementation` lanes.
 - Human-test capacity is the number of declared `role=human-test` lanes.
-- With zero declared Human-test lanes, Manual E2E startup is unavailable. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done; explicitly reintroduce and verify a dedicated `role=human-test` lane before execution.
+- A declared Human-test lane supplies capacity only when the exact real checkout is registered and passes the complete topology / idle-state admission. Until `/Users/yosomi/Code/nuinuiCAD-e2e` exists as the registered clean detached checkout, native Manual E2E startup remains blocked. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done.
 - a lane is never reassigned across roles, and declared paths are not inferred from lane names.
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
@@ -859,24 +860,91 @@ CI reproductionも追加のexecution laneを作らない。必要ならFREEなde
 
 並列性はmanifestに宣言されたimplementation lane数で表現する。それ以上のdynamic laneを作らず、全laneを同時に使うこと自体も目的にしない。
 
-## Future GitHub-native Manual E2E checkout contract (inactive)
+## Native GitHub Manual E2E checkout contract (activation pending)
 
-This is a future checkout contract, not an available lifecycle or permission
-to create a lane, checkout, marker, session, or receipt. Native E2E remains
-unavailable until separately approved tooling and an explicit activation
-checkpoint exist. The compatible SAY lifecycle above keeps its current helper,
-marker/session/receipt authority, and exact recovery behavior.
+The native `nuinui-e2e` production lifecycle is implemented in this policy change, but is not yet active and does not authorize creating or registering the Human-test checkout. Before any live generation, this change must be independently reviewed and merged, read back from authoritative `main`, and separately activated after safe checkout registration. The compatible legacy SAY lifecycle above keeps its current helper, marker/session/receipt authority, and exact recovery behavior.
+
+### Production lifecycle
+
+The live helper requires explicit `--production` and selects only the canonical
+standard-clone executable and versioned manifest. It accepts canonical
+`sayosomi/nuinuiCAD#N`, issue URL, or `GH-sayosomi-nuinuiCAD-N` identities.
+Production rejects caller-supplied manifests / adapters and every
+`NUINUI_E2E_TEST_*` override. The explicit `--self-test --manifest` mode remains
+fixture-only and cannot supply production checkout authority.
+
+For one canonical Issue, generation, and exact tested SHA, the lifecycle is:
+
+1. `admit` proves the Human-test lane is FREE, clean, detached, registered, and
+   at its independently verified idle revision. It also proves complete
+   topology and an idle implementation lane.
+2. `start` fetches authoritative `main`, requires the caller's tested SHA to
+   match it exactly, detaches the Human-test checkout to that SHA, and writes
+   the generation-bound marker. A duplicate start is read-only only when every
+   identity still matches.
+3. `host-check` validates an external fixture, explicit port, exact immutable
+   dogfood snapshot, artifact hashes / paths, signed Microsoft VS Code app,
+   and process / listener availability. `host-prepare` launches the isolated
+   host and records the generation-owned profile, snapshot, process, and
+   loopback CDP listener. Host readiness is not product PASS.
+4. Only the Human performs and judges Manual E2E in the actual VS Code GUI.
+5. `host-closure` proves and removes only the owned host resources, binds the
+   host cleanup receipt to the native generation, releases the checkout, and
+   independently proves final clean detached closure. `recover` and
+   `host-recover` handle only their exact recorded interruption cases; unclear
+   ownership or process identity remains blocked.
+
+Every production operation reruns complete preflight. Missing / dirty / named
+checkouts, incomplete registered topology, stale or wrong tested SHA, foreign
+markers / sessions / processes / listeners, malformed receipts, and artifact
+mismatches fail closed before the relevant mutation. The helper does not
+choose an oracle, operate the GUI, or judge product behavior.
 
 ### Admission and checkout identity
 
-The current [`LANES.conf`](./LANES.conf) declares zero `role=human-test` lanes.
-That is a hard startup block. Do not reuse an implementation lane, create an
-unregistered checkout, or make a native E2E generation until a separate
-Human-approved manifest change declares a Human-test lane and every admission
-check below passes. A Required Manual E2E cannot be waived or reported PASS
-because capacity is zero.
+The current [`LANES.conf`](./LANES.conf) declares exactly one `role=human-test`
+lane named `human-e2e`, with `idle=detached` at
+`/Users/yosomi/Code/nuinuiCAD-e2e`. That path is intentionally not registered by
+this implementation change. A missing or unregistered path is a hard startup
+block. Do not reuse the implementation lane, invent another checkout, or make
+a native E2E generation before the reviewed manifest and policy are activated.
+A Required Manual E2E cannot be waived or reported PASS while the checkout is
+unavailable.
 
-For a future native generation, the selected checkout must be a manifest-
+### Human-test checkout registration and recovery
+
+Registration is a separate Human-authorized step after the manifest and this
+policy have been reviewed, merged, read back from authoritative dev-context
+`main`, and explicitly activated in dev-context #286. Do not register the
+checkout from the implementation branch or during this policy review.
+
+After activation, first fetch the nuinuiCAD `origin/main` and inspect the
+complete registered-worktree list, both declared paths, the destination path,
+and all Git-local ownership records. Continue only when the existing
+implementation checkout is the single valid registered lane, the destination
+path is absent, and no operation or ownership state is active or pending. Use
+the freshly read full authoritative `main` SHA as the idle commit:
+
+```bash
+git -C /Users/yosomi/Code/nuinuiCAD worktree add --detach \
+  /Users/yosomi/Code/nuinuiCAD-e2e <authoritative-main-sha>
+```
+
+Then independently re-read `git worktree list --porcelain`, the Human-test
+checkout's origin / Git directory / detached HEAD / clean status, and the full
+manifest-to-worktree topology before any E2E command. Do not overwrite an
+existing path or use reset, force, prune, or cleanup to make registration
+appear successful.
+
+If `worktree add` fails or is interrupted, leave the destination and Git
+metadata untouched. Read the complete worktree list, destination existence,
+`.git` pointer, checkout origin, HEAD, status, and ownership records; do not
+repeat `worktree add`, remove the path, or run `worktree repair` / `prune` until
+the exact interrupted state has been independently classified and a specific
+recovery is authorized. Unknown, partial, or conflicting state remains
+`BLOCKED` for bounded diagnosis.
+
+For each native generation, the selected checkout must be a manifest-
 declared `role=human-test` lane with the required `idle=detached` topology. At
 the admission boundary, verify all of the following from fresh Git and manifest
 state:
@@ -906,17 +974,18 @@ Do not advance the tested ref or move the detached HEAD during a generation.
 Any mismatch, dirty or named checkout, incomplete topology, stale authority,
 or foreign ownership fails closed before mutation.
 
-### Future generation and recovery evidence
+### Generation and recovery evidence
 
 The native Work identity is the canonical GitHub identity in
-[`ISSUES.md`](./ISSUES.md#future-github-native-manual-e2e-checkpoints-inactive).
-If future tooling serializes it locally, it must use the reserved
-`GH-sayosomi-nuinuiCAD-<N>` token and reverse-map exactly to that Issue. This
-token is not accepted by the old `nuinui` or `nuinui-e2e-prepare` executables.
-Do not put it in live metadata in this policy change, reinterpret any `SAY-N`
-record, or change the existing legacy marker schema.
+[`ISSUES.md`](./ISSUES.md#native-github-manual-e2e-checkpoints-activation-pending).
+The native helper stores the reserved `GH-sayosomi-nuinuiCAD-<N>` token and
+reverse-maps it exactly to that Issue. The old `nuinui` and
+`nuinui-e2e-prepare` executables remain SAY-compatible only; never pass the
+native token to them. This implementation creates no live metadata,
+reinterprets no existing `SAY-N` record, and does not change the legacy marker
+schema.
 
-Future native marker and session evidence must be strict, generation-scoped,
+Native marker and session evidence is strict, generation-scoped,
 and mutually consistent. Bind the canonical Issue, reserved local token, exact
 manifest lane and checkout identity, immutable tested ref, and unique
 generation identity; bind any session to that same generation. Treat the
@@ -942,7 +1011,7 @@ automatically, infer a generation from a receipt, retry an unsafe mutation, or
 remove foreign files or processes. No competing checkout ownership is allowed
 at any point.
 
-These future requirements do not change the existing legacy closure order
+These native requirements do not change the existing legacy closure order
 `cleanup -> e2e-release -> closure-check` or remove its `SAY-N` release gates.
 Manual E2E judgment and execution semantics remain owned by
 [`MANUAL-E2E.md`](./MANUAL-E2E.md).

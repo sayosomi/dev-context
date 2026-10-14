@@ -156,11 +156,13 @@ E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読�
 
 このdocumentはE2E chat固有のlifecycle boundaryだけをownerする。Manual E2E semantics、Human production-host setup、checkout detailはそれぞれのowner documentへ置く。Inactive Luna E2E materialは`LUNA-E2E-PLAYBOOK.md`だけに隔離する。
 
-## Future GitHub-native Manual E2E route (inactive)
+## Native GitHub Manual E2E route (activation pending)
 
-This section defines a future route only. It does not activate or provide a
-currently callable E2E command. The compatible legacy SAY procedures above
-remain the only supported current E2E helper lifecycle.
+The native `nuinui-e2e --production` lifecycle is implemented, but is not an
+active Human route yet. Compatible pre-existing SAY procedures above continue
+to use their existing helper. Do not start a native generation until the
+reviewed policy is merged and read back, the dedicated Human-test checkout is
+safely registered, and the separate activation checkpoint is recorded.
 
 A native GitHub Issue has no legacy `nuinui` implementation generation or
 claim. Native Manual E2E admission must not require `IMPLEMENTATION RELEASED`,
@@ -178,20 +180,24 @@ must be rechecked, and all of these facts must be proved together:
   ownership admission in [`CHECKOUTS.md`](./CHECKOUTS.md);
 - the exact Issue, lane, tested ref, generation, and recovery evidence agree.
 
-The current manifest has zero Human-test lanes, so this route is blocked before
-startup. A Required Manual E2E remains governed by
+The manifest declares `human-e2e` at `/Users/yosomi/Code/nuinuiCAD-e2e`, but the
+checkout is not registered. Native production startup therefore remains
+blocked before mutation. Fixture-only `--self-test` regression mode does not
+authorize that path. A Required Manual E2E remains governed by
 [`MANUAL-E2E.md`](./MANUAL-E2E.md); this route does not waive its acceptance or
 change its Human-only executor, oracle, result, stabilization, actual-host
 evidence, or post-merge verification rules.
 
 The native start checkpoint and later progress, stop, result, and closure
 evidence belong in the canonical GitHub Issue comments described by
-[`ISSUES.md`](./ISSUES.md#future-github-native-manual-e2e-checkpoints-inactive).
+[`ISSUES.md`](./ISSUES.md#native-github-manual-e2e-checkpoints-activation-pending).
 Closure must prove the exact generation was safely cleaned up and released,
 then independently prove the final checkout state. An interrupted or ambiguous
 generation remains blocked until its exact recovery evidence is independently
 resolved; do not infer closure from a merge, result comment, or stale receipt.
 
-This route cannot be invoked until its tooling has been separately approved,
-implemented, and verified, and a separate explicit activation checkpoint has
-been recorded. This contract-only change is not that approval or activation.
+After activation, use the production command contract and exact checkout gates
+owned by [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) and
+[`CHECKOUTS.md`](./CHECKOUTS.md). A native host-ready result remains setup
+evidence; only the Human operates and judges Manual E2E. This policy change
+does not start the pilot automatically.

@@ -1,4 +1,5 @@
-# Isolated, fixture-only native E2E ownership lifecycle.
+# Native E2E ownership lifecycle. Self-test fixtures and production authority
+# enter through separate context validators and share the same lifecycle.
 
 nuinui_e2e__exists() { [ -e "$1" ] || [ -L "$1" ]; }
 
@@ -465,6 +466,175 @@ EOF
   [ "$nuinui_e2e_expected_lane" != '' ]
 }
 
+nuinui_e2e__canonical_product_origin() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_production_origin=$(git -C "$1" remote get-url origin 2>/dev/null) || return 1
+  case "$nuinui_e2e_production_origin" in
+    https://github.com/sayosomi/nuinuiCAD|https://github.com/sayosomi/nuinuiCAD.git|\
+    git@github.com:sayosomi/nuinuiCAD|git@github.com:sayosomi/nuinuiCAD.git|\
+    ssh://git@github.com/sayosomi/nuinuiCAD|ssh://git@github.com/sayosomi/nuinuiCAD.git)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+nuinui_e2e__production_context() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_manifest_input=$1
+  nuinui_e2e_expected_lane=$2
+  nuinui_e2e_manifest_arg_issue=$3
+  nuinui_e2e_live_root=/Users/yosomi/Code/dev-context
+  nuinui_e2e_live_manifest=$nuinui_e2e_live_root/projects/nuinuiCAD/LANES.conf
+  nuinui_e2e_live_helper=$nuinui_e2e_live_root/projects/nuinuiCAD/scripts/nuinui-e2e
+  nuinui_e2e_live_manifest_rel=projects/nuinuiCAD/LANES.conf
+  nuinui_e2e_live_helper_rel=projects/nuinuiCAD/scripts/nuinui-e2e
+
+  [ "${nuinui_e2e_production:-no}" = yes ] || {
+    echo 'BLOCKED: native E2E production mode was not explicitly selected'
+    return 1
+  }
+  [ -z "$(env | sed -n '/^NUINUI_E2E_TEST_/p' | sed -n '1p')" ] || {
+    echo 'BLOCKED: self-test environment overrides are forbidden in production mode'
+    return 1
+  }
+  [ "$nuinui_e2e_manifest_input" = "$nuinui_e2e_live_manifest" ] &&
+    [ "${nuinui_e2e_cli_program_path:-}" = "$nuinui_e2e_live_helper" ] || {
+      echo 'BLOCKED: production mode requires the installed canonical nuinui-e2e executable and versioned LANES.conf'
+      return 1
+    }
+  [ -f "$nuinui_e2e_live_helper" ] && [ ! -L "$nuinui_e2e_live_helper" ] &&
+    [ -f "$nuinui_e2e_live_manifest" ] && [ ! -L "$nuinui_e2e_live_manifest" ] &&
+    [ "$(realpath "$nuinui_e2e_live_helper" 2>/dev/null)" = "$nuinui_e2e_live_helper" ] &&
+    [ "$(realpath "$nuinui_e2e_live_manifest" 2>/dev/null)" = "$nuinui_e2e_live_manifest" ] || {
+      echo 'BLOCKED: canonical production executable or lane manifest is missing, symlinked, or non-canonical'
+      return 1
+    }
+  [ "$(git -C "$nuinui_e2e_live_root" rev-parse --show-toplevel 2>/dev/null)" = "$nuinui_e2e_live_root" ] &&
+    lane_execution__repository_matches "$nuinui_e2e_live_root" sayosomi/dev-context &&
+    [ "$(git -C "$nuinui_e2e_live_root" remote get-url origin 2>/dev/null)" = https://github.com/sayosomi/dev-context.git ] &&
+    [ "$(git -C "$nuinui_e2e_live_root" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" = main ] &&
+    [ "$(git -C "$nuinui_e2e_live_root" rev-parse HEAD 2>/dev/null)" = "$(git -C "$nuinui_e2e_live_root" rev-parse origin/main 2>/dev/null)" ] &&
+    [ -z "$(git -C "$nuinui_e2e_live_root" status --porcelain=v1 --untracked-files=all 2>/dev/null)" ] || {
+      echo 'BLOCKED: production helper requires the clean standard dev-context clone at its synchronized main'
+      return 1
+    }
+  git -C "$nuinui_e2e_live_root" ls-files --error-unmatch \
+    "$nuinui_e2e_live_manifest_rel" "$nuinui_e2e_live_helper_rel" >/dev/null 2>&1 &&
+    git -C "$nuinui_e2e_live_root" show "HEAD:$nuinui_e2e_live_manifest_rel" 2>/dev/null |
+      cmp -s - "$nuinui_e2e_live_manifest" &&
+    git -C "$nuinui_e2e_live_root" show "HEAD:$nuinui_e2e_live_helper_rel" 2>/dev/null |
+      cmp -s - "$nuinui_e2e_live_helper" || {
+        echo 'BLOCKED: production executable or lane manifest differs from its versioned main artifact'
+        return 1
+      }
+
+  nuinui_e2e_self_test=no
+  nuinui_e2e_fixture_root=
+  nuinui_e2e_manifest_path=$nuinui_e2e_live_manifest
+  lane_manifest_validate "$nuinui_e2e_manifest_path" || return 1
+  [ "$(lane_manifest_repository_identity "$nuinui_e2e_manifest_path")" = sayosomi/nuinuiCAD ] &&
+    [ "$(lane_manifest_default_branch "$nuinui_e2e_manifest_path")" = main ] || {
+      echo 'BLOCKED: production lane manifest has an unexpected repository or default branch'
+      return 1
+    }
+  nuinui_e2e_manifest_sha=$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path") || return 1
+  nuinui_e2e_valid_digest "$nuinui_e2e_manifest_sha" || return 1
+  nuinui_e2e_default_branch=main
+
+  nuinui_e2e_all_lanes=$(lane_manifest_all_lanes "$nuinui_e2e_manifest_path") || return 1
+  nuinui_e2e_implementation_lanes=$(lane_manifest_lanes_by_role \
+    "$nuinui_e2e_manifest_path" implementation) || return 1
+  nuinui_e2e_human_lanes=$(lane_manifest_lanes_by_role \
+    "$nuinui_e2e_manifest_path" human-test) || return 1
+  [ "$(printf '%s\n' "$nuinui_e2e_all_lanes" | grep -c . || true)" = 2 ] &&
+    [ "$nuinui_e2e_implementation_lanes" = main ] &&
+    [ "$nuinui_e2e_human_lanes" = human-e2e ] || {
+      echo 'BLOCKED: production manifest must declare the existing implementation lane and exactly one human-e2e lane'
+      return 1
+    }
+  [ "$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" main)" = /Users/yosomi/Code/nuinuiCAD ] &&
+    [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" main)" = implementation ] &&
+    [ "$(lane_manifest_lane_idle_policy "$nuinui_e2e_manifest_path" main)" = branch ] || {
+      echo 'BLOCKED: existing implementation lane policy changed unexpectedly'
+      return 1
+    }
+  [ "$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" human-e2e)" = /Users/yosomi/Code/nuinuiCAD-e2e ] &&
+    [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" human-e2e)" = human-test ] &&
+    [ "$(lane_manifest_lane_idle_policy "$nuinui_e2e_manifest_path" human-e2e)" = detached ] || {
+      echo 'BLOCKED: dedicated Human-test lane policy changed unexpectedly'
+      return 1
+    }
+  if [ -z "$nuinui_e2e_expected_lane" ]; then
+    nuinui_e2e_expected_lane=human-e2e
+  fi
+  [ "$nuinui_e2e_expected_lane" = human-e2e ] || {
+    echo 'BLOCKED: production E2E requires the declared human-e2e lane'
+    return 1
+  }
+
+  while IFS= read -r nuinui_e2e_manifest_lane || [ -n "$nuinui_e2e_manifest_lane" ]; do
+    [ -n "$nuinui_e2e_manifest_lane" ] || continue
+    nuinui_e2e_lane_path=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" \
+      "$nuinui_e2e_manifest_lane") || return 1
+    case "$nuinui_e2e_lane_path" in /*) ;; *) return 1 ;; esac
+    [ -d "$nuinui_e2e_lane_path" ] && [ ! -L "$nuinui_e2e_lane_path" ] &&
+      [ "$(realpath "$nuinui_e2e_lane_path" 2>/dev/null)" = "$nuinui_e2e_lane_path" ] || {
+        echo "BLOCKED: declared production checkout is missing, symlinked, or non-canonical: $nuinui_e2e_manifest_lane"
+        return 1
+      }
+    nuinui_e2e_ancestor=$nuinui_e2e_lane_path
+    while :; do
+      if nuinui_e2e__exists "$nuinui_e2e_ancestor/.nuinui-e2e-fixture"; then
+        echo "BLOCKED: disposable E2E fixture cannot provide production checkout authority: $nuinui_e2e_lane_path"
+        return 1
+      fi
+      [ "$nuinui_e2e_ancestor" != / ] || break
+      nuinui_e2e_ancestor=${nuinui_e2e_ancestor%/*}
+      [ -n "$nuinui_e2e_ancestor" ] || nuinui_e2e_ancestor=/
+    done
+    git -C "$nuinui_e2e_lane_path" rev-parse --show-toplevel >/dev/null 2>&1 &&
+      lane_execution__repository_matches "$nuinui_e2e_lane_path" sayosomi/nuinuiCAD &&
+      nuinui_e2e__canonical_product_origin "$nuinui_e2e_lane_path" || {
+        echo "BLOCKED: production checkout has a foreign or non-GitHub origin: $nuinui_e2e_manifest_lane"
+        return 1
+      }
+  done <<EOF
+$nuinui_e2e_all_lanes
+EOF
+
+  nuinui_e2e_expected_repo=/Users/yosomi/Code/nuinuiCAD-e2e
+  nuinui_e2e_checkout=$nuinui_e2e_expected_repo
+  nuinui_e2e_git_dir=$(lane_execution__git_dir "$nuinui_e2e_checkout") || return 1
+  [ -d "$nuinui_e2e_git_dir" ] && [ ! -L "$nuinui_e2e_git_dir" ] || return 1
+  nuinui_e2e_expected_issue=$(nuinui_e2e_identity_issue "$nuinui_e2e_manifest_arg_issue") || {
+    echo 'BLOCKED: Issue identity is not canonical for sayosomi/nuinuiCAD'
+    return 1
+  }
+  nuinui_e2e_expected_url=$(nuinui_e2e_identity_url "$nuinui_e2e_expected_issue") || return 1
+  nuinui_e2e_expected_token=$(nuinui_e2e_identity_token "$nuinui_e2e_expected_issue") || return 1
+  nuinui_e2e_valid_generation "$nuinui_e2e_expected_generation" || {
+    echo 'BLOCKED: generation must be a unique canonical caller-supplied token'
+    return 1
+  }
+  nuinui_e2e_valid_sha "$nuinui_e2e_expected_tested" || {
+    echo 'BLOCKED: tested commit must be an exact lowercase 40-character SHA'
+    return 1
+  }
+  [ -n "$nuinui_e2e_expected_lane" ]
+}
+
+nuinui_e2e__selected_context() {
+  if [ "${nuinui_e2e_production:-no}" = yes ]; then
+    nuinui_e2e__production_context "$@"
+  elif [ "${nuinui_e2e_self_test:-no}" = yes ]; then
+    nuinui_e2e__fixture_context "$@"
+  else
+    echo 'BLOCKED: explicit --production or --self-test mode is required'
+    return 1
+  fi
+}
+
 nuinui_e2e__lane_preflight_state() {
   [ "$#" = 3 ] || return 2
   nuinui_e2e_check_lane=$1
@@ -714,7 +884,7 @@ nuinui_e2e__preflight() {
   if ! lane_execution_preflight "$1" >"$nuinui_e2e_preflight_tmp" 2>&1; then
     cat "$nuinui_e2e_preflight_tmp" >&2
     rm -f "$nuinui_e2e_preflight_tmp"
-    echo 'BLOCKED: full candidate fixture preflight failed' >&2
+    echo 'BLOCKED: full native E2E preflight failed' >&2
     return 1
   fi
   if ! awk '
@@ -898,7 +1068,7 @@ nuinui_e2e_admit() {
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -936,7 +1106,7 @@ nuinui_e2e_status() {
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -987,7 +1157,7 @@ nuinui_e2e_start() {
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
   nuinui_e2e_expected_tested=$4
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -1065,7 +1235,11 @@ nuinui_e2e_start() {
   }
   nuinui_e2e__finish_start "$nuinui_e2e_starting" \
     "$nuinui_e2e_active" yes || return 1
-  echo 'NATIVE E2E FIXTURE STARTED'
+  if [ "${nuinui_e2e_production:-no}" = yes ]; then
+    echo 'NATIVE E2E STARTED'
+  else
+    echo 'NATIVE E2E FIXTURE STARTED'
+  fi
   echo "issue=$nuinui_e2e_expected_issue"
   echo "url=$nuinui_e2e_expected_url"
   echo "local_id=$nuinui_e2e_expected_token"
@@ -1081,7 +1255,7 @@ nuinui_e2e_cleanup_proof() {
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -1126,7 +1300,7 @@ nuinui_e2e_release() {
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -1261,7 +1435,11 @@ nuinui_e2e_release() {
       echo 'BLOCKED: release intent changed after marker removal; receipt retained'
       return 1
     }
-  echo 'NATIVE E2E FIXTURE RELEASED'
+  if [ "${nuinui_e2e_production:-no}" = yes ]; then
+    echo 'NATIVE E2E RELEASED'
+  else
+    echo 'NATIVE E2E FIXTURE RELEASED'
+  fi
   echo "issue=$nuinui_e2e_expected_issue"
   echo "tested_sha=$nuinui_e2e_expected_tested"
   echo "idle_sha=$nuinui_e2e_idle_sha"
@@ -1276,7 +1454,7 @@ nuinui_e2e_recover() {
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
@@ -1395,7 +1573,7 @@ nuinui_e2e_closure() {
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
   nuinui_e2e_issue_arg=$3
-  nuinui_e2e__fixture_context "$nuinui_e2e_manifest_arg" \
+  nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1

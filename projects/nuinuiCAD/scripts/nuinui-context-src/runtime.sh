@@ -2,6 +2,7 @@
 # product lifecycle, lane ownership, reservation, or E2E helpers.
 P=$0
 case "$P" in */*) ;; *) P=$(command -v "$P" 2>/dev/null || printf '%s' "$P");; esac
+P=$(realpath "$P" 2>/dev/null || printf '%s' "$P")
 D=$(CDPATH= cd -- "$(dirname -- "$P")" 2>/dev/null && pwd -P)
 if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
   C=${NUINUI_DEV_CONTEXT_WT:?NUINUI_DEV_CONTEXT_WT is required for fixture runs}
@@ -12,7 +13,7 @@ else
   CD=/Users/yosomi/Code/dev-context-dev
   CT=https://github.com/sayosomi/dev-context.git
 fi
-CONTEXT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui
+CONTEXT_ARTIFACT=projects/nuinuiCAD/scripts/nuinui-context
 context_sha_is_valid() { printf '%s\n' "$1" | grep -Eq '^[0-9a-fA-F]{40}$'; }
 gr() { [ -d "$1" ] && git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
 cn() { [ -z "$(git -C "$1" status --porcelain --untracked-files=all 2>/dev/null)" ]; }
@@ -44,6 +45,19 @@ context_origin_exact() {
 
 context_repo_ready() {
   [ -n "$C" ] && gr "$C" && context_origin_exact
+}
+
+context_installed_executable_prove() {
+  if [ "${NUINUI_SELFTEST:-0}" = 1 ]; then
+    context_installed_executable_blob=self-test
+    return 0
+  fi
+  context_installed_expected_path=$C/$CONTEXT_ARTIFACT
+  [ "$P" = "$context_installed_expected_path" ] &&
+    [ -f "$P" ] && [ ! -L "$P" ] || return 1
+  context_installed_head_blob=$(context_artifact_blob "$C" HEAD) || return 1
+  context_installed_executable_blob=$(git -C "$C" hash-object --no-filters -- "$P" 2>/dev/null) || return 1
+  [ "$context_installed_executable_blob" = "$context_installed_head_blob" ]
 }
 
 context_artifact_blob() {
@@ -133,6 +147,7 @@ context_dev_ready() {
 
 context_check_command() {
   context_repo_ready || { echo "BLOCKED: context-check repository/origin mismatch path=$C"; return 1; }
+  context_installed_executable_prove || { echo "BLOCKED: installed nuinui-context executable identity mismatch path=$P"; return 1; }
   context_worktree_registry || { echo "BLOCKED: context-check worktree inventory is invalid or unexpected path=$C"; return 1; }
   cn "$C" && cn "$CD" || { echo 'BLOCKED: context-check requires clean standard and dev worktrees'; return 1; }
   context_docs=$C/projects/nuinuiCAD/LOCAL-TOOLS.md
@@ -160,6 +175,7 @@ EOF
     grep -Fq "nuinui-context $context_command" "$context_docs" || { echo "BLOCKED: candidate command is undocumented: $context_command"; return 1; }
   done
   echo 'nuinui-context 0.1.0'
+  echo "installed_executable_blob=$context_installed_executable_blob"
   echo 'CONTEXT CHECK PASS'
 }
 
@@ -184,6 +200,10 @@ context_audit_prove() {
   }
   context_repo_ready || {
     context_audit_error="BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"
+    return 1
+  }
+  context_installed_executable_prove || {
+    context_audit_error="BLOCKED: installed nuinui-context executable identity mismatch path=$P"
     return 1
   }
   context_audit_branch=$(bn "$C")
@@ -222,7 +242,9 @@ context_audit_command() {
     printf '%s\n' "$context_audit_error"
     return 1
   }
-  printf 'AUDIT COMPLETE\nhead=%s\norigin_main=%s\nartifact_blob=%s\nclean=yes\n' "$context_audit_head" "$context_audit_remote" "$context_audit_artifact"
+  printf 'AUDIT COMPLETE\nhead=%s\norigin_main=%s\nexpected_artifact_blob=%s\nartifact_blob=%s\ninstalled_executable_blob=%s\nclean=yes\n' \
+    "$context_audit_head" "$context_audit_remote" "$context_expected_artifact" \
+    "$context_audit_artifact" "$context_installed_executable_blob"
 }
 
 context_sync_command() {
@@ -285,7 +307,9 @@ context_sync_command() {
     echo "ERROR: post-sync artifact blob mismatch expected=$context_sync_expected_artifact actual=$context_sync_post_artifact"
     return 1
   }
-  printf 'CONTEXT SYNCED\nhead=%s\nartifact_blob=%s\nclean=yes\n' "$context_sync_expected_main" "$context_sync_post_artifact"
+  printf 'CONTEXT SYNCED\nhead=%s\nexpected_artifact_blob=%s\ninstalled_executable_blob_before_sync=%s\nartifact_blob=%s\nclean=yes\n' \
+    "$context_sync_expected_main" "$context_sync_expected_artifact" \
+    "$context_installed_executable_blob" "$context_sync_post_artifact"
 }
 
 context_dev_audit_prove() {
@@ -301,6 +325,10 @@ context_dev_audit_prove() {
   }
   context_repo_ready || {
     context_dev_audit_error="BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"
+    return 1
+  }
+  context_installed_executable_prove || {
+    context_dev_audit_error="BLOCKED: installed nuinui-context executable identity mismatch path=$P"
     return 1
   }
   context_dev_ready || {
@@ -461,6 +489,7 @@ context_dev_transition_command() {
   context_valid_sha "$context_transition_old_head" || { echo "ERROR: invalid expected old HEAD SHA: $context_transition_old_head"; return 2; }
   context_valid_sha "$context_transition_expected_main" || { echo "ERROR: invalid expected main SHA: $context_transition_expected_main"; return 2; }
   context_repo_ready || { echo "BLOCKED: standard clone repository/origin mismatch expected_origin=$CT path=$C"; return 1; }
+  context_installed_executable_prove || { echo "BLOCKED: installed nuinui-context executable identity mismatch path=$P"; return 1; }
   context_dev_ready || { echo "BLOCKED: canonical dev worktree registration is missing, duplicate, malformed, or belongs to another repository path=$CD"; return 1; }
   context_transition_current_branch=$(bn "$CD")
   if [ "$context_transition_current_branch" != "$context_transition_old_branch" ]; then

@@ -34,20 +34,25 @@ is historical operational proof at the revision recorded in its
 That SHA is not a fixed revision for future audits. General use still requires
 the separate D2-C activation checkpoint in #268.
 
-## Independent dev-context context tooling — D3-B activation gated
+## Standalone dev-context context migration — activation pending
 
-The future context-only route uses standalone `nuinui-context` for context
-audit, sync, dev-worktree audit and transition, checks, and its own result
-read-back. It becomes effective only after the D3-B policy PR is independently
-reviewed and merged, read back from authoritative dev-context `main`, followed
-by guarded standard-clone sync with the existing production `nuinui`, an
-independent read-only candidate canary, and a separate explicit activation
-checkpoint in
-[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). Until
-that checkpoint, continue the existing `nuinui` context route. See
+The standalone `nuinui-context` route owns context audit, guarded sync,
+dev-worktree audit and transition, checks, and its own result read-back. Its
+implementation is being completed under dev-context
+[Issue #286](https://github.com/sayosomi/dev-context/issues/286); it becomes
+the production route only after independent review / merge, authoritative
+read-back, guarded standard-clone sync through the existing `nuinui` bootstrap,
+an independent read-only canary, and a separate explicit activation checkpoint
+in #286. Until then, use `nuinui` for real-clone context operations and keep
+the legacy executable. See
 [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) for rollout and recovery boundaries and
 [dev-context `DEVELOPMENT.md`](../../DEVELOPMENT.md) for sequential worktree
 transition rules.
+
+Native GitHub Manual E2E lifecycle and the not-yet-registered Human-test lane
+are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Host setup constraints are in
+[`VS-CODE-E2E.md`](./VS-CODE-E2E.md); Human execution and judgment remain in
+[`MANUAL-E2E.md`](./MANUAL-E2E.md).
 
 ## Compatible legacy SAY implementation flow
 
