@@ -12,7 +12,7 @@ Evaluator auditのexecutor selection、finding threshold、Sol-first / Astra-esc
 
 ## Declared lanes
 
-The checked-in manifest declares one implementation lane and one Human-test lane; the names and paths are data, not the capacity model. The Human-test path is not yet registered, so it does not provide usable Manual E2E capacity until the reviewed policy is activated and the checkout is safely registered.
+The checked-in manifest declares one implementation lane and one Human-test lane; the names and paths are data, not the capacity model. Both declared checkouts are registered. Registration does not activate the native Manual E2E lifecycle, which remains behind its separate activation gate.
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
@@ -25,7 +25,7 @@ Capacity and routing rules:
 
 - implementation capacity is the number of declared `role=implementation` lanes.
 - Human-test capacity is the number of declared `role=human-test` lanes.
-- A declared Human-test lane supplies capacity only when the exact real checkout is registered and passes the complete topology / idle-state admission. Until `/Users/yosomi/Code/nuinuiCAD-e2e` exists as the registered clean detached checkout, native Manual E2E startup remains blocked. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done.
+- A declared Human-test lane supplies capacity only when its exact real checkout is registered and passes complete topology / idle-state admission. `/Users/yosomi/Code/nuinuiCAD-e2e` is registered; native Manual E2E startup remains blocked until its separate activation gate is complete. A Required Manual E2E remains required and must not be waived, marked PASS, or treated as Done.
 - a lane is never reassigned across roles, and declared paths are not inferred from lane names.
 - the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
 - capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
@@ -233,7 +233,7 @@ work and are not activated by this checkpoint.
 
 ## Human-authorized forensic worktree exception
 
-通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の1 implementation lane / 0 Human-test laneはmanifestの現行構成であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
+通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の1 implementation lane / 1 Human-test laneはmanifestの現行構成であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
 
 forensic checkoutの作成・利用には、事前の明示的なHuman authorizationが必要である。`--forensic-worktree <absolute-path>` flagは、既にHumanがauthorizedしたcheckoutをcurrent invocationのinventory exceptionとして認識するだけであり、作成・利用をauthorizeしない。
 
@@ -257,19 +257,38 @@ fields are owned by [`ISSUES.md`](./ISSUES.md).
 ### Admission
 
 Before each new GitHub-native audit starts, all of the following must be
-verified:
+verified read-only:
 
 - A current canonical `sayosomi/nuinuiCAD#N` Research/Improvement Issue is
   open. Its body owns the approved bounded semantic-conformance scope and
   acceptance; material decisions are in its comments. The D2-C activation
   checkpoint is already present in dev-context #268.
 - The exact fixed audit SHA is the freshly verified authoritative product
-  `main` commit. The existing single product checkout at
-  `/Users/yosomi/Code/nuinuiCAD` is the correct repository and registered
-  worktree; the complete registered-worktree inventory confirms exactly one
-  registered product checkout.
-- The checkout's current branch is exactly `main`, HEAD is exactly the fixed
-  audit SHA, and tracked and untracked state is clean.
+  `main` commit. Read the current canonical `LANES.conf` and validate its
+  complete declared-checkout inventory against the repository's complete
+  registered Git worktree topology. Every lane name and checkout path must be
+  unique and canonical; every declared path must be registered to the same
+  `sayosomi/nuinuiCAD` repository identity and common Git directory with the
+  declared role and idle policy. Missing, duplicate, unknown, extra, or
+  foreign checkouts, invalid roles or paths, and any incomplete or ambiguous
+  topology fail closed.
+- `/Users/yosomi/Code/nuinuiCAD` is the registered `main` lane with
+  `role=implementation` and `idle=branch`. It is the sole D2-C audit execution
+  checkout. Require its current branch to be exactly `main`, HEAD to be exactly
+  the fixed audit SHA, and tracked and untracked state to be clean. Never use
+  the Human-test checkout for evaluator execution.
+- Read-only admission for `/Users/yosomi/Code/nuinuiCAD-e2e` proves its exact
+  registered path and shared repository identity, `role=human-test`, and
+  `idle=detached`. Its tracked and untracked state must be clean and it must
+  remain detached. Do not require its idle HEAD to equal the audit SHA: a
+  previously released clean detached checkout may be at an older revision.
+  Record its exact HEAD and state for final comparison, and do not advance or
+  otherwise mutate this checkout for the audit.
+- The Human-test checkout has no active or pending E2E generation, marker,
+  session, host ownership, cleanup, or release operation; no unresolved host
+  process or foreign ownership; and no ambiguous metadata or incomplete
+  recovery. Reconcile its occupancy with the complete registered topology.
+  Missing evidence or any inconsistent or ambiguous state fails closed.
 - Existing required legacy ownership and audit metadata has been inspected
   read-only using the complete metadata inventory and schema requirements
   listed in Startup admission above. Validate present and required records
@@ -280,16 +299,17 @@ verified:
   non-secret baseline fingerprint outside the checkout so final proof can show
   that this metadata was not mutated. Do not create, initialize, rewrite,
   release, or replace legacy metadata or reservations.
-- Current Issue/PR checkpoints and the checkout show no active, paused, or
-  otherwise unfinished implementation execution, no competing evaluator
-  audit, and no unmatched evaluator-audit start checkpoint. A not-yet-started
-  Issue alone is not execution occupancy. Branches or PRs alone do not prove
-  the checkout is idle. Any ambiguous implementation or audit state blocks
-  admission.
-- The Human/operator explicitly confirms that no implementation, evaluator
-  audit, or checkout transition is in progress and that the checkout is
-  available for this audit. If process or execution occupancy cannot be
-  established, admission fails closed.
+- Current Issue/PR checkpoints and checkout evidence show no active, paused,
+  or otherwise unfinished implementation execution, no competing evaluator
+  audit, and no unmatched evaluator-audit start checkpoint. They also show no
+  Manual E2E operation or checkout transition involving either declared
+  checkout. A not-yet-started Issue alone is not execution occupancy. Branches
+  or PRs alone do not prove a checkout is idle. Any ambiguous implementation,
+  audit, E2E, transition, or ownership state blocks admission.
+- The Human/operator explicitly confirms that no implementation, Manual E2E,
+  evaluator audit, or checkout transition involving either checkout is in
+  progress and that both checkouts are available for this audit. If process or
+  execution occupancy cannot be established, admission fails closed.
 
 Re-read authoritative remote `main` after the other admission checks and
 immediately before the start checkpoint. If it no longer equals the fixed SHA,
@@ -307,23 +327,24 @@ workflow, then repeat the complete admission check against a new fixed SHA.
 
 ### Fixed-revision execution and sequential exclusion
 
-Sol operates on the exact admitted SHA. The audit does not switch branches,
-detach HEAD, merge, rebase, reset, or fast-forward the checkout. Keep tracked
-product source read-only. Place temporary harnesses, reducers, logs, outputs,
-caches, and evidence outside the product checkout. Use only the existing
-single product checkout; do not add a permanent audit checkout or worktree.
+Sol operates on the exact admitted SHA in `/Users/yosomi/Code/nuinuiCAD` only.
+The audit does not switch branches, detach HEAD, merge, rebase, reset, or
+fast-forward either checkout. Keep tracked product source read-only. Place
+temporary harnesses, reducers, logs, outputs, caches, and evidence outside both
+product checkouts. Do not add a permanent audit checkout or worktree.
 
-From the audit-start checkpoint until final checkout proof is independently
-verified, no implementation, second evaluator audit, or checkout transition
-may start. Record audit start, progress, stop, any revision/scope/evidence/
-residual updates, and final checkout proof in the current GitHub Issue comments
-using the fields owned by `ISSUES.md`. Issue comments are operational
-checkpoints, not atomic or machine-enforced locks: this workflow does not
-provide the machine-enforced exclusion formerly supplied by the durable audit
-reservation. All participants must follow the sequence, and missing or
-ambiguous occupancy blocks execution. The D1 implementation admission must
-check for an unfinished evaluator audit even when an optional legacy preflight
-diagnostic reports `FREE`.
+From the audit-start checkpoint until independent final checkout verification
+passes, maintain complete sequential exclusion: no implementation, Manual E2E,
+second evaluator audit, or checkout transition involving either the `main` or
+`human-e2e` checkout may start. Record audit start, progress, stop, any
+revision/scope/evidence/residual updates, and final checkout proof in the
+current GitHub Issue comments using the fields owned by `ISSUES.md`. Issue
+comments are operational checkpoints, not atomic or machine-enforced locks:
+this workflow does not provide the machine-enforced exclusion formerly
+supplied by the durable audit reservation. All participants must follow the
+sequence, and missing or ambiguous occupancy blocks execution. The D1
+implementation admission must check for an unfinished evaluator audit even
+when an optional legacy preflight diagnostic reports `FREE`.
 
 If remote product `main` advances during an active audit, record the new SHA
 as drift in the Issue comments. Keep the local checkout and audit evidence at
@@ -332,27 +353,31 @@ evidence. Defer any synchronization until the audit has safely completed.
 
 ### Completion and interruption recovery
 
-After audit execution stops, prove and record that all audit processes using
-the checkout have stopped; repository and registered-worktree identity are
-unchanged; branch remains `main`; HEAD equals the original fixed SHA; tracked
-and untracked state is clean; legacy ownership metadata matches the admission
-fingerprint; and evidence plus residual findings are retained. A newer remote
-`main` is allowed and must not be incorporated during completion. The next
-implementation Task uses the existing D1 freshness and safe fast-forward
-procedure.
+After audit execution stops, prove and record that all audit processes have
+fully stopped; `/Users/yosomi/Code/nuinuiCAD` remains on branch `main` at the
+original fixed SHA with tracked and untracked state clean; and the complete
+two-checkout registered topology, paths, repository identities, roles, and
+idle policies match admission. Prove that `/Users/yosomi/Code/nuinuiCAD-e2e`
+is still registered, clean, detached, idle, and unchanged from its admission
+HEAD and state; that no competing E2E generation, host session, process,
+cleanup, or release operation exists; and that legacy ownership metadata is
+identical to its admission fingerprint. Retain external evidence and residual
+findings. A newer remote `main` is allowed and must not be incorporated during
+completion. The next implementation Task uses the existing D1 freshness and
+safe fast-forward procedure.
 
-An independent verifier must compare the final Issue checkpoint with the
-actual checkout and registered-worktree inventory, stopped-process and
-occupancy evidence, and metadata baseline. No implementation, other audit, or
-checkout transition may begin until this independent final checkout
-verification passes. An audit-stop checkpoint alone does not release the
-checkout.
+An independent verifier must compare the final Issue checkpoint with both
+actual checkouts, the complete registered-worktree inventory and occupancy,
+stopped-process evidence, the legacy metadata baseline, and retained external
+evidence. No implementation, Manual E2E, other audit, or checkout transition
+may begin until this independent final checkout verification passes. An
+audit-stop checkpoint alone does not release either checkout.
 
-If execution is interrupted, the final state is ambiguous, or required proof
-is missing, preserve the checkout and report `BLOCKED`. An unmatched audit
+If execution is interrupted, final state is ambiguous, or any required proof
+is missing, preserve both checkouts and report `BLOCKED`. An unmatched audit
 start is not proof of safe release. Investigate it explicitly and require the
 complete post-audit proof above before permitting another execution. Never
-reset, clean, stash, delete, auto-release, or repair an ambiguous checkout.
+reset, clean, stash, delete, auto-release, or repair ambiguous state.
 
 Compatible pre-existing SAY audit reservations remain governed by the
 existing lifecycle in [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) and
@@ -904,45 +929,45 @@ choose an oracle, operate the GUI, or judge product behavior.
 
 The current [`LANES.conf`](./LANES.conf) declares exactly one `role=human-test`
 lane named `human-e2e`, with `idle=detached` at
-`/Users/yosomi/Code/nuinuiCAD-e2e`. That path is intentionally not registered by
-this implementation change. A missing or unregistered path is a hard startup
-block. Do not reuse the implementation lane, invent another checkout, or make
-a native E2E generation before the reviewed manifest and policy are activated.
-A Required Manual E2E cannot be waived or reported PASS while the checkout is
-unavailable.
+`/Users/yosomi/Code/nuinuiCAD-e2e`. This checkout was authorized and registered
+under dev-context #286. Registration does not activate native Manual E2E; the
+separate activation checkpoint remains pending. Do not register or recreate
+the existing checkout again, reuse the implementation lane, invent another
+checkout, or start a native E2E generation before activation. A Required
+Manual E2E cannot be waived or reported PASS while native startup is blocked.
 
-### Human-test checkout registration and recovery
+### Historical one-time Human-test checkout registration and recovery
 
-Registration is a separate Human-authorized step after the manifest and this
-policy have been reviewed, merged, read back from authoritative dev-context
-`main`, and explicitly activated in dev-context #286. Do not register the
-checkout from the implementation branch or during this policy review.
+The one-time Human-authorized registration was completed under dev-context
+#286. This procedure is retained as historical context only. The destination
+is already registered: do not run `worktree add` again, re-register it, or
+remove and recreate it. Registration did not activate native E2E; its separate
+activation checkpoint remains pending.
 
-After activation, first fetch the nuinuiCAD `origin/main` and inspect the
-complete registered-worktree list, both declared paths, the destination path,
-and all Git-local ownership records. Continue only when the existing
-implementation checkout is the single valid registered lane, the destination
-path is absent, and no operation or ownership state is active or pending. Use
-the freshly read full authoritative `main` SHA as the idle commit:
+At the historical registration boundary, the complete registered-worktree
+list, both declared paths, destination path, and Git-local ownership records
+were inspected read-only. The implementation checkout was the only registered
+lane, the destination path was absent, and no operation or ownership state was
+active or pending. The full authoritative `main` SHA was used as the idle
+commit:
 
 ```bash
 git -C /Users/yosomi/Code/nuinuiCAD worktree add --detach \
   /Users/yosomi/Code/nuinuiCAD-e2e <authoritative-main-sha>
 ```
 
-Then independently re-read `git worktree list --porcelain`, the Human-test
-checkout's origin / Git directory / detached HEAD / clean status, and the full
-manifest-to-worktree topology before any E2E command. Do not overwrite an
-existing path or use reset, force, prune, or cleanup to make registration
-appear successful.
+After the historical `worktree add`, `git worktree list --porcelain`, the
+Human-test checkout's origin / Git directory / detached HEAD / clean status,
+and the full manifest-to-worktree topology were independently re-read. Do not
+overwrite an existing path or use reset, force, prune, or cleanup to make
+registration appear successful.
 
-If `worktree add` fails or is interrupted, leave the destination and Git
-metadata untouched. Read the complete worktree list, destination existence,
-`.git` pointer, checkout origin, HEAD, status, and ownership records; do not
-repeat `worktree add`, remove the path, or run `worktree repair` / `prune` until
-the exact interrupted state has been independently classified and a specific
-recovery is authorized. Unknown, partial, or conflicting state remains
-`BLOCKED` for bounded diagnosis.
+The historical recovery rule for an interrupted registration was to leave the
+destination and Git metadata untouched. Any uncertain state required
+read-only inspection of the complete worktree list, destination, `.git`
+pointer, checkout origin, HEAD, status, and ownership records. An unknown,
+partial, or conflicting state remained `BLOCKED`; repeating `worktree add`,
+removing the path, or running `worktree repair` / `prune` did not resolve it.
 
 For each native generation, the selected checkout must be a manifest-
 declared `role=human-test` lane with the required `idle=detached` topology. At
