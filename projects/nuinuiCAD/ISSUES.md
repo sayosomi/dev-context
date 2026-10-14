@@ -60,18 +60,48 @@ Use explicit comment headings and record:
   execution using the checkout has stopped, and retained evidence/residuals.
 - `Evaluator audit final checkout proof`: unchanged repository/worktree
   identity, branch `main`, HEAD equal to the original fixed SHA, clean tracked
-  and untracked state, unchanged legacy ownership metadata, and retained
-  evidence/residuals. Record remote-main drift without incorporating it. An
-  independent verifier must compare this checkpoint with the actual checkout,
-  process/occupancy evidence, and metadata baseline before the checkout is
-  available for reuse.
+  and untracked state, complete declared/registered two-checkout topology,
+  unchanged detached Human E2E checkout and idle state, unchanged legacy
+  ownership metadata, and retained evidence/residuals. Record remote-main
+  drift without incorporating it. This is Sol's executor proof, not
+  independent verification and not a release checkpoint.
+- `Independent final checkout verification PASS`: ChatGPT posts this
+  checkpoint on the canonical product evaluator Research/Improvement Issue
+  immediately in the same continuation after independently accepting the
+  Human's complete output from the one read-only verification block. The block
+  is prepared after Sol's final audit report and executor checkout proof, uses
+  the current run's external evidence directory and original fixed SHA, and is
+  executed once by the Human without a separate approval round. No additional
+  verifier agent is required. ChatGPT assesses the returned output itself and
+  does not claim to have run the local checker.
+
+  Record, without exposing secrets: the current run identity, evidence
+  directory, and original fixed SHA; the complete `LANES.conf` / registered
+  topology result; each checkout's lane, absolute path, canonical repository
+  identity, declared role and idle policy, and verified state (`main` at the
+  exact fixed SHA and clean; `human-e2e` detached at its unchanged admission
+  HEAD and clean/idle); the recursive legacy
+  metadata path/type/content-fingerprint match and validation against the
+  actual baseline schema; the retained report, evidence, and matching start,
+  any progress, stop, and executor-proof checkpoints; and the process/occupancy
+  conclusion that audit-owned processes stopped and no conflicting or
+  unexplained activity involves either checkout. State explicitly that this
+  PASS ends the audit-specific exclusion for both checkouts.
+
+  This checkpoint establishes physical checkout reuse eligibility only. It
+  does not close the Research Issue or admit a later implementation, evaluator
+  audit, or Manual E2E operation. Keep the Research Issue open while residual
+  scope remains; any later operation requires its own separate fresh
+  admission. On `BLOCKED`, error, incomplete output, or ambiguity, do not post
+  this PASS and do not lift the exclusion.
 
 Issue comments are operational checkpoints, not atomic or machine-enforced
-locks. An unmatched audit-start comment, missing final proof, or ambiguous
-execution state blocks implementation, another audit, and checkout transition
-until explicit investigation and complete independent post-audit verification
-resolve it. A stop comment alone is not proof that the checkout is safe to
-reuse. Detailed physical admission and recovery remain owned by
+locks. An unmatched audit-start comment, missing executor proof, missing
+independent PASS, or ambiguous execution state blocks implementation, another
+audit, Manual E2E, and checkout transition until explicit investigation and
+complete independent post-audit verification resolve it. A stop or executor
+proof comment alone is not proof that either checkout is safe to reuse.
+Detailed physical admission and recovery remain owned by
 [`CHECKOUTS.md`](./CHECKOUTS.md).
 
 ## Native Issue authoring
