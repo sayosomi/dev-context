@@ -531,6 +531,18 @@ nuinui_e2e__production_context() {
 
   nuinui_e2e_self_test=no
   nuinui_e2e_fixture_root=
+  case "${HOME:-}" in
+    /*) ;;
+    *)
+      echo 'BLOCKED: production host sessions require an absolute HOME directory'
+      return 1
+      ;;
+  esac
+  [ "$HOME" != / ] || {
+    echo 'BLOCKED: production host sessions require a user HOME directory'
+    return 1
+  }
+  nuinui_e2e_host_parent=${HOME%/}/.nuinuicad/e2e-hosts
   nuinui_e2e_manifest_path=$nuinui_e2e_live_manifest
   lane_manifest_validate "$nuinui_e2e_manifest_path" || return 1
   [ "$(lane_manifest_repository_identity "$nuinui_e2e_manifest_path")" = sayosomi/nuinuiCAD ] &&

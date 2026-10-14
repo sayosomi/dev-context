@@ -1944,6 +1944,18 @@ nuinui_e2e__production_context() {
 
   nuinui_e2e_self_test=no
   nuinui_e2e_fixture_root=
+  case "${HOME:-}" in
+    /*) ;;
+    *)
+      echo 'BLOCKED: production host sessions require an absolute HOME directory'
+      return 1
+      ;;
+  esac
+  [ "$HOME" != / ] || {
+    echo 'BLOCKED: production host sessions require a user HOME directory'
+    return 1
+  }
+  nuinui_e2e_host_parent=${HOME%/}/.nuinuicad/e2e-hosts
   nuinui_e2e_manifest_path=$nuinui_e2e_live_manifest
   lane_manifest_validate "$nuinui_e2e_manifest_path" || return 1
   [ "$(lane_manifest_repository_identity "$nuinui_e2e_manifest_path")" = sayosomi/nuinuiCAD ] &&
@@ -3049,9 +3061,121 @@ nuinui_e2e_host__fixture_identity() {
   printf '%s\n%s\n' "$nuinui_e2e_host_fixture_canonical" "$nuinui_e2e_host_fixture_sha"
 }
 
+nuinui_e2e_host__production_root_mode() {
+  [ "${nuinui_e2e_production:-no}" = yes ] || {
+    [ "${nuinui_e2e_self_test:-no}" = yes ] &&
+      [ "${NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT:-no}" = yes ]
+  }
+}
+
+nuinui_e2e_host__production_parent_for_home() {
+  [ -n "${HOME:-}" ] || return 1
+  case "$HOME" in /*) ;; *) return 1 ;; esac
+  [ "$HOME" != / ] || return 1
+  printf '%s/.nuinuicad/e2e-hosts\n' "${HOME%/}"
+}
+
+nuinui_e2e_host__validate_owned_directory() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_host_directory=$1
+  nuinui_e2e_host_directory_policy=$2
+  [ -d "$nuinui_e2e_host_directory" ] &&
+    [ ! -L "$nuinui_e2e_host_directory" ] &&
+    [ "$(realpath "$nuinui_e2e_host_directory" 2>/dev/null)" = \
+      "$nuinui_e2e_host_directory" ] &&
+    [ "$(stat -f '%u' "$nuinui_e2e_host_directory" 2>/dev/null)" = \
+      "$(command id -u 2>/dev/null)" ] || return 1
+  nuinui_e2e_host_directory_mode=$(stat -f '%Lp' \
+    "$nuinui_e2e_host_directory" 2>/dev/null) || return 1
+  case "$nuinui_e2e_host_directory_policy" in
+    private)
+      [ "$nuinui_e2e_host_directory_mode" = 700 ]
+      ;;
+    safe-parent)
+      case "$nuinui_e2e_host_directory_mode" in
+        [0-7][0-7][0-7]) ;;
+        *) return 1 ;;
+      esac
+      case "$nuinui_e2e_host_directory_mode" in
+        [0-7][2367][0-7]|[0-7][0-7][2367]) return 1 ;;
+      esac
+      [ -w "$nuinui_e2e_host_directory" ] &&
+        [ -x "$nuinui_e2e_host_directory" ]
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+nuinui_e2e_host__ensure_owned_directory() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_host_ensure_directory=$1
+  nuinui_e2e_host_ensure_policy=$2
+  if nuinui_e2e__exists "$nuinui_e2e_host_ensure_directory"; then
+    nuinui_e2e_host__validate_owned_directory \
+      "$nuinui_e2e_host_ensure_directory" "$nuinui_e2e_host_ensure_policy"
+    return $?
+  fi
+  (umask 077; mkdir -m 0700 "$nuinui_e2e_host_ensure_directory") 2>/dev/null || return 1
+  nuinui_e2e_host__validate_owned_directory \
+    "$nuinui_e2e_host_ensure_directory" "$nuinui_e2e_host_ensure_policy"
+}
+
+nuinui_e2e_host__validate_production_parent() {
+  nuinui_e2e_host__production_root_mode || return 0
+  nuinui_e2e_host_home=${HOME:-}
+  nuinui_e2e_host_expected_parent=$(nuinui_e2e_host__production_parent_for_home) || return 1
+  [ "$(realpath "$nuinui_e2e_host_home" 2>/dev/null)" = \
+    "$nuinui_e2e_host_home" ] || return 1
+  nuinui_e2e_host__validate_owned_directory \
+    "$nuinui_e2e_host_home" safe-parent || return 1
+  [ "${nuinui_e2e_host_parent:-$nuinui_e2e_host_expected_parent}" = \
+    "$nuinui_e2e_host_expected_parent" ] || return 1
+  nuinui_e2e_host_dot_parent=${nuinui_e2e_host_home%/}/.nuinuicad
+  nuinui_e2e_host__validate_owned_directory \
+    "$nuinui_e2e_host_dot_parent" safe-parent || return 1
+  nuinui_e2e_host__validate_owned_directory \
+    "$nuinui_e2e_host_expected_parent" private || return 1
+}
+
+nuinui_e2e_host__prepare_production_parent() {
+  nuinui_e2e_host__production_root_mode || return 0
+  nuinui_e2e_host_home=${HOME:-}
+  nuinui_e2e_host_expected_parent=$(nuinui_e2e_host__production_parent_for_home) || return 1
+  [ "$(realpath "$nuinui_e2e_host_home" 2>/dev/null)" = \
+    "$nuinui_e2e_host_home" ] || return 1
+  nuinui_e2e_host__validate_owned_directory \
+    "$nuinui_e2e_host_home" safe-parent || return 1
+  [ "${nuinui_e2e_host_parent:-$nuinui_e2e_host_expected_parent}" = \
+    "$nuinui_e2e_host_expected_parent" ] || return 1
+  nuinui_e2e_host_dot_parent=${nuinui_e2e_host_home%/}/.nuinuicad
+  nuinui_e2e_host__ensure_owned_directory \
+    "$nuinui_e2e_host_dot_parent" safe-parent || return 1
+  nuinui_e2e_host__ensure_owned_directory \
+    "$nuinui_e2e_host_expected_parent" private || return 1
+  nuinui_e2e_host__validate_production_parent
+}
+
 nuinui_e2e_host__root_for() {
   [ "$#" = 1 ] || return 2
-  printf '%s/.nuinui-e2e-host-%s\n' "$nuinui_e2e_fixture_root" \
+  nuinui_e2e_host_generation_hash=$(nuinui_e2e__generation_hash "$1") || return 1
+  if nuinui_e2e_host__production_root_mode; then
+    if [ "${nuinui_e2e_production:-no}" = yes ]; then
+      nuinui_e2e_host_root_parent=${nuinui_e2e_host_parent:-}
+    else
+      nuinui_e2e_host_root_parent=$(nuinui_e2e_host__production_parent_for_home) || return 1
+    fi
+    [ -n "$nuinui_e2e_host_root_parent" ] || return 1
+  else
+    nuinui_e2e_host_root_parent=$nuinui_e2e_fixture_root
+  fi
+  [ -n "$nuinui_e2e_host_root_parent" ] || return 1
+  printf '%s/.nuinui-e2e-host-%s\n' "$nuinui_e2e_host_root_parent" \
+    "$nuinui_e2e_host_generation_hash"
+}
+
+nuinui_e2e_host__legacy_root_for() {
+  [ "$#" = 1 ] || return 2
+  printf '/.nuinui-e2e-host-%s\n' \
     "$(nuinui_e2e__generation_hash "$1")"
 }
 
@@ -3127,6 +3251,11 @@ nuinui_e2e_host__verify_root() {
   nuinui_e2e_host_verify_root=$1
   nuinui_e2e_host_verify_mode=$2
   [ -d "$nuinui_e2e_host_verify_root" ] && [ ! -L "$nuinui_e2e_host_verify_root" ] || return 1
+  if nuinui_e2e_host__production_root_mode; then
+    nuinui_e2e_host__validate_production_parent &&
+      nuinui_e2e_host__validate_owned_directory \
+        "$nuinui_e2e_host_verify_root" private || return 1
+  fi
   [ "$(realpath "$nuinui_e2e_host_verify_root" 2>/dev/null)" = \
     "$nuinui_e2e_host_root" ] || return 1
   [ "$(nuinui_e2e_host__root_identity "$nuinui_e2e_host_verify_root")" = \
@@ -4888,6 +5017,10 @@ nuinui_e2e_host__adapter_owner_content() {
 
 nuinui_e2e_host__adapter_verify_root() {
   [ "$#" = 2 ] || return 2
+  if nuinui_e2e_host__production_root_mode; then
+    nuinui_e2e_host__validate_production_parent &&
+      nuinui_e2e_host__validate_owned_directory "$1" private || return 1
+  fi
   case "$nuinui_e2e_host_adapter" in
     fixture-no-process) nuinui_e2e_host__verify_root "$1" "$2" ;;
     vscode-isolated)
@@ -5021,7 +5154,24 @@ nuinui_e2e_host__read_record() {
     fixture-no-process|vscode-isolated) ;;
     *) return 1 ;;
   esac
-  [ "$nuinui_e2e_host_r_root" = "$(nuinui_e2e_host__root_for "$nuinui_e2e_host_r_generation")" ] || return 1
+  nuinui_e2e_host_expected_root=$(nuinui_e2e_host__root_for \
+    "$nuinui_e2e_host_r_generation") || return 1
+  if [ "$nuinui_e2e_host_r_root" != "$nuinui_e2e_host_expected_root" ]; then
+    nuinui_e2e_host_legacy_root=$(nuinui_e2e_host__legacy_root_for \
+      "$nuinui_e2e_host_r_generation") || return 1
+    [ "$nuinui_e2e_host_read_fixture_policy" = historical ] &&
+      nuinui_e2e_host__production_root_mode &&
+      [ "$nuinui_e2e_host_r_root" = "$nuinui_e2e_host_legacy_root" ] || return 1
+    # A legacy / root is only a read-only candidate while proving a completed
+    # historical generation. Outside that proof, run the complete proof here.
+    if [ "${nuinui_e2e_host_history_verifying:-no}" != yes ]; then
+      [ "$nuinui_e2e_host_r_generation" != \
+        "$nuinui_e2e_expected_generation" ] || return 1
+      nuinui_e2e_host__verify_released_history \
+        "$nuinui_e2e_host_r_issue" "$nuinui_e2e_host_r_generation" \
+        "$nuinui_e2e_host_r_tested" "$nuinui_e2e_host_r_lane" || return 1
+    fi
+  fi
   case "$nuinui_e2e_host_r_root_identity" in
     pending)
       case "$nuinui_e2e_host_read_kind" in intent|cleanup-pending|cleanup) ;;
@@ -5282,6 +5432,7 @@ EOF
 
 nuinui_e2e_host__verify_released_history() (
   [ "$#" = 4 ] || exit 2
+  nuinui_e2e_host_history_verifying=yes
   nuinui_e2e_host_history_issue=$1
   nuinui_e2e_host_history_generation=$2
   nuinui_e2e_host_history_tested=$3
@@ -5319,6 +5470,7 @@ nuinui_e2e_host__verify_released_history() (
 
   nuinui_e2e_host_history_payload=
   nuinui_e2e_host_history_root_identity=
+  nuinui_e2e_host_history_record_root=
   nuinui_e2e_host_history_cleanup_handoff_sha=
   nuinui_e2e_host_history_has_handoff=no
   nuinui_e2e_host_history_has_ready=no
@@ -5356,6 +5508,7 @@ nuinui_e2e_host__verify_released_history() (
       "$nuinui_e2e_host_history_path") || exit 1
     if [ -z "$nuinui_e2e_host_history_payload" ]; then
       nuinui_e2e_host_history_payload=$nuinui_e2e_host_history_current_payload
+      nuinui_e2e_host_history_record_root=$nuinui_e2e_host_r_root
     else
       [ "$nuinui_e2e_host_history_current_payload" = \
         "$nuinui_e2e_host_history_payload" ] || exit 1
@@ -5381,8 +5534,19 @@ nuinui_e2e_host__verify_released_history() (
   fi
   nuinui_e2e_host_history_root=$(nuinui_e2e_host__root_for \
     "$nuinui_e2e_host_history_generation") || exit 1
+  nuinui_e2e_host_history_legacy_root=$(nuinui_e2e_host__legacy_root_for \
+    "$nuinui_e2e_host_history_generation") || exit 1
+  case "$nuinui_e2e_host_history_record_root" in
+    "$nuinui_e2e_host_history_root") ;;
+    "$nuinui_e2e_host_history_legacy_root")
+      nuinui_e2e_host__production_root_mode || exit 1
+      ;;
+    *) exit 1 ;;
+  esac
   [ ! -e "$nuinui_e2e_host_history_root" ] &&
-    [ ! -L "$nuinui_e2e_host_history_root" ] || exit 1
+    [ ! -L "$nuinui_e2e_host_history_root" ] &&
+    [ ! -e "$nuinui_e2e_host_history_legacy_root" ] &&
+    [ ! -L "$nuinui_e2e_host_history_legacy_root" ] || exit 1
   if [ "$nuinui_e2e_host_history_has_handoff" = yes ]; then
     nuinui_e2e_host_history_expected_handoff_sha=$(nuinui_e2e__sha256 \
       "$nuinui_e2e_host_history_handoff") || exit 1
@@ -5462,6 +5626,10 @@ nuinui_e2e_host__preflight_scan() {
   done <<EOF
 $nuinui_e2e_host_scan_paths
 EOF
+  # The active requested generation must always use the current production
+  # root algorithm. Historical reads above are only admitted after the exact
+  # completed-generation proof succeeds.
+  nuinui_e2e_host_fixture_policy=required
   nuinui_e2e_host__load_state || return 1
   case "$nuinui_e2e_host_state:$nuinui_e2e_operation" in
     ABSENT:*) ;;
@@ -5713,6 +5881,20 @@ nuinui_e2e_host_prepare() {
     echo 'BLOCKED: generation-specific host root already exists without matching durable records'
     return 1
   }
+  nuinui_e2e_host__prepare_production_parent || {
+    echo 'BLOCKED: production host-session parent is missing, non-canonical, foreign, or insecure'
+    return 1
+  }
+  if nuinui_e2e_host__production_root_mode; then
+    nuinui_e2e_host__validate_production_parent || {
+      echo 'BLOCKED: production host-session parent changed before PREPARING intent'
+      return 1
+    }
+  fi
+  nuinui_e2e__exists "$nuinui_e2e_host_root" && {
+    echo 'BLOCKED: generation-specific host root already exists without matching durable records'
+    return 1
+  }
   nuinui_e2e_host_root_identity=pending
   nuinui_e2e_host_intent_content=$(nuinui_e2e_host__record_content PREPARING pending)
   nuinui_e2e_host_intent=$(nuinui_e2e_host__metadata_path \
@@ -5726,10 +5908,26 @@ nuinui_e2e_host_prepare() {
     echo 'BLOCKED: injected interruption after PREPARING intent; recovery evidence retained'
     return 1
   }
-  mkdir "$nuinui_e2e_host_root" 2>/dev/null || {
-    echo 'BLOCKED: generation-specific fixture host root could not be created'
-    return 1
-  }
+  if nuinui_e2e_host__production_root_mode; then
+    nuinui_e2e_host__validate_production_parent || {
+      echo 'BLOCKED: production host-session parent changed after PREPARING intent'
+      return 1
+    }
+    (umask 077; mkdir -m 0700 "$nuinui_e2e_host_root") 2>/dev/null || {
+      echo 'BLOCKED: generation-specific fixture host root could not be created'
+      return 1
+    }
+    nuinui_e2e_host__validate_owned_directory \
+      "$nuinui_e2e_host_root" private || {
+      echo 'BLOCKED: generation-specific production host root is not privately owned'
+      return 1
+    }
+  else
+    mkdir "$nuinui_e2e_host_root" 2>/dev/null || {
+      echo 'BLOCKED: generation-specific fixture host root could not be created'
+      return 1
+    }
+  fi
   nuinui_e2e_host_root_identity=$(nuinui_e2e_host__root_identity "$nuinui_e2e_host_root") || return 1
   case "$nuinui_e2e_host_adapter" in
     fixture-no-process)
