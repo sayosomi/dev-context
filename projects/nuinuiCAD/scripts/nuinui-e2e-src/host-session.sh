@@ -702,6 +702,7 @@ nuinui_e2e_host__native_cleanup_proof() {
 nuinui_e2e_host__operation_context() {
   [ "$#" = 4 ] || return 2
   nuinui_e2e_operation=$1
+  nuinui_e2e_vscode_process_state=
   nuinui_e2e_host_manifest_arg=$2
   nuinui_e2e_host_lane_arg=$3
   nuinui_e2e_host_issue_arg=$4
@@ -1020,10 +1021,25 @@ nuinui_e2e_host_status() {
     "$nuinui_e2e_host_state" "$nuinui_e2e_expected_issue" \
     "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_tested" \
     "$nuinui_e2e_expected_generation" "$nuinui_e2e_host_adapter"
+  if [ "$nuinui_e2e_host_adapter" = vscode-isolated ] &&
+    [ "${nuinui_e2e_vscode_process_state:-}" = ABNORMAL-EXIT-RECOVERY-SAFE ]; then
+    echo 'process_state=ABNORMAL-EXIT-RECOVERY-SAFE'
+    echo 'recovery=explicit-host-recover-required'
+  fi
 }
 
 nuinui_e2e_host_cleanup() {
-  [ "$#" = 3 ] || return 2
+  case "$#" in
+    3) nuinui_e2e_host_abnormal_exit_recovery=no ;;
+    4)
+      case "$4" in
+        '') nuinui_e2e_host_abnormal_exit_recovery=no ;;
+        abnormal-exit-recovery) nuinui_e2e_host_abnormal_exit_recovery=yes ;;
+        *) return 2 ;;
+      esac
+      ;;
+    *) return 2 ;;
+  esac
   nuinui_e2e_host__operation_context host-cleanup "$1" "$2" "$3" || return 1
   nuinui_e2e_host__load_state || {
     echo 'BLOCKED: host cleanup cannot prove exact session and resource ownership'
@@ -1120,21 +1136,43 @@ nuinui_e2e_host_cleanup() {
 
 nuinui_e2e_host_recover() {
   [ "$#" = 3 ] || return 2
+  nuinui_e2e_host_abnormal_exit_recovery=no
   nuinui_e2e_host__operation_context host-recover "$1" "$2" "$3" || return 1
   nuinui_e2e_host__load_state || {
     echo 'BLOCKED: fresh host metadata, native generation, and checkout evidence do not agree'
     return 1
   }
   case "$nuinui_e2e_host_state" in
-    PREPARING|CLEANUP-PENDING)
+    PREPARING|CLEANUP-PENDING|READY)
+      if [ "$nuinui_e2e_host_state" = READY ] &&
+        { [ "$nuinui_e2e_host_adapter" != vscode-isolated ] ||
+          [ "${nuinui_e2e_vscode_process_state:-}" != ABNORMAL-EXIT-RECOVERY-SAFE ]; }; then
+        echo 'BLOCKED: a ready host requires a verified abnormal exit before recovery'
+        return 1
+      fi
       nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || return 1
       nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
         "$nuinui_e2e_expected_tested" || return 1
+      if [ "$nuinui_e2e_host_adapter" = vscode-isolated ] &&
+        [ "${nuinui_e2e_vscode_process_state:-}" = ABNORMAL-EXIT-RECOVERY-SAFE ]; then
+        nuinui_e2e_host_abnormal_exit_recovery=yes
+      fi
       nuinui_e2e_host_operation_before=$nuinui_e2e_host_state
-      nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3") || {
-        echo "$nuinui_e2e_host_recovered"
-        return 1
-      }
+      nuinui_e2e_host_recovery_token=
+      [ "${nuinui_e2e_host_abnormal_exit_recovery:-no}" = yes ] &&
+        nuinui_e2e_host_recovery_token=abnormal-exit-recovery
+      if [ "$nuinui_e2e_host_recovery_token" = abnormal-exit-recovery ]; then
+        nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3" \
+          "$nuinui_e2e_host_recovery_token") || {
+            echo "$nuinui_e2e_host_recovered"
+            return 1
+          }
+      else
+        nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3") || {
+          echo "$nuinui_e2e_host_recovered"
+          return 1
+        }
+      fi
       printf '%s\n' "$nuinui_e2e_host_recovered"
       if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
         echo "HOST FIXTURE RECOVERED FROM $nuinui_e2e_host_operation_before"

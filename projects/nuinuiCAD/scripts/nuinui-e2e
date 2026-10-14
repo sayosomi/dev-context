@@ -4248,7 +4248,7 @@ nuinui_e2e_host_vscode__verify_process_group() {
     "$nuinui_e2e_host_process_executable" "$nuinui_e2e_vscode_app_root" \
     "$nuinui_e2e_vscode_rust" "$nuinui_e2e_vscode_rust_sha" \
     "$nuinui_e2e_vscode_fake_app" <<'PY'
-import ctypes, hashlib, os, stat, sys
+import ctypes, hashlib, os, stat, sys, time
 root_s, group_s, start_s, root_exe, app_root, rust_path, rust_sha, fake = sys.argv[1:]
 def fail(message): raise SystemExit("BLOCKED: " + message)
 try:
@@ -4281,9 +4281,47 @@ try:
     path_fn.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
     path_fn.restype = ctypes.c_int
     pids_buffer = ctypes.create_string_buffer(4 * 65536)
-    byte_count = list_fn(2, pgid, pids_buffer, len(pids_buffer))
-    if byte_count <= 0 or byte_count > len(pids_buffer) or byte_count % 4:
-        fail("process topology could not be enumerated exactly")
+    injected_zeroes = 0
+    if fake == "yes":
+        injected_raw = os.environ.get("NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES", "0")
+        if not injected_raw.isdigit() or int(injected_raw) > 8:
+            fail("test-only process enumeration override is invalid")
+        injected_zeroes = int(injected_raw)
+    byte_count = 0
+    enumeration_errno = 0
+    for attempt in range(9):
+        ctypes.set_errno(0)
+        byte_count = list_fn(2, pgid, pids_buffer, len(pids_buffer))
+        enumeration_errno = ctypes.get_errno()
+        if attempt < injected_zeroes:
+            byte_count = 0
+            enumeration_errno = 0
+        if byte_count > 0:
+            break
+        if byte_count < 0:
+            fail("process topology enumeration returned an invalid byte count")
+        if attempt == 8:
+            break
+        time.sleep(0.025)
+        # A zero result is ambiguous on macOS. Keep retrying only while the
+        # exact launch owner is still the same live process.
+        ctypes.set_errno(0)
+        before = BSDInfo()
+        result = info_fn(root_pid, 3, 0, ctypes.byref(before), ctypes.sizeof(before))
+        if (result != ctypes.sizeof(before) or before.pid != root_pid or
+                before.pgid != pgid or before.uid != os.getuid() or
+                before.status == 5 or
+                (before.start_sec, before.start_usec) != (root_sec, root_usec)):
+            fail("launch process identity changed while process topology enumeration was retried")
+        root_buffer = ctypes.create_string_buffer(4096)
+        if path_fn(root_pid, root_buffer, len(root_buffer)) <= 0 or \
+                os.path.realpath(os.fsdecode(root_buffer.value)) != root_exe:
+            fail("launch executable identity changed while process topology enumeration was retried")
+    if byte_count == 0:
+        detail = os.strerror(enumeration_errno) if enumeration_errno else "no process IDs returned"
+        fail("process topology could not be enumerated after bounded retries (" + detail + ")")
+    if byte_count >= len(pids_buffer) or byte_count % 4:
+        fail("process topology enumeration returned a malformed or truncated result")
     pids = {int.from_bytes(pids_buffer.raw[index:index+4], byteorder=sys.byteorder, signed=True)
             for index in range(0, byte_count, 4)}
     members = []
@@ -4660,6 +4698,125 @@ nuinui_e2e_host_vscode__read_process_record() {
     nuinui_e2e_valid_digest "$nuinui_e2e_vscode_process_identity_sha" || return 1
 }
 
+nuinui_e2e_host_vscode__classify_process_exit() {
+  [ "$#" = 0 ] || return 2
+  python3 - "$nuinui_e2e_vscode_process_pid" \
+    "$nuinui_e2e_vscode_process_group" "$nuinui_e2e_vscode_process_start" <<'PY'
+import ctypes, errno, os, subprocess, sys, time
+pid_s, group_s, start_s = sys.argv[1:]
+def fail(message): raise SystemExit("BLOCKED: " + message)
+try:
+    pid, group = int(pid_s), int(group_s)
+    start_sec, start_usec = (int(part) for part in start_s.split(".", 1))
+except ValueError:
+    fail("recorded process identity is malformed")
+if pid <= 1 or group != pid:
+    fail("recorded process group is not bound to its launch PID")
+class BSDInfo(ctypes.Structure):
+    _fields_ = [("flags", ctypes.c_uint32), ("status", ctypes.c_uint32),
+                ("xstatus", ctypes.c_uint32), ("pid", ctypes.c_uint32),
+                ("ppid", ctypes.c_uint32), ("uid", ctypes.c_uint32),
+                ("gid", ctypes.c_uint32), ("ruid", ctypes.c_uint32),
+                ("rgid", ctypes.c_uint32), ("svuid", ctypes.c_uint32),
+                ("svgid", ctypes.c_uint32), ("rfu", ctypes.c_uint32),
+                ("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32),
+                ("nfiles", ctypes.c_uint32), ("pgid", ctypes.c_uint32),
+                ("pjobc", ctypes.c_uint32), ("tdev", ctypes.c_uint32),
+                ("tpgid", ctypes.c_uint32), ("nice", ctypes.c_int32),
+                ("start_sec", ctypes.c_uint64), ("start_usec", ctypes.c_uint64)]
+try:
+    lib = ctypes.CDLL("/usr/lib/system/libsystem_kernel.dylib", use_errno=True)
+    info_fn = lib.proc_pidinfo
+    info_fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
+                        ctypes.c_void_p, ctypes.c_int]
+    info_fn.restype = ctypes.c_int
+    list_fn = lib.proc_listpids
+    list_fn.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                        ctypes.c_int]
+    list_fn.restype = ctypes.c_int
+    def root_state():
+        info = BSDInfo()
+        ctypes.set_errno(0)
+        result = info_fn(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
+        error = ctypes.get_errno()
+        if result == ctypes.sizeof(info) and info.pid == pid:
+            if (info.uid != os.getuid() or info.pgid != group or
+                    (info.start_sec, info.start_usec) != (start_sec, start_usec)):
+                fail("recorded process PID now has a different identity")
+            return "ZOMBIE" if info.status == 5 else "LIVE"
+        if result <= 0 and error == errno.ESRCH:
+            return "ABSENT"
+        fail("recorded process identity is inaccessible (errno=" + str(error) + ")")
+    initial = root_state()
+    if initial == "LIVE":
+        print("LIVE")
+        raise SystemExit(0)
+    def group_pids():
+        buffer = ctypes.create_string_buffer(4 * 65536)
+        for attempt in range(4):
+            ctypes.set_errno(0)
+            count = list_fn(2, group, buffer, len(buffer))
+            error = ctypes.get_errno()
+            if count > 0:
+                if count >= len(buffer) or count % 4:
+                    fail("process topology enumeration is malformed or truncated")
+                values = (int.from_bytes(buffer.raw[offset:offset+4],
+                                         byteorder=sys.byteorder, signed=True)
+                          for offset in range(0, count, 4))
+                return {member for member in values if member > 1}
+            if count < 0:
+                fail("process topology enumeration returned an invalid byte count")
+            if count == 0 and error == 0:
+                return set()
+            if attempt < 3:
+                time.sleep(0.025)
+                if root_state() == "LIVE":
+                    fail("recorded process restarted during abnormal-exit verification")
+        fail("process topology could not be enumerated exactly (errno=" + str(error) + ")")
+    def verify_kernel_group():
+        for member in group_pids():
+            info = BSDInfo()
+            ctypes.set_errno(0)
+            result = info_fn(member, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
+            error = ctypes.get_errno()
+            if result <= 0 and error == errno.ESRCH:
+                continue
+            if result != ctypes.sizeof(info) or info.pid != member:
+                fail("generation process-group member identity is inaccessible")
+            if member == pid:
+                if (initial != "ZOMBIE" or info.status != 5 or info.uid != os.getuid() or
+                        info.pgid != group or
+                        (info.start_sec, info.start_usec) != (start_sec, start_usec)):
+                    fail("recorded process PID changed while group emptiness was checked")
+            else:
+                fail("generation process group still contains another process")
+    def verify_process_table():
+        try:
+            result = subprocess.run(["/bin/ps", "-axo", "pid=,pgid=,stat="],
+                                    check=True, capture_output=True, text=True)
+        except (OSError, subprocess.SubprocessError) as error:
+            fail("system process table is inaccessible: " + str(error))
+        for row in result.stdout.splitlines():
+            fields = row.split()
+            if len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit():
+                fail("system process table returned a malformed identity row")
+            member, member_group, state = int(fields[0]), int(fields[1]), fields[2]
+            if member_group != group:
+                continue
+            if member != pid or initial != "ZOMBIE" or not state.upper().startswith("Z"):
+                fail("system process table still reports a generation process")
+    verify_kernel_group()
+    verify_process_table()
+    verify_kernel_group()
+    final = root_state()
+    if final == "LIVE" or (initial == "ABSENT" and final == "ZOMBIE"):
+        fail("recorded process changed while abnormal-exit recovery was checked")
+except (OSError, ValueError, OverflowError) as error:
+    fail("process topology could not be verified: " + str(error))
+print("EXITED")
+PY
+}
+
 nuinui_e2e_host_vscode__create_resources() {
   [ "$#" = 0 ] || return 2
   nuinui_e2e_host_vscode__configure_paths || return 1
@@ -4730,7 +4887,8 @@ nuinui_e2e_host_vscode__verify_process_state() {
     case "$nuinui_e2e_vscode_allow_stopped" in preparing|cleanup-pending) return 0 ;; *) return 1 ;; esac
   fi
   nuinui_e2e_host_vscode__read_process_record || return 1
-  if kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null; then
+  nuinui_e2e_vscode_process_state=$(nuinui_e2e_host_vscode__classify_process_exit) || return 1
+  if [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
     if [ "$nuinui_e2e_vscode_allow_stopped" = cleanup-pending ]; then
       nuinui_e2e_host_vscode__verify_process_identity_only \
         "$nuinui_e2e_vscode_process_pid" || return 1
@@ -4743,23 +4901,61 @@ nuinui_e2e_host_vscode__verify_process_state() {
         "$nuinui_e2e_vscode_process_pid" || return 1
       nuinui_e2e_host_vscode__verify_process_group || return 1
     fi
-  elif [ "$nuinui_e2e_vscode_allow_stopped" != cleanup-pending ]; then
-    echo 'BLOCKED: generation-owned VS Code process exited outside verified cleanup'
-    return 1
   else
-    nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
-    nuinui_e2e__regular "$nuinui_e2e_vscode_stop_intent" || {
-      echo 'BLOCKED: recorded host process exited without a durable cleanup signal intent'
+    case "$nuinui_e2e_vscode_allow_stopped:$nuinui_e2e_operation" in
+      ready:host-status|ready:host-recover|preparing:host-status|preparing:host-recover)
+        nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
+        ;;
+      ready:host-cleanup|preparing:host-cleanup)
+        [ "${nuinui_e2e_host_abnormal_exit_recovery:-no}" = yes ] || {
+          echo 'BLOCKED: abnormal exit cleanup requires an explicit host-recover operation'
+          return 1
+        }
+        nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
+        ;;
+      cleanup-pending:host-status|cleanup-pending:host-recover)
+        nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
+        if nuinui_e2e__exists "$nuinui_e2e_vscode_stop_intent"; then
+          nuinui_e2e__regular "$nuinui_e2e_vscode_stop_intent" || return 1
+          nuinui_e2e_vscode_expected_stop=$(nuinui_e2e_host_vscode__stop_intent_content) || return 1
+          printf '%s' "$nuinui_e2e_vscode_expected_stop" |
+            cmp -s - "$nuinui_e2e_vscode_stop_intent" || return 1
+          nuinui_e2e_vscode_process_state=STOPPED-AFTER-VERIFIED-CLEANUP
+        else
+          nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
+        fi
+        ;;
+      cleanup-pending:host-cleanup)
+        if [ "${nuinui_e2e_host_abnormal_exit_recovery:-no}" = yes ]; then
+          nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
+        else
+          nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
+          nuinui_e2e__regular "$nuinui_e2e_vscode_stop_intent" || {
+            echo 'BLOCKED: recorded host process exited without a durable cleanup signal intent'
+            return 1
+          }
+          nuinui_e2e_vscode_expected_stop=$(nuinui_e2e_host_vscode__stop_intent_content) || return 1
+          printf '%s' "$nuinui_e2e_vscode_expected_stop" |
+            cmp -s - "$nuinui_e2e_vscode_stop_intent" || return 1
+          nuinui_e2e_vscode_process_state=STOPPED-AFTER-VERIFIED-CLEANUP
+        fi
+        ;;
+      *)
+        echo 'BLOCKED: generation-owned VS Code process exited outside verified cleanup'
+        return 1
+        ;;
+    esac
+    nuinui_e2e_vscode_listeners=$(nuinui_e2e_host_vscode__listener_pids \
+      "$nuinui_e2e_host_port") || return 1
+    [ -z "$nuinui_e2e_vscode_listeners" ] || {
+      echo 'BLOCKED: a CDP listener remains after the recorded process exited'
       return 1
     }
-    nuinui_e2e_vscode_expected_stop=$(nuinui_e2e_host_vscode__stop_intent_content) || return 1
-    printf '%s' "$nuinui_e2e_vscode_expected_stop" |
-      cmp -s - "$nuinui_e2e_vscode_stop_intent" || return 1
   fi
   if [ "$nuinui_e2e_vscode_allow_stopped" = cleanup-pending ]; then
     nuinui_e2e_vscode_listeners=$(nuinui_e2e_host_vscode__listener_pids \
       "$nuinui_e2e_host_port") || return 1
-    if kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null; then
+    if [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
       if [ -n "$nuinui_e2e_vscode_listeners" ]; then
         nuinui_e2e_vscode_group_members=$(nuinui_e2e_host_vscode__verify_process_group) || return 1
         while IFS= read -r nuinui_e2e_vscode_listener_pid ||
@@ -4775,7 +4971,8 @@ EOF
       return 1
     fi
   else
-    if [ "$nuinui_e2e_vscode_allow_stopped" = ready ]; then
+    if [ "$nuinui_e2e_vscode_allow_stopped" = ready ] &&
+      [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
       nuinui_e2e_host_vscode__verify_owned_process \
         "$nuinui_e2e_vscode_process_pid" || return 1
     fi
@@ -4844,6 +5041,7 @@ if mode == "launcher": argv.append(app_path)
 argv.extend(sys.argv[5:])
 environment = os.environ.copy()
 environment["NUINUICAD_RUST_EVALUATION_BINARY"] = rust_path
+environment.pop("NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES", None)
 os.execve(executable, argv, environment)
 PY
   nuinui_e2e_vscode_launched_pid=$!
@@ -4905,7 +5103,7 @@ nuinui_e2e_host_vscode__stop_owned_process() {
     return 0
   fi
   if nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1" &&
-    kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null; then
+    [ "${nuinui_e2e_vscode_process_state:-}" = LIVE ]; then
     nuinui_e2e_host_vscode__verify_process_identity_only \
       "$nuinui_e2e_vscode_process_pid" || return 1
     nuinui_e2e_host_vscode__verify_process_group || return 1
@@ -5707,6 +5905,7 @@ nuinui_e2e_host__native_cleanup_proof() {
 nuinui_e2e_host__operation_context() {
   [ "$#" = 4 ] || return 2
   nuinui_e2e_operation=$1
+  nuinui_e2e_vscode_process_state=
   nuinui_e2e_host_manifest_arg=$2
   nuinui_e2e_host_lane_arg=$3
   nuinui_e2e_host_issue_arg=$4
@@ -6025,10 +6224,25 @@ nuinui_e2e_host_status() {
     "$nuinui_e2e_host_state" "$nuinui_e2e_expected_issue" \
     "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_tested" \
     "$nuinui_e2e_expected_generation" "$nuinui_e2e_host_adapter"
+  if [ "$nuinui_e2e_host_adapter" = vscode-isolated ] &&
+    [ "${nuinui_e2e_vscode_process_state:-}" = ABNORMAL-EXIT-RECOVERY-SAFE ]; then
+    echo 'process_state=ABNORMAL-EXIT-RECOVERY-SAFE'
+    echo 'recovery=explicit-host-recover-required'
+  fi
 }
 
 nuinui_e2e_host_cleanup() {
-  [ "$#" = 3 ] || return 2
+  case "$#" in
+    3) nuinui_e2e_host_abnormal_exit_recovery=no ;;
+    4)
+      case "$4" in
+        '') nuinui_e2e_host_abnormal_exit_recovery=no ;;
+        abnormal-exit-recovery) nuinui_e2e_host_abnormal_exit_recovery=yes ;;
+        *) return 2 ;;
+      esac
+      ;;
+    *) return 2 ;;
+  esac
   nuinui_e2e_host__operation_context host-cleanup "$1" "$2" "$3" || return 1
   nuinui_e2e_host__load_state || {
     echo 'BLOCKED: host cleanup cannot prove exact session and resource ownership'
@@ -6125,21 +6339,43 @@ nuinui_e2e_host_cleanup() {
 
 nuinui_e2e_host_recover() {
   [ "$#" = 3 ] || return 2
+  nuinui_e2e_host_abnormal_exit_recovery=no
   nuinui_e2e_host__operation_context host-recover "$1" "$2" "$3" || return 1
   nuinui_e2e_host__load_state || {
     echo 'BLOCKED: fresh host metadata, native generation, and checkout evidence do not agree'
     return 1
   }
   case "$nuinui_e2e_host_state" in
-    PREPARING|CLEANUP-PENDING)
+    PREPARING|CLEANUP-PENDING|READY)
+      if [ "$nuinui_e2e_host_state" = READY ] &&
+        { [ "$nuinui_e2e_host_adapter" != vscode-isolated ] ||
+          [ "${nuinui_e2e_vscode_process_state:-}" != ABNORMAL-EXIT-RECOVERY-SAFE ]; }; then
+        echo 'BLOCKED: a ready host requires a verified abnormal exit before recovery'
+        return 1
+      fi
       nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || return 1
       nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
         "$nuinui_e2e_expected_tested" || return 1
+      if [ "$nuinui_e2e_host_adapter" = vscode-isolated ] &&
+        [ "${nuinui_e2e_vscode_process_state:-}" = ABNORMAL-EXIT-RECOVERY-SAFE ]; then
+        nuinui_e2e_host_abnormal_exit_recovery=yes
+      fi
       nuinui_e2e_host_operation_before=$nuinui_e2e_host_state
-      nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3") || {
-        echo "$nuinui_e2e_host_recovered"
-        return 1
-      }
+      nuinui_e2e_host_recovery_token=
+      [ "${nuinui_e2e_host_abnormal_exit_recovery:-no}" = yes ] &&
+        nuinui_e2e_host_recovery_token=abnormal-exit-recovery
+      if [ "$nuinui_e2e_host_recovery_token" = abnormal-exit-recovery ]; then
+        nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3" \
+          "$nuinui_e2e_host_recovery_token") || {
+            echo "$nuinui_e2e_host_recovered"
+            return 1
+          }
+      else
+        nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3") || {
+          echo "$nuinui_e2e_host_recovered"
+          return 1
+        }
+      fi
       printf '%s\n' "$nuinui_e2e_host_recovered"
       if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
         echo "HOST FIXTURE RECOVERED FROM $nuinui_e2e_host_operation_before"
