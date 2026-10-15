@@ -15,9 +15,13 @@ Use one sequential implementation track and the ordinary shared primary-checkout
 
 ## Device safety
 
-Compilation and builds are allowed. Physical firmware flashing, partition changes, filesystem formatting or upload, destructive device operations, and replacement of existing LittleFS avatar or audio data each require separate, explicit, narrowly scoped Human authorization for the specific action and target. A build result proves only that the build passed; never report it as a device or hardware PASS.
+Compilation and builds are allowed. A successful build is not physical-device acceptance; the Human alone performs physical E2E.
 
-When using any optional local Arduino CLI, M5Stack, or other agent skill, first inspect its actual installed contract and confirm it applies to the current task. No skill may override the explicit device authorization boundaries above.
+For ordinary firmware-only uploads to the Human's identified M5Stack CoreS3, ChatGPT supplies the exact, safety-checked upload command in the same response as an independent pushed-HEAD review PASS, provided the applicable build passed. Do not introduce another chat approval turn for this normal review-to-E2E handoff. The Human authorizes that one firmware upload by choosing to execute the displayed command; neither ChatGPT nor a Coding Agent executes it on the device. Check the exact repository and reviewed HEAD, clean checkout, intended serial port/device, FQBN, and unchanged partition scheme before upload. Use the existing upload helper and supplement missing safety checks in the presented command when required.
+
+Obtain separate, explicit Human authorization before any LittleFS/filesystem image upload, audio/avatar asset replacement, filesystem formatting, flash erasure, partition-layout change, other destructive device operation, or deletion of device data. A routine firmware-upload handoff never authorizes these actions. Stop rather than upload if target identity, side effects, or safe preconditions are uncertain.
+
+When using any optional local Arduino CLI, M5Stack, or other agent skill, first inspect its actual installed contract and confirm it applies to the current task. No skill may override the device safety boundaries.
 
 ## Voice data and publication
 
