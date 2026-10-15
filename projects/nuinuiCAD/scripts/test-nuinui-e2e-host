@@ -209,7 +209,7 @@ native_path() {
 
 host_root_path() {
   if [ "$host_test_root_mode" = production ]; then
-    printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%s\n' "$host_test_home" \
+    printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%.12s\n' "$host_test_home" \
       "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
   else
     printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \

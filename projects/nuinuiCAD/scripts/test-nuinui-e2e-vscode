@@ -382,7 +382,7 @@ host_failpoint() {
 
 host_root_path() {
   if [ "$host_test_root_mode" = production ]; then
-    printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%s\n' "$host_test_home" \
+    printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%.12s\n' "$host_test_home" \
       "$(printf '%s\n' "$1" | shasum -a 256 | awk 'NR == 1 {print $1}')"
   else
     printf '%s/.nuinui-e2e-host-%s\n' "$fixture_root" \
@@ -465,16 +465,21 @@ contains 'HOST SESSION READY'
 contains 'mutation=no'
 assert_no_mutation
 
-# The VS Code profile walker must preserve a foreign symlink and its target.
+# VS Code profile contents may include sockets and links; cleanup must preserve link targets.
 profile_target=$fixture_root/foreign-profile-target
 printf 'preserve me\n' > "$profile_target"
 profile_link=$direct_root/user-data/User/globalStorage/unowned-link
 ln -s "$profile_target" "$profile_link"
+python3 - "$direct_root/user-data/fixture.sock" <<'PYTHON'
+import os, socket, sys
+os.chdir(os.path.dirname(sys.argv[1]))
+with socket.socket(socket.AF_UNIX) as ipc:
+    ipc.bind(os.path.basename(sys.argv[1]))
+PYTHON
 fingerprint_before_denial
-blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 assert_no_mutation
-[ -L "$profile_link" ] && [ -f "$profile_target" ] || fail 'foreign profile resource changed'
-rm "$profile_link"
+[ -L "$profile_link" ] && [ -f "$profile_target" ] || fail 'foreign link target changed'
 
 foreign_vscode_port=$(choose_port)
 NUINUICAD_RUST_EVALUATION_BINARY="$fixture_snapshot/bin/evaluation_stdio" \

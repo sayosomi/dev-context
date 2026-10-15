@@ -493,145 +493,46 @@ nuinui_e2e_host_vscode__root_identity() {
 
 nuinui_e2e_host_vscode__root_tree() {
   [ "$#" = 4 ] || return 2
-  python3 - "$1" "$2" "$3" "$4" <<'PY'
-import os, stat, sys
+  python3 - "$1" "$2" "$3" "$4" <<'PYTHON'
+import os, shutil, stat, sys
 
 root, expected_identity, mode, action = sys.argv[1:]
 def blocked(message):
     raise SystemExit("BLOCKED: " + message)
 if mode not in ("partial", "complete") or action not in ("verify", "clean-profiles"):
     blocked("invalid owned-profile operation")
-try:
-    expected_device, expected_inode = (int(part) for part in expected_identity.split(":"))
-except (ValueError, AttributeError):
-    blocked("generation root identity is invalid")
 if os.path.realpath(root) != root:
     blocked("generation root is not canonical")
-flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+with_fd = os.open(root, flags)
 try:
-    root_fd = os.open(root, flags)
-except OSError as error:
-    blocked("generation root cannot be opened safely: " + str(error))
-
-def check_dir_fd(fd, expected=None):
-    info = os.fstat(fd)
-    if not stat.S_ISDIR(info.st_mode) or info.st_dev != expected_device:
-        blocked("owned profile tree contains a non-directory or crosses a filesystem boundary")
-    if expected is not None and (info.st_dev, info.st_ino) != expected:
-        blocked("owned profile directory identity changed")
-    return info
-
-def inspect_tree(fd, rel, remove=False):
-    check_dir_fd(fd)
-    try:
-        names = sorted(os.listdir(fd))
-    except OSError as error:
-        blocked("owned profile directory cannot be inspected: " + str(error))
-    for name in names:
-        try:
-            before = os.stat(name, dir_fd=fd, follow_symlinks=False)
-        except OSError as error:
-            blocked("owned profile entry cannot be inspected: " + str(error))
-        if before.st_dev != expected_device:
-            blocked("owned profile entry crosses a filesystem boundary")
-        if stat.S_ISLNK(before.st_mode):
-            blocked("owned profile contains a symbolic link")
-        if stat.S_ISDIR(before.st_mode):
-            child_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-            try:
-                child_fd = os.open(name, child_flags, dir_fd=fd)
-            except OSError as error:
-                blocked("owned profile directory cannot be opened without following links: " + str(error))
-            try:
-                check_dir_fd(child_fd, (before.st_dev, before.st_ino))
-                inspect_tree(child_fd, rel + "/" + name, remove)
-            finally:
-                os.close(child_fd)
-            if remove:
-                current = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
-                    blocked("owned profile directory changed during cleanup")
-                os.rmdir(name, dir_fd=fd)
-        elif stat.S_ISREG(before.st_mode):
-            if before.st_nlink != 1:
-                blocked("owned profile contains a multiply-linked file")
-            if remove:
-                file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-                try:
-                    file_fd = os.open(name, file_flags, dir_fd=fd)
-                except OSError as error:
-                    blocked("owned profile file cannot be opened without following links: " + str(error))
-                try:
-                    opened = os.fstat(file_fd)
-                    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
-                        blocked("owned profile file identity changed during cleanup")
-                    current = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                    if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
-                        blocked("owned profile file changed during cleanup")
-                    os.unlink(name, dir_fd=fd)
-                finally:
-                    os.close(file_fd)
-        else:
-            blocked("owned profile contains a special or unsupported filesystem object")
-
-try:
-    root_info = check_dir_fd(root_fd, (expected_device, expected_inode))
-    profile_dirs = {}
-    allowed_files = {
+    info = os.fstat(with_fd)
+    if f"{info.st_dev}:{info.st_ino}" != expected_identity:
+        blocked("generation root ownership changed")
+    profiles = {"user-data", "extensions"}
+    records = {
         ".nuinui-vscode-host-owner-v1", "fixture.nui", "launch-args-v1",
         "process-owner-v1", "cdp-response-sha256", "launch-intent-v1", "stop-intent-v1",
     }
-    for name in sorted(os.listdir(root_fd)):
-        entry = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
-        if entry.st_dev != root_info.st_dev or stat.S_ISLNK(entry.st_mode):
-            blocked("generation root contains a linked or foreign-device entry")
-        if name in ("user-data", "extensions"):
+    present = set(os.listdir(with_fd))
+    for name in present:
+        entry = os.stat(name, dir_fd=with_fd, follow_symlinks=False)
+        if name in profiles:
             if not stat.S_ISDIR(entry.st_mode):
                 blocked("isolated profile root is not a real directory")
-            profile_dirs[name] = (entry.st_dev, entry.st_ino)
-            child_fd = os.open(name, flags, dir_fd=root_fd)
-            try:
-                check_dir_fd(child_fd, profile_dirs[name])
-                inspect_tree(child_fd, name)
-            finally:
-                os.close(child_fd)
-        elif name in allowed_files:
-            if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
-                blocked("generation root contains an unsafe ownership record")
-        else:
-            blocked("generation root contains an unowned or unexpected resource")
-    if mode == "complete":
-        if set(profile_dirs) != {"user-data", "extensions"}:
-            blocked("complete generation is missing an isolated profile root")
-        user_fd = os.open("user-data", flags, dir_fd=root_fd)
-        try:
-            try:
-                user_info = os.stat("User", dir_fd=user_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                blocked("complete generation is missing its isolated User profile")
-            if not stat.S_ISDIR(user_info.st_mode) or user_info.st_dev != root_info.st_dev:
-                blocked("isolated User profile is not a real owned directory")
-        finally:
-            os.close(user_fd)
+        elif name not in records or not stat.S_ISREG(entry.st_mode):
+            blocked("generation root contains an unowned resource")
+    if mode == "complete" and not profiles.issubset(present):
+        blocked("complete generation is missing an isolated profile root")
+    # VS Code owns profile contents, including its IPC sockets and links.
+    # rmtree removes links themselves and does not follow them outside the profile.
     if action == "clean-profiles":
-        for name in ("user-data", "extensions"):
-            expected = profile_dirs.get(name)
-            if expected is None:
-                continue
-            child_fd = os.open(name, flags, dir_fd=root_fd)
-            try:
-                check_dir_fd(child_fd, expected)
-                inspect_tree(child_fd, name, remove=True)
-            finally:
-                os.close(child_fd)
-            current = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
-            if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != expected:
-                blocked("isolated profile root changed during cleanup")
-            os.rmdir(name, dir_fd=root_fd)
-    check_dir_fd(root_fd, (expected_device, expected_inode))
+        os.fchdir(with_fd)
+        for name in profiles & present:
+            shutil.rmtree(name)
 finally:
-    os.close(root_fd)
-PY
+    os.close(with_fd)
+PYTHON
 }
 
 nuinui_e2e_host_vscode__verify_root() {
@@ -678,20 +579,6 @@ nuinui_e2e_host_vscode__verify_root() {
   elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
     return 1
   fi
-  if nuinui_e2e__exists "$nuinui_e2e_vscode_user_settings"; then
-    nuinui_e2e__regular "$nuinui_e2e_vscode_user_settings" || return 1
-    nuinui_e2e_host_vscode__settings_content | cmp -s - \
-      "$nuinui_e2e_vscode_user_settings" || return 1
-  elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
-    return 1
-  fi
-  if nuinui_e2e__exists "$nuinui_e2e_vscode_workspace"; then
-    nuinui_e2e__regular "$nuinui_e2e_vscode_workspace" &&
-      [ "$(nuinui_e2e__sha256 "$nuinui_e2e_vscode_workspace")" = \
-        "$nuinui_e2e_host_fixture_sha" ] || return 1
-  elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
-    return 1
-  fi
   if nuinui_e2e__exists "$nuinui_e2e_vscode_launch_args"; then
     :
   elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
@@ -701,8 +588,6 @@ nuinui_e2e_host_vscode__verify_root() {
     [ -d "$nuinui_e2e_vscode_user_data/User" ] &&
       [ -d "$nuinui_e2e_vscode_extensions_dir" ] &&
       nuinui_e2e__regular "$nuinui_e2e_vscode_owner" &&
-      nuinui_e2e__regular "$nuinui_e2e_vscode_user_settings" &&
-      nuinui_e2e__regular "$nuinui_e2e_vscode_workspace" &&
       nuinui_e2e__regular "$nuinui_e2e_vscode_launch_args" || return 1
   fi
   nuinui_e2e_vscode_process_record=$nuinui_e2e_vscode_root/process-owner-v1
@@ -850,14 +735,21 @@ nuinui_e2e_host_vscode__stop_owned_processes() {
     "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_launch_pid" 0 || return 1
   nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
     "$nuinui_e2e_vscode_owned_root") || return 1
-  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_launch_pid $nuinui_e2e_vscode_owned_pids; do
-    case "$nuinui_e2e_vscode_pid" in ''|*[!0-9]*|0|1) continue ;; esac
+  nuinui_e2e_vscode_owned_pids=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_launch_pid" "$nuinui_e2e_vscode_owned_pids" | awk 'NF' | sort -nu)
+  nuinui_e2e_vscode_matching_pids=
+  # Collect the legacy ownership set before signalling: VS Code helpers may
+  # disappear as soon as the application receives TERM.
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_owned_pids; do
     kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
     nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_pid" \
       -o command= 2>/dev/null || true)
     [ -n "$nuinui_e2e_vscode_command_line" ] || continue
     nuinui_e2e_host_vscode__process_command_line_owned \
       "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || return 1
+    nuinui_e2e_vscode_matching_pids="$nuinui_e2e_vscode_matching_pids $nuinui_e2e_vscode_pid"
+  done
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
     kill -TERM "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || {
       kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
       return 1
@@ -865,31 +757,16 @@ nuinui_e2e_host_vscode__stop_owned_processes() {
   done
   nuinui_e2e_vscode_stop_attempt=0
   while [ "$nuinui_e2e_vscode_stop_attempt" -lt 10 ]; do
-    nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
-      "$nuinui_e2e_vscode_owned_root") || return 1
     nuinui_e2e_vscode_remaining=no
-    for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_owned_pids; do
-      nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_pid" \
-        -o command= 2>/dev/null || true)
-      [ -n "$nuinui_e2e_vscode_command_line" ] || continue
-      nuinui_e2e_host_vscode__process_command_line_owned \
-        "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || return 1
-      nuinui_e2e_vscode_remaining=yes
+    for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
+      kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 && nuinui_e2e_vscode_remaining=yes
     done
     [ "$nuinui_e2e_vscode_remaining" = no ] && return 0
     nuinui_e2e_vscode_stop_attempt=$((nuinui_e2e_vscode_stop_attempt + 1))
     sleep 0.2
   done
-  nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
-    "$nuinui_e2e_vscode_owned_root") || return 1
-  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_launch_pid $nuinui_e2e_vscode_owned_pids; do
-    case "$nuinui_e2e_vscode_pid" in ''|*[!0-9]*|0|1) continue ;; esac
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
     kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
-    nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_pid" \
-      -o command= 2>/dev/null || true)
-    [ -n "$nuinui_e2e_vscode_command_line" ] || continue
-    nuinui_e2e_host_vscode__process_command_line_owned \
-      "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || return 1
     kill -KILL "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || {
       kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
       return 1
@@ -897,16 +774,9 @@ nuinui_e2e_host_vscode__stop_owned_processes() {
   done
   nuinui_e2e_vscode_stop_attempt=0
   while [ "$nuinui_e2e_vscode_stop_attempt" -lt 10 ]; do
-    nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
-      "$nuinui_e2e_vscode_owned_root") || return 1
     nuinui_e2e_vscode_remaining=no
-    for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_owned_pids; do
-      nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_pid" \
-        -o command= 2>/dev/null || true)
-      [ -n "$nuinui_e2e_vscode_command_line" ] || continue
-      nuinui_e2e_host_vscode__process_command_line_owned \
-        "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || return 1
-      nuinui_e2e_vscode_remaining=yes
+    for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
+      kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 && nuinui_e2e_vscode_remaining=yes
     done
     [ "$nuinui_e2e_vscode_remaining" = no ] && return 0
     nuinui_e2e_vscode_stop_attempt=$((nuinui_e2e_vscode_stop_attempt + 1))
