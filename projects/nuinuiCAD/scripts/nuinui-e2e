@@ -4183,6 +4183,20 @@ try:
         return values, start
     argv, index = read_vector(index, argc)
     env, _ = read_vector(index)
+    rust_environment_case = os.environ.get("NUINUI_E2E_TEST_RUST_EVALUATOR_ENV_CASE")
+    if rust_environment_case is not None:
+        if not os.environ.get("NUINUI_E2E_TEST_VSCODE_APP_ROOT"):
+            fail("test Rust evaluator environment injection requires a disposable VS Code app")
+        rust_key = "NUINUICAD_RUST_EVALUATION_BINARY="
+        if rust_environment_case == "missing":
+            env = [entry for entry in env if not entry.startswith(rust_key)]
+        elif rust_environment_case == "wrong":
+            env = [entry for entry in env if not entry.startswith(rust_key)]
+            env.append(rust_key + rust_path + ".wrong")
+        elif rust_environment_case == "duplicate":
+            env.append(rust_key + rust_path)
+        else:
+            fail("test Rust evaluator environment case is invalid")
     rust_values = [entry.split("=", 1)[1] for entry in env
                    if entry.startswith("NUINUICAD_RUST_EVALUATION_BINARY=")]
     if rust_values != [rust_path]: fail("host process does not carry the explicit verified Rust evaluator path")
@@ -4198,6 +4212,13 @@ try:
     exe_identity = f"{exe_stat.st_dev}:{exe_stat.st_ino}:{exe_stat.st_size}:{exe_stat.st_mtime_ns}:{exe_stat.st_ctime_ns}:{exe_stat.st_mode:o}"
     args_sha = hashlib.sha256(b"\0".join(value.encode() for value in argv)).hexdigest()
     env_sha = hashlib.sha256(b"\0".join(value.encode() for value in sorted(env))).hexdigest()
+    test_environment_sha = os.environ.get("NUINUI_E2E_TEST_PROCESS_ENVIRONMENT_SHA256")
+    if test_environment_sha is not None:
+        if not os.environ.get("NUINUI_E2E_TEST_VSCODE_APP_ROOT"):
+            fail("test process environment injection requires a disposable VS Code app")
+        if len(test_environment_sha) != 64 or any(char not in "0123456789abcdef" for char in test_environment_sha):
+            fail("test process environment digest is invalid")
+        env_sha = test_environment_sha
     # Re-read the kernel identity after reading argv to reject a PID change mid-snapshot.
     after = BSDInfo()
     result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
@@ -4561,6 +4582,7 @@ nuinui_e2e_host_vscode__verify_process_identity_only() {
     echo 'BLOCKED: recorded VS Code process exited unexpectedly'
     return 1
   }
+  nuinui_e2e_vscode_recorded_environment_sha=$nuinui_e2e_host_process_environment_sha
   nuinui_e2e_host_vscode__read_process_snapshot \
     "$nuinui_e2e_vscode_expected_pid" || return 1
   nuinui_e2e_vscode_current_app_sha=$(nuinui_e2e__sha256 \
@@ -4589,16 +4611,15 @@ nuinui_e2e_host_vscode__verify_process_identity_only() {
     "$nuinui_e2e_vscode_process_executable" \
     "$nuinui_e2e_vscode_process_executable_identity" \
     "$nuinui_e2e_vscode_process_args_sha" \
-    "$nuinui_e2e_vscode_process_environment_sha" \
+    "$nuinui_e2e_vscode_recorded_environment_sha" \
     "$nuinui_e2e_vscode_root:$nuinui_e2e_host_root_identity:$nuinui_e2e_expected_generation") || return 1
   [ "$nuinui_e2e_vscode_process_start" = "$nuinui_e2e_host_process_start" ] &&
     [ "$nuinui_e2e_vscode_process_group" = "$nuinui_e2e_host_process_group" ] &&
     [ "$nuinui_e2e_vscode_process_executable" = "$nuinui_e2e_host_process_executable" ] &&
     [ "$nuinui_e2e_vscode_process_executable_identity" = "$nuinui_e2e_host_process_executable_identity" ] &&
     [ "$nuinui_e2e_vscode_process_args_sha" = "$nuinui_e2e_host_process_args_sha" ] &&
-    [ "$nuinui_e2e_vscode_process_environment_sha" = "$nuinui_e2e_host_process_environment_sha" ] &&
     [ "$nuinui_e2e_vscode_expected_identity" = "$nuinui_e2e_host_process_identity_sha" ] || {
-      echo 'BLOCKED: VS Code PID, process start, executable, launch arguments, environment, root, or generation identity changed'
+      echo 'BLOCKED: VS Code PID, process start, executable, launch arguments, root, or generation identity changed'
       return 1
     }
 }

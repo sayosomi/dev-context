@@ -1013,6 +1013,125 @@ ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sh
 fixture_direct_external_helper=no
 fixture_direct_transient_helper=no
 
+# A changed live environment digest does not invalidate an otherwise exact
+# direct host, and the recorded launch identity remains unchanged through recovery.
+fixture_app_mode=direct
+fixture_direct_child=yes
+fixture_cdp_kind=electron
+advance_default vscode-process-environment-drift
+fixture_generation=vscode-process-env-drift-0009
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+rm -f "$fixture_direct_pid_file"
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+contains 'HOST SESSION READY (adapter=vscode-isolated'
+drift_root=$(host_root_path "$fixture_generation")
+process_record=$drift_root/process-owner-v1
+direct_pid=$(sed -n 's/^pid=//p' "$process_record")
+recorded_environment_sha=$(sed -n 's/^process_environment_sha256=//p' "$process_record")
+recorded_identity_sha=$(sed -n 's/^process_identity_sha256=//p' "$process_record")
+nuinui_e2e_valid_digest "$recorded_environment_sha" || fail 'launch environment digest was not persisted'
+nuinui_e2e_valid_digest "$recorded_identity_sha" || fail 'launch process identity digest was not persisted'
+cp "$process_record" "$fixture_root/process-owner.before-tamper"
+
+# A changed persisted field or process identity digest cannot be adopted.
+for tampered_field in process_environment_sha256 process_identity_sha256 \
+  process_executable process_args_sha256; do
+  case "$tampered_field" in
+    process_environment_sha256) tampered_value=$(printf '%064d' 1) ;;
+    process_identity_sha256) tampered_value=$(printf '%064d' 2) ;;
+    process_executable) tampered_value=$fixture_app/Contents/MacOS/Code.tampered ;;
+    process_args_sha256) tampered_value=$(printf '%064d' 3) ;;
+  esac
+  python3 - "$process_record" "$tampered_field" "$tampered_value" <<'PY'
+import sys
+path, field, value = sys.argv[1:]
+prefix = field + "="
+with open(path, encoding="utf-8") as stream:
+    lines = stream.readlines()
+matches = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+if len(matches) != 1:
+    raise SystemExit("expected exactly one process record field: " + field)
+lines[matches[0]] = prefix + value + "\n"
+with open(path, "w", encoding="utf-8") as stream:
+    stream.writelines(lines)
+PY
+  fingerprint_before_denial
+  blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  assert_no_mutation
+  kill -0 "$direct_pid" 2>/dev/null || fail "tampered $tampered_field caused the host to be signaled"
+  cp "$fixture_root/process-owner.before-tamper" "$process_record"
+done
+rm "$fixture_root/process-owner.before-tamper"
+
+# Live Rust evaluator validation rejects missing, incorrect, and duplicated values.
+for rust_environment_case in missing wrong duplicate; do
+  fingerprint_before_denial
+  export NUINUI_E2E_TEST_RUST_EVALUATOR_ENV_CASE=$rust_environment_case
+  blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  unset NUINUI_E2E_TEST_RUST_EVALUATOR_ENV_CASE
+  contains 'host process does not carry the explicit verified Rust evaluator path'
+  assert_no_mutation
+  kill -0 "$direct_pid" 2>/dev/null || fail 'Rust evaluator rejection signaled the direct host'
+done
+
+observed_environment_sha=$(python3 - "$recorded_environment_sha" <<'PY'
+import hashlib, sys
+recorded = sys.argv[1]
+for index in range(4):
+    observed = hashlib.sha256(f"test-observed-process-environment-{index}".encode()).hexdigest()
+    if observed != recorded:
+        print(observed)
+        break
+else:
+    raise SystemExit("could not derive a distinct deterministic environment digest")
+PY
+)
+[ "$observed_environment_sha" != "$recorded_environment_sha" ] ||
+  fail 'test environment digest did not differ from the launch-time digest'
+cp "$process_record" "$fixture_root/process-owner.before-environment-drift"
+fingerprint_before_denial
+export NUINUI_E2E_TEST_PROCESS_ENVIRONMENT_SHA256=$observed_environment_sha
+export NUINUI_E2E_TEST_VSCODE_APP_ROOT=$fixture_app
+drift_snapshot=$(nuinui_e2e_host_vscode__process_snapshot \
+  "$direct_pid" "$fixture_app/Contents/MacOS/Code" "$drift_root/launch-args-v1" \
+  "$fixture_snapshot/bin/evaluation_stdio" no "$fixture_app/Contents/MacOS/Code") ||
+  fail 'could not inspect direct host under deterministic environment drift'
+[ "$(printf '%s\n' "$drift_snapshot" | sed -n 's/^process_environment_sha256=//p')" = \
+  "$observed_environment_sha" ] || fail 'test environment injection did not change the observed digest'
+unset NUINUI_E2E_TEST_VSCODE_APP_ROOT
+ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION READY'
+assert_no_mutation
+[ "$(sed -n 's/^process_environment_sha256=//p' "$process_record")" = \
+  "$recorded_environment_sha" ] || fail 'live environment digest replaced the recorded launch digest'
+[ "$(sed -n 's/^process_identity_sha256=//p' "$process_record")" = \
+  "$recorded_identity_sha" ] || fail 'live verification rewrote the durable process identity'
+cmp -s "$process_record" "$fixture_root/process-owner.before-environment-drift" ||
+  fail 'live environment verification changed the process-owner record'
+
+if ( NUINUI_E2E_TEST_FAILPOINT=after-host-cleanup-pending \
+  invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
+  fail 'environment-drift cleanup interruption failpoint did not interrupt'
+fi
+contains 'interruption after CLEANUP-PENDING'
+cmp -s "$process_record" "$fixture_root/process-owner.before-environment-drift" ||
+  fail 'interrupted cleanup changed the durable process-owner record'
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION RECOVERED FROM CLEANUP-PENDING'
+unset NUINUI_E2E_TEST_PROCESS_ENVIRONMENT_SHA256
+rm "$fixture_root/process-owner.before-environment-drift"
+[ ! -e "$drift_root" ] || fail 'environment-drift recovery left owned profile data'
+direct_remaining_group=$(nuinui_e2e_host_vscode__process_group_pids "$direct_pid") ||
+  fail 'environment-drift recovery process group could not be inspected'
+[ -z "$direct_remaining_group" ] || fail 'environment-drift recovery left a generation child'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_direct_child=no
+
 # If a ready host exits unexpectedly, recovery is admitted only after its
 # child group and port are both proven empty. The host-status operation stays read-only.
 fixture_app_mode=direct
