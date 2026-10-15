@@ -25,6 +25,7 @@ fixture_direct_external_helper=no
 fixture_direct_external_pid_file=
 fixture_direct_transient_helper=no
 fixture_direct_transient_pid_file=
+fixture_root_final_procinfo_gone=no
 fixture_proc_list_zeroes=0
 output=
 foreign_pid=
@@ -118,6 +119,7 @@ new_fixture() {
   fixture_direct_child=no
   fixture_direct_external_helper=no
   fixture_direct_transient_helper=no
+  fixture_root_final_procinfo_gone=no
   fixture_proc_list_zeroes=0
   fixture_direct_pid_file=$fixture_root/direct-child.pid
   fixture_direct_external_pid_file=$fixture_root/direct-external-helper.pid
@@ -411,6 +413,7 @@ invoke() {
       NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER="$fixture_direct_transient_helper" \
       NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE="$fixture_direct_transient_pid_file" \
       NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE="$host_transient_pid_file" \
+      NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE="$fixture_root_final_procinfo_gone" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   else
@@ -426,6 +429,7 @@ invoke() {
       NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER="$fixture_direct_transient_helper" \
       NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE="$fixture_direct_transient_pid_file" \
       NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE="$host_transient_pid_file" \
+      NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE="$fixture_root_final_procinfo_gone" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   fi
@@ -988,6 +992,12 @@ direct_helper_session=$(python3 -c 'import os,sys; print(os.getsid(int(sys.argv[
   fail 'external helper does not share the exact isolated process group and session'
 direct_helper_executable=$(ps -o comm= -p "$direct_external_helper_pid")
 case "$direct_helper_executable" in *sleep*) ;; *) fail 'test helper is not the external sleep executable' ;; esac
+fingerprint_before_denial
+( fixture_root_final_procinfo_gone=yes; blocked host-status \
+  "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ) ||
+  fail 'launch owner disappearance during final topology verification was accepted'
+contains 'launch process identity became inaccessible during final topology verification'
+assert_no_mutation
 if ( NUINUI_E2E_TEST_FAILPOINT=after-vscode-stop-signal \
   invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
   fail 'direct-host shutdown interruption failpoint did not interrupt'

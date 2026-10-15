@@ -4285,25 +4285,52 @@ try:
     path_fn.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
     path_fn.restype = ctypes.c_int
     def process_disappeared(pid, expected):
+        if pid == root_pid:
+            if (test_app == "yes" and
+                    os.environ.get("NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE") == "yes"):
+                # Exercise the final-check path where the transient classifier reports disappearance.
+                return True
+            return False
+        expected = expected or (pid, pgid, os.getuid(), None, None)
+        identity_fields = (("pid", ctypes.c_uint32, expected[0]),
+                           ("pgid", ctypes.c_uint32, expected[1]),
+                           ("uid", ctypes.c_uint32, expected[2]),
+                           ("start_sec", ctypes.c_uint64, expected[3]),
+                           ("start_usec", ctypes.c_uint64, expected[4]))
         current = BSDInfo()
         ctypes.set_errno(0)
         result = info_fn(pid, 3, 0, ctypes.byref(current), ctypes.sizeof(current))
         info_errno = ctypes.get_errno()
-        if (result >= BSDInfo.pid.offset + ctypes.sizeof(ctypes.c_uint32) and
-                current.pid == pid and current.status == 5):
-            return True
+        if result > 0:
+            for field, field_type, expected_value in identity_fields:
+                available = getattr(BSDInfo, field).offset + ctypes.sizeof(field_type)
+                if (expected_value is not None and result >= available and
+                        getattr(current, field) != expected_value):
+                    fail("generation process identity changed during transient-member verification")
         if result == ctypes.sizeof(current):
-            if current.pid != pid or (expected is not None and
-                    (current.pid, current.pgid, current.uid, current.start_sec,
-                     current.start_usec) != expected):
-                fail("generation process identity changed during transient-member verification")
             return current.status == 5
+        if (result >= BSDInfo.pid.offset + ctypes.sizeof(ctypes.c_uint32) and
+                result >= BSDInfo.status.offset + ctypes.sizeof(ctypes.c_uint32) and
+                current.status == 5):
+            return True
         if result <= 0 and info_errno == errno.ESRCH:
             # macOS hides zombie BSD info even though kill(pid, 0) still succeeds.
-            state = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)],
-                                   capture_output=True, text=True, check=False)
-            if state.returncode == 0 and any(line.strip().startswith("Z")
-                                             for line in state.stdout.splitlines()):
+            state = subprocess.run(["/bin/ps", "-o", "pid=,pgid=,uid=,lstart=,stat=",
+                                    "-p", str(pid)], capture_output=True, text=True,
+                                   check=False, env={**os.environ, "LC_ALL": "C"})
+            rows = [line.split() for line in state.stdout.splitlines() if line.strip()]
+            if state.returncode == 0 and len(rows) == 1 and len(rows[0]) >= 9 and \
+                    rows[0][-1].startswith("Z"):
+                fields = rows[0]
+                try:
+                    ps_identity = (int(fields[0]), int(fields[1]), int(fields[2]))
+                    ps_start = int(time.mktime(time.strptime(
+                        " ".join(fields[3:-1]), "%a %b %d %H:%M:%S %Y")))
+                except (ValueError, OverflowError):
+                    fail("zombie process identity could not be verified")
+                if ps_identity != expected[:3] or (
+                        expected[3] is not None and ps_start != expected[3]):
+                    fail("generation process identity changed during transient-member verification")
                 return True
         try:
             os.kill(pid, 0)
@@ -4389,12 +4416,16 @@ try:
         before = BSDInfo()
         result = info_fn(pid, 3, 0, ctypes.byref(before), ctypes.sizeof(before))
         if result != ctypes.sizeof(before) or before.pid != pid:
-            if pid == root_pid or not process_disappeared(pid, None):
+            if pid == root_pid or not process_disappeared(pid, (pid, pgid, os.getuid(), None, None)):
                 fail("generation process identity is inaccessible during topology verification")
             continue
-        if before.pgid != pgid or before.status == 5:
+        if before.pgid != pgid:
             continue
         if before.uid != os.getuid(): fail("generation process group contains a different user")
+        if before.status == 5:
+            if pid == root_pid:
+                fail("generation process-group leader exited during topology verification")
+            continue
         expected_identity = (before.pid, before.pgid, before.uid,
                              before.start_sec, before.start_usec)
         try:
@@ -4445,15 +4476,22 @@ try:
                     fail("generation evaluator process differs from the verified artifact snapshot")
         after = BSDInfo()
         result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
+        if (pid == root_pid and test_app == "yes" and
+                os.environ.get("NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE") == "yes"):
+            result = 0
         if result != ctypes.sizeof(after):
-            if process_disappeared(pid, expected_identity):
+            if pid != root_pid and process_disappeared(pid, expected_identity):
                 continue
+            if pid == root_pid:
+                fail("launch process identity became inaccessible during final topology verification")
             fail("generation process identity is inaccessible during final topology verification")
         if (after.pid, after.pgid, after.ppid, after.uid,
                 after.start_sec, after.start_usec) != (before.pid, before.pgid, before.ppid, before.uid,
                 before.start_sec, before.start_usec):
             fail("generation process topology changed during verification")
         if after.status == 5:
+            if pid == root_pid:
+                fail("generation process-group leader exited during final topology verification")
             continue
         members.append(pid)
     if not found_root: fail("generation process-group leader is no longer present")
@@ -5127,6 +5165,7 @@ environment = os.environ.copy()
 environment["NUINUICAD_RUST_EVALUATION_BINARY"] = rust_path
 environment.pop("NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES", None)
 environment.pop("NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE", None)
+environment.pop("NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE", None)
 os.execve(executable, argv, environment)
 PY
   nuinui_e2e_vscode_launched_pid=$!
