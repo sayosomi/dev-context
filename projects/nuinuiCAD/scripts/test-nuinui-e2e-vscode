@@ -23,6 +23,8 @@ fixture_direct_child=no
 fixture_direct_pid_file=
 fixture_direct_external_helper=no
 fixture_direct_external_pid_file=
+fixture_direct_transient_helper=no
+fixture_direct_transient_pid_file=
 fixture_proc_list_zeroes=0
 output=
 foreign_pid=
@@ -115,9 +117,11 @@ new_fixture() {
   fixture_app_sha=
   fixture_direct_child=no
   fixture_direct_external_helper=no
+  fixture_direct_transient_helper=no
   fixture_proc_list_zeroes=0
   fixture_direct_pid_file=$fixture_root/direct-child.pid
   fixture_direct_external_pid_file=$fixture_root/direct-external-helper.pid
+  fixture_direct_transient_pid_file=$fixture_root/direct-transient-helper.pid
   output=$fixture_root/command.out
   mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
   printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
@@ -296,6 +300,21 @@ int main(int argc, char **argv) {
       fprintf(stream, "%d\n", (int)helper);
       fclose(stream);
     }
+    if (strcmp(getenv("NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER") ?
+        getenv("NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER") : "no", "yes") == 0) {
+      pid_t helper = fork();
+      if (helper < 0) return 2;
+      if (helper == 0) {
+        execl("/bin/sleep", "sleep", "1", (char *)NULL);
+        _exit(127);
+      }
+      const char *helper_pid_file = getenv("NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE");
+      if (!helper_pid_file) return 2;
+      stream = fopen(helper_pid_file, "w");
+      if (!stream) return 2;
+      fprintf(stream, "%d\n", (int)helper);
+      fclose(stream);
+    }
     for (;;) pause();
   }
   return serve(port);
@@ -366,6 +385,11 @@ invoke() {
   host_port_arg=${2-}
   host_locale_arg=${3:-default}
   host_adapter_arg=${4:-fixture-no-process}
+  host_transient_pid_file=
+  if [ "$command_name" = host-prepare ] &&
+    [ "$fixture_direct_transient_helper" = yes ]; then
+    host_transient_pid_file=$fixture_direct_transient_pid_file
+  fi
   set -- "$command_name" --self-test --manifest "$fixture_manifest" \
     --issue "$issue" --generation "$generation" --tested-sha "$tested"
   [ -z "$lane" ] || set -- "$@" --lane "$lane"
@@ -384,6 +408,9 @@ invoke() {
       NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
       NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER="$fixture_direct_external_helper" \
       NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE="$fixture_direct_external_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER="$fixture_direct_transient_helper" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE="$fixture_direct_transient_pid_file" \
+      NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE="$host_transient_pid_file" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   else
@@ -396,6 +423,9 @@ invoke() {
       NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
       NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER="$fixture_direct_external_helper" \
       NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE="$fixture_direct_external_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER="$fixture_direct_transient_helper" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE="$fixture_direct_transient_pid_file" \
+      NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE="$host_transient_pid_file" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   fi
@@ -909,6 +939,8 @@ fixture_port=$(choose_port)
 rm -f "$fixture_direct_pid_file"
 fixture_direct_external_helper=yes
 rm -f "$fixture_direct_external_pid_file"
+fixture_direct_transient_helper=yes
+rm -f "$fixture_direct_transient_pid_file" "$fixture_direct_transient_pid_file.seen"
 ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
   "$fixture_file" "$fixture_port" default vscode-isolated
 ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
@@ -918,10 +950,29 @@ direct_pid=$(sed -n 's/^pid=//p' "$direct_root/process-owner-v1")
 direct_child_pid=$(cat "$fixture_direct_pid_file")
 [ -f "$fixture_direct_external_pid_file" ] || fail 'direct-host external helper PID was not recorded'
 direct_external_helper_pid=$(cat "$fixture_direct_external_pid_file")
+[ -f "$fixture_direct_transient_pid_file" ] || fail 'direct-host transient helper PID was not recorded'
+direct_transient_helper_pid=$(cat "$fixture_direct_transient_pid_file")
+[ -f "$fixture_direct_transient_pid_file.seen" ] ||
+  fail 'short-lived helper was not observed in the enumerated process group'
 [ "$direct_child_pid" != "$direct_pid" ] || fail 'ready direct-host did not use a child listener process'
 [ "$direct_external_helper_pid" != "$direct_pid" ] || fail 'direct-host external helper reused the launch PID'
 [ "$direct_external_helper_pid" != "$direct_child_pid" ] || fail 'direct-host external helper reused the listener PID'
+[ "$direct_transient_helper_pid" != "$direct_pid" ] &&
+  [ "$direct_transient_helper_pid" != "$direct_child_pid" ] &&
+  [ "$direct_transient_helper_pid" != "$direct_external_helper_pid" ] ||
+  fail 'direct-host transient helper reused another process identity'
 kill -0 "$direct_external_helper_pid" 2>/dev/null || fail 'direct-host external helper did not remain live'
+direct_transient_attempt=0
+direct_transient_stat=
+while [ "$direct_transient_attempt" -lt 20 ]; do
+  direct_transient_stat=$(ps -o stat= -p "$direct_transient_helper_pid" 2>/dev/null |
+    tr -d '[:space:]')
+  case "$direct_transient_stat" in ''|Z*) break ;; esac
+  direct_transient_attempt=$((direct_transient_attempt + 1))
+  sleep 0.05
+done
+case "$direct_transient_stat" in ''|Z*) ;; *)
+  fail 'short-lived helper remained live after disappearing during topology verification' ;; esac
 direct_owner_group=$(ps -o pgid= -p "$direct_pid" | tr -d '[:space:]')
 direct_helper_group=$(ps -o pgid= -p "$direct_external_helper_pid" | tr -d '[:space:]')
 direct_owner_uid=$(ps -o uid= -p "$direct_pid" | tr -d '[:space:]')
@@ -950,6 +1001,7 @@ direct_remaining_group=$(nuinui_e2e_host_vscode__process_group_pids "$direct_pid
 [ -z "$direct_remaining_group" ] || fail 'external helper remained after exact process-group recovery'
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 fixture_direct_external_helper=no
+fixture_direct_transient_helper=no
 
 # If a ready host exits unexpectedly, recovery is admitted only after its
 # child group and port are both proven empty. The host-status operation stays read-only.

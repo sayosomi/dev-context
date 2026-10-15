@@ -4251,9 +4251,9 @@ nuinui_e2e_host_vscode__verify_process_group() {
     "$nuinui_e2e_host_process_group" "$nuinui_e2e_host_process_start" \
     "$nuinui_e2e_host_process_executable" "$nuinui_e2e_vscode_rust" \
     "$nuinui_e2e_vscode_rust_sha" \
-    "$nuinui_e2e_vscode_fake_app" <<'PY'
-import ctypes, hashlib, os, stat, sys, time
-root_s, group_s, start_s, root_exe, rust_path, rust_sha, fake = sys.argv[1:]
+    "$nuinui_e2e_vscode_fake_app" "$nuinui_e2e_vscode_test_app" <<'PY'
+import ctypes, errno, hashlib, os, stat, subprocess, sys, time
+root_s, group_s, start_s, root_exe, rust_path, rust_sha, fake, test_app = sys.argv[1:]
 def fail(message): raise SystemExit("BLOCKED: " + message)
 try:
     root_pid, pgid = int(root_s), int(group_s)
@@ -4284,6 +4284,57 @@ try:
     path_fn = lib.proc_pidpath
     path_fn.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
     path_fn.restype = ctypes.c_int
+    def process_disappeared(pid, expected):
+        current = BSDInfo()
+        ctypes.set_errno(0)
+        result = info_fn(pid, 3, 0, ctypes.byref(current), ctypes.sizeof(current))
+        info_errno = ctypes.get_errno()
+        if (result >= BSDInfo.pid.offset + ctypes.sizeof(ctypes.c_uint32) and
+                current.pid == pid and current.status == 5):
+            return True
+        if result == ctypes.sizeof(current):
+            if current.pid != pid or (expected is not None and
+                    (current.pid, current.pgid, current.uid, current.start_sec,
+                     current.start_usec) != expected):
+                fail("generation process identity changed during transient-member verification")
+            return current.status == 5
+        if result <= 0 and info_errno == errno.ESRCH:
+            # macOS hides zombie BSD info even though kill(pid, 0) still succeeds.
+            state = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)],
+                                   capture_output=True, text=True, check=False)
+            if state.returncode == 0 and any(line.strip().startswith("Z")
+                                             for line in state.stdout.splitlines()):
+                return True
+        try:
+            os.kill(pid, 0)
+        except OSError as error:
+            if error.errno == errno.ESRCH:
+                return True
+            if error.errno == errno.EPERM:
+                return False
+            fail("process liveness could not be verified: " + str(error))
+        return False
+    transient_pid = None
+    transient_pid_file = ""
+    transient_seen_file = ""
+    if test_app == "yes":
+        transient_pid_file = os.environ.get("NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE", "")
+    if transient_pid_file:
+        transient_seen_file = transient_pid_file + ".seen"
+        if not os.path.exists(transient_seen_file):
+            deadline = time.monotonic() + 2.0
+            while not os.path.isfile(transient_pid_file) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if not os.path.isfile(transient_pid_file):
+                fail("test transient process identity was not recorded")
+            try:
+                with open(transient_pid_file, encoding="utf-8") as stream:
+                    transient_raw = stream.read().strip()
+                if not transient_raw.isdigit() or int(transient_raw) <= 1:
+                    fail("test transient process identity is malformed")
+                transient_pid = int(transient_raw)
+            except OSError as error:
+                fail("test transient process identity is inaccessible: " + str(error))
     pids_buffer = ctypes.create_string_buffer(4 * 65536)
     injected_zeroes = 0
     if fake == "yes":
@@ -4328,6 +4379,8 @@ try:
         fail("process topology enumeration returned a malformed or truncated result")
     pids = {int.from_bytes(pids_buffer.raw[index:index+4], byteorder=sys.byteorder, signed=True)
             for index in range(0, byte_count, 4)}
+    if transient_pid is not None and transient_pid not in pids:
+        fail("test transient process was not present in the isolated process enumeration")
     members = []
     found_root = False
     if os.getsid(root_pid) != root_pid:
@@ -4336,23 +4389,40 @@ try:
         before = BSDInfo()
         result = info_fn(pid, 3, 0, ctypes.byref(before), ctypes.sizeof(before))
         if result != ctypes.sizeof(before) or before.pid != pid:
+            if pid == root_pid or not process_disappeared(pid, None):
+                fail("generation process identity is inaccessible during topology verification")
             continue
         if before.pgid != pgid or before.status == 5:
             continue
         if before.uid != os.getuid(): fail("generation process group contains a different user")
+        expected_identity = (before.pid, before.pgid, before.uid,
+                             before.start_sec, before.start_usec)
         try:
             session = os.getsid(pid)
         except OSError:
+            if process_disappeared(pid, expected_identity):
+                continue
             fail("generation process-group session identity is inaccessible")
         if session != root_pid:
             fail("generation process group contains a process outside its isolated session")
         if (before.start_sec, before.start_usec) < (root_sec, root_usec):
             fail("generation process group contains a process older than its launch owner")
+        if pid == transient_pid:
+            with open(transient_seen_file, "w", encoding="utf-8") as stream:
+                stream.write(str(pid) + "\n")
+            time.sleep(1.5)
         buffer = ctypes.create_string_buffer(4096)
         if path_fn(pid, buffer, len(buffer)) <= 0:
+            if process_disappeared(pid, expected_identity):
+                continue
             fail("generation process-group executable identity is inaccessible")
         executable = os.path.realpath(os.fsdecode(buffer.value))
-        info = os.stat(executable, follow_symlinks=False)
+        try:
+            info = os.stat(executable, follow_symlinks=False)
+        except OSError:
+            if process_disappeared(pid, expected_identity):
+                continue
+            raise
         if not stat.S_ISREG(info.st_mode) or not (info.st_mode & 0o111):
             fail("generation process group contains a non-executable resource")
         if pid == root_pid:
@@ -4364,16 +4434,27 @@ try:
                 fail("disposable host created an unexpected child process")
             if executable == os.path.realpath(rust_path):
                 digest = hashlib.sha256()
-                with open(executable, "rb") as stream:
-                    for block in iter(lambda: stream.read(1024 * 1024), b""): digest.update(block)
+                try:
+                    with open(executable, "rb") as stream:
+                        for block in iter(lambda: stream.read(1024 * 1024), b""): digest.update(block)
+                except OSError:
+                    if process_disappeared(pid, expected_identity):
+                        continue
+                    raise
                 if digest.hexdigest() != rust_sha:
                     fail("generation evaluator process differs from the verified artifact snapshot")
         after = BSDInfo()
         result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
-        if result != ctypes.sizeof(after) or (after.pid, after.pgid, after.ppid,
-                after.start_sec, after.start_usec) != (before.pid, before.pgid, before.ppid,
+        if result != ctypes.sizeof(after):
+            if process_disappeared(pid, expected_identity):
+                continue
+            fail("generation process identity is inaccessible during final topology verification")
+        if (after.pid, after.pgid, after.ppid, after.uid,
+                after.start_sec, after.start_usec) != (before.pid, before.pgid, before.ppid, before.uid,
                 before.start_sec, before.start_usec):
             fail("generation process topology changed during verification")
+        if after.status == 5:
+            continue
         members.append(pid)
     if not found_root: fail("generation process-group leader is no longer present")
 except (OSError, ValueError, OverflowError) as error:
@@ -5045,6 +5126,7 @@ argv.extend(sys.argv[5:])
 environment = os.environ.copy()
 environment["NUINUICAD_RUST_EVALUATION_BINARY"] = rust_path
 environment.pop("NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES", None)
+environment.pop("NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE", None)
 os.execve(executable, argv, environment)
 PY
   nuinui_e2e_vscode_launched_pid=$!
