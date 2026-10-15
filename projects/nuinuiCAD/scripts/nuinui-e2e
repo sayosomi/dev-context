@@ -4145,6 +4145,8 @@ try:
         fail("process exited or PID identity is inaccessible")
     if info.uid != os.getuid() or info.pgid != pid:
         fail("host process is not in its exact isolated generation process group")
+    if os.getsid(pid) != pid:
+        fail("host process is not the leader of its exact isolated generation session")
     path_fn = lib.proc_pidpath
     path_fn.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
     path_fn.restype = ctypes.c_int
@@ -4201,6 +4203,8 @@ try:
     result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
     if result != ctypes.sizeof(after) or (after.pid, after.pgid, after.start_sec, after.start_usec) != (info.pid, info.pgid, info.start_sec, info.start_usec):
         fail("process identity changed while it was being verified")
+    if os.getsid(pid) != pid:
+        fail("process session identity changed while it was being verified")
 except (OSError, ValueError, IndexError) as error:
     fail(f"process identity could not be verified: {error}")
 print("process_pid=" + str(pid))
@@ -4245,11 +4249,11 @@ nuinui_e2e_host_vscode__verify_process_group() {
   [ "$#" = 0 ] || return 2
   python3 - "$nuinui_e2e_host_process_pid" \
     "$nuinui_e2e_host_process_group" "$nuinui_e2e_host_process_start" \
-    "$nuinui_e2e_host_process_executable" "$nuinui_e2e_vscode_app_root" \
-    "$nuinui_e2e_vscode_rust" "$nuinui_e2e_vscode_rust_sha" \
+    "$nuinui_e2e_host_process_executable" "$nuinui_e2e_vscode_rust" \
+    "$nuinui_e2e_vscode_rust_sha" \
     "$nuinui_e2e_vscode_fake_app" <<'PY'
 import ctypes, hashlib, os, stat, sys, time
-root_s, group_s, start_s, root_exe, app_root, rust_path, rust_sha, fake = sys.argv[1:]
+root_s, group_s, start_s, root_exe, rust_path, rust_sha, fake = sys.argv[1:]
 def fail(message): raise SystemExit("BLOCKED: " + message)
 try:
     root_pid, pgid = int(root_s), int(group_s)
@@ -4326,7 +4330,8 @@ try:
             for index in range(0, byte_count, 4)}
     members = []
     found_root = False
-    canonical_app = os.path.realpath(app_root)
+    if os.getsid(root_pid) != root_pid:
+        fail("generation process-group leader is outside its isolated session")
     for pid in sorted(p for p in pids if p > 1):
         before = BSDInfo()
         result = info_fn(pid, 3, 0, ctypes.byref(before), ctypes.sizeof(before))
@@ -4335,6 +4340,12 @@ try:
         if before.pgid != pgid or before.status == 5:
             continue
         if before.uid != os.getuid(): fail("generation process group contains a different user")
+        try:
+            session = os.getsid(pid)
+        except OSError:
+            fail("generation process-group session identity is inaccessible")
+        if session != root_pid:
+            fail("generation process group contains a process outside its isolated session")
         if (before.start_sec, before.start_usec) < (root_sec, root_usec):
             fail("generation process group contains a process older than its launch owner")
         buffer = ctypes.create_string_buffer(4096)
@@ -4351,20 +4362,12 @@ try:
         else:
             if fake == "yes":
                 fail("disposable host created an unexpected child process")
-            try:
-                inside_app = os.path.commonpath((canonical_app, executable)) == canonical_app
-            except ValueError:
-                inside_app = False
-            if inside_app and not executable.startswith(canonical_app + "/Contents/"):
-                inside_app = False
             if executable == os.path.realpath(rust_path):
                 digest = hashlib.sha256()
                 with open(executable, "rb") as stream:
                     for block in iter(lambda: stream.read(1024 * 1024), b""): digest.update(block)
                 if digest.hexdigest() != rust_sha:
                     fail("generation evaluator process differs from the verified artifact snapshot")
-            elif not inside_app:
-                fail("generation process group contains an executable outside the verified app and evaluator")
         after = BSDInfo()
         result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
         if result != ctypes.sizeof(after) or (after.pid, after.pgid, after.ppid,

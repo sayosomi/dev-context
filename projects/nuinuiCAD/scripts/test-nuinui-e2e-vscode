@@ -21,6 +21,8 @@ fixture_app_mode=launcher
 fixture_app_sha=
 fixture_direct_child=no
 fixture_direct_pid_file=
+fixture_direct_external_helper=no
+fixture_direct_external_pid_file=
 fixture_proc_list_zeroes=0
 output=
 foreign_pid=
@@ -112,8 +114,10 @@ new_fixture() {
   fixture_app_mode=launcher
   fixture_app_sha=
   fixture_direct_child=no
+  fixture_direct_external_helper=no
   fixture_proc_list_zeroes=0
   fixture_direct_pid_file=$fixture_root/direct-child.pid
+  fixture_direct_external_pid_file=$fixture_root/direct-external-helper.pid
   output=$fixture_root/command.out
   mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
   printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
@@ -277,6 +281,21 @@ int main(int argc, char **argv) {
     if (!stream) return 2;
     fprintf(stream, "%d\n", (int)child);
     fclose(stream);
+    if (strcmp(getenv("NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER") ?
+        getenv("NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER") : "no", "yes") == 0) {
+      pid_t helper = fork();
+      if (helper < 0) return 2;
+      if (helper == 0) {
+        execl("/bin/sleep", "sleep", "60", (char *)NULL);
+        _exit(127);
+      }
+      const char *helper_pid_file = getenv("NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE");
+      if (!helper_pid_file) return 2;
+      stream = fopen(helper_pid_file, "w");
+      if (!stream) return 2;
+      fprintf(stream, "%d\n", (int)helper);
+      fclose(stream);
+    }
     for (;;) pause();
   }
   return serve(port);
@@ -363,6 +382,8 @@ invoke() {
       NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
       NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
       NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER="$fixture_direct_external_helper" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE="$fixture_direct_external_pid_file" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   else
@@ -373,6 +394,8 @@ invoke() {
       NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
       NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
       NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER="$fixture_direct_external_helper" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE="$fixture_direct_external_pid_file" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   fi
@@ -884,6 +907,8 @@ prepare_generation "$fixture_generation"
 setup_vscode_artifacts
 fixture_port=$(choose_port)
 rm -f "$fixture_direct_pid_file"
+fixture_direct_external_helper=yes
+rm -f "$fixture_direct_external_pid_file"
 ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
   "$fixture_file" "$fixture_port" default vscode-isolated
 ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
@@ -891,7 +916,27 @@ ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sh
 direct_root=$(host_root_path "$fixture_generation")
 direct_pid=$(sed -n 's/^pid=//p' "$direct_root/process-owner-v1")
 direct_child_pid=$(cat "$fixture_direct_pid_file")
+[ -f "$fixture_direct_external_pid_file" ] || fail 'direct-host external helper PID was not recorded'
+direct_external_helper_pid=$(cat "$fixture_direct_external_pid_file")
 [ "$direct_child_pid" != "$direct_pid" ] || fail 'ready direct-host did not use a child listener process'
+[ "$direct_external_helper_pid" != "$direct_pid" ] || fail 'direct-host external helper reused the launch PID'
+[ "$direct_external_helper_pid" != "$direct_child_pid" ] || fail 'direct-host external helper reused the listener PID'
+kill -0 "$direct_external_helper_pid" 2>/dev/null || fail 'direct-host external helper did not remain live'
+direct_owner_group=$(ps -o pgid= -p "$direct_pid" | tr -d '[:space:]')
+direct_helper_group=$(ps -o pgid= -p "$direct_external_helper_pid" | tr -d '[:space:]')
+direct_owner_uid=$(ps -o uid= -p "$direct_pid" | tr -d '[:space:]')
+direct_helper_uid=$(ps -o uid= -p "$direct_external_helper_pid" | tr -d '[:space:]')
+direct_owner_session=$(python3 -c 'import os,sys; print(os.getsid(int(sys.argv[1])))' "$direct_pid")
+direct_helper_session=$(python3 -c 'import os,sys; print(os.getsid(int(sys.argv[1])))' "$direct_external_helper_pid")
+[ "$direct_owner_group" = "$direct_pid" ] &&
+  [ "$direct_helper_group" = "$direct_owner_group" ] &&
+  [ "$direct_owner_uid" = "$(/usr/bin/id -u)" ] &&
+  [ "$direct_helper_uid" = "$direct_owner_uid" ] &&
+  [ "$direct_owner_session" = "$direct_pid" ] &&
+  [ "$direct_helper_session" = "$direct_owner_session" ] ||
+  fail 'external helper does not share the exact isolated process group and session'
+direct_helper_executable=$(ps -o comm= -p "$direct_external_helper_pid")
+case "$direct_helper_executable" in *sleep*) ;; *) fail 'test helper is not the external sleep executable' ;; esac
 if ( NUINUI_E2E_TEST_FAILPOINT=after-vscode-stop-signal \
   invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
   fail 'direct-host shutdown interruption failpoint did not interrupt'
@@ -900,7 +945,11 @@ contains 'interruption after generation-scoped shutdown signal'
 [ -e "$direct_root/process-owner-v1" ] || fail 'interrupted shutdown removed process ownership evidence'
 ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 [ ! -e "$direct_root" ] || fail 'interrupted direct-host shutdown recovery left owned profile data'
+direct_remaining_group=$(nuinui_e2e_host_vscode__process_group_pids "$direct_pid") ||
+  fail 'external-helper process group could not be inspected after recovery'
+[ -z "$direct_remaining_group" ] || fail 'external helper remained after exact process-group recovery'
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_direct_external_helper=no
 
 # If a ready host exits unexpectedly, recovery is admitted only after its
 # child group and port are both proven empty. The host-status operation stays read-only.
