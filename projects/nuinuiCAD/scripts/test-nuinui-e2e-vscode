@@ -972,6 +972,90 @@ ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sh
 contains 'mutation=no-op'
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 
+# A PREPARING host that exits unexpectedly remains blocked until its exact
+# generation process group and listener are proven empty.
+advance_default vscode-abnormal-preparing-exit
+fixture_generation=vscode-abnormal-preparing-0008
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+rm -f "$fixture_direct_pid_file"
+if ( NUINUI_E2E_TEST_FAILPOINT=after-vscode-process-record \
+  invoke_host host-prepare "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$fixture_file" "$fixture_port" default vscode-isolated ); then
+  fail 'PREPARING direct-host process-record interruption did not interrupt'
+fi
+contains 'interruption after verified VS Code process'
+preparing_root=$(host_root_path "$fixture_generation")
+preparing_pid=$(sed -n 's/^pid=//p' "$preparing_root/process-owner-v1")
+preparing_group=$(sed -n 's/^process_group=//p' "$preparing_root/process-owner-v1")
+preparing_child_attempt=0
+while [ ! -f "$fixture_direct_pid_file" ] &&
+  [ "$preparing_child_attempt" -lt 100 ]; do
+  kill -0 "$preparing_pid" 2>/dev/null || fail 'PREPARING host exited before its test child listener was recorded'
+  preparing_child_attempt=$((preparing_child_attempt + 1))
+  sleep 0.05
+done
+[ -f "$fixture_direct_pid_file" ] || fail 'PREPARING test child listener identity was not recorded'
+preparing_child=$(cat "$fixture_direct_pid_file")
+[ "$preparing_pid" = "$preparing_group" ] || fail 'PREPARING host process group is not generation-bound'
+[ "$preparing_child" != "$preparing_pid" ] || fail 'PREPARING child listener did not use a distinct process'
+[ "$(nuinui_e2e_host_vscode__listener_pids "$fixture_port")" = "$preparing_child" ] ||
+  fail 'PREPARING child listener is not the recorded port owner'
+grep -q '^record_state=PREPARING$' "$(host_path intent "$fixture_generation")" ||
+  fail 'direct-host interruption did not leave the durable PREPARING intent intact'
+[ ! -e "$(host_path ready "$fixture_generation")" ] ||
+  fail 'direct-host interruption unexpectedly created the READY record'
+
+kill -TERM "$preparing_pid" 2>/dev/null || fail 'failed to stop the disposable PREPARING host'
+fingerprint_before_denial
+blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+[ "$(nuinui_e2e_host_vscode__listener_pids "$fixture_port")" = "$preparing_child" ] ||
+  fail 'blocked PREPARING status changed the child listener owner'
+fingerprint_before_denial
+blocked host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+[ "$(nuinui_e2e_host_vscode__listener_pids "$fixture_port")" = "$preparing_child" ] ||
+  fail 'blocked PREPARING recovery changed the child listener owner'
+
+kill -TERM "$preparing_child" 2>/dev/null || fail 'failed to stop the disposable PREPARING child through the test harness'
+preparing_exit_attempt=0
+while { [ -n "$(nuinui_e2e_host_vscode__process_group_pids "$preparing_group" 2>/dev/null || true)" ] ||
+    [ -n "$(nuinui_e2e_host_vscode__listener_pids "$fixture_port" 2>/dev/null || true)" ]; } &&
+  [ "$preparing_exit_attempt" -lt 50 ]; do
+  preparing_exit_attempt=$((preparing_exit_attempt + 1))
+  sleep 0.1
+done
+preparing_group_members=$(nuinui_e2e_host_vscode__process_group_pids "$preparing_group") ||
+  fail 'PREPARING process group could not be inspected after child shutdown'
+[ -z "$preparing_group_members" ] || fail 'PREPARING process group remained occupied after child shutdown'
+[ -z "$(nuinui_e2e_host_vscode__listener_pids "$fixture_port")" ] ||
+  fail 'PREPARING CDP port remained occupied after child shutdown'
+
+fingerprint_before_denial
+preparing_status_attempt=0
+while ! invoke_host host-status "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha"; do
+  preparing_status_attempt=$((preparing_status_attempt + 1))
+  [ "$preparing_status_attempt" -lt 20 ] || {
+    cat "$output" >&2
+    fail 'PREPARING abnormal-exit status did not become safe after process-group and port shutdown'
+  }
+  sleep 0.1
+done
+contains 'HOST SESSION PREPARING'
+contains 'process_state=ABNORMAL-EXIT-RECOVERY-SAFE'
+contains 'recovery=explicit-host-recover-required'
+assert_no_mutation
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION RECOVERED FROM PREPARING'
+[ ! -e "$preparing_root" ] || fail 'PREPARING abnormal-exit recovery left the isolated generation root'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+contains 'clean=yes'
+contains 'detached=yes'
+
 fixture_app_mode=launcher
 fixture_direct_child=no
 fixture_cdp_kind=fake
