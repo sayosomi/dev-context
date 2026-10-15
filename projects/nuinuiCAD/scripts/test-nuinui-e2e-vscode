@@ -21,6 +21,11 @@ fixture_app_mode=launcher
 fixture_app_sha=
 fixture_direct_child=no
 fixture_direct_pid_file=
+fixture_direct_external_helper=no
+fixture_direct_external_pid_file=
+fixture_direct_transient_helper=no
+fixture_direct_transient_pid_file=
+fixture_root_final_procinfo_gone=no
 fixture_proc_list_zeroes=0
 output=
 foreign_pid=
@@ -112,8 +117,13 @@ new_fixture() {
   fixture_app_mode=launcher
   fixture_app_sha=
   fixture_direct_child=no
+  fixture_direct_external_helper=no
+  fixture_direct_transient_helper=no
+  fixture_root_final_procinfo_gone=no
   fixture_proc_list_zeroes=0
   fixture_direct_pid_file=$fixture_root/direct-child.pid
+  fixture_direct_external_pid_file=$fixture_root/direct-external-helper.pid
+  fixture_direct_transient_pid_file=$fixture_root/direct-transient-helper.pid
   output=$fixture_root/command.out
   mkdir -p "$fixture_root/remote/sayosomi" || fail 'fixture remote directory'
   printf 'schema_version=1\n' > "$fixture_root/.nuinui-e2e-fixture"
@@ -277,6 +287,36 @@ int main(int argc, char **argv) {
     if (!stream) return 2;
     fprintf(stream, "%d\n", (int)child);
     fclose(stream);
+    if (strcmp(getenv("NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER") ?
+        getenv("NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER") : "no", "yes") == 0) {
+      pid_t helper = fork();
+      if (helper < 0) return 2;
+      if (helper == 0) {
+        execl("/bin/sleep", "sleep", "60", (char *)NULL);
+        _exit(127);
+      }
+      const char *helper_pid_file = getenv("NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE");
+      if (!helper_pid_file) return 2;
+      stream = fopen(helper_pid_file, "w");
+      if (!stream) return 2;
+      fprintf(stream, "%d\n", (int)helper);
+      fclose(stream);
+    }
+    if (strcmp(getenv("NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER") ?
+        getenv("NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER") : "no", "yes") == 0) {
+      pid_t helper = fork();
+      if (helper < 0) return 2;
+      if (helper == 0) {
+        execl("/bin/sleep", "sleep", "1", (char *)NULL);
+        _exit(127);
+      }
+      const char *helper_pid_file = getenv("NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE");
+      if (!helper_pid_file) return 2;
+      stream = fopen(helper_pid_file, "w");
+      if (!stream) return 2;
+      fprintf(stream, "%d\n", (int)helper);
+      fclose(stream);
+    }
     for (;;) pause();
   }
   return serve(port);
@@ -347,6 +387,11 @@ invoke() {
   host_port_arg=${2-}
   host_locale_arg=${3:-default}
   host_adapter_arg=${4:-fixture-no-process}
+  host_transient_pid_file=
+  if [ "$command_name" = host-prepare ] &&
+    [ "$fixture_direct_transient_helper" = yes ]; then
+    host_transient_pid_file=$fixture_direct_transient_pid_file
+  fi
   set -- "$command_name" --self-test --manifest "$fixture_manifest" \
     --issue "$issue" --generation "$generation" --tested-sha "$tested"
   [ -z "$lane" ] || set -- "$@" --lane "$lane"
@@ -363,6 +408,12 @@ invoke() {
       NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
       NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
       NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER="$fixture_direct_external_helper" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE="$fixture_direct_external_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER="$fixture_direct_transient_helper" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE="$fixture_direct_transient_pid_file" \
+      NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE="$host_transient_pid_file" \
+      NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE="$fixture_root_final_procinfo_gone" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   else
@@ -373,6 +424,12 @@ invoke() {
       NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
       NUINUI_E2E_TEST_DIRECT_CHILD_LISTENER="$fixture_direct_child" \
       NUINUI_E2E_TEST_DIRECT_PID_FILE="$fixture_direct_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_HELPER="$fixture_direct_external_helper" \
+      NUINUI_E2E_TEST_DIRECT_EXTERNAL_PID_FILE="$fixture_direct_external_pid_file" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_HELPER="$fixture_direct_transient_helper" \
+      NUINUI_E2E_TEST_DIRECT_TRANSIENT_PID_FILE="$fixture_direct_transient_pid_file" \
+      NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE="$host_transient_pid_file" \
+      NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE="$fixture_root_final_procinfo_gone" \
       NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES="$fixture_proc_list_zeroes" \
       "$helper" "$@" > "$output" 2>&1
   fi
@@ -884,6 +941,10 @@ prepare_generation "$fixture_generation"
 setup_vscode_artifacts
 fixture_port=$(choose_port)
 rm -f "$fixture_direct_pid_file"
+fixture_direct_external_helper=yes
+rm -f "$fixture_direct_external_pid_file"
+fixture_direct_transient_helper=yes
+rm -f "$fixture_direct_transient_pid_file" "$fixture_direct_transient_pid_file.seen"
 ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
   "$fixture_file" "$fixture_port" default vscode-isolated
 ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
@@ -891,7 +952,52 @@ ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sh
 direct_root=$(host_root_path "$fixture_generation")
 direct_pid=$(sed -n 's/^pid=//p' "$direct_root/process-owner-v1")
 direct_child_pid=$(cat "$fixture_direct_pid_file")
+[ -f "$fixture_direct_external_pid_file" ] || fail 'direct-host external helper PID was not recorded'
+direct_external_helper_pid=$(cat "$fixture_direct_external_pid_file")
+[ -f "$fixture_direct_transient_pid_file" ] || fail 'direct-host transient helper PID was not recorded'
+direct_transient_helper_pid=$(cat "$fixture_direct_transient_pid_file")
+[ -f "$fixture_direct_transient_pid_file.seen" ] ||
+  fail 'short-lived helper was not observed in the enumerated process group'
 [ "$direct_child_pid" != "$direct_pid" ] || fail 'ready direct-host did not use a child listener process'
+[ "$direct_external_helper_pid" != "$direct_pid" ] || fail 'direct-host external helper reused the launch PID'
+[ "$direct_external_helper_pid" != "$direct_child_pid" ] || fail 'direct-host external helper reused the listener PID'
+[ "$direct_transient_helper_pid" != "$direct_pid" ] &&
+  [ "$direct_transient_helper_pid" != "$direct_child_pid" ] &&
+  [ "$direct_transient_helper_pid" != "$direct_external_helper_pid" ] ||
+  fail 'direct-host transient helper reused another process identity'
+kill -0 "$direct_external_helper_pid" 2>/dev/null || fail 'direct-host external helper did not remain live'
+direct_transient_attempt=0
+direct_transient_stat=
+while [ "$direct_transient_attempt" -lt 20 ]; do
+  direct_transient_stat=$(ps -o stat= -p "$direct_transient_helper_pid" 2>/dev/null |
+    tr -d '[:space:]')
+  case "$direct_transient_stat" in ''|Z*) break ;; esac
+  direct_transient_attempt=$((direct_transient_attempt + 1))
+  sleep 0.05
+done
+case "$direct_transient_stat" in ''|Z*) ;; *)
+  fail 'short-lived helper remained live after disappearing during topology verification' ;; esac
+direct_owner_group=$(ps -o pgid= -p "$direct_pid" | tr -d '[:space:]')
+direct_helper_group=$(ps -o pgid= -p "$direct_external_helper_pid" | tr -d '[:space:]')
+direct_owner_uid=$(ps -o uid= -p "$direct_pid" | tr -d '[:space:]')
+direct_helper_uid=$(ps -o uid= -p "$direct_external_helper_pid" | tr -d '[:space:]')
+direct_owner_session=$(python3 -c 'import os,sys; print(os.getsid(int(sys.argv[1])))' "$direct_pid")
+direct_helper_session=$(python3 -c 'import os,sys; print(os.getsid(int(sys.argv[1])))' "$direct_external_helper_pid")
+[ "$direct_owner_group" = "$direct_pid" ] &&
+  [ "$direct_helper_group" = "$direct_owner_group" ] &&
+  [ "$direct_owner_uid" = "$(/usr/bin/id -u)" ] &&
+  [ "$direct_helper_uid" = "$direct_owner_uid" ] &&
+  [ "$direct_owner_session" = "$direct_pid" ] &&
+  [ "$direct_helper_session" = "$direct_owner_session" ] ||
+  fail 'external helper does not share the exact isolated process group and session'
+direct_helper_executable=$(ps -o comm= -p "$direct_external_helper_pid")
+case "$direct_helper_executable" in *sleep*) ;; *) fail 'test helper is not the external sleep executable' ;; esac
+fingerprint_before_denial
+( fixture_root_final_procinfo_gone=yes; blocked host-status \
+  "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ) ||
+  fail 'launch owner disappearance during final topology verification was accepted'
+contains 'launch process identity became inaccessible during final topology verification'
+assert_no_mutation
 if ( NUINUI_E2E_TEST_FAILPOINT=after-vscode-stop-signal \
   invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
   fail 'direct-host shutdown interruption failpoint did not interrupt'
@@ -900,7 +1006,131 @@ contains 'interruption after generation-scoped shutdown signal'
 [ -e "$direct_root/process-owner-v1" ] || fail 'interrupted shutdown removed process ownership evidence'
 ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 [ ! -e "$direct_root" ] || fail 'interrupted direct-host shutdown recovery left owned profile data'
+direct_remaining_group=$(nuinui_e2e_host_vscode__process_group_pids "$direct_pid") ||
+  fail 'external-helper process group could not be inspected after recovery'
+[ -z "$direct_remaining_group" ] || fail 'external helper remained after exact process-group recovery'
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_direct_external_helper=no
+fixture_direct_transient_helper=no
+
+# A changed live environment digest does not invalidate an otherwise exact
+# direct host, and the recorded launch identity remains unchanged through recovery.
+fixture_app_mode=direct
+fixture_direct_child=yes
+fixture_cdp_kind=electron
+advance_default vscode-process-environment-drift
+fixture_generation=vscode-process-env-drift-0009
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+rm -f "$fixture_direct_pid_file"
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+contains 'HOST SESSION READY (adapter=vscode-isolated'
+drift_root=$(host_root_path "$fixture_generation")
+process_record=$drift_root/process-owner-v1
+direct_pid=$(sed -n 's/^pid=//p' "$process_record")
+recorded_environment_sha=$(sed -n 's/^process_environment_sha256=//p' "$process_record")
+recorded_identity_sha=$(sed -n 's/^process_identity_sha256=//p' "$process_record")
+nuinui_e2e_valid_digest "$recorded_environment_sha" || fail 'launch environment digest was not persisted'
+nuinui_e2e_valid_digest "$recorded_identity_sha" || fail 'launch process identity digest was not persisted'
+cp "$process_record" "$fixture_root/process-owner.before-tamper"
+
+# A changed persisted field or process identity digest cannot be adopted.
+for tampered_field in process_environment_sha256 process_identity_sha256 \
+  process_executable process_args_sha256; do
+  case "$tampered_field" in
+    process_environment_sha256) tampered_value=$(printf '%064d' 1) ;;
+    process_identity_sha256) tampered_value=$(printf '%064d' 2) ;;
+    process_executable) tampered_value=$fixture_app/Contents/MacOS/Code.tampered ;;
+    process_args_sha256) tampered_value=$(printf '%064d' 3) ;;
+  esac
+  python3 - "$process_record" "$tampered_field" "$tampered_value" <<'PY'
+import sys
+path, field, value = sys.argv[1:]
+prefix = field + "="
+with open(path, encoding="utf-8") as stream:
+    lines = stream.readlines()
+matches = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+if len(matches) != 1:
+    raise SystemExit("expected exactly one process record field: " + field)
+lines[matches[0]] = prefix + value + "\n"
+with open(path, "w", encoding="utf-8") as stream:
+    stream.writelines(lines)
+PY
+  fingerprint_before_denial
+  blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  assert_no_mutation
+  kill -0 "$direct_pid" 2>/dev/null || fail "tampered $tampered_field caused the host to be signaled"
+  cp "$fixture_root/process-owner.before-tamper" "$process_record"
+done
+rm "$fixture_root/process-owner.before-tamper"
+
+# Live Rust evaluator validation rejects missing, incorrect, and duplicated values.
+for rust_environment_case in missing wrong duplicate; do
+  fingerprint_before_denial
+  export NUINUI_E2E_TEST_RUST_EVALUATOR_ENV_CASE=$rust_environment_case
+  blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  unset NUINUI_E2E_TEST_RUST_EVALUATOR_ENV_CASE
+  contains 'host process does not carry the explicit verified Rust evaluator path'
+  assert_no_mutation
+  kill -0 "$direct_pid" 2>/dev/null || fail 'Rust evaluator rejection signaled the direct host'
+done
+
+observed_environment_sha=$(python3 - "$recorded_environment_sha" <<'PY'
+import hashlib, sys
+recorded = sys.argv[1]
+for index in range(4):
+    observed = hashlib.sha256(f"test-observed-process-environment-{index}".encode()).hexdigest()
+    if observed != recorded:
+        print(observed)
+        break
+else:
+    raise SystemExit("could not derive a distinct deterministic environment digest")
+PY
+)
+[ "$observed_environment_sha" != "$recorded_environment_sha" ] ||
+  fail 'test environment digest did not differ from the launch-time digest'
+cp "$process_record" "$fixture_root/process-owner.before-environment-drift"
+fingerprint_before_denial
+export NUINUI_E2E_TEST_PROCESS_ENVIRONMENT_SHA256=$observed_environment_sha
+export NUINUI_E2E_TEST_VSCODE_APP_ROOT=$fixture_app
+drift_snapshot=$(nuinui_e2e_host_vscode__process_snapshot \
+  "$direct_pid" "$fixture_app/Contents/MacOS/Code" "$drift_root/launch-args-v1" \
+  "$fixture_snapshot/bin/evaluation_stdio" no "$fixture_app/Contents/MacOS/Code") ||
+  fail 'could not inspect direct host under deterministic environment drift'
+[ "$(printf '%s\n' "$drift_snapshot" | sed -n 's/^process_environment_sha256=//p')" = \
+  "$observed_environment_sha" ] || fail 'test environment injection did not change the observed digest'
+unset NUINUI_E2E_TEST_VSCODE_APP_ROOT
+ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION READY'
+assert_no_mutation
+[ "$(sed -n 's/^process_environment_sha256=//p' "$process_record")" = \
+  "$recorded_environment_sha" ] || fail 'live environment digest replaced the recorded launch digest'
+[ "$(sed -n 's/^process_identity_sha256=//p' "$process_record")" = \
+  "$recorded_identity_sha" ] || fail 'live verification rewrote the durable process identity'
+cmp -s "$process_record" "$fixture_root/process-owner.before-environment-drift" ||
+  fail 'live environment verification changed the process-owner record'
+
+if ( NUINUI_E2E_TEST_FAILPOINT=after-host-cleanup-pending \
+  invoke_host host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
+  fail 'environment-drift cleanup interruption failpoint did not interrupt'
+fi
+contains 'interruption after CLEANUP-PENDING'
+cmp -s "$process_record" "$fixture_root/process-owner.before-environment-drift" ||
+  fail 'interrupted cleanup changed the durable process-owner record'
+ok host-recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'HOST SESSION RECOVERED FROM CLEANUP-PENDING'
+unset NUINUI_E2E_TEST_PROCESS_ENVIRONMENT_SHA256
+rm "$fixture_root/process-owner.before-environment-drift"
+[ ! -e "$drift_root" ] || fail 'environment-drift recovery left owned profile data'
+direct_remaining_group=$(nuinui_e2e_host_vscode__process_group_pids "$direct_pid") ||
+  fail 'environment-drift recovery process group could not be inspected'
+[ -z "$direct_remaining_group" ] || fail 'environment-drift recovery left a generation child'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+fixture_direct_child=no
 
 # If a ready host exits unexpectedly, recovery is admitted only after its
 # child group and port are both proven empty. The host-status operation stays read-only.
