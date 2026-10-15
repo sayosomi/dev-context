@@ -118,7 +118,7 @@ nuinui_e2e_host__prepare_production_parent() {
 }
 
 nuinui_e2e_host__root_for() {
-  [ "$#" = 1 ] || return 2
+  [ "$#" -ge 1 ] && [ "$#" -le 2 ] || return 2
   nuinui_e2e_host_generation_hash=$(nuinui_e2e__generation_hash "$1") || return 1
   if nuinui_e2e_host__production_root_mode; then
     if [ "${nuinui_e2e_production:-no}" = yes ]; then
@@ -127,6 +127,12 @@ nuinui_e2e_host__root_for() {
       nuinui_e2e_host_root_parent=$(nuinui_e2e_host__production_parent_for_home) || return 1
     fi
     [ -n "$nuinui_e2e_host_root_parent" ] || return 1
+    if [ "${2:-}" != full ]; then
+      # Leave room for VS Code's Unix socket below user-data on macOS.
+      printf '%s/.nuinui-e2e-host-%.12s\n' "$nuinui_e2e_host_root_parent" \
+        "$nuinui_e2e_host_generation_hash"
+      return 0
+    fi
   else
     nuinui_e2e_host_root_parent=$nuinui_e2e_fixture_root
   fi

@@ -154,9 +154,14 @@ nuinui_e2e_host__read_record() {
   if [ "$nuinui_e2e_host_r_root" != "$nuinui_e2e_host_expected_root" ]; then
     nuinui_e2e_host_legacy_root=$(nuinui_e2e_host__legacy_root_for \
       "$nuinui_e2e_host_r_generation") || return 1
+    nuinui_e2e_host_previous_root=$(nuinui_e2e_host__root_for \
+      "$nuinui_e2e_host_r_generation" full) || return 1
     [ "$nuinui_e2e_host_read_fixture_policy" = historical ] &&
-      nuinui_e2e_host__production_root_mode &&
-      [ "$nuinui_e2e_host_r_root" = "$nuinui_e2e_host_legacy_root" ] || return 1
+      nuinui_e2e_host__production_root_mode || return 1
+    case "$nuinui_e2e_host_r_root" in
+      "$nuinui_e2e_host_legacy_root"|"$nuinui_e2e_host_previous_root") ;;
+      *) return 1 ;;
+    esac
     # A legacy / root is only a read-only candidate while proving a completed
     # historical generation. Outside that proof, run the complete proof here.
     if [ "${nuinui_e2e_host_history_verifying:-no}" != yes ]; then
@@ -531,9 +536,11 @@ nuinui_e2e_host__verify_released_history() (
     "$nuinui_e2e_host_history_generation") || exit 1
   nuinui_e2e_host_history_legacy_root=$(nuinui_e2e_host__legacy_root_for \
     "$nuinui_e2e_host_history_generation") || exit 1
+  nuinui_e2e_host_history_previous_root=$(nuinui_e2e_host__root_for \
+    "$nuinui_e2e_host_history_generation" full) || exit 1
   case "$nuinui_e2e_host_history_record_root" in
     "$nuinui_e2e_host_history_root") ;;
-    "$nuinui_e2e_host_history_legacy_root")
+    "$nuinui_e2e_host_history_legacy_root"|"$nuinui_e2e_host_history_previous_root")
       nuinui_e2e_host__production_root_mode || exit 1
       ;;
     *) exit 1 ;;
@@ -541,7 +548,9 @@ nuinui_e2e_host__verify_released_history() (
   [ ! -e "$nuinui_e2e_host_history_root" ] &&
     [ ! -L "$nuinui_e2e_host_history_root" ] &&
     [ ! -e "$nuinui_e2e_host_history_legacy_root" ] &&
-    [ ! -L "$nuinui_e2e_host_history_legacy_root" ] || exit 1
+    [ ! -L "$nuinui_e2e_host_history_legacy_root" ] &&
+    [ ! -e "$nuinui_e2e_host_history_previous_root" ] &&
+    [ ! -L "$nuinui_e2e_host_history_previous_root" ] || exit 1
   if [ "$nuinui_e2e_host_history_has_handoff" = yes ]; then
     nuinui_e2e_host_history_expected_handoff_sha=$(nuinui_e2e__sha256 \
       "$nuinui_e2e_host_history_handoff") || exit 1

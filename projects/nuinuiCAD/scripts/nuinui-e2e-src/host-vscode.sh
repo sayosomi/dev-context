@@ -11,13 +11,21 @@ PY
 }
 
 nuinui_e2e_host_vscode__fake_launcher_content() {
+  printf '#!/usr/bin/env node\n'
   cat <<'JS'
 const fs = require("node:fs");
 const http = require("node:http");
 const portArg = process.argv.slice(2).find(value => value.startsWith("--remote-debugging-port="));
+const extensionPathArg = process.argv.slice(2).find(value => value.startsWith("--extensionDevelopmentPath="));
 const rust = process.env.NUINUICAD_RUST_EVALUATION_BINARY || "";
 const rustStat = rust ? fs.statSync(rust, { throwIfNoEntry: false }) : undefined;
-if (!portArg || !rustStat || !rustStat.isFile() || (rustStat.mode & 0o111) === 0) {
+const fixturePath = process.argv[process.argv.length - 1];
+const extensionPath = extensionPathArg ? extensionPathArg.slice("--extensionDevelopmentPath=".length) : "";
+const extensionStat = extensionPath ? fs.statSync(extensionPath, { throwIfNoEntry: false }) : undefined;
+const fixtureStat = fixturePath ? fs.statSync(fixturePath, { throwIfNoEntry: false }) : undefined;
+if (!portArg || !extensionStat || !extensionStat.isDirectory() ||
+    !fixtureStat || !fixtureStat.isFile() || !rustStat || !rustStat.isFile() ||
+    (rustStat.mode & 0o111) === 0) {
   process.exitCode = 1;
   process.exit();
 }
@@ -70,16 +78,6 @@ JS
 
 nuinui_e2e_host_vscode__fake_launcher_sha() {
   nuinui_e2e_host_vscode__fake_launcher_content | shasum -a 256 | awk 'NR == 1 {print $1}'
-}
-
-nuinui_e2e_host_vscode__file_identity() {
-  [ "$#" = 1 ] || return 2
-  python3 - "$1" <<'PY'
-import os, sys
-p = sys.argv[1]
-s = os.stat(p, follow_symlinks=False)
-print(f"{s.st_dev}:{s.st_ino}:{s.st_size}:{s.st_mtime_ns}:{s.st_ctime_ns}:{s.st_mode:o}")
-PY
 }
 
 nuinui_e2e_host_vscode__snapshot_info() {
@@ -209,9 +207,6 @@ nuinui_e2e_host_vscode__app_info() {
       "$nuinui_e2e_vscode_app_path" ] || return 1
   nuinui_e2e_vscode_app_sha=$(nuinui_e2e__sha256 \
     "$nuinui_e2e_vscode_app_path") || return 1
-  nuinui_e2e_vscode_app_identity=$(nuinui_e2e_host_vscode__file_identity \
-    "$nuinui_e2e_vscode_app_path") || return 1
-  [ -n "$nuinui_e2e_vscode_app_identity" ] || return 1
   if [ -n "${NUINUI_E2E_TEST_VSCODE_APP_ROOT:-}" ]; then
     [ "$nuinui_e2e_self_test" = yes ] || return 1
     nuinui_e2e_vscode_test_app_real=$(realpath \
@@ -249,8 +244,8 @@ nuinui_e2e_host_vscode__app_info() {
         return 1
       }
   fi
-  printf '%s\n%s\n%s\n' "$nuinui_e2e_vscode_app_path" \
-    "$nuinui_e2e_vscode_app_sha" "$nuinui_e2e_vscode_app_identity"
+  printf '%s\n%s\n' "$nuinui_e2e_vscode_app_path" \
+    "$nuinui_e2e_vscode_app_sha"
 }
 
 nuinui_e2e_host_vscode__validate_artifacts() {
@@ -260,7 +255,7 @@ nuinui_e2e_host_vscode__validate_artifacts() {
   nuinui_e2e_vscode_port=$3
   nuinui_e2e_vscode_locale=$4
   [ "$(uname -s 2>/dev/null)" = Darwin ] || {
-    echo 'BLOCKED: vscode-isolated adapter requires macOS process identity APIs'
+    echo 'BLOCKED: vscode-isolated adapter requires macOS'
     return 1
   }
   nuinui_e2e_host__valid_port "$nuinui_e2e_vscode_port" || {
@@ -365,12 +360,11 @@ PY
   fi
   nuinui_e2e_vscode_app_rows=$(nuinui_e2e_host_vscode__app_info \
     "$nuinui_e2e_vscode_app_root") || {
-      echo 'BLOCKED: Visual Studio Code application executable identity could not be verified'
+      echo 'BLOCKED: Visual Studio Code application executable provenance could not be verified'
       return 1
     }
   nuinui_e2e_vscode_app_path=$(printf '%s\n' "$nuinui_e2e_vscode_app_rows" | sed -n '1p')
   nuinui_e2e_vscode_app_sha=$(printf '%s\n' "$nuinui_e2e_vscode_app_rows" | sed -n '2p')
-  nuinui_e2e_vscode_app_identity=$(printf '%s\n' "$nuinui_e2e_vscode_app_rows" | sed -n '3p')
   if [ -n "${NUINUI_E2E_TEST_VSCODE_APP_ROOT:-}" ]; then
     nuinui_e2e_vscode_test_app=yes
     nuinui_e2e_vscode_test_app_mode=${NUINUI_E2E_TEST_VSCODE_APP_MODE:-launcher}
@@ -472,7 +466,6 @@ nuinui_e2e_host_vscode__owner_content() {
   printf 'root_identity=%s\n' "$nuinui_e2e_host_root_identity"
   printf 'vscode_app_path=%s\n' "$nuinui_e2e_vscode_app_path"
   printf 'vscode_app_sha256=%s\n' "$nuinui_e2e_vscode_app_sha"
-  printf 'vscode_app_identity=%s\n' "$nuinui_e2e_vscode_app_identity"
   printf 'vscode_artifact_root=%s\n' "$nuinui_e2e_vscode_artifact_root"
   printf 'vscode_artifact_identity=%s\n' "$nuinui_e2e_vscode_artifact_identity"
   printf 'vscode_artifact_snapshot=%s\n' "$nuinui_e2e_vscode_artifact_snapshot"
@@ -500,145 +493,46 @@ nuinui_e2e_host_vscode__root_identity() {
 
 nuinui_e2e_host_vscode__root_tree() {
   [ "$#" = 4 ] || return 2
-  python3 - "$1" "$2" "$3" "$4" <<'PY'
-import os, stat, sys
+  python3 - "$1" "$2" "$3" "$4" <<'PYTHON'
+import os, shutil, stat, sys
 
 root, expected_identity, mode, action = sys.argv[1:]
 def blocked(message):
     raise SystemExit("BLOCKED: " + message)
 if mode not in ("partial", "complete") or action not in ("verify", "clean-profiles"):
     blocked("invalid owned-profile operation")
-try:
-    expected_device, expected_inode = (int(part) for part in expected_identity.split(":"))
-except (ValueError, AttributeError):
-    blocked("generation root identity is invalid")
 if os.path.realpath(root) != root:
     blocked("generation root is not canonical")
-flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+with_fd = os.open(root, flags)
 try:
-    root_fd = os.open(root, flags)
-except OSError as error:
-    blocked("generation root cannot be opened safely: " + str(error))
-
-def check_dir_fd(fd, expected=None):
-    info = os.fstat(fd)
-    if not stat.S_ISDIR(info.st_mode) or info.st_dev != expected_device:
-        blocked("owned profile tree contains a non-directory or crosses a filesystem boundary")
-    if expected is not None and (info.st_dev, info.st_ino) != expected:
-        blocked("owned profile directory identity changed")
-    return info
-
-def inspect_tree(fd, rel, remove=False):
-    check_dir_fd(fd)
-    try:
-        names = sorted(os.listdir(fd))
-    except OSError as error:
-        blocked("owned profile directory cannot be inspected: " + str(error))
-    for name in names:
-        try:
-            before = os.stat(name, dir_fd=fd, follow_symlinks=False)
-        except OSError as error:
-            blocked("owned profile entry cannot be inspected: " + str(error))
-        if before.st_dev != expected_device:
-            blocked("owned profile entry crosses a filesystem boundary")
-        if stat.S_ISLNK(before.st_mode):
-            blocked("owned profile contains a symbolic link")
-        if stat.S_ISDIR(before.st_mode):
-            child_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-            try:
-                child_fd = os.open(name, child_flags, dir_fd=fd)
-            except OSError as error:
-                blocked("owned profile directory cannot be opened without following links: " + str(error))
-            try:
-                check_dir_fd(child_fd, (before.st_dev, before.st_ino))
-                inspect_tree(child_fd, rel + "/" + name, remove)
-            finally:
-                os.close(child_fd)
-            if remove:
-                current = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
-                    blocked("owned profile directory changed during cleanup")
-                os.rmdir(name, dir_fd=fd)
-        elif stat.S_ISREG(before.st_mode):
-            if before.st_nlink != 1:
-                blocked("owned profile contains a multiply-linked file")
-            if remove:
-                file_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-                try:
-                    file_fd = os.open(name, file_flags, dir_fd=fd)
-                except OSError as error:
-                    blocked("owned profile file cannot be opened without following links: " + str(error))
-                try:
-                    opened = os.fstat(file_fd)
-                    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
-                        blocked("owned profile file identity changed during cleanup")
-                    current = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                    if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino):
-                        blocked("owned profile file changed during cleanup")
-                    os.unlink(name, dir_fd=fd)
-                finally:
-                    os.close(file_fd)
-        else:
-            blocked("owned profile contains a special or unsupported filesystem object")
-
-try:
-    root_info = check_dir_fd(root_fd, (expected_device, expected_inode))
-    profile_dirs = {}
-    allowed_files = {
+    info = os.fstat(with_fd)
+    if f"{info.st_dev}:{info.st_ino}" != expected_identity:
+        blocked("generation root ownership changed")
+    profiles = {"user-data", "extensions"}
+    records = {
         ".nuinui-vscode-host-owner-v1", "fixture.nui", "launch-args-v1",
         "process-owner-v1", "cdp-response-sha256", "launch-intent-v1", "stop-intent-v1",
     }
-    for name in sorted(os.listdir(root_fd)):
-        entry = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
-        if entry.st_dev != root_info.st_dev or stat.S_ISLNK(entry.st_mode):
-            blocked("generation root contains a linked or foreign-device entry")
-        if name in ("user-data", "extensions"):
+    present = set(os.listdir(with_fd))
+    for name in present:
+        entry = os.stat(name, dir_fd=with_fd, follow_symlinks=False)
+        if name in profiles:
             if not stat.S_ISDIR(entry.st_mode):
                 blocked("isolated profile root is not a real directory")
-            profile_dirs[name] = (entry.st_dev, entry.st_ino)
-            child_fd = os.open(name, flags, dir_fd=root_fd)
-            try:
-                check_dir_fd(child_fd, profile_dirs[name])
-                inspect_tree(child_fd, name)
-            finally:
-                os.close(child_fd)
-        elif name in allowed_files:
-            if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
-                blocked("generation root contains an unsafe ownership record")
-        else:
-            blocked("generation root contains an unowned or unexpected resource")
-    if mode == "complete":
-        if set(profile_dirs) != {"user-data", "extensions"}:
-            blocked("complete generation is missing an isolated profile root")
-        user_fd = os.open("user-data", flags, dir_fd=root_fd)
-        try:
-            try:
-                user_info = os.stat("User", dir_fd=user_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                blocked("complete generation is missing its isolated User profile")
-            if not stat.S_ISDIR(user_info.st_mode) or user_info.st_dev != root_info.st_dev:
-                blocked("isolated User profile is not a real owned directory")
-        finally:
-            os.close(user_fd)
+        elif name not in records or not stat.S_ISREG(entry.st_mode):
+            blocked("generation root contains an unowned resource")
+    if mode == "complete" and not profiles.issubset(present):
+        blocked("complete generation is missing an isolated profile root")
+    # VS Code owns profile contents, including its IPC sockets and links.
+    # rmtree removes links themselves and does not follow them outside the profile.
     if action == "clean-profiles":
-        for name in ("user-data", "extensions"):
-            expected = profile_dirs.get(name)
-            if expected is None:
-                continue
-            child_fd = os.open(name, flags, dir_fd=root_fd)
-            try:
-                check_dir_fd(child_fd, expected)
-                inspect_tree(child_fd, name, remove=True)
-            finally:
-                os.close(child_fd)
-            current = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
-            if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != expected:
-                blocked("isolated profile root changed during cleanup")
-            os.rmdir(name, dir_fd=root_fd)
-    check_dir_fd(root_fd, (expected_device, expected_inode))
+        os.fchdir(with_fd)
+        for name in profiles & present:
+            shutil.rmtree(name)
 finally:
-    os.close(root_fd)
-PY
+    os.close(with_fd)
+PYTHON
 }
 
 nuinui_e2e_host_vscode__verify_root() {
@@ -685,20 +579,6 @@ nuinui_e2e_host_vscode__verify_root() {
   elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
     return 1
   fi
-  if nuinui_e2e__exists "$nuinui_e2e_vscode_user_settings"; then
-    nuinui_e2e__regular "$nuinui_e2e_vscode_user_settings" || return 1
-    nuinui_e2e_host_vscode__settings_content | cmp -s - \
-      "$nuinui_e2e_vscode_user_settings" || return 1
-  elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
-    return 1
-  fi
-  if nuinui_e2e__exists "$nuinui_e2e_vscode_workspace"; then
-    nuinui_e2e__regular "$nuinui_e2e_vscode_workspace" &&
-      [ "$(nuinui_e2e__sha256 "$nuinui_e2e_vscode_workspace")" = \
-        "$nuinui_e2e_host_fixture_sha" ] || return 1
-  elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
-    return 1
-  fi
   if nuinui_e2e__exists "$nuinui_e2e_vscode_launch_args"; then
     :
   elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
@@ -708,18 +588,12 @@ nuinui_e2e_host_vscode__verify_root() {
     [ -d "$nuinui_e2e_vscode_user_data/User" ] &&
       [ -d "$nuinui_e2e_vscode_extensions_dir" ] &&
       nuinui_e2e__regular "$nuinui_e2e_vscode_owner" &&
-      nuinui_e2e__regular "$nuinui_e2e_vscode_user_settings" &&
-      nuinui_e2e__regular "$nuinui_e2e_vscode_workspace" &&
       nuinui_e2e__regular "$nuinui_e2e_vscode_launch_args" || return 1
   fi
   nuinui_e2e_vscode_process_record=$nuinui_e2e_vscode_root/process-owner-v1
   if nuinui_e2e__exists "$nuinui_e2e_vscode_process_record"; then
     nuinui_e2e_host_vscode__read_process_record || return 1
   else
-    if [ "$nuinui_e2e_vscode_verify_mode" = complete ] &&
-      nuinui_e2e__exists "$nuinui_e2e_vscode_launch_intent"; then
-      return 1
-    fi
     nuinui_e2e__exists "$nuinui_e2e_vscode_cdp_evidence" && return 1
   fi
   return 0
@@ -786,632 +660,137 @@ nuinui_e2e_host_vscode__port_free() {
   }
 }
 
-nuinui_e2e_host_vscode__process_snapshot() {
-  [ "$#" = 6 ] || return 2
-  python3 - "$1" "$2" "$3" "$4" "$5" "$6" <<'PY'
-import ctypes, hashlib, os, stat, struct, sys
-pid_s, app_path, args_path, rust_path, fake, runtime_path = sys.argv[1:]
-def fail(message): raise SystemExit("BLOCKED: " + message)
-try: pid = int(pid_s)
-except ValueError: fail("process identity has an invalid PID")
-if pid <= 1: fail("process identity has an invalid PID")
-class BSDInfo(ctypes.Structure):
-    _fields_ = [("flags", ctypes.c_uint32), ("status", ctypes.c_uint32),
-                ("xstatus", ctypes.c_uint32), ("pid", ctypes.c_uint32),
-                ("ppid", ctypes.c_uint32), ("uid", ctypes.c_uint32),
-                ("gid", ctypes.c_uint32), ("ruid", ctypes.c_uint32),
-                ("rgid", ctypes.c_uint32), ("svuid", ctypes.c_uint32),
-                ("svgid", ctypes.c_uint32), ("rfu", ctypes.c_uint32),
-                ("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32),
-                ("nfiles", ctypes.c_uint32), ("pgid", ctypes.c_uint32),
-                ("pjobc", ctypes.c_uint32), ("tdev", ctypes.c_uint32),
-                ("tpgid", ctypes.c_uint32), ("nice", ctypes.c_int32),
-                ("start_sec", ctypes.c_uint64), ("start_usec", ctypes.c_uint64)]
-try:
-    lib = ctypes.CDLL("/usr/lib/system/libsystem_kernel.dylib", use_errno=True)
-    info_fn = lib.proc_pidinfo
-    info_fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
-    info_fn.restype = ctypes.c_int
-    info = BSDInfo()
-    result = info_fn(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
-    if result != ctypes.sizeof(info) or info.pid != pid or info.status == 5:
-        fail("process exited or PID identity is inaccessible")
-    if info.uid != os.getuid() or info.pgid != pid:
-        fail("host process is not in its exact isolated generation process group")
-    if os.getsid(pid) != pid:
-        fail("host process is not the leader of its exact isolated generation session")
-    path_fn = lib.proc_pidpath
-    path_fn.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
-    path_fn.restype = ctypes.c_int
-    buffer = ctypes.create_string_buffer(4096)
-    if path_fn(pid, buffer, len(buffer)) <= 0: fail("process executable identity is inaccessible")
-    process_path = os.path.realpath(os.fsdecode(buffer.value))
-    mib = (ctypes.c_int * 3)(1, 49, pid)
-    sysctl_lib = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
-    sysctl_fn = sysctl_lib.sysctl
-    sysctl_fn.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_void_p,
-                          ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t]
-    sysctl_fn.restype = ctypes.c_int
-    size = ctypes.c_size_t()
-    if sysctl_fn(mib, 3, None, ctypes.byref(size), None, 0) != 0 or size.value < 8:
-        fail("exact process arguments are inaccessible")
-    raw_buffer = ctypes.create_string_buffer(size.value)
-    if sysctl_fn(mib, 3, raw_buffer, ctypes.byref(size), None, 0) != 0:
-        fail("exact process arguments are inaccessible")
-    raw = raw_buffer.raw[:size.value]
-    argc = struct.unpack_from("i", raw)[0]
-    if argc < 1: fail("process argument count is invalid")
-    index = raw.find(b"\0", 4)
-    if index < 0: fail("process argument vector is malformed")
-    index += 1
-    while index < len(raw) and raw[index] == 0: index += 1
-    def read_vector(start, count=None):
-        values = []
-        while start < len(raw) and raw[start] != 0 and (count is None or len(values) < count):
-            end = raw.find(b"\0", start)
-            if end < 0: fail("process argument or environment vector is malformed")
-            values.append(os.fsdecode(raw[start:end]))
-            start = end + 1
-        if count is not None and len(values) != count: fail("process argument vector is incomplete")
-        return values, start
-    argv, index = read_vector(index, argc)
-    env, _ = read_vector(index)
-    rust_environment_case = os.environ.get("NUINUI_E2E_TEST_RUST_EVALUATOR_ENV_CASE")
-    if rust_environment_case is not None:
-        if not os.environ.get("NUINUI_E2E_TEST_VSCODE_APP_ROOT"):
-            fail("test Rust evaluator environment injection requires a disposable VS Code app")
-        rust_key = "NUINUICAD_RUST_EVALUATION_BINARY="
-        if rust_environment_case == "missing":
-            env = [entry for entry in env if not entry.startswith(rust_key)]
-        elif rust_environment_case == "wrong":
-            env = [entry for entry in env if not entry.startswith(rust_key)]
-            env.append(rust_key + rust_path + ".wrong")
-        elif rust_environment_case == "duplicate":
-            env.append(rust_key + rust_path)
-        else:
-            fail("test Rust evaluator environment case is invalid")
-    rust_values = [entry.split("=", 1)[1] for entry in env
-                   if entry.startswith("NUINUICAD_RUST_EVALUATION_BINARY=")]
-    if rust_values != [rust_path]: fail("host process does not carry the explicit verified Rust evaluator path")
-    with open(args_path, encoding="utf-8") as stream: launch_args = stream.read().splitlines()
-    expected = [process_path]
-    if fake == "yes":
-        if process_path != os.path.realpath(runtime_path): fail("test host process differs from its verified Node runtime")
-        expected.append(app_path)
-    elif process_path != os.path.realpath(app_path): fail("process executable differs from verified VS Code executable")
-    expected.extend(launch_args)
-    if argv != expected: fail("process launch arguments or isolated root differ from the exact generation")
-    exe_stat = os.stat(process_path, follow_symlinks=False)
-    exe_identity = f"{exe_stat.st_dev}:{exe_stat.st_ino}:{exe_stat.st_size}:{exe_stat.st_mtime_ns}:{exe_stat.st_ctime_ns}:{exe_stat.st_mode:o}"
-    args_sha = hashlib.sha256(b"\0".join(value.encode() for value in argv)).hexdigest()
-    env_sha = hashlib.sha256(b"\0".join(value.encode() for value in sorted(env))).hexdigest()
-    test_environment_sha = os.environ.get("NUINUI_E2E_TEST_PROCESS_ENVIRONMENT_SHA256")
-    if test_environment_sha is not None:
-        if not os.environ.get("NUINUI_E2E_TEST_VSCODE_APP_ROOT"):
-            fail("test process environment injection requires a disposable VS Code app")
-        if len(test_environment_sha) != 64 or any(char not in "0123456789abcdef" for char in test_environment_sha):
-            fail("test process environment digest is invalid")
-        env_sha = test_environment_sha
-    # Re-read the kernel identity after reading argv to reject a PID change mid-snapshot.
-    after = BSDInfo()
-    result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
-    if result != ctypes.sizeof(after) or (after.pid, after.pgid, after.start_sec, after.start_usec) != (info.pid, info.pgid, info.start_sec, info.start_usec):
-        fail("process identity changed while it was being verified")
-    if os.getsid(pid) != pid:
-        fail("process session identity changed while it was being verified")
-except (OSError, ValueError, IndexError) as error:
-    fail(f"process identity could not be verified: {error}")
-print("process_pid=" + str(pid))
-print("process_group=" + str(info.pgid))
-print(f"process_start={info.start_sec}.{info.start_usec:06d}")
-print("process_executable=" + process_path)
-print("process_executable_identity=" + exe_identity)
-print("process_args_sha256=" + args_sha)
-print("process_environment_sha256=" + env_sha)
-PY
-}
-
-nuinui_e2e_host_vscode__process_identity_sha() {
-  [ "$#" = 8 ] || return 2
-  python3 - "$@" <<'PY'
-import hashlib, sys
-print(hashlib.sha256("\0".join(sys.argv[1:]).encode()).hexdigest())
-PY
-}
-
-nuinui_e2e_host_vscode__read_process_snapshot() {
+nuinui_e2e_host_vscode__process_ids_for_root() {
   [ "$#" = 1 ] || return 2
-  nuinui_e2e_vscode_process_rows=$(nuinui_e2e_host_vscode__process_snapshot \
-    "$1" "$nuinui_e2e_vscode_app_path" "$nuinui_e2e_vscode_launch_args" \
-    "$nuinui_e2e_vscode_rust" "$nuinui_e2e_vscode_fake_app" \
-    "$nuinui_e2e_vscode_runtime") || return 1
-  nuinui_e2e_vscode_process_pid=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_pid=//p')
-  nuinui_e2e_vscode_process_group=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_group=//p')
-  nuinui_e2e_vscode_process_start=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_start=//p')
-  nuinui_e2e_vscode_process_executable=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_executable=//p')
-  nuinui_e2e_vscode_process_executable_identity=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_executable_identity=//p')
-  nuinui_e2e_vscode_process_args_sha=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_args_sha256=//p')
-  nuinui_e2e_vscode_process_environment_sha=$(printf '%s\n' "$nuinui_e2e_vscode_process_rows" | sed -n 's/^process_environment_sha256=//p')
-  nuinui_e2e_valid_digest "$nuinui_e2e_vscode_process_args_sha" &&
-    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_process_environment_sha" &&
-    [ "$nuinui_e2e_vscode_process_group" = "$nuinui_e2e_vscode_process_pid" ] &&
-    [ -n "$nuinui_e2e_vscode_process_start" ] &&
-    [ -n "$nuinui_e2e_vscode_process_executable_identity" ]
+  command -v pgrep >/dev/null 2>&1 || return 1
+  pgrep -f "user-data-dir=$1/user-data" 2>/dev/null || true
 }
 
-nuinui_e2e_host_vscode__verify_process_group() {
-  [ "$#" = 0 ] || return 2
-  python3 - "$nuinui_e2e_host_process_pid" \
-    "$nuinui_e2e_host_process_group" "$nuinui_e2e_host_process_start" \
-    "$nuinui_e2e_host_process_executable" "$nuinui_e2e_vscode_rust" \
-    "$nuinui_e2e_vscode_rust_sha" \
-    "$nuinui_e2e_vscode_fake_app" "$nuinui_e2e_vscode_test_app" <<'PY'
-import ctypes, errno, hashlib, os, stat, subprocess, sys, time
-root_s, group_s, start_s, root_exe, rust_path, rust_sha, fake, test_app = sys.argv[1:]
-def fail(message): raise SystemExit("BLOCKED: " + message)
-try:
-    root_pid, pgid = int(root_s), int(group_s)
-    root_sec, root_usec = (int(part) for part in start_s.split(".", 1))
-except ValueError:
-    fail("generation process-group identity is malformed")
-if root_pid <= 1 or pgid != root_pid: fail("generation process group is not bound to its launch PID")
-class BSDInfo(ctypes.Structure):
-    _fields_ = [("flags", ctypes.c_uint32), ("status", ctypes.c_uint32),
-                ("xstatus", ctypes.c_uint32), ("pid", ctypes.c_uint32),
-                ("ppid", ctypes.c_uint32), ("uid", ctypes.c_uint32),
-                ("gid", ctypes.c_uint32), ("ruid", ctypes.c_uint32),
-                ("rgid", ctypes.c_uint32), ("svuid", ctypes.c_uint32),
-                ("svgid", ctypes.c_uint32), ("rfu", ctypes.c_uint32),
-                ("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32),
-                ("nfiles", ctypes.c_uint32), ("pgid", ctypes.c_uint32),
-                ("pjobc", ctypes.c_uint32), ("tdev", ctypes.c_uint32),
-                ("tpgid", ctypes.c_uint32), ("nice", ctypes.c_int32),
-                ("start_sec", ctypes.c_uint64), ("start_usec", ctypes.c_uint64)]
-try:
-    lib = ctypes.CDLL("/usr/lib/system/libsystem_kernel.dylib", use_errno=True)
-    info_fn = lib.proc_pidinfo
-    info_fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
-    info_fn.restype = ctypes.c_int
-    list_fn = lib.proc_listpids
-    list_fn.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_int]
-    list_fn.restype = ctypes.c_int
-    path_fn = lib.proc_pidpath
-    path_fn.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
-    path_fn.restype = ctypes.c_int
-    def process_disappeared(pid, expected):
-        if pid == root_pid:
-            if (test_app == "yes" and
-                    os.environ.get("NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE") == "yes"):
-                # Exercise the final-check path where the transient classifier reports disappearance.
-                return True
-            return False
-        expected = expected or (pid, pgid, os.getuid(), None, None)
-        identity_fields = (("pid", ctypes.c_uint32, expected[0]),
-                           ("pgid", ctypes.c_uint32, expected[1]),
-                           ("uid", ctypes.c_uint32, expected[2]),
-                           ("start_sec", ctypes.c_uint64, expected[3]),
-                           ("start_usec", ctypes.c_uint64, expected[4]))
-        current = BSDInfo()
-        ctypes.set_errno(0)
-        result = info_fn(pid, 3, 0, ctypes.byref(current), ctypes.sizeof(current))
-        info_errno = ctypes.get_errno()
-        if result > 0:
-            for field, field_type, expected_value in identity_fields:
-                available = getattr(BSDInfo, field).offset + ctypes.sizeof(field_type)
-                if (expected_value is not None and result >= available and
-                        getattr(current, field) != expected_value):
-                    fail("generation process identity changed during transient-member verification")
-        if result == ctypes.sizeof(current):
-            return current.status == 5
-        if (result >= BSDInfo.pid.offset + ctypes.sizeof(ctypes.c_uint32) and
-                result >= BSDInfo.status.offset + ctypes.sizeof(ctypes.c_uint32) and
-                current.status == 5):
-            return True
-        if result <= 0 and info_errno == errno.ESRCH:
-            # macOS hides zombie BSD info even though kill(pid, 0) still succeeds.
-            state = subprocess.run(["/bin/ps", "-o", "pid=,pgid=,uid=,lstart=,stat=",
-                                    "-p", str(pid)], capture_output=True, text=True,
-                                   check=False, env={**os.environ, "LC_ALL": "C"})
-            rows = [line.split() for line in state.stdout.splitlines() if line.strip()]
-            if state.returncode == 0 and len(rows) == 1 and len(rows[0]) >= 9 and \
-                    rows[0][-1].startswith("Z"):
-                fields = rows[0]
-                try:
-                    ps_identity = (int(fields[0]), int(fields[1]), int(fields[2]))
-                    ps_start = int(time.mktime(time.strptime(
-                        " ".join(fields[3:-1]), "%a %b %d %H:%M:%S %Y")))
-                except (ValueError, OverflowError):
-                    fail("zombie process identity could not be verified")
-                if ps_identity != expected[:3] or (
-                        expected[3] is not None and ps_start != expected[3]):
-                    fail("generation process identity changed during transient-member verification")
-                return True
-        try:
-            os.kill(pid, 0)
-        except OSError as error:
-            if error.errno == errno.ESRCH:
-                return True
-            if error.errno == errno.EPERM:
-                return False
-            fail("process liveness could not be verified: " + str(error))
-        return False
-    transient_pid = None
-    transient_pid_file = ""
-    transient_seen_file = ""
-    if test_app == "yes":
-        transient_pid_file = os.environ.get("NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE", "")
-    if transient_pid_file:
-        transient_seen_file = transient_pid_file + ".seen"
-        if not os.path.exists(transient_seen_file):
-            deadline = time.monotonic() + 2.0
-            while not os.path.isfile(transient_pid_file) and time.monotonic() < deadline:
-                time.sleep(0.01)
-            if not os.path.isfile(transient_pid_file):
-                fail("test transient process identity was not recorded")
-            try:
-                with open(transient_pid_file, encoding="utf-8") as stream:
-                    transient_raw = stream.read().strip()
-                if not transient_raw.isdigit() or int(transient_raw) <= 1:
-                    fail("test transient process identity is malformed")
-                transient_pid = int(transient_raw)
-            except OSError as error:
-                fail("test transient process identity is inaccessible: " + str(error))
-    pids_buffer = ctypes.create_string_buffer(4 * 65536)
-    injected_zeroes = 0
-    if fake == "yes":
-        injected_raw = os.environ.get("NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES", "0")
-        if not injected_raw.isdigit() or int(injected_raw) > 8:
-            fail("test-only process enumeration override is invalid")
-        injected_zeroes = int(injected_raw)
-    byte_count = 0
-    enumeration_errno = 0
-    for attempt in range(9):
-        ctypes.set_errno(0)
-        byte_count = list_fn(2, pgid, pids_buffer, len(pids_buffer))
-        enumeration_errno = ctypes.get_errno()
-        if attempt < injected_zeroes:
-            byte_count = 0
-            enumeration_errno = 0
-        if byte_count > 0:
-            break
-        if byte_count < 0:
-            fail("process topology enumeration returned an invalid byte count")
-        if attempt == 8:
-            break
-        time.sleep(0.025)
-        # A zero result is ambiguous on macOS. Keep retrying only while the
-        # exact launch owner is still the same live process.
-        ctypes.set_errno(0)
-        before = BSDInfo()
-        result = info_fn(root_pid, 3, 0, ctypes.byref(before), ctypes.sizeof(before))
-        if (result != ctypes.sizeof(before) or before.pid != root_pid or
-                before.pgid != pgid or before.uid != os.getuid() or
-                before.status == 5 or
-                (before.start_sec, before.start_usec) != (root_sec, root_usec)):
-            fail("launch process identity changed while process topology enumeration was retried")
-        root_buffer = ctypes.create_string_buffer(4096)
-        if path_fn(root_pid, root_buffer, len(root_buffer)) <= 0 or \
-                os.path.realpath(os.fsdecode(root_buffer.value)) != root_exe:
-            fail("launch executable identity changed while process topology enumeration was retried")
-    if byte_count == 0:
-        detail = os.strerror(enumeration_errno) if enumeration_errno else "no process IDs returned"
-        fail("process topology could not be enumerated after bounded retries (" + detail + ")")
-    if byte_count >= len(pids_buffer) or byte_count % 4:
-        fail("process topology enumeration returned a malformed or truncated result")
-    pids = {int.from_bytes(pids_buffer.raw[index:index+4], byteorder=sys.byteorder, signed=True)
-            for index in range(0, byte_count, 4)}
-    if transient_pid is not None and transient_pid not in pids:
-        fail("test transient process was not present in the isolated process enumeration")
-    members = []
-    found_root = False
-    if os.getsid(root_pid) != root_pid:
-        fail("generation process-group leader is outside its isolated session")
-    for pid in sorted(p for p in pids if p > 1):
-        before = BSDInfo()
-        result = info_fn(pid, 3, 0, ctypes.byref(before), ctypes.sizeof(before))
-        if result != ctypes.sizeof(before) or before.pid != pid:
-            if pid == root_pid or not process_disappeared(pid, (pid, pgid, os.getuid(), None, None)):
-                fail("generation process identity is inaccessible during topology verification")
-            continue
-        if before.pgid != pgid:
-            continue
-        if before.uid != os.getuid(): fail("generation process group contains a different user")
-        if before.status == 5:
-            if pid == root_pid:
-                fail("generation process-group leader exited during topology verification")
-            continue
-        expected_identity = (before.pid, before.pgid, before.uid,
-                             before.start_sec, before.start_usec)
-        try:
-            session = os.getsid(pid)
-        except OSError:
-            if process_disappeared(pid, expected_identity):
-                continue
-            fail("generation process-group session identity is inaccessible")
-        if session != root_pid:
-            fail("generation process group contains a process outside its isolated session")
-        if (before.start_sec, before.start_usec) < (root_sec, root_usec):
-            fail("generation process group contains a process older than its launch owner")
-        if pid == transient_pid:
-            with open(transient_seen_file, "w", encoding="utf-8") as stream:
-                stream.write(str(pid) + "\n")
-            time.sleep(1.5)
-        buffer = ctypes.create_string_buffer(4096)
-        if path_fn(pid, buffer, len(buffer)) <= 0:
-            if process_disappeared(pid, expected_identity):
-                continue
-            fail("generation process-group executable identity is inaccessible")
-        executable = os.path.realpath(os.fsdecode(buffer.value))
-        try:
-            info = os.stat(executable, follow_symlinks=False)
-        except OSError:
-            if process_disappeared(pid, expected_identity):
-                continue
-            raise
-        if not stat.S_ISREG(info.st_mode) or not (info.st_mode & 0o111):
-            fail("generation process group contains a non-executable resource")
-        if pid == root_pid:
-            if (before.start_sec, before.start_usec) != (root_sec, root_usec) or executable != root_exe:
-                fail("generation process-group leader identity changed")
-            found_root = True
-        else:
-            if fake == "yes":
-                fail("disposable host created an unexpected child process")
-            if executable == os.path.realpath(rust_path):
-                digest = hashlib.sha256()
-                try:
-                    with open(executable, "rb") as stream:
-                        for block in iter(lambda: stream.read(1024 * 1024), b""): digest.update(block)
-                except OSError:
-                    if process_disappeared(pid, expected_identity):
-                        continue
-                    raise
-                if digest.hexdigest() != rust_sha:
-                    fail("generation evaluator process differs from the verified artifact snapshot")
-        after = BSDInfo()
-        result = info_fn(pid, 3, 0, ctypes.byref(after), ctypes.sizeof(after))
-        if (pid == root_pid and test_app == "yes" and
-                os.environ.get("NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE") == "yes"):
-            result = 0
-        if result != ctypes.sizeof(after):
-            if pid != root_pid and process_disappeared(pid, expected_identity):
-                continue
-            if pid == root_pid:
-                fail("launch process identity became inaccessible during final topology verification")
-            fail("generation process identity is inaccessible during final topology verification")
-        if (after.pid, after.pgid, after.ppid, after.uid,
-                after.start_sec, after.start_usec) != (before.pid, before.pgid, before.ppid, before.uid,
-                before.start_sec, before.start_usec):
-            fail("generation process topology changed during verification")
-        if after.status == 5:
-            if pid == root_pid:
-                fail("generation process-group leader exited during final topology verification")
-            continue
-        members.append(pid)
-    if not found_root: fail("generation process-group leader is no longer present")
-except (OSError, ValueError, OverflowError) as error:
-    fail("generation process topology could not be verified: " + str(error))
-if not members: fail("generation process group has no verified members")
-print("\n".join(str(pid) for pid in members))
-PY
-}
-
-nuinui_e2e_host_vscode__process_group_pids() {
-  [ "$#" = 1 ] || return 2
-  nuinui_e2e_vscode_ps_rows=$(ps -axo pid=,pgid=,stat= 2>&1) || {
-    echo 'BLOCKED: process-group shutdown state is inaccessible'
-    return 1
-  }
-  python3 - "$1" "$nuinui_e2e_vscode_ps_rows" <<'PY'
-import sys
-try: group = int(sys.argv[1])
-except ValueError: raise SystemExit("BLOCKED: process-group ID is malformed")
-pids = []
-for row in sys.argv[2].splitlines():
-    fields = row.split()
-    if len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit():
-        raise SystemExit("BLOCKED: process table returned a malformed identity row")
-    if int(fields[1]) == group and not fields[2].upper().startswith("Z"):
-        pids.append(int(fields[0]))
-print("\n".join(str(pid) for pid in sorted(set(pids))))
-PY
-}
-
-nuinui_e2e_host_vscode__signal_process_group() {
+nuinui_e2e_host_vscode__process_command_line_owned() {
   [ "$#" = 2 ] || return 2
-  case "$1" in ''|*[!0-9]*|0|1) return 1 ;; esac
-  case "$2" in TERM) nuinui_e2e_vscode_signal=15 ;; KILL) nuinui_e2e_vscode_signal=9 ;; *) return 2 ;; esac
-  python3 - "$1" "$nuinui_e2e_vscode_signal" <<'PY'
-import os, signal, sys
-try:
-    group, number = int(sys.argv[1]), int(sys.argv[2])
-    os.killpg(group, number)
-except (OSError, ValueError) as error:
-    raise SystemExit("BLOCKED: isolated generation process group could not be signaled: " + str(error))
-PY
+  nuinui_e2e_vscode_owned_root=$1
+  nuinui_e2e_vscode_owned_command=$2
+  case "$nuinui_e2e_vscode_owned_command" in
+    *"user-data-dir=$nuinui_e2e_vscode_owned_root/user-data"*) ;;
+    *) return 1 ;;
+  esac
+  case "$nuinui_e2e_vscode_owned_command" in
+    *"$nuinui_e2e_vscode_app_root/Contents/"*) ;;
+    *) return 1 ;;
+  esac
 }
 
-nuinui_e2e_host_vscode__capture_process() {
-  [ "$#" = 1 ] || return 2
-  nuinui_e2e_vscode_capture_pid=$1
-  nuinui_e2e_vscode_capture_attempt=0
-  while [ "$nuinui_e2e_vscode_capture_attempt" -lt 60 ]; do
-    if nuinui_e2e_host_vscode__read_process_snapshot \
-      "$nuinui_e2e_vscode_capture_pid"; then
-      return 0
-    fi
-    kill -0 "$nuinui_e2e_vscode_capture_pid" 2>/dev/null || return 1
-    nuinui_e2e_vscode_capture_attempt=$((nuinui_e2e_vscode_capture_attempt + 1))
-    sleep 0.1
-  done
-  return 1
-}
-
-nuinui_e2e_host_vscode__verify_process_identity_only() {
-  [ "$#" = 1 ] || return 2
-  nuinui_e2e_vscode_expected_pid=$1
-  case "$nuinui_e2e_vscode_expected_pid" in ''|*[!0-9]*|0) return 1 ;; esac
-  kill -0 "$nuinui_e2e_vscode_expected_pid" 2>/dev/null || {
-    echo 'BLOCKED: recorded VS Code process exited unexpectedly'
+nuinui_e2e_host_vscode__assert_process_ownership() {
+  [ "$#" -ge 1 ] && [ "$#" -le 3 ] || return 2
+  nuinui_e2e_vscode_owned_root=$1
+  nuinui_e2e_vscode_launch_pid=${2:-}
+  nuinui_e2e_vscode_require_launch=${3:-0}
+  [ "$nuinui_e2e_vscode_owned_root" = "$nuinui_e2e_vscode_root" ] || return 1
+  case "$nuinui_e2e_vscode_require_launch" in 0|1) ;; *) return 2 ;; esac
+  if [ -n "$nuinui_e2e_vscode_launch_pid" ]; then
+    case "$nuinui_e2e_vscode_launch_pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+  elif [ "$nuinui_e2e_vscode_require_launch" = 1 ]; then
+    echo 'BLOCKED: recorded launch PID is missing'
     return 1
-  }
-  nuinui_e2e_vscode_recorded_environment_sha=$nuinui_e2e_host_process_environment_sha
-  nuinui_e2e_host_vscode__read_process_snapshot \
-    "$nuinui_e2e_vscode_expected_pid" || return 1
-  nuinui_e2e_vscode_current_app_sha=$(nuinui_e2e__sha256 \
-    "$nuinui_e2e_vscode_app_path") || return 1
-  nuinui_e2e_vscode_current_app_identity=$(nuinui_e2e_host_vscode__file_identity \
-    "$nuinui_e2e_vscode_app_path") || return 1
-  [ "$nuinui_e2e_vscode_current_app_sha" = "$nuinui_e2e_vscode_app_sha" ] &&
-    [ "$nuinui_e2e_vscode_current_app_identity" = "$nuinui_e2e_vscode_app_identity" ] || {
-      echo 'BLOCKED: verified VS Code application executable changed after validation'
-      return 1
-    }
-  if [ "$nuinui_e2e_vscode_test_app" != yes ]; then
-    codesign --verify --deep --strict "$nuinui_e2e_vscode_app_root" >/dev/null 2>&1 || {
-      echo 'BLOCKED: Visual Studio Code code signature changed after validation'
-      return 1
-    }
-    codesign -dv --verbose=4 "$nuinui_e2e_vscode_app_root" 2>&1 |
-      grep -q '^TeamIdentifier=UBF8T346G9$' || {
-        echo 'BLOCKED: Visual Studio Code Microsoft signing identity changed after validation'
-        return 1
-      }
   fi
-  nuinui_e2e_vscode_expected_identity=$(nuinui_e2e_host_vscode__process_identity_sha \
-    "$nuinui_e2e_vscode_process_pid" "$nuinui_e2e_vscode_process_group" \
-    "$nuinui_e2e_vscode_process_start" \
-    "$nuinui_e2e_vscode_process_executable" \
-    "$nuinui_e2e_vscode_process_executable_identity" \
-    "$nuinui_e2e_vscode_process_args_sha" \
-    "$nuinui_e2e_vscode_recorded_environment_sha" \
-    "$nuinui_e2e_vscode_root:$nuinui_e2e_host_root_identity:$nuinui_e2e_expected_generation") || return 1
-  [ "$nuinui_e2e_vscode_process_start" = "$nuinui_e2e_host_process_start" ] &&
-    [ "$nuinui_e2e_vscode_process_group" = "$nuinui_e2e_host_process_group" ] &&
-    [ "$nuinui_e2e_vscode_process_executable" = "$nuinui_e2e_host_process_executable" ] &&
-    [ "$nuinui_e2e_vscode_process_executable_identity" = "$nuinui_e2e_host_process_executable_identity" ] &&
-    [ "$nuinui_e2e_vscode_process_args_sha" = "$nuinui_e2e_host_process_args_sha" ] &&
-    [ "$nuinui_e2e_vscode_expected_identity" = "$nuinui_e2e_host_process_identity_sha" ] || {
-      echo 'BLOCKED: VS Code PID, process start, executable, launch arguments, root, or generation identity changed'
-      return 1
-    }
-}
-
-nuinui_e2e_host_vscode__verify_owned_process() {
-  [ "$#" = 1 ] || return 2
-  nuinui_e2e_vscode_expected_pid=$1
-  nuinui_e2e_host_vscode__verify_process_identity_only \
-    "$nuinui_e2e_vscode_expected_pid" || return 1
-  nuinui_e2e_vscode_group_members=$(nuinui_e2e_host_vscode__verify_process_group) || return 1
-  nuinui_e2e_vscode_listener=$(nuinui_e2e_host_vscode__listener_pids \
-    "$nuinui_e2e_host_port") || return 1
-  [ -n "$nuinui_e2e_vscode_listener" ] || {
-    echo 'BLOCKED: exact generation process group has no CDP listener'
+  if [ -n "$nuinui_e2e_vscode_launch_pid" ] &&
+    kill -0 "$nuinui_e2e_vscode_launch_pid" >/dev/null 2>&1; then
+    nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_launch_pid" -o command= 2>/dev/null || true)
+    if [ -z "$nuinui_e2e_vscode_command_line" ]; then
+      if [ "$nuinui_e2e_vscode_require_launch" = 1 ]; then
+        echo 'BLOCKED: recorded launch PID is not running'
+        return 1
+      fi
+    else
+      nuinui_e2e_host_vscode__process_command_line_owned \
+        "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || {
+          echo 'BLOCKED: launch PID ownership mismatch'
+          return 1
+        }
+    fi
+  elif [ "$nuinui_e2e_vscode_require_launch" = 1 ]; then
+    echo 'BLOCKED: recorded launch PID is not running'
     return 1
-  }
-  while IFS= read -r nuinui_e2e_vscode_listener_pid ||
-    [ -n "$nuinui_e2e_vscode_listener_pid" ]; do
-    case "$nuinui_e2e_vscode_listener_pid" in ''|*[!0-9]*) return 1 ;; esac
-    printf '%s\n' "$nuinui_e2e_vscode_group_members" |
-      grep -Fxq "$nuinui_e2e_vscode_listener_pid" || {
-        echo 'BLOCKED: CDP listener process is outside the exact generation process group'
+  fi
+  nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+    "$nuinui_e2e_vscode_owned_root") || return 1
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_owned_pids; do
+    case "$nuinui_e2e_vscode_pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_pid" \
+      -o command= 2>/dev/null || true)
+    [ -n "$nuinui_e2e_vscode_command_line" ] || continue
+    nuinui_e2e_host_vscode__process_command_line_owned \
+      "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || {
+        echo 'BLOCKED: E2E process ownership is ambiguous'
         return 1
       }
-  done <<EOF
-$nuinui_e2e_vscode_listener
-EOF
-  nuinui_e2e_host_vscode__verify_process_identity_only \
-    "$nuinui_e2e_vscode_expected_pid"
+  done
 }
 
-nuinui_e2e_host_vscode__readiness() {
-  [ "$#" = 0 ] || return 2
-  nuinui_e2e_host_vscode__verify_owned_process \
-    "$nuinui_e2e_host_process_pid" || return 1
-  nuinui_e2e_vscode_response=$(curl --noproxy '*' --silent --show-error \
-    --max-time 3 --fail "http://127.0.0.1:$nuinui_e2e_host_port/json/version" 2>/dev/null) || {
-      echo 'BLOCKED: generation-owned CDP readiness endpoint is inaccessible'
+nuinui_e2e_host_vscode__stop_owned_processes() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_vscode_owned_root=$1
+  nuinui_e2e_vscode_launch_pid=$2
+  nuinui_e2e_host_vscode__assert_process_ownership \
+    "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_launch_pid" 0 || return 1
+  nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+    "$nuinui_e2e_vscode_owned_root") || return 1
+  nuinui_e2e_vscode_owned_pids=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_launch_pid" "$nuinui_e2e_vscode_owned_pids" | awk 'NF' | sort -nu)
+  nuinui_e2e_vscode_matching_pids=
+  # Collect the legacy ownership set before signalling: VS Code helpers may
+  # disappear as soon as the application receives TERM.
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_owned_pids; do
+    kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
+    nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_pid" \
+      -o command= 2>/dev/null || true)
+    [ -n "$nuinui_e2e_vscode_command_line" ] || continue
+    nuinui_e2e_host_vscode__process_command_line_owned \
+      "$nuinui_e2e_vscode_owned_root" "$nuinui_e2e_vscode_command_line" || return 1
+    nuinui_e2e_vscode_matching_pids="$nuinui_e2e_vscode_matching_pids $nuinui_e2e_vscode_pid"
+  done
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
+    kill -TERM "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || {
+      kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
       return 1
     }
-  nuinui_e2e_host_vscode__validate_cdp_response \
-    "$nuinui_e2e_vscode_cdp_kind" "$nuinui_e2e_host_port" \
-    "$nuinui_e2e_vscode_response" || return 1
-  nuinui_e2e_vscode_readiness_sha=$(printf '%s' "$nuinui_e2e_vscode_response" |
-    shasum -a 256 | awk 'NR == 1 {print $1}') || return 1
-  nuinui_e2e_valid_digest "$nuinui_e2e_vscode_readiness_sha" || return 1
-  nuinui_e2e_vscode_cdp_content=$(nuinui_e2e_host_vscode__cdp_content) || return 1
-  nuinui_e2e__atomic_create "$nuinui_e2e_vscode_cdp_evidence" \
-    "$nuinui_e2e_vscode_cdp_content" || return 1
-  nuinui_e2e_host_vscode__verify_owned_process \
-    "$nuinui_e2e_vscode_process_pid"
-}
-
-nuinui_e2e_host_vscode__validate_cdp_response() {
-  [ "$#" = 3 ] || return 2
-  python3 - "$1" "$2" "$3" <<'PY'
-import json, re, sys
-from urllib.parse import urlsplit
-
-kind, raw_port, raw_body = sys.argv[1:]
-def blocked(message):
-    raise SystemExit("BLOCKED: " + message)
-if kind not in ("fake", "electron") or not raw_port.isdigit():
-    blocked("CDP response validation mode or port is invalid")
-port = int(raw_port)
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON key")
-        result[key] = value
-    return result
-try:
-    body = json.loads(raw_body, object_pairs_hook=unique_object)
-except (ValueError, TypeError):
-    blocked("CDP readiness response is not unique-key JSON")
-if not isinstance(body, dict) or body.get("Protocol-Version") != "1.3":
-    blocked("CDP readiness response has an unsupported protocol version")
-browser = body.get("Browser")
-websocket = body.get("webSocketDebuggerUrl")
-if not isinstance(browser, str) or not isinstance(websocket, str):
-    blocked("CDP readiness response is missing browser or WebSocket identity")
-try:
-    address = urlsplit(websocket)
-    address_port = address.port
-except ValueError:
-    blocked("CDP readiness WebSocket address is malformed")
-if (address.scheme != "ws" or address.hostname not in ("127.0.0.1", "localhost", "::1") or
-        address_port != port or address.username is not None or address.password is not None or
-        address.query or address.fragment or
-        not re.fullmatch(r"/devtools/browser/[A-Za-z0-9._:-]{1,256}", address.path)):
-    blocked("CDP readiness WebSocket address is not bound to the requested loopback port")
-if kind == "fake":
-    if set(body) != {"Browser", "Protocol-Version", "webSocketDebuggerUrl"} or browser != "FakeVSCode/1.0":
-        blocked("test CDP response does not match the explicit disposable fake-host shape")
-else:
-    chrome = re.fullmatch(r"Chrome/(\d+(?:\.\d+){1,3})", browser)
-    user_agent = body.get("User-Agent")
-    if not chrome:
-        blocked("Electron CDP response has no versioned Chromium browser identity")
-    if user_agent is not None:
-        if not isinstance(user_agent, str):
-            blocked("Electron CDP User-Agent is not text")
-        ua_chrome = re.search(r"(?:^|\s)Chrome/(\d+(?:\.\d+){1,3})(?:\s|$)", user_agent)
-        if ua_chrome and ua_chrome.group(1) != chrome.group(1):
-            blocked("Electron CDP User-Agent disagrees with its Chromium browser identity")
-        electron_versions = re.findall(r"(?:^|\s)Electron/(\d+(?:\.\d+){1,3})(?:\s|$)", user_agent)
-        if len(electron_versions) > 1:
-            blocked("Electron CDP User-Agent contains ambiguous Electron versions")
-PY
+  done
+  nuinui_e2e_vscode_stop_attempt=0
+  while [ "$nuinui_e2e_vscode_stop_attempt" -lt 10 ]; do
+    nuinui_e2e_vscode_remaining=no
+    for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
+      kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 && nuinui_e2e_vscode_remaining=yes
+    done
+    [ "$nuinui_e2e_vscode_remaining" = no ] && return 0
+    nuinui_e2e_vscode_stop_attempt=$((nuinui_e2e_vscode_stop_attempt + 1))
+    sleep 0.2
+  done
+  for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
+    kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
+    kill -KILL "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || {
+      kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 || continue
+      return 1
+    }
+  done
+  nuinui_e2e_vscode_stop_attempt=0
+  while [ "$nuinui_e2e_vscode_stop_attempt" -lt 10 ]; do
+    nuinui_e2e_vscode_remaining=no
+    for nuinui_e2e_vscode_pid in $nuinui_e2e_vscode_matching_pids; do
+      kill -0 "$nuinui_e2e_vscode_pid" >/dev/null 2>&1 && nuinui_e2e_vscode_remaining=yes
+    done
+    [ "$nuinui_e2e_vscode_remaining" = no ] && return 0
+    nuinui_e2e_vscode_stop_attempt=$((nuinui_e2e_vscode_stop_attempt + 1))
+    sleep 0.2
+  done
+  echo 'BLOCKED: isolated VS Code processes remained after shutdown'
+  return 1
 }
 
 nuinui_e2e_host_vscode__cdp_content() {
   printf 'schema_version=1\n'
   printf 'issue=%s\n' "$nuinui_e2e_host_issue"
   printf 'generation=%s\n' "$nuinui_e2e_host_generation"
-  printf 'process_identity_sha256=%s\n' "$nuinui_e2e_vscode_process_identity_sha"
   printf 'readiness_sha256=%s\n' "$nuinui_e2e_vscode_readiness_sha"
-  printf 'response_kind=%s\n' "$nuinui_e2e_vscode_cdp_kind"
 }
 
 nuinui_e2e_host_vscode__launch_intent_content() {
@@ -1425,44 +804,19 @@ nuinui_e2e_host_vscode__launch_intent_content() {
 }
 
 nuinui_e2e_host_vscode__stop_intent_content() {
-  printf 'schema_version=1\n'
-  printf 'issue=%s\n' "$nuinui_e2e_host_issue"
-  printf 'generation=%s\n' "$nuinui_e2e_host_generation"
-  printf 'root=%s\n' "$nuinui_e2e_host_root"
-  printf 'root_identity=%s\n' "$nuinui_e2e_host_root_identity"
-  printf 'process_identity_sha256=%s\n' "$nuinui_e2e_vscode_process_identity_sha"
-  printf 'process_group=%s\n' "$nuinui_e2e_vscode_process_group"
-  printf 'adapter=vscode-isolated\n'
+  nuinui_e2e_host_vscode__launch_intent_content
 }
 
 nuinui_e2e_host_vscode__process_record_content() {
   printf 'schema_version=1\n'
   printf 'issue=%s\n' "$nuinui_e2e_host_issue"
-  printf 'issue_url=%s\n' "$nuinui_e2e_host_url"
-  printf 'local_id=%s\n' "$nuinui_e2e_host_token"
-  printf 'lane=%s\n' "$nuinui_e2e_host_lane"
-  printf 'repository=sayosomi/nuinuiCAD\n'
-  printf 'checkout=%s\n' "$nuinui_e2e_host_checkout"
-  printf 'git_dir=%s\n' "$nuinui_e2e_host_git_dir"
-  printf 'manifest=%s\n' "$nuinui_e2e_host_manifest"
-  printf 'manifest_sha256=%s\n' "$nuinui_e2e_host_manifest_sha"
-  printf 'tested_sha=%s\n' "$nuinui_e2e_host_tested"
   printf 'generation=%s\n' "$nuinui_e2e_host_generation"
-  printf 'adapter=vscode-isolated\n'
   printf 'root=%s\n' "$nuinui_e2e_host_root"
   printf 'root_identity=%s\n' "$nuinui_e2e_host_root_identity"
   printf 'port=%s\n' "$nuinui_e2e_host_port"
   printf 'app_path=%s\n' "$nuinui_e2e_vscode_app_path"
   printf 'app_sha256=%s\n' "$nuinui_e2e_vscode_app_sha"
-  printf 'app_identity=%s\n' "$nuinui_e2e_vscode_app_identity"
   printf 'pid=%s\n' "$nuinui_e2e_vscode_process_pid"
-  printf 'process_group=%s\n' "$nuinui_e2e_vscode_process_group"
-  printf 'process_start=%s\n' "$nuinui_e2e_vscode_process_start"
-  printf 'process_executable=%s\n' "$nuinui_e2e_vscode_process_executable"
-  printf 'process_executable_identity=%s\n' "$nuinui_e2e_vscode_process_executable_identity"
-  printf 'process_args_sha256=%s\n' "$nuinui_e2e_vscode_process_args_sha"
-  printf 'process_environment_sha256=%s\n' "$nuinui_e2e_vscode_process_environment_sha"
-  printf 'process_identity_sha256=%s\n' "$nuinui_e2e_vscode_process_identity_sha"
 }
 
 nuinui_e2e_host_vscode__read_process_record() {
@@ -1470,167 +824,91 @@ nuinui_e2e_host_vscode__read_process_record() {
   nuinui_e2e_vscode_process_record=$nuinui_e2e_vscode_root/process-owner-v1
   nuinui_e2e__regular "$nuinui_e2e_vscode_process_record" || return 1
   nuinui_ownership_validate_exact_file "$nuinui_e2e_vscode_process_record" \
-    schema_version,issue,issue_url,local_id,lane,repository,checkout,git_dir,manifest,manifest_sha256,tested_sha,generation,adapter,root,root_identity,port,app_path,app_sha256,app_identity,pid,process_group,process_start,process_executable,process_executable_identity,process_args_sha256,process_environment_sha256,process_identity_sha256 || return 1
-  nuinui_e2e_vscode_process_pid=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" pid) || return 1
-  nuinui_e2e_vscode_process_group=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_group) || return 1
-  nuinui_e2e_vscode_process_start=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_start) || return 1
-  nuinui_e2e_vscode_process_executable=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_executable) || return 1
-  nuinui_e2e_vscode_process_executable_identity=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_executable_identity) || return 1
-  nuinui_e2e_vscode_process_args_sha=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_args_sha256) || return 1
-  nuinui_e2e_vscode_process_environment_sha=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_environment_sha256) || return 1
-  nuinui_e2e_vscode_process_identity_sha=$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" process_identity_sha256) || return 1
-  nuinui_e2e_host_process_pid=$nuinui_e2e_vscode_process_pid
-  nuinui_e2e_host_process_group=$nuinui_e2e_vscode_process_group
-  nuinui_e2e_host_process_start=$nuinui_e2e_vscode_process_start
-  nuinui_e2e_host_process_executable=$nuinui_e2e_vscode_process_executable
-  nuinui_e2e_host_process_executable_identity=$nuinui_e2e_vscode_process_executable_identity
-  nuinui_e2e_host_process_args_sha=$nuinui_e2e_vscode_process_args_sha
-  nuinui_e2e_host_process_environment_sha=$nuinui_e2e_vscode_process_environment_sha
-  nuinui_e2e_host_process_identity_sha=$nuinui_e2e_vscode_process_identity_sha
-  case "$nuinui_e2e_vscode_process_pid" in ''|*[!0-9]*|0) return 1 ;; esac
-  [ "$nuinui_e2e_vscode_process_group" = "$nuinui_e2e_vscode_process_pid" ] || return 1
-  case "$nuinui_e2e_vscode_process_start" in ''|*[!0-9.]*|.*|*.) return 1 ;; esac
-  [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" issue)" = "$nuinui_e2e_host_issue" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" issue_url)" = "$nuinui_e2e_host_url" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" local_id)" = "$nuinui_e2e_host_token" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" lane)" = "$nuinui_e2e_host_lane" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" checkout)" = "$nuinui_e2e_host_checkout" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" git_dir)" = "$nuinui_e2e_host_git_dir" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" manifest)" = "$nuinui_e2e_host_manifest" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" manifest_sha256)" = "$nuinui_e2e_host_manifest_sha" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" tested_sha)" = "$nuinui_e2e_host_tested" ] &&
+    schema_version,issue,generation,root,root_identity,port,app_path,app_sha256,pid || return 1
+  nuinui_e2e_vscode_process_pid=$(nuinui_ownership_field \
+    "$nuinui_e2e_vscode_process_record" pid) || return 1
+  case "$nuinui_e2e_vscode_process_pid" in ''|*[!0-9]*|0|1) return 1 ;; esac
+  [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" schema_version)" = 1 ] &&
+    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" issue)" = "$nuinui_e2e_host_issue" ] &&
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" generation)" = "$nuinui_e2e_host_generation" ] &&
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" root)" = "$nuinui_e2e_host_root" ] &&
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" root_identity)" = "$nuinui_e2e_host_root_identity" ] &&
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" port)" = "$nuinui_e2e_host_port" ] &&
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" app_path)" = "$nuinui_e2e_vscode_app_path" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" app_sha256)" = "$nuinui_e2e_vscode_app_sha" ] &&
-    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" app_identity)" = "$nuinui_e2e_vscode_app_identity" ] || return 1
+    [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_process_record" app_sha256)" = "$nuinui_e2e_vscode_app_sha" ] || return 1
   nuinui_e2e_vscode_expected_process=$(nuinui_e2e_host_vscode__process_record_content) || return 1
   printf '%s' "$nuinui_e2e_vscode_expected_process" | cmp -s - \
     "$nuinui_e2e_vscode_process_record" || return 1
-  nuinui_e2e_valid_digest "$nuinui_e2e_vscode_process_args_sha" &&
-    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_process_environment_sha" &&
-    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_process_identity_sha" || return 1
+  nuinui_e2e_host_process_pid=$nuinui_e2e_vscode_process_pid
 }
 
 nuinui_e2e_host_vscode__classify_process_exit() {
   [ "$#" = 0 ] || return 2
-  python3 - "$nuinui_e2e_vscode_process_pid" \
-    "$nuinui_e2e_vscode_process_group" "$nuinui_e2e_vscode_process_start" <<'PY'
-import ctypes, errno, os, subprocess, sys, time
-pid_s, group_s, start_s = sys.argv[1:]
-def fail(message): raise SystemExit("BLOCKED: " + message)
-try:
-    pid, group = int(pid_s), int(group_s)
-    start_sec, start_usec = (int(part) for part in start_s.split(".", 1))
-except ValueError:
-    fail("recorded process identity is malformed")
-if pid <= 1 or group != pid:
-    fail("recorded process group is not bound to its launch PID")
-class BSDInfo(ctypes.Structure):
-    _fields_ = [("flags", ctypes.c_uint32), ("status", ctypes.c_uint32),
-                ("xstatus", ctypes.c_uint32), ("pid", ctypes.c_uint32),
-                ("ppid", ctypes.c_uint32), ("uid", ctypes.c_uint32),
-                ("gid", ctypes.c_uint32), ("ruid", ctypes.c_uint32),
-                ("rgid", ctypes.c_uint32), ("svuid", ctypes.c_uint32),
-                ("svgid", ctypes.c_uint32), ("rfu", ctypes.c_uint32),
-                ("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32),
-                ("nfiles", ctypes.c_uint32), ("pgid", ctypes.c_uint32),
-                ("pjobc", ctypes.c_uint32), ("tdev", ctypes.c_uint32),
-                ("tpgid", ctypes.c_uint32), ("nice", ctypes.c_int32),
-                ("start_sec", ctypes.c_uint64), ("start_usec", ctypes.c_uint64)]
-try:
-    lib = ctypes.CDLL("/usr/lib/system/libsystem_kernel.dylib", use_errno=True)
-    info_fn = lib.proc_pidinfo
-    info_fn.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64,
-                        ctypes.c_void_p, ctypes.c_int]
-    info_fn.restype = ctypes.c_int
-    list_fn = lib.proc_listpids
-    list_fn.argtypes = [ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
-                        ctypes.c_int]
-    list_fn.restype = ctypes.c_int
-    def root_state():
-        info = BSDInfo()
-        ctypes.set_errno(0)
-        result = info_fn(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
-        error = ctypes.get_errno()
-        if result == ctypes.sizeof(info) and info.pid == pid:
-            if (info.uid != os.getuid() or info.pgid != group or
-                    (info.start_sec, info.start_usec) != (start_sec, start_usec)):
-                fail("recorded process PID now has a different identity")
-            return "ZOMBIE" if info.status == 5 else "LIVE"
-        if result <= 0 and error == errno.ESRCH:
-            return "ABSENT"
-        fail("recorded process identity is inaccessible (errno=" + str(error) + ")")
-    initial = root_state()
-    if initial == "LIVE":
-        print("LIVE")
-        raise SystemExit(0)
-    def group_pids():
-        buffer = ctypes.create_string_buffer(4 * 65536)
-        for attempt in range(4):
-            ctypes.set_errno(0)
-            count = list_fn(2, group, buffer, len(buffer))
-            error = ctypes.get_errno()
-            if count > 0:
-                if count >= len(buffer) or count % 4:
-                    fail("process topology enumeration is malformed or truncated")
-                values = (int.from_bytes(buffer.raw[offset:offset+4],
-                                         byteorder=sys.byteorder, signed=True)
-                          for offset in range(0, count, 4))
-                return {member for member in values if member > 1}
-            if count < 0:
-                fail("process topology enumeration returned an invalid byte count")
-            if count == 0 and error == 0:
-                return set()
-            if attempt < 3:
-                time.sleep(0.025)
-                if root_state() == "LIVE":
-                    fail("recorded process restarted during abnormal-exit verification")
-        fail("process topology could not be enumerated exactly (errno=" + str(error) + ")")
-    def verify_kernel_group():
-        for member in group_pids():
-            info = BSDInfo()
-            ctypes.set_errno(0)
-            result = info_fn(member, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
-            error = ctypes.get_errno()
-            if result <= 0 and error == errno.ESRCH:
-                continue
-            if result != ctypes.sizeof(info) or info.pid != member:
-                fail("generation process-group member identity is inaccessible")
-            if member == pid:
-                if (initial != "ZOMBIE" or info.status != 5 or info.uid != os.getuid() or
-                        info.pgid != group or
-                        (info.start_sec, info.start_usec) != (start_sec, start_usec)):
-                    fail("recorded process PID changed while group emptiness was checked")
-            else:
-                fail("generation process group still contains another process")
-    def verify_process_table():
-        try:
-            result = subprocess.run(["/bin/ps", "-axo", "pid=,pgid=,stat="],
-                                    check=True, capture_output=True, text=True)
-        except (OSError, subprocess.SubprocessError) as error:
-            fail("system process table is inaccessible: " + str(error))
-        for row in result.stdout.splitlines():
-            fields = row.split()
-            if len(fields) != 3 or not fields[0].isdigit() or not fields[1].isdigit():
-                fail("system process table returned a malformed identity row")
-            member, member_group, state = int(fields[0]), int(fields[1]), fields[2]
-            if member_group != group:
-                continue
-            if member != pid or initial != "ZOMBIE" or not state.upper().startswith("Z"):
-                fail("system process table still reports a generation process")
-    verify_kernel_group()
-    verify_process_table()
-    verify_kernel_group()
-    final = root_state()
-    if final == "LIVE" or (initial == "ABSENT" and final == "ZOMBIE"):
-        fail("recorded process changed while abnormal-exit recovery was checked")
-except (OSError, ValueError, OverflowError) as error:
-    fail("process topology could not be verified: " + str(error))
-print("EXITED")
-PY
+  nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+    "$nuinui_e2e_vscode_root") || return 1
+  if [ -n "$nuinui_e2e_vscode_owned_pids" ]; then
+    nuinui_e2e_host_vscode__assert_process_ownership \
+      "$nuinui_e2e_vscode_root" "${nuinui_e2e_vscode_process_pid:-}" 0 || return 1
+    printf 'LIVE\n'
+    return 0
+  fi
+  if [ -n "${nuinui_e2e_vscode_process_pid:-}" ] &&
+    kill -0 "$nuinui_e2e_vscode_process_pid" >/dev/null 2>&1; then
+    nuinui_e2e_vscode_command_line=$(ps -ww -p "$nuinui_e2e_vscode_process_pid" \
+      -o command= 2>/dev/null || true)
+    if [ -n "$nuinui_e2e_vscode_command_line" ]; then
+      nuinui_e2e_host_vscode__process_command_line_owned \
+        "$nuinui_e2e_vscode_root" "$nuinui_e2e_vscode_command_line" || {
+          echo 'BLOCKED: recorded launch PID ownership mismatch'
+          return 1
+        }
+      printf 'LIVE\n'
+      return 0
+    fi
+  fi
+  printf 'EXITED\n'
+}
+
+nuinui_e2e_host_vscode__readiness() {
+  [ "$#" = 0 ] || return 2
+  nuinui_e2e_host_vscode__verify_owned_process \
+    "$nuinui_e2e_vscode_process_pid" || return 1
+  nuinui_e2e_vscode_response=$(curl --noproxy '*' --silent --show-error \
+    --max-time 1 --fail "http://127.0.0.1:$nuinui_e2e_host_port/json/version" \
+    2>/dev/null) || return 1
+  nuinui_e2e_vscode_readiness_sha=$(printf '%s' "$nuinui_e2e_vscode_response" |
+    shasum -a 256 | awk 'NR == 1 {print $1}') || return 1
+  nuinui_e2e_valid_digest "$nuinui_e2e_vscode_readiness_sha" || return 1
+  nuinui_e2e_vscode_cdp_content=$(nuinui_e2e_host_vscode__cdp_content) || return 1
+  nuinui_e2e__atomic_create "$nuinui_e2e_vscode_cdp_evidence" \
+    "$nuinui_e2e_vscode_cdp_content" || return 1
+  nuinui_e2e_host_vscode__verify_owned_process \
+    "$nuinui_e2e_vscode_process_pid"
+}
+
+nuinui_e2e_host_vscode__verify_owned_process() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_vscode_expected_pid=$1
+  nuinui_e2e_host_vscode__assert_process_ownership \
+    "$nuinui_e2e_vscode_root" "$nuinui_e2e_vscode_expected_pid" 1 || return 1
+  nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+    "$nuinui_e2e_vscode_root") || return 1
+  nuinui_e2e_vscode_listener=$(nuinui_e2e_host_vscode__listener_pids \
+    "$nuinui_e2e_host_port") || return 1
+  [ -n "$nuinui_e2e_vscode_listener" ] || {
+    echo 'BLOCKED: isolated host has no CDP listener'
+    return 1
+  }
+  for nuinui_e2e_vscode_listener_pid in $nuinui_e2e_vscode_listener; do
+    nuinui_e2e_vscode_listener_command_line=$(ps -ww -p \
+      "$nuinui_e2e_vscode_listener_pid" -o command= 2>/dev/null || true)
+    [ -n "$nuinui_e2e_vscode_listener_command_line" ] || return 1
+    nuinui_e2e_host_vscode__process_command_line_owned \
+      "$nuinui_e2e_vscode_root" "$nuinui_e2e_vscode_listener_command_line" || {
+        echo 'BLOCKED: CDP listener is outside the isolated VS Code host'
+        return 1
+      }
+  done
 }
 
 nuinui_e2e_host_vscode__create_resources() {
@@ -1684,40 +962,53 @@ nuinui_e2e_host_vscode__verify_process_state() {
   [ "$#" = 1 ] || return 2
   nuinui_e2e_vscode_allow_stopped=$1
   nuinui_e2e_vscode_process_record=$nuinui_e2e_vscode_root/process-owner-v1
-  if ! nuinui_e2e__exists "$nuinui_e2e_vscode_process_record"; then
-    nuinui_e2e_vscode_launch_intent=$nuinui_e2e_vscode_root/launch-intent-v1
-    if nuinui_e2e__exists "$nuinui_e2e_vscode_launch_intent"; then
-      nuinui_e2e__regular "$nuinui_e2e_vscode_launch_intent" || return 1
-      nuinui_e2e_vscode_expected_intent=$(nuinui_e2e_host_vscode__launch_intent_content) || return 1
-      printf '%s' "$nuinui_e2e_vscode_expected_intent" |
-        cmp -s - "$nuinui_e2e_vscode_launch_intent" || return 1
-      echo 'BLOCKED: launch intent exists without a durable process identity; ownership is unknown'
-      return 1
-    fi
+  nuinui_e2e_vscode_launch_intent=$nuinui_e2e_vscode_root/launch-intent-v1
+  nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
+  nuinui_e2e_vscode_has_process_record=no
+  nuinui_e2e_vscode_process_pid=
+  if nuinui_e2e__exists "$nuinui_e2e_vscode_process_record"; then
+    nuinui_e2e_host_vscode__read_process_record || return 1
+    nuinui_e2e_vscode_has_process_record=yes
+  fi
+  if nuinui_e2e__exists "$nuinui_e2e_vscode_launch_intent"; then
+    nuinui_e2e__regular "$nuinui_e2e_vscode_launch_intent" || return 1
+    nuinui_e2e_vscode_expected_intent=$(nuinui_e2e_host_vscode__launch_intent_content) || return 1
+    printf '%s' "$nuinui_e2e_vscode_expected_intent" |
+      cmp -s - "$nuinui_e2e_vscode_launch_intent" || return 1
+    nuinui_e2e_vscode_has_launch_intent=yes
+  else
+    nuinui_e2e_vscode_has_launch_intent=no
+  fi
+  if [ "$nuinui_e2e_vscode_has_process_record" = no ] &&
+    [ "$nuinui_e2e_vscode_has_launch_intent" = no ]; then
+    nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+      "$nuinui_e2e_vscode_root") || return 1
     nuinui_e2e_vscode_listeners=$(nuinui_e2e_host_vscode__listener_pids \
       "$nuinui_e2e_host_port") || return 1
-    [ -z "$nuinui_e2e_vscode_listeners" ] || {
-      echo 'BLOCKED: a listener occupies the generation port without durable ownership evidence'
-      return 1
-    }
+    [ -z "$nuinui_e2e_vscode_owned_pids" ] &&
+      [ -z "$nuinui_e2e_vscode_listeners" ] || {
+        echo 'BLOCKED: a process or listener exists without generation launch intent'
+        return 1
+      }
     case "$nuinui_e2e_vscode_allow_stopped" in preparing|cleanup-pending) return 0 ;; *) return 1 ;; esac
   fi
-  nuinui_e2e_host_vscode__read_process_record || return 1
   nuinui_e2e_vscode_process_state=$(nuinui_e2e_host_vscode__classify_process_exit) || return 1
   if [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
-    if [ "$nuinui_e2e_vscode_allow_stopped" = cleanup-pending ]; then
-      nuinui_e2e_host_vscode__verify_process_identity_only \
-        "$nuinui_e2e_vscode_process_pid" || return 1
-      nuinui_e2e_host_vscode__verify_process_group || return 1
-    elif [ "$nuinui_e2e_vscode_allow_stopped" = ready ]; then
+    if [ "$nuinui_e2e_vscode_allow_stopped" = ready ]; then
+      [ "$nuinui_e2e_vscode_has_process_record" = yes ] || return 1
       nuinui_e2e_host_vscode__verify_owned_process \
         "$nuinui_e2e_vscode_process_pid" || return 1
     else
-      nuinui_e2e_host_vscode__verify_process_identity_only \
-        "$nuinui_e2e_vscode_process_pid" || return 1
-      nuinui_e2e_host_vscode__verify_process_group || return 1
+      nuinui_e2e_host_vscode__assert_process_ownership \
+        "$nuinui_e2e_vscode_root" "${nuinui_e2e_vscode_process_pid:-}" 0 || return 1
     fi
   else
+    nuinui_e2e_vscode_listeners=$(nuinui_e2e_host_vscode__listener_pids \
+      "$nuinui_e2e_host_port") || return 1
+    [ -z "$nuinui_e2e_vscode_listeners" ] || {
+      echo 'BLOCKED: a CDP listener remains after the isolated host exited'
+      return 1
+    }
     case "$nuinui_e2e_vscode_allow_stopped:$nuinui_e2e_operation" in
       ready:host-status|ready:host-recover|preparing:host-status|preparing:host-recover)
         nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
@@ -1730,7 +1021,6 @@ nuinui_e2e_host_vscode__verify_process_state() {
         nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
         ;;
       cleanup-pending:host-status|cleanup-pending:host-recover)
-        nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
         if nuinui_e2e__exists "$nuinui_e2e_vscode_stop_intent"; then
           nuinui_e2e__regular "$nuinui_e2e_vscode_stop_intent" || return 1
           nuinui_e2e_vscode_expected_stop=$(nuinui_e2e_host_vscode__stop_intent_content) || return 1
@@ -1745,9 +1035,8 @@ nuinui_e2e_host_vscode__verify_process_state() {
         if [ "${nuinui_e2e_host_abnormal_exit_recovery:-no}" = yes ]; then
           nuinui_e2e_vscode_process_state=ABNORMAL-EXIT-RECOVERY-SAFE
         else
-          nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
           nuinui_e2e__regular "$nuinui_e2e_vscode_stop_intent" || {
-            echo 'BLOCKED: recorded host process exited without a durable cleanup signal intent'
+            echo 'BLOCKED: recorded host process exited without a durable cleanup intent'
             return 1
           }
           nuinui_e2e_vscode_expected_stop=$(nuinui_e2e_host_vscode__stop_intent_content) || return 1
@@ -1761,47 +1050,29 @@ nuinui_e2e_host_vscode__verify_process_state() {
         return 1
         ;;
     esac
-    nuinui_e2e_vscode_listeners=$(nuinui_e2e_host_vscode__listener_pids \
-      "$nuinui_e2e_host_port") || return 1
-    [ -z "$nuinui_e2e_vscode_listeners" ] || {
-      echo 'BLOCKED: a CDP listener remains after the recorded process exited'
-      return 1
-    }
   fi
-  if [ "$nuinui_e2e_vscode_allow_stopped" = cleanup-pending ]; then
+  if [ "$nuinui_e2e_vscode_allow_stopped" = cleanup-pending ] &&
+    [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
     nuinui_e2e_vscode_listeners=$(nuinui_e2e_host_vscode__listener_pids \
       "$nuinui_e2e_host_port") || return 1
-    if [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
-      if [ -n "$nuinui_e2e_vscode_listeners" ]; then
-        nuinui_e2e_vscode_group_members=$(nuinui_e2e_host_vscode__verify_process_group) || return 1
-        while IFS= read -r nuinui_e2e_vscode_listener_pid ||
-          [ -n "$nuinui_e2e_vscode_listener_pid" ]; do
-          printf '%s\n' "$nuinui_e2e_vscode_group_members" |
-            grep -Fxq "$nuinui_e2e_vscode_listener_pid" || return 1
-        done <<EOF
-$nuinui_e2e_vscode_listeners
-EOF
-      fi
-    elif [ -n "$nuinui_e2e_vscode_listeners" ]; then
-      echo 'BLOCKED: a listener remains after the owned process exited'
-      return 1
-    fi
-  else
-    if [ "$nuinui_e2e_vscode_allow_stopped" = ready ] &&
-      [ "$nuinui_e2e_vscode_process_state" = LIVE ]; then
-      nuinui_e2e_host_vscode__verify_owned_process \
-        "$nuinui_e2e_vscode_process_pid" || return 1
-    fi
+    for nuinui_e2e_vscode_listener_pid in $nuinui_e2e_vscode_listeners; do
+      nuinui_e2e_vscode_listener_command_line=$(ps -ww -p \
+        "$nuinui_e2e_vscode_listener_pid" -o command= 2>/dev/null || true)
+      [ -n "$nuinui_e2e_vscode_listener_command_line" ] || return 1
+      nuinui_e2e_host_vscode__process_command_line_owned \
+        "$nuinui_e2e_vscode_root" "$nuinui_e2e_vscode_listener_command_line" || {
+          echo 'BLOCKED: CDP listener is outside the isolated VS Code host'
+          return 1
+        }
+    done
   fi
   if nuinui_e2e__exists "$nuinui_e2e_vscode_cdp_evidence"; then
     nuinui_e2e__regular "$nuinui_e2e_vscode_cdp_evidence" || return 1
     nuinui_ownership_validate_exact_file "$nuinui_e2e_vscode_cdp_evidence" \
-      schema_version,issue,generation,process_identity_sha256,readiness_sha256,response_kind || return 1
+      schema_version,issue,generation,readiness_sha256 || return 1
     [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" schema_version)" = 1 ] &&
       [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" issue)" = "$nuinui_e2e_host_issue" ] &&
-      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" generation)" = "$nuinui_e2e_host_generation" ] &&
-      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" process_identity_sha256)" = "$nuinui_e2e_vscode_process_identity_sha" ] &&
-      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" response_kind)" = "$nuinui_e2e_vscode_cdp_kind" ] || return 1
+      [ "$(nuinui_ownership_field "$nuinui_e2e_vscode_cdp_evidence" generation)" = "$nuinui_e2e_host_generation" ] || return 1
     nuinui_e2e_vscode_readiness_sha=$(nuinui_ownership_field \
       "$nuinui_e2e_vscode_cdp_evidence" readiness_sha256) || return 1
     nuinui_e2e_valid_digest "$nuinui_e2e_vscode_readiness_sha" || return 1
@@ -1830,62 +1101,26 @@ nuinui_e2e_host_vscode__launch_and_ready() {
     [ -n "$nuinui_e2e_vscode_arg" ] || return 1
     set -- "$@" "$nuinui_e2e_vscode_arg"
   done < "$nuinui_e2e_vscode_launch_args"
-  nuinui_e2e_host_vscode__port_free "$nuinui_e2e_host_port" || return 1
   nuinui_e2e_vscode_launch_intent=$nuinui_e2e_vscode_root/launch-intent-v1
   nuinui_e2e_vscode_launch_content=$(nuinui_e2e_host_vscode__launch_intent_content) || return 1
   nuinui_e2e__atomic_create "$nuinui_e2e_vscode_launch_intent" \
     "$nuinui_e2e_vscode_launch_content" || return 1
-  if [ "$nuinui_e2e_vscode_fake_app" = yes ]; then
-    nuinui_e2e_vscode_launch_mode=launcher
-  else
-    nuinui_e2e_vscode_launch_mode=direct
-    nuinui_e2e_vscode_runtime=$nuinui_e2e_vscode_app_path
-  fi
-  python3 - "$nuinui_e2e_vscode_launch_mode" \
-    "$nuinui_e2e_vscode_runtime" "$nuinui_e2e_vscode_app_path" \
-    "$nuinui_e2e_vscode_rust" "$@" <<'PY' >/dev/null 2>&1 &
-import os, sys
-mode, executable, app_path, rust_path = sys.argv[1:5]
-try:
-    os.setsid()
-except OSError:
-    raise SystemExit("BLOCKED: isolated generation process group could not be created")
-if mode not in ("launcher", "direct"):
-    raise SystemExit("BLOCKED: VS Code startup mode is invalid")
-argv = [executable]
-if mode == "launcher": argv.append(app_path)
-argv.extend(sys.argv[5:])
-environment = os.environ.copy()
-environment["NUINUICAD_RUST_EVALUATION_BINARY"] = rust_path
-environment.pop("NUINUI_E2E_TEST_PROC_LISTPIDS_ZEROES", None)
-environment.pop("NUINUI_E2E_TEST_PROCESS_GROUP_TRANSIENT_PID_FILE", None)
-environment.pop("NUINUI_E2E_TEST_ROOT_FINAL_PROCINFO_GONE", None)
-os.execve(executable, argv, environment)
-PY
-  nuinui_e2e_vscode_launched_pid=$!
-  nuinui_e2e_host_vscode__capture_process \
-    "$nuinui_e2e_vscode_launched_pid" || return 1
-  nuinui_e2e_vscode_process_identity_sha=$(nuinui_e2e_host_vscode__process_identity_sha \
-    "$nuinui_e2e_vscode_process_pid" "$nuinui_e2e_vscode_process_group" \
-    "$nuinui_e2e_vscode_process_start" \
-    "$nuinui_e2e_vscode_process_executable" \
-    "$nuinui_e2e_vscode_process_executable_identity" \
-    "$nuinui_e2e_vscode_process_args_sha" \
-    "$nuinui_e2e_vscode_process_environment_sha" \
-    "$nuinui_e2e_vscode_root:$nuinui_e2e_host_root_identity:$nuinui_e2e_expected_generation") || return 1
+  NUINUICAD_RUST_EVALUATION_BINARY="$nuinui_e2e_vscode_rust" \
+  NUINUICAD_MCP_OBSERVATION=1 \
+    "$nuinui_e2e_vscode_app_path" "$@" >/dev/null 2>&1 &
+  nuinui_e2e_vscode_process_pid=$!
   nuinui_e2e_vscode_process_content=$(nuinui_e2e_host_vscode__process_record_content) || return 1
   nuinui_e2e__atomic_create "$nuinui_e2e_vscode_root/process-owner-v1" \
     "$nuinui_e2e_vscode_process_content" || return 1
   nuinui_e2e_host_vscode__read_process_record || return 1
-  nuinui_e2e_host_vscode__verify_process_identity_only \
-    "$nuinui_e2e_vscode_process_pid" || return 1
-  nuinui_e2e_host_vscode__verify_process_group || return 1
+  nuinui_e2e_host_vscode__assert_process_ownership \
+    "$nuinui_e2e_vscode_root" "$nuinui_e2e_vscode_process_pid" 1 || return 1
   nuinui_e2e__failpoint after-vscode-process-record && {
-    echo 'BLOCKED: injected interruption after verified VS Code process; recovery evidence retained'
+    echo 'BLOCKED: injected interruption after VS Code launch record; recovery evidence retained'
     return 1
   }
   nuinui_e2e_vscode_attempt=0
-  while [ "$nuinui_e2e_vscode_attempt" -lt 60 ]; do
+  while [ "$nuinui_e2e_vscode_attempt" -lt 120 ]; do
     if nuinui_e2e_host_vscode__readiness; then
       nuinui_e2e_host_vscode__verify_process_state ready || return 1
       nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_host_tested" \
@@ -1897,9 +1132,14 @@ PY
         "$nuinui_e2e_vscode_process_pid" || return 1
       return 0
     fi
-    kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null || return 1
+    nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+      "$nuinui_e2e_vscode_root") || return 1
+    if [ -z "$nuinui_e2e_vscode_owned_pids" ] &&
+      ! kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null; then
+      return 1
+    fi
     nuinui_e2e_vscode_attempt=$((nuinui_e2e_vscode_attempt + 1))
-    sleep 0.1
+    sleep 0.5
   done
   return 1
 }
@@ -1915,16 +1155,11 @@ nuinui_e2e_host_vscode__stop_owned_process() {
     echo 'BLOCKED: process ownership cannot be proven for cleanup'
     return 1
   }
-  if ! nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1"; then
-    # Before a durable launch intent and process record exist, the state verifier
-    # has already proved there is no owned process or listener to stop.
+  if ! nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1" &&
+    ! nuinui_e2e__exists "$nuinui_e2e_vscode_root/launch-intent-v1"; then
     return 0
   fi
-  if nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1" &&
-    [ "${nuinui_e2e_vscode_process_state:-}" = LIVE ]; then
-    nuinui_e2e_host_vscode__verify_process_identity_only \
-      "$nuinui_e2e_vscode_process_pid" || return 1
-    nuinui_e2e_host_vscode__verify_process_group || return 1
+  if [ "${nuinui_e2e_vscode_process_state:-}" = LIVE ]; then
     nuinui_e2e_vscode_stop_intent=$nuinui_e2e_vscode_root/stop-intent-v1
     nuinui_e2e_vscode_expected_stop=$(nuinui_e2e_host_vscode__stop_intent_content) || return 1
     if nuinui_e2e__exists "$nuinui_e2e_vscode_stop_intent"; then
@@ -1935,56 +1170,15 @@ nuinui_e2e_host_vscode__stop_owned_process() {
       nuinui_e2e__atomic_create "$nuinui_e2e_vscode_stop_intent" \
         "$nuinui_e2e_vscode_expected_stop" || return 1
     fi
-    nuinui_e2e_host_vscode__verify_process_identity_only \
-      "$nuinui_e2e_vscode_process_pid" || return 1
-    nuinui_e2e_host_vscode__verify_process_group || return 1
-    nuinui_e2e_host_vscode__signal_process_group \
-      "$nuinui_e2e_vscode_process_group" TERM || return 1
-    nuinui_e2e__failpoint after-vscode-stop-signal && {
-      echo 'BLOCKED: injected interruption after generation-scoped shutdown signal; recovery evidence retained'
-      return 1
-    }
-    nuinui_e2e_vscode_stop_attempt=0
-    nuinui_e2e_vscode_group_pids=$(nuinui_e2e_host_vscode__process_group_pids \
-      "$nuinui_e2e_vscode_process_group") || return 1
-    while [ -n "$nuinui_e2e_vscode_group_pids" ] &&
-      [ "$nuinui_e2e_vscode_stop_attempt" -lt 50 ]; do
-      nuinui_e2e_vscode_stop_attempt=$((nuinui_e2e_vscode_stop_attempt + 1))
-      sleep 0.1
-      nuinui_e2e_vscode_group_pids=$(nuinui_e2e_host_vscode__process_group_pids \
-        "$nuinui_e2e_vscode_process_group") || return 1
-    done
-    if [ -n "$nuinui_e2e_vscode_group_pids" ]; then
-      kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null || {
-        echo 'BLOCKED: generation process group outlived its verified owner; preserving recovery evidence'
-        return 1
-      }
-      nuinui_e2e_host_vscode__verify_process_identity_only \
-        "$nuinui_e2e_vscode_process_pid" || return 1
-      nuinui_e2e_host_vscode__verify_process_group || return 1
-      nuinui_e2e_host_vscode__signal_process_group \
-        "$nuinui_e2e_vscode_process_group" KILL || return 1
-      nuinui_e2e_vscode_stop_attempt=0
-      while [ "$nuinui_e2e_vscode_stop_attempt" -lt 50 ]; do
-        nuinui_e2e_vscode_group_pids=$(nuinui_e2e_host_vscode__process_group_pids \
-          "$nuinui_e2e_vscode_process_group") || return 1
-        [ -z "$nuinui_e2e_vscode_group_pids" ] && break
-        nuinui_e2e_vscode_stop_attempt=$((nuinui_e2e_vscode_stop_attempt + 1))
-        sleep 0.1
-      done
-    fi
-    wait "$nuinui_e2e_vscode_process_pid" 2>/dev/null || true
+    nuinui_e2e_host_vscode__assert_process_ownership \
+      "$nuinui_e2e_vscode_root" "${nuinui_e2e_vscode_process_pid:-}" 0 || return 1
   fi
-  nuinui_e2e_vscode_group_pids=$(nuinui_e2e_host_vscode__process_group_pids \
-    "$nuinui_e2e_vscode_process_group") || return 1
-  [ -z "$nuinui_e2e_vscode_group_pids" ] || {
-    echo 'BLOCKED: a generation-owned VS Code child remains after process-group shutdown'
-    return 1
-  }
+  nuinui_e2e_host_vscode__stop_owned_processes \
+    "$nuinui_e2e_vscode_root" "${nuinui_e2e_vscode_process_pid:-}" || return 1
   nuinui_e2e_vscode_listener=$(nuinui_e2e_host_vscode__listener_pids \
     "$nuinui_e2e_host_port") || return 1
   [ -z "$nuinui_e2e_vscode_listener" ] || {
-    echo 'BLOCKED: CDP listener remains after exact owned process cleanup'
+    echo 'BLOCKED: CDP listener remains after isolated VS Code cleanup'
     return 1
   }
 }
@@ -1997,8 +1191,8 @@ nuinui_e2e_host_vscode__remove_root() {
     return 0
   fi
   nuinui_e2e_host_vscode__verify_root "$nuinui_e2e_vscode_root" partial || return 1
-  if nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1"; then
-    nuinui_e2e_host_vscode__read_process_record || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1" ||
+    nuinui_e2e__exists "$nuinui_e2e_vscode_root/launch-intent-v1"; then
     nuinui_e2e_host_vscode__verify_process_state cleanup-pending || return 1
   fi
   nuinui_e2e_host_vscode__root_tree "$nuinui_e2e_vscode_root" \
