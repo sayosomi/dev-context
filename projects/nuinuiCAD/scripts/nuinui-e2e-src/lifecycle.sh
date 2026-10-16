@@ -7,11 +7,11 @@ nuinui_e2e__regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
 
 nuinui_e2e__sha256() {
   [ "$#" = 1 ] || return 2
-  shasum -a 256 "$1" 2>/dev/null | awk 'NR == 1 {print $1}'
+  /usr/bin/openssl dgst -sha256 -r "$1" 2>/dev/null | awk 'NR == 1 {print $1}'
 }
 
 nuinui_e2e__generation_hash() {
-  printf '%s\n' "$1" | shasum -a 256 2>/dev/null | awk 'NR == 1 {print $1}'
+  printf '%s\n' "$1" | /usr/bin/openssl dgst -sha256 -r 2>/dev/null | awk 'NR == 1 {print $1}'
 }
 
 nuinui_e2e__under() {
@@ -87,22 +87,23 @@ nuinui_e2e__read_record() {
     *) return 2 ;;
   esac
   nuinui_e2e__regular "$nuinui_e2e_record_path" || return 1
-  nuinui_ownership_validate_exact_file "$nuinui_e2e_record_path" \
-    "$nuinui_e2e_record_keys" || return 1
-  nuinui_e2e_r_schema=$(nuinui_ownership_field "$nuinui_e2e_record_path" schema_version) || return 1
-  nuinui_e2e_r_issue=$(nuinui_ownership_field "$nuinui_e2e_record_path" issue) || return 1
-  nuinui_e2e_r_url=$(nuinui_ownership_field "$nuinui_e2e_record_path" issue_url) || return 1
-  nuinui_e2e_r_token=$(nuinui_ownership_field "$nuinui_e2e_record_path" local_id) || return 1
-  nuinui_e2e_r_lane=$(nuinui_ownership_field "$nuinui_e2e_record_path" lane) || return 1
-  nuinui_e2e_r_repository=$(nuinui_ownership_field "$nuinui_e2e_record_path" repository) || return 1
-  nuinui_e2e_r_checkout=$(nuinui_ownership_field "$nuinui_e2e_record_path" checkout) || return 1
-  nuinui_e2e_r_git_dir=$(nuinui_ownership_field "$nuinui_e2e_record_path" git_dir) || return 1
-  nuinui_e2e_r_manifest=$(nuinui_ownership_field "$nuinui_e2e_record_path" manifest) || return 1
-  nuinui_e2e_r_manifest_sha=$(nuinui_ownership_field "$nuinui_e2e_record_path" manifest_sha256) || return 1
-  nuinui_e2e_r_default=$(nuinui_ownership_field "$nuinui_e2e_record_path" default_branch) || return 1
-  nuinui_e2e_r_idle=$(nuinui_ownership_field "$nuinui_e2e_record_path" idle_policy) || return 1
-  nuinui_e2e_r_tested=$(nuinui_ownership_field "$nuinui_e2e_record_path" tested_sha) || return 1
-  nuinui_e2e_r_generation=$(nuinui_ownership_field "$nuinui_e2e_record_path" generation) || return 1
+  # Native receipt fields (including manifest-defined checkout paths) contain
+  # no whitespace. Read the existing exact-schema parser's result once.
+  nuinui_e2e_record_rows=$(nuinui_ownership_read_fields \
+    "$nuinui_e2e_record_path" "$nuinui_e2e_record_keys") || return 1
+  printf '%s\n' "$nuinui_e2e_record_rows" |
+    LC_ALL=C grep -Eq '^[^[:space:]]+( [^[:space:]]+)*$' || return 1
+  IFS=' ' read -r nuinui_e2e_r_schema nuinui_e2e_r_issue nuinui_e2e_r_url \
+    nuinui_e2e_r_token nuinui_e2e_r_lane nuinui_e2e_r_repository \
+    nuinui_e2e_r_checkout nuinui_e2e_r_git_dir nuinui_e2e_r_manifest \
+    nuinui_e2e_r_manifest_sha nuinui_e2e_r_default nuinui_e2e_r_idle \
+    nuinui_e2e_r_tested nuinui_e2e_r_generation \
+    nuinui_e2e_r_extra_one nuinui_e2e_r_extra_two <<EOF
+$nuinui_e2e_record_rows
+EOF
+  if [ "$nuinui_e2e_record_kind" = active ]; then
+    [ -z "$nuinui_e2e_r_extra_one$nuinui_e2e_r_extra_two" ] || return 1
+  fi
   [ "$nuinui_e2e_r_schema" = 1 ] || return 1
   nuinui_e2e_r_number=$(nuinui_e2e_identity_number "$nuinui_e2e_r_issue") || return 1
   [ "$nuinui_e2e_r_url" = "$(nuinui_e2e_identity_url "$nuinui_e2e_r_issue")" ] || return 1
@@ -119,13 +120,12 @@ nuinui_e2e__read_record() {
     *) return 1 ;;
   esac
   if [ "$nuinui_e2e_record_kind" = cleanup ]; then
-    nuinui_e2e_r_proof=$(nuinui_ownership_field "$nuinui_e2e_record_path" proof) || return 1
+    nuinui_e2e_r_proof=$nuinui_e2e_r_extra_one
     case "$nuinui_e2e_r_proof" in
-      fixture-no-host-session) ;;
+      fixture-no-host-session) [ -z "$nuinui_e2e_r_extra_two" ] || return 1 ;;
       fixture-host-session-cleaned)
         nuinui_e2e_host_proof_adapter=fixture-no-process
-        nuinui_e2e_r_host_cleanup_sha=$(nuinui_ownership_field \
-          "$nuinui_e2e_record_path" host_cleanup_sha256) || return 1
+        nuinui_e2e_r_host_cleanup_sha=$nuinui_e2e_r_extra_two
         nuinui_e2e_valid_digest "$nuinui_e2e_r_host_cleanup_sha" &&
           nuinui_e2e_host__cleanup_proof_matches \
             "$nuinui_e2e_r_host_cleanup_sha" "$nuinui_e2e_r_issue" \
@@ -134,8 +134,7 @@ nuinui_e2e__read_record() {
         ;;
       vscode-isolated-host-session-cleaned)
         nuinui_e2e_host_proof_adapter=vscode-isolated
-        nuinui_e2e_r_host_cleanup_sha=$(nuinui_ownership_field \
-          "$nuinui_e2e_record_path" host_cleanup_sha256) || return 1
+        nuinui_e2e_r_host_cleanup_sha=$nuinui_e2e_r_extra_two
         nuinui_e2e_valid_digest "$nuinui_e2e_r_host_cleanup_sha" &&
           nuinui_e2e_host__cleanup_proof_matches \
             "$nuinui_e2e_r_host_cleanup_sha" "$nuinui_e2e_r_issue" \
@@ -147,8 +146,8 @@ nuinui_e2e__read_record() {
   elif [ "$nuinui_e2e_record_kind" = starting ] ||
     [ "$nuinui_e2e_record_kind" = release ] ||
     [ "$nuinui_e2e_record_kind" = releasing ]; then
-    nuinui_e2e_r_idle_sha=$(nuinui_ownership_field "$nuinui_e2e_record_path" idle_sha) || return 1
-    nuinui_e2e_r_state=$(nuinui_ownership_field "$nuinui_e2e_record_path" record_state) || return 1
+    nuinui_e2e_r_idle_sha=$nuinui_e2e_r_extra_one
+    nuinui_e2e_r_state=$nuinui_e2e_r_extra_two
     nuinui_e2e_valid_sha "$nuinui_e2e_r_idle_sha" || return 1
     if [ "$nuinui_e2e_record_kind" = starting ]; then
       [ "$nuinui_e2e_r_state" = pending ] || return 1
@@ -245,38 +244,20 @@ nuinui_e2e__read_expected_releasing() {
 nuinui_e2e__generation_seen() {
   [ "$#" = 1 ] || return 2
   nuinui_e2e_seen_generation=$1
+  nuinui_e2e_seen_hash=$(nuinui_e2e__generation_hash "$1") || return 1
   while IFS= read -r nuinui_e2e_seen_lane || [ -n "$nuinui_e2e_seen_lane" ]; do
     [ -n "$nuinui_e2e_seen_lane" ] || continue
-    [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
-      "$nuinui_e2e_seen_lane")" = human-test ] || continue
     nuinui_e2e_seen_repo=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" \
       "$nuinui_e2e_seen_lane") || return 1
     nuinui_e2e_seen_git_dir=$(lane_execution__git_dir "$nuinui_e2e_seen_repo") || return 1
-    nuinui_e2e_seen_paths=$(find "$nuinui_e2e_seen_git_dir" -maxdepth 1 \
-      -name 'nuinui-github-e2e-*' -print 2>/dev/null) || return 1
-    while IFS= read -r nuinui_e2e_seen_path || [ -n "$nuinui_e2e_seen_path" ]; do
-      [ -n "$nuinui_e2e_seen_path" ] || continue
-      nuinui_e2e_seen_name=${nuinui_e2e_seen_path##*/}
-      case "$nuinui_e2e_seen_name" in
-        nuinui-github-e2e-active-v1) nuinui_e2e_seen_kind=active ;;
-        nuinui-github-e2e-starting-v1.*) nuinui_e2e_seen_kind=starting ;;
-        nuinui-github-e2e-cleanup-v1.*) nuinui_e2e_seen_kind=cleanup ;;
-        nuinui-github-e2e-release-v1.*) nuinui_e2e_seen_kind=release ;;
-        nuinui-github-e2e-releasing-v1.*) nuinui_e2e_seen_kind=releasing ;;
-        nuinui-github-e2e-host-*)
-          nuinui_e2e_seen_kind=$(nuinui_e2e_host__kind_from_name "$nuinui_e2e_seen_name") || return 1
-          nuinui_e2e_host__read_record "$nuinui_e2e_seen_path" \
-            "$nuinui_e2e_seen_kind" historical || return 1
-          [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_seen_generation" ] && return 0
-          continue
-          ;;
-        *) return 1 ;;
-      esac
-      nuinui_e2e__read_record "$nuinui_e2e_seen_path" "$nuinui_e2e_seen_kind" || return 1
+    for nuinui_e2e_seen_path in "$nuinui_e2e_seen_git_dir"/nuinui-github-e2e-*.$nuinui_e2e_seen_hash; do
+      nuinui_e2e__exists "$nuinui_e2e_seen_path" && return 0
+    done
+    nuinui_e2e_seen_active=$nuinui_e2e_seen_git_dir/nuinui-github-e2e-active-v1
+    if nuinui_e2e__exists "$nuinui_e2e_seen_active"; then
+      nuinui_e2e__read_record "$nuinui_e2e_seen_active" active || return 1
       [ "$nuinui_e2e_r_generation" = "$nuinui_e2e_seen_generation" ] && return 0
-    done <<EOF
-$nuinui_e2e_seen_paths
-EOF
+    fi
   done <<EOF
 $nuinui_e2e_human_lanes
 EOF
@@ -673,6 +654,8 @@ nuinui_e2e__lane_preflight_state() {
     return 1
   }
 
+  nuinui_e2e_history_checked=' '
+  nuinui_e2e_current_generation_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_expected_generation") || return 1
   nuinui_e2e_lane_active=no
   nuinui_e2e_lane_starting=no
   nuinui_e2e_lane_releasing=no
@@ -692,25 +675,20 @@ nuinui_e2e__lane_preflight_state() {
             echo '  state=BLOCKED reason=unknown-host-metadata'
             return 1
           }
-          nuinui_e2e_host__read_record "$nuinui_e2e_native_path" \
-            "$nuinui_e2e_native_kind" historical || {
-            echo '  state=BLOCKED reason=malformed-host-metadata'
-            return 1
-          }
-          nuinui_e2e__record_matches_lane "$nuinui_e2e_check_lane" \
-            "$nuinui_e2e_check_repo" "$nuinui_e2e_manifest_path" || return 1
-          nuinui_e2e_native_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation") || return 1
-          case "$nuinui_e2e_native_name" in
-            nuinui-github-e2e-host-intent-v1."$nuinui_e2e_native_hash"|\
-            nuinui-github-e2e-host-handoff-v1."$nuinui_e2e_native_hash"|\
-            nuinui-github-e2e-host-ready-v1."$nuinui_e2e_native_hash"|\
-            nuinui-github-e2e-host-cleanup-pending-v1."$nuinui_e2e_native_hash"|\
-            nuinui-github-e2e-host-cleanup-v1."$nuinui_e2e_native_hash") ;;
-            *) echo '  state=BLOCKED reason=host-generation-path-mismatch'; return 1 ;;
-          esac
+          # The host scanner owns these records; do not read them twice.
           continue
           ;;
       *) echo '  state=BLOCKED reason=unknown-native-metadata'; return 1 ;;
+    esac
+    case "$nuinui_e2e_native_kind" in
+      cleanup|release)
+        nuinui_e2e_host__valid_history_path "$nuinui_e2e_native_path" \
+          "$nuinui_e2e_check_lane" || {
+            echo '  state=BLOCKED reason=incomplete-native-history'
+            return 1
+          }
+        [ "$nuinui_e2e_history_path_hash" = "$nuinui_e2e_current_generation_hash" ] || continue
+        ;;
     esac
     nuinui_e2e__read_record "$nuinui_e2e_native_path" \
       "$nuinui_e2e_native_kind" historical || {
@@ -1080,6 +1058,7 @@ nuinui_e2e__finish_start() {
 
 nuinui_e2e_admit() {
   [ "$#" = 3 ] || return 2
+  echo 'NATIVE E2E: checking admission' >&2
   nuinui_e2e_operation=admit
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2
@@ -1168,6 +1147,7 @@ nuinui_e2e_status() {
 
 nuinui_e2e_start() {
   [ "$#" = 4 ] || return 2
+  echo 'NATIVE E2E: preparing tested checkout' >&2
   nuinui_e2e_operation=start
   nuinui_e2e_manifest_arg=$1
   nuinui_e2e_lane_arg=$2

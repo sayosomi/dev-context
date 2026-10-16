@@ -162,15 +162,9 @@ nuinui_e2e_host__read_record() {
       "$nuinui_e2e_host_legacy_root"|"$nuinui_e2e_host_previous_root") ;;
       *) return 1 ;;
     esac
-    # A legacy / root is only a read-only candidate while proving a completed
-    # historical generation. Outside that proof, run the complete proof here.
-    if [ "${nuinui_e2e_host_history_verifying:-no}" != yes ]; then
-      [ "$nuinui_e2e_host_r_generation" != \
-        "$nuinui_e2e_expected_generation" ] || return 1
-      nuinui_e2e_host__verify_released_history \
-        "$nuinui_e2e_host_r_issue" "$nuinui_e2e_host_r_generation" \
-        "$nuinui_e2e_host_r_tested" "$nuinui_e2e_host_r_lane" || return 1
-    fi
+    # Historical roots are never authority for a current resource mutation.
+    [ "$nuinui_e2e_host_r_generation" != \
+      "$nuinui_e2e_expected_generation" ] || return 1
   fi
   case "$nuinui_e2e_host_r_root_identity" in
     pending)
@@ -439,156 +433,59 @@ EOF
   fi
 }
 
+# A completed release is the durable end of an old generation. Its earlier
+# preparation details are no longer live ownership or startup prerequisites.
 nuinui_e2e_host__verify_released_history() (
-  [ "$#" = 4 ] || exit 2
-  nuinui_e2e_host_history_verifying=yes
-  nuinui_e2e_host_history_issue=$1
-  nuinui_e2e_host_history_generation=$2
-  nuinui_e2e_host_history_tested=$3
-  nuinui_e2e_host_history_lane=$4
-
-  [ "$nuinui_e2e_host_history_issue" = \
-    "$(nuinui_e2e_identity_issue "$nuinui_e2e_host_history_issue")" ] &&
-    nuinui_e2e_valid_generation "$nuinui_e2e_host_history_generation" &&
-    nuinui_e2e_valid_sha "$nuinui_e2e_host_history_tested" || exit 1
-  lane_manifest_validate_lane_name "$nuinui_e2e_manifest_path" \
-    "$nuinui_e2e_host_history_lane" >/dev/null 2>&1 || exit 1
-  [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
-    "$nuinui_e2e_host_history_lane")" = human-test ] || exit 1
-
-  # The native active marker is shared by generations. Its exact current
-  # generation is validated by lifecycle preflight; it must never name history.
-  nuinui_e2e_host_history_active=$(nuinui_e2e__path_for \
-    "$nuinui_e2e_expected_repo" active) || exit 1
-  if nuinui_e2e__exists "$nuinui_e2e_host_history_active"; then
-    nuinui_e2e__read_record "$nuinui_e2e_host_history_active" active || exit 1
-    [ "$nuinui_e2e_r_generation" != "$nuinui_e2e_host_history_generation" ] &&
-      nuinui_e2e__record_matches_lane "$nuinui_e2e_host_history_lane" \
-        "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path" || exit 1
-  fi
-
-  nuinui_e2e_expected_issue=$nuinui_e2e_host_history_issue
-  nuinui_e2e_expected_url=$(nuinui_e2e_identity_url \
-    "$nuinui_e2e_host_history_issue") || exit 1
-  nuinui_e2e_expected_token=$(nuinui_e2e_identity_token \
-    "$nuinui_e2e_host_history_issue") || exit 1
-  nuinui_e2e_expected_lane=$nuinui_e2e_host_history_lane
-  nuinui_e2e_expected_generation=$nuinui_e2e_host_history_generation
-  nuinui_e2e_expected_tested=$nuinui_e2e_host_history_tested
-  nuinui_e2e_host_fixture_policy=historical
-
-  nuinui_e2e_host_history_payload=
-  nuinui_e2e_host_history_root_identity=
-  nuinui_e2e_host_history_record_root=
-  nuinui_e2e_host_history_cleanup_handoff_sha=
-  nuinui_e2e_host_history_has_handoff=no
-  nuinui_e2e_host_history_has_ready=no
-  nuinui_e2e_host_history_handoff=$(nuinui_e2e_host__metadata_path \
-    "$nuinui_e2e_expected_repo" handoff) || exit 1
-  nuinui_e2e_host_history_ready=$(nuinui_e2e_host__metadata_path \
-    "$nuinui_e2e_expected_repo" ready) || exit 1
-  if nuinui_e2e__exists "$nuinui_e2e_host_history_handoff"; then
-    nuinui_e2e_host_history_has_handoff=yes
-  fi
-  if nuinui_e2e__exists "$nuinui_e2e_host_history_ready"; then
-    nuinui_e2e_host_history_has_ready=yes
-  fi
-  [ "$nuinui_e2e_host_history_has_ready" = no ] ||
-    [ "$nuinui_e2e_host_history_has_handoff" = yes ] || exit 1
-  for nuinui_e2e_host_history_kind in intent handoff ready cleanup-pending cleanup; do
-    nuinui_e2e_host_history_path=$(nuinui_e2e_host__metadata_path \
-      "$nuinui_e2e_expected_repo" "$nuinui_e2e_host_history_kind") || exit 1
-    if ! nuinui_e2e__exists "$nuinui_e2e_host_history_path"; then
-      case "$nuinui_e2e_host_history_kind" in
-        handoff|ready) continue ;;
-        *) exit 1 ;;
-      esac
-    fi
-    nuinui_e2e__regular "$nuinui_e2e_host_history_path" || exit 1
-    nuinui_e2e_host__read_record "$nuinui_e2e_host_history_path" \
-      "$nuinui_e2e_host_history_kind" historical || exit 1
-    [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_host_history_issue" ] &&
-      [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_host_history_generation" ] &&
-      [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_host_history_tested" ] &&
-      [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_history_lane" ] &&
-      nuinui_e2e__record_matches_lane "$nuinui_e2e_host_history_lane" \
-        "$nuinui_e2e_expected_repo" "$nuinui_e2e_manifest_path" || exit 1
-    nuinui_e2e_host_history_current_payload=$(nuinui_e2e_host__record_payload \
-      "$nuinui_e2e_host_history_path") || exit 1
-    if [ -z "$nuinui_e2e_host_history_payload" ]; then
-      nuinui_e2e_host_history_payload=$nuinui_e2e_host_history_current_payload
-      nuinui_e2e_host_history_record_root=$nuinui_e2e_host_r_root
-    else
-      [ "$nuinui_e2e_host_history_current_payload" = \
-        "$nuinui_e2e_host_history_payload" ] || exit 1
-    fi
-    if [ "$nuinui_e2e_host_history_kind" = intent ]; then
-      [ "$nuinui_e2e_host_r_root_identity" = pending ] || exit 1
-    else
-      if [ -z "$nuinui_e2e_host_history_root_identity" ]; then
-        nuinui_e2e_host_history_root_identity=$nuinui_e2e_host_r_root_identity
-      else
-        [ "$nuinui_e2e_host_history_root_identity" = \
-          "$nuinui_e2e_host_r_root_identity" ] || exit 1
-      fi
-    fi
-    if [ "$nuinui_e2e_host_history_kind" = cleanup ]; then
-      nuinui_e2e_host_history_cleanup_handoff_sha=$nuinui_e2e_host_r_handoff_sha
-    fi
+  [ "$#" = 2 ] || exit 2
+  nuinui_e2e_history_hash=${1##*.}
+  nuinui_e2e_history_lane=$2
+  nuinui_e2e_history_repo=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" "$2") || exit 1
+  nuinui_e2e_valid_digest "$nuinui_e2e_history_hash" || exit 1
+  nuinui_e2e_history_release=${1%/*}/nuinui-github-e2e-release-v1.$nuinui_e2e_history_hash
+  nuinui_e2e__read_record "$nuinui_e2e_history_release" release historical &&
+    nuinui_e2e__record_matches_lane "$nuinui_e2e_history_lane" \
+      "$nuinui_e2e_history_repo" "$nuinui_e2e_manifest_path" || exit 1
+  [ "$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation")" = \
+    "$nuinui_e2e_history_hash" ] &&
+    [ "$nuinui_e2e_r_generation" != "$nuinui_e2e_expected_generation" ] || exit 1
+  nuinui_e2e_expected_generation=$nuinui_e2e_r_generation
+  for nuinui_e2e_history_kind in starting releasing; do
+    nuinui_e2e_history_pending=$(nuinui_e2e__path_for \
+      "$nuinui_e2e_history_repo" "$nuinui_e2e_history_kind") || exit 1
+    nuinui_e2e__exists "$nuinui_e2e_history_pending" && exit 1
   done
-  [ -n "$nuinui_e2e_host_history_root_identity" ] || exit 1
-  if [ "$nuinui_e2e_host_history_root_identity" = pending ]; then
-    [ "$nuinui_e2e_host_history_has_handoff" = no ] &&
-      [ "$nuinui_e2e_host_history_has_ready" = no ] || exit 1
-  fi
-  nuinui_e2e_host_history_root=$(nuinui_e2e_host__root_for \
-    "$nuinui_e2e_host_history_generation") || exit 1
-  nuinui_e2e_host_history_legacy_root=$(nuinui_e2e_host__legacy_root_for \
-    "$nuinui_e2e_host_history_generation") || exit 1
-  nuinui_e2e_host_history_previous_root=$(nuinui_e2e_host__root_for \
-    "$nuinui_e2e_host_history_generation" full) || exit 1
-  case "$nuinui_e2e_host_history_record_root" in
-    "$nuinui_e2e_host_history_root") ;;
-    "$nuinui_e2e_host_history_legacy_root"|"$nuinui_e2e_host_history_previous_root")
-      nuinui_e2e_host__production_root_mode || exit 1
-      ;;
-    *) exit 1 ;;
-  esac
-  [ ! -e "$nuinui_e2e_host_history_root" ] &&
-    [ ! -L "$nuinui_e2e_host_history_root" ] &&
-    [ ! -e "$nuinui_e2e_host_history_legacy_root" ] &&
-    [ ! -L "$nuinui_e2e_host_history_legacy_root" ] &&
-    [ ! -e "$nuinui_e2e_host_history_previous_root" ] &&
-    [ ! -L "$nuinui_e2e_host_history_previous_root" ] || exit 1
-  if [ "$nuinui_e2e_host_history_has_handoff" = yes ]; then
-    nuinui_e2e_host_history_expected_handoff_sha=$(nuinui_e2e__sha256 \
-      "$nuinui_e2e_host_history_handoff") || exit 1
-  else
-    nuinui_e2e_host_history_expected_handoff_sha=none
-  fi
-  [ "$nuinui_e2e_host_history_cleanup_handoff_sha" = \
-    "$nuinui_e2e_host_history_expected_handoff_sha" ] || exit 1
-
-  nuinui_e2e_host_history_starting=$(nuinui_e2e__path_for \
-    "$nuinui_e2e_expected_repo" starting) || exit 1
-  nuinui_e2e_host_history_releasing=$(nuinui_e2e__path_for \
-    "$nuinui_e2e_expected_repo" releasing) || exit 1
-  nuinui_e2e_host_history_cleanup=$(nuinui_e2e__path_for \
-    "$nuinui_e2e_expected_repo" cleanup) || exit 1
-  nuinui_e2e_host_history_release=$(nuinui_e2e__path_for \
-    "$nuinui_e2e_expected_repo" release) || exit 1
-  nuinui_e2e__exists "$nuinui_e2e_host_history_starting" && exit 1
-  nuinui_e2e__exists "$nuinui_e2e_host_history_releasing" && exit 1
-  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_host_history_cleanup" || exit 1
-  nuinui_e2e__read_expected_release "$nuinui_e2e_host_history_release" || exit 1
-  nuinui_e2e_host_history_idle_sha=$nuinui_e2e_r_idle_sha
-  git -C "$nuinui_e2e_expected_repo" cat-file -e \
-    "$nuinui_e2e_host_history_idle_sha^{commit}" 2>/dev/null || exit 1
-  nuinui_e2e_host_history_head=$(git -C "$nuinui_e2e_expected_repo" \
-    rev-parse HEAD 2>/dev/null) || exit 1
-  git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
-    "$nuinui_e2e_host_history_idle_sha" "$nuinui_e2e_host_history_head" || exit 1
+  for nuinui_e2e_history_root in \
+    "$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation")" \
+    "$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation" full)" \
+    "$(nuinui_e2e_host__legacy_root_for "$nuinui_e2e_expected_generation")"; do
+    [ -n "$nuinui_e2e_history_root" ] || exit 1
+    nuinui_e2e__exists "$nuinui_e2e_history_root" && exit 1
+  done
+  exit 0
 )
+
+nuinui_e2e_host__valid_history_path() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e__regular "$1" || return 1
+  nuinui_e2e_history_path_name=${1##*/}
+  nuinui_e2e_history_path_hash=${1##*.}
+  case "${nuinui_e2e_history_path_name%.*}" in
+    nuinui-github-e2e-cleanup-v1|nuinui-github-e2e-release-v1|\
+    nuinui-github-e2e-host-intent-v1|nuinui-github-e2e-host-handoff-v1|\
+    nuinui-github-e2e-host-ready-v1|nuinui-github-e2e-host-cleanup-pending-v1|\
+    nuinui-github-e2e-host-cleanup-v1) ;;
+    *) return 1 ;;
+  esac
+  nuinui_e2e_valid_digest "$nuinui_e2e_history_path_hash" || return 1
+  [ "$nuinui_e2e_history_path_hash" != "$nuinui_e2e_current_generation_hash" ] || return 0
+  case "$nuinui_e2e_history_checked" in
+    *" $nuinui_e2e_history_path_hash "*) ;;
+    *)
+      nuinui_e2e_host__verify_released_history "$1" "$2" || return 1
+      nuinui_e2e_history_checked="$nuinui_e2e_history_checked$nuinui_e2e_history_path_hash "
+      ;;
+  esac
+}
 
 nuinui_e2e_host__preflight_scan() {
   [ "$#" = 2 ] || return 2
@@ -596,7 +493,6 @@ nuinui_e2e_host__preflight_scan() {
   nuinui_e2e_host_scan_lane=$2
   nuinui_e2e_host_scan_paths=$(find "$nuinui_e2e_host_scan_git_dir" -maxdepth 1 \
     -name 'nuinui-github-e2e-host-*' -print 2>/dev/null) || return 1
-  nuinui_e2e_host_scan_checked_generations=' '
   if [ -z "$nuinui_e2e_host_scan_paths" ]; then
     nuinui_e2e_host_orphan_root=$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation") || return 1
     nuinui_e2e__exists "$nuinui_e2e_host_orphan_root" && return 1
@@ -607,35 +503,15 @@ nuinui_e2e_host__preflight_scan() {
     [ -n "$nuinui_e2e_host_scan_path" ] || continue
     nuinui_e2e_host_scan_name=${nuinui_e2e_host_scan_path##*/}
     nuinui_e2e_host_scan_kind=$(nuinui_e2e_host__kind_from_name "$nuinui_e2e_host_scan_name") || return 1
+    nuinui_e2e_host__valid_history_path "$nuinui_e2e_host_scan_path" \
+      "$nuinui_e2e_host_scan_lane" || return 1
+    [ "$nuinui_e2e_history_path_hash" = "$nuinui_e2e_current_generation_hash" ] || continue
     nuinui_e2e_host__read_record "$nuinui_e2e_host_scan_path" \
-      "$nuinui_e2e_host_scan_kind" historical || return 1
-    [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] || return 1
-    nuinui_e2e_host_scan_hash=$(nuinui_e2e__generation_hash "$nuinui_e2e_host_r_generation") || return 1
-    case "$nuinui_e2e_host_scan_name" in
-      nuinui-github-e2e-host-intent-v1."$nuinui_e2e_host_scan_hash"|\
-      nuinui-github-e2e-host-handoff-v1."$nuinui_e2e_host_scan_hash"|\
-      nuinui-github-e2e-host-ready-v1."$nuinui_e2e_host_scan_hash"|\
-      nuinui-github-e2e-host-cleanup-pending-v1."$nuinui_e2e_host_scan_hash"|\
-      nuinui-github-e2e-host-cleanup-v1."$nuinui_e2e_host_scan_hash") ;;
-      *) return 1 ;;
-    esac
-    [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] || return 1
-    if [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_expected_generation" ]; then
+      "$nuinui_e2e_host_scan_kind" || return 1
+    [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] &&
+      [ "$nuinui_e2e_host_r_generation" = "$nuinui_e2e_expected_generation" ] &&
       [ "$nuinui_e2e_host_r_issue" = "$nuinui_e2e_expected_issue" ] &&
-        [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_expected_tested" ] || return 1
-    else
-      nuinui_e2e_host_scan_hash=$(nuinui_e2e__generation_hash \
-        "$nuinui_e2e_host_r_generation") || return 1
-      case "$nuinui_e2e_host_scan_checked_generations" in
-        *" $nuinui_e2e_host_scan_hash "*) ;;
-        *)
-          nuinui_e2e_host__verify_released_history \
-            "$nuinui_e2e_host_r_issue" "$nuinui_e2e_host_r_generation" \
-            "$nuinui_e2e_host_r_tested" "$nuinui_e2e_host_scan_lane" || return 1
-          nuinui_e2e_host_scan_checked_generations="$nuinui_e2e_host_scan_checked_generations$nuinui_e2e_host_scan_hash "
-          ;;
-      esac
-    fi
+      [ "$nuinui_e2e_host_r_tested" = "$nuinui_e2e_expected_tested" ] || return 1
   done <<EOF
 $nuinui_e2e_host_scan_paths
 EOF
@@ -834,6 +710,7 @@ nuinui_e2e_host_check() {
 }
 
 nuinui_e2e_host_prepare() (
+  echo 'HOST PREPARATION: checking current session and artifacts' >&2
   # Keep resolved artifacts local to this command, including library callers.
   nuinui_e2e_vscode_artifacts_ready=no
   nuinui_e2e_host__check host-prepare "$@" || return $?
@@ -859,7 +736,15 @@ nuinui_e2e_host_prepare() (
     echo "BLOCKED: host preparation cannot continue from $nuinui_e2e_host_state"
     return 1
   }
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  # History was checked at entry; only live topology and this generation can
+  # change during preparation. Recheck those at each mutation boundary.
+  lane_execution__inventory_check "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_expected_repo" >/dev/null || {
+      echo 'BLOCKED: checkout topology changed during host preparation'
+      return 1
+    }
+  [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
+    "$nuinui_e2e_manifest_sha" ] || return 1
   nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_expected_tested" || {
@@ -979,7 +864,15 @@ nuinui_e2e_host_prepare() (
     echo 'BLOCKED: fixture resources or ownership changed before READY'
     return 1
   }
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  # History was checked at entry; only live topology and this generation can
+  # change during preparation. Recheck those at each mutation boundary.
+  lane_execution__inventory_check "$nuinui_e2e_manifest_path" \
+    "$nuinui_e2e_expected_repo" >/dev/null || {
+      echo 'BLOCKED: checkout topology changed during host preparation'
+      return 1
+    }
+  [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
+    "$nuinui_e2e_manifest_sha" ] || return 1
   nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_expected_tested" || return 1
