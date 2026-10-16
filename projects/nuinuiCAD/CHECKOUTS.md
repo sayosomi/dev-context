@@ -6,7 +6,7 @@ nuinuiCADのlocal execution capacityとlane ownershipを、versioned `LANES.conf
 
 宣言されたcheckoutは再利用候補ではなく、**存在を許可するexecution laneそのもの**である。Issue数、Ready数、worker数を理由に動的なlane / worktree / clone / checkoutを作らない。
 
-再利用可能なexecution semantics（role、capacity、FREE/BUSY/RELEASE-PENDING/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md) がsole ownerする。この文書はnuinuiCAD固有のmanifest、Luna implementation policy、Human-only Manual E2E policyをownerする。
+再利用可能なexecution semantics（role、capacity、FREE/BUSY/RELEASE-PENDING/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md) がsole ownerする。この文書はnuinuiCAD固有のmanifest、implementation lane policy、Human-only Manual E2E policyをownerする。
 
 Evaluator auditのexecutor selection、finding threshold、Sol-first / Astra-escalation handoffは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)がownerする。この文書は、既存checkoutを一時的なread-only / execution-only探索に使う場合のlane境界をownerする。
 
@@ -16,7 +16,7 @@ The checked-in manifest declares one implementation lane and one Human-test lane
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
-| `main` | `/Users/yosomi/Code/nuinuiCAD` | Luna implementation / blocking fix / implementation-side diagnosis |
+| `main` | `/Users/yosomi/Code/nuinuiCAD` | implementation Coding Agent (Luna xhigh by default; an explicitly opted-in Issue may use its Human-selected agent under `CODING-AGENT.md`) |
 | `human-e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Human-only native Manual E2E |
 
 Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
@@ -230,6 +230,24 @@ Git-only workflow above is the ordinary route and requires no additional
 per-Task approval or activation mechanism. Evaluator-audit replacement,
 product legacy-helper retirement, and Human Manual E2E policy remain separate
 work and are not activated by this checkpoint.
+
+### Per-Issue autonomous conformance implementation stays on D1
+
+A canonical GitHub implementation Issue may explicitly opt into autonomous
+conformance discovery and repair only under [`CODING-AGENT.md`](./CODING-AGENT.md).
+That is still source-code implementation, so it uses this same D1 admission,
+the sole registered `role=implementation` checkout, the ordinary topic-branch
+and exact-checkpoint lifecycle, and all normal independent review and protected
+PR/CI gates. D1 admission must still prove the complete registered two-checkout
+topology, clean expected state, no active implementation or evaluator audit,
+and valid legacy ownership metadata.
+
+This mode does not use D2-C read-only fixed-main audit occupancy or the legacy
+audit reservation lifecycle. It does not create another lane, checkout,
+worktree, claim, or metadata owner. An unfinished D2-C audit blocks
+implementation admission, and no implementation runs concurrently with that
+audit. The registered Human-test checkout remains isolated for Human-only
+Manual E2E; implementation work cannot use it or claim a GUI result.
 
 ## Human-authorized forensic worktree exception
 
@@ -485,7 +503,7 @@ versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent
 
 ## Human-authorized exact source-fix exception
 
-通常のsource-code implementation / blocking-fix executorはLuna xhighのままである。ただし、ChatGPTがcurrent implementation contract内の単一で自明なmechanical repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用のexact-fix boundaryを使える。このexceptionは一般的なsource implementation、debug loop、design判断、conflict resolution、または任意のlane mutationを許可しない。
+明示的にautonomous conformance discovery and repairへopt-inしたIssueを除き、通常のsource-code implementation / blocking-fix executorはLuna xhighのままである。別の例外として、ChatGPTがcurrent implementation contract内の単一で自明なmechanical repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用のexact-fix boundaryを使える。このexceptionは一般的なsource implementation、debug loop、design判断、conflict resolution、または任意のlane mutationを許可しない。
 
 exact-fixのeligibility / identity / Base / checkpoint / lock / release-pending / remote freshness semanticsはこのsectionがownerする。active durable implementation generationがIssueに対して一意であり、resolved checkoutがそのgenerationのbranch / Base / current remote topicへ一致し、expected authoritative mainがfreshであることを証明する。callerはlane、claim、Base、checkpoint、ticket、またはauthorization tokenを渡さず、helperが既存のhandoff / manifest / ownership primitiveから一意に解決する。zero / multiple / malformed generation、near-match、stale remote、dirty startup、または曖昧なidentityはmutation前にBLOCKEDとする。
 

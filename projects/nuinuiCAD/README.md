@@ -15,6 +15,12 @@ merged, read back on authoritative dev-context `main`, and recorded as the
 activation checkpoint in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268).
 Until all four conditions are met, do not start a GitHub-native implementation.
 Afterward, no separate per-Task approval or activation mechanism is required.
+Luna remains the ordinary implementation default. A current implementation
+Issue may choose the bounded autonomous conformance mode only through the
+explicit Issue-body opt-in owned by [`CODING-AGENT.md`](./CODING-AGENT.md);
+this is a per-Issue scope statement, not another D1 approval or activation.
+The opted-in Issue still uses the D1 checkout, checkpoint, review, PR/CI, and
+Human Manual E2E rules below and in [`CHECKOUTS.md`](./CHECKOUTS.md).
 
 ## Evaluator audit route — D2-C activation gated
 
@@ -26,7 +32,8 @@ Until then, do not start a new reservation-free audit. Read
 [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) for executor roles and evidence, and
 [`CHECKOUTS.md`](./CHECKOUTS.md) plus [`ISSUES.md`](./ISSUES.md) for admission,
 operational checkpoints, independent final checkout verification, and safe
-return.
+return. This route remains read-only and cannot authorize source changes; a
+separate implementation Issue must opt in to the implementation-side mode.
 
 The completed [D2-B pilot on #1194](https://github.com/sayosomi/nuinuiCAD/issues/1194)
 is historical operational proof at the revision recorded in its
@@ -123,7 +130,8 @@ replacement for the normal implementation-agent route.
 | implementation-agent handoff identity / startup safety | [Execution handoff authority](./EXECUTION-HANDOFF.md) |
 | GitHub-native Git-only startup, recovery, slicing, and safe return | [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md), [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md), [CODING-AGENT.md](./CODING-AGENT.md), [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md) |
 | implementation / blocking-fix Coding Agent workflow | [Shared Implementation Coding Agent Workflow](../../shared/CODING-AGENT-WORKFLOW.md) + [nuinuiCAD Implementation Coding Agent Policy](./CODING-AGENT.md) |
-| open-ended evaluator correctness / semantic-conformance exploration and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
+| read-only evaluator correctness / semantic-conformance audits and finding handoff | [Evaluator Audit Policy — Sol first / Astra escalation](./ASTRA-AUDIT.md) |
+| per-Issue autonomous conformance discovery and repair | [Implementation Coding Agent Policy](./CODING-AGENT.md) + [Implementation slicing policy](./IMPLEMENTATION-SLICING.md); D1 admission in [CHECKOUTS.md](./CHECKOUTS.md) |
 | implementation slicing / integration checkpoint / sequential PR | [Implementation slicing policy](./IMPLEMENTATION-SLICING.md) |
 | implementation / review skill selection | [Shared Agent Skills](../../shared/AGENT-SKILLS.md) + [nuinuiCAD Agent Skills](./AGENT-SKILLS.md) |
 | Current Work authoring / contract / readiness / completion | [GitHub Issues policy](./ISSUES.md) |
@@ -232,7 +240,7 @@ implementation lanesは互いの途中変更を取り込まない。
 3. **Development work:** `shared/DEVELOPMENT.md`とcurrent repository `AGENTS.md`。
 4. **Checkout / branch / local execution / concurrency:** `CHECKOUTS.md`。
 5. **Local versioned helper / local dev-context sync / tool trial-promotion-repair:** `LOCAL-TOOLS.md`。
-6. **Evaluator semantic-conformance exploration:** `ASTRA-AUDIT.md` (GPT-6.1 Sol High first pass; GPT-6 Astra only under the documented escalation conditions). Temporary execution or isolation checkout rules are in `CHECKOUTS.md`; current Work tracking follows `ISSUES.md`.
+6. **Read-only evaluator audit:** `ASTRA-AUDIT.md` (Sol first pass; Astra only under the documented audit escalation conditions). D2-C admission, fixed-SHA read-only execution, audit limits, and final checkout verification are in `CHECKOUTS.md`; current audit Work follows `ISSUES.md`. For implementation-side autonomous discovery and repair, use the explicit Issue-body opt-in and owner rules in `CODING-AGENT.md`, plus D1 admission in `CHECKOUTS.md` and sequential checkpoints in `IMPLEMENTATION-SLICING.md`.
 7. **Implementation-agent prompt generation:** `shared/AGENT-PROMPT-STYLE.md` + `shared/CODING-AGENT-WORKFLOW.md` + `EXECUTION-HANDOFF.md`.
 8. **Implementation / blocking fix:** `shared/CODING-AGENT-WORKFLOW.md` + `CODING-AGENT.md`. Read Shared / nuinuiCAD Agent Skills when applicable.
 9. **Implementation start / pause-resume / sequential PR / integration checkpoint / scope expansion:** `IMPLEMENTATION-SLICING.md`.

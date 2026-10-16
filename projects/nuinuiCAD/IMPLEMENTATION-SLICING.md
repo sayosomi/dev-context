@@ -14,7 +14,7 @@ Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、lane capa
 
 以下のlane assignmentとLinear checkpoint recordはcompatible pre-existing SAY executionにだけ適用する。GitHub-native slicingは末尾のsectionがownerし、一般D1 activation checkpoint後に通常適用する。それまではnative implementation startupを行わない。
 
-same Issueであることはsame branch、same PR、same Luna session、same uninterrupted execution trackを意味しない。
+same Issueであることはsame branch、same PR、same Coding Agent session、same uninterrupted execution trackを意味しない。
 
 ## Core rule
 
@@ -30,7 +30,13 @@ Implementationはcurrent repository ownershipの自然なboundaryでsliceし、*
 - next safe checkpoint;
 - required verification。
 
-実装executorはLuna xhigh。sliceごとに別execution routeを選ぶ仕組みは持たない。
+Ordinary implementation and compatible pre-existing SAY execution keep Luna
+xhigh as their default/current executor. A GitHub-native implementation Issue
+may use the Human-selected agent only when its current Issue body explicitly
+opts into the autonomous conformance mode defined in [`CODING-AGENT.md`](./CODING-AGENT.md).
+That choice applies to the Issue's authorized matrix, not separately to each
+defect family or slice. No other Work may select an alternative executor by
+implication.
 
 ## Pre-execution slicing audit
 
@@ -80,7 +86,7 @@ PRを小さくすること、Issue数を増やすこと、宣言されたcapacit
 
 ### Implementation checkpoint
 
-current laneの作業をremote branchへ安全に保存し、別conversation / Luna sessionから再開できる地点。
+current laneの作業をremote branchへ安全に保存し、別conversation / Coding Agent sessionから再開できる地点。
 
 最低限:
 
@@ -122,7 +128,8 @@ pushed implementation checkpoint
    -> blocking review
    or
 -> integration reasoning / conflict resolution / integration fix required
-   -> Luna xhigh integrates and verifies
+   -> the assigned implementation Coding Agent integrates and verifies
+      (Luna xhigh for ordinary work; the Human-selected agent for an opted-in Issue)
    -> record Integration Watermark
    -> blocking review
 -> merge
@@ -170,7 +177,7 @@ first / routine checkpointではexact implementation checkpoint、same durable g
 
 既存のpost-review merge-gate refreshでは、already-reviewed exact Review Headと既存のIntegration Watermarkがあり、post-integration semantic driftをChatGPTがfreshに`NON-INTERFERING`と判定し、merge gateの唯一の要求がcurrent-base CI / branch freshnessであることが追加のpreconditionとなる。この場合もhelperはcurrent `main`をconflict-free merge-onlyで取り込み、verification後にnormal pushする。successful pushed merge headでIntegration Watermarkを更新し、parents / effective diff / verification evidence / remote stateを対象とするfocused blocking reviewとfresh required PR CIを行う。
 
-`integrate-clean`のstale / mechanical precondition failureが、source reasoningなしに一意にfreshへ更新できる場合は、ChatGPTのfresh re-evaluation後も同じdeterministic Human routeに残してよい。conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous repository stateが必要なintegrationはLunaが担当する。Human `integrate-clean`はdeterministic terminal assistanceであり、別のsource implementation executorではない。
+`integrate-clean`のstale / mechanical precondition failureが、source reasoningなしに一意にfreshへ更新できる場合は、ChatGPTのfresh re-evaluation後も同じdeterministic Human routeに残してよい。conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous repository stateが必要なintegrationは、current Workのimplementation Coding Agentが担当する（ordinary work and compatible SAY workではLuna xhigh、明示的にopt-inしたnative IssueではHuman-selected agent）。Human `integrate-clean`はdeterministic terminal assistanceであり、別のsource implementation executorではない。
 
 ### Verification boundary
 
@@ -318,9 +325,16 @@ previously passed unaffected unitsはshared owner / premiseが変わらない限
 
 ## Coding Agent execution
 
-各implementation sliceのexecutorはLuna xhigh。
+Luna xhigh remains the default executor for ordinary implementation and the
+current executor for compatible pre-existing SAY work. The only alternate
+route is a GitHub-native Issue that explicitly opts into autonomous
+conformance discovery and repair under [`CODING-AGENT.md`](./CODING-AGENT.md).
 
-ChatGPTがcurrent sliceのcontract / lane / Base checkpoint / safe checkpointを決め、Lunaにはそのnarrow implementationだけを渡す。詳細は [`CODING-AGENT.md`](./CODING-AGENT.md)。
+ChatGPT sets the current slice's contract, lane, Base checkpoint, and safe
+checkpoint, then gives the assigned Coding Agent only that scoped work. The
+opted-in agent may continue across multiple in-scope defect families without
+a family-count stop; choose slice and PR boundaries by owner and repository
+coherence, never by the number of discovered defects.
 
 ## GitHub-native slicing and checkpoints — after general activation
 
@@ -337,6 +351,11 @@ applies.
 Do not import the compatible SAY lane claims or Linear checkpoints below into a
 native Issue.
 
+An opted-in conformance Issue remains ordinary D1 implementation Work and
+uses the same single-checkout admission and GitHub-native checkpoints. Read
+[`CODING-AGENT.md`](./CODING-AGENT.md) for its required Issue-body contract;
+do not infer the mode from a D2-C audit Issue or wording in a prompt.
+
 Keep Work decomposition separate from implementation slicing. Keep one
 product implementation active at a time. Choose slice boundaries by independent
 acceptance, semantic-owner boundaries, dependencies, verifiable outcomes, and
@@ -351,6 +370,13 @@ checkpoint in GitHub Issue comments. Re-read the latest Issue contract and
 latest main before starting the next slice. A next slice after an intermediate
 merge starts from a fresh topic branch at the newly verified main; do not
 continue from stale main or silently reuse the previous branch.
+
+For an opted-in conformance Issue, also record distinct defect families,
+reproduction seeds, expected/actual results, exact candidate revisions,
+completed and contaminated matrix cells, residuals, source changes, and
+verification in the same Issue/PR surfaces. Finding another in-scope family
+does not by itself end a slice, require a new Issue, or trigger a PR; retain
+the ordinary safe checkpoint, independent review, and protected CI gates.
 
 For interrupted work, resume only after rechecking the Issue, exact remote
 topic SHA, local branch/HEAD/status, and the recorded pushed checkpoint.
