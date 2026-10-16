@@ -495,9 +495,36 @@ nuinui_e2e_host_vscode__root_identity() {
   stat -f '%d:%i' "$1" 2>/dev/null
 }
 
+# Recovery may retain the recorded device number while the mounted device has
+# changed. Keep the inode and all owner/content checks; admit only a dead host.
+nuinui_e2e_host_vscode__identity_matches() {
+  [ "$#" = 2 ] || return 2
+  [ "$1" != "$2" ] || return 0
+  case "$nuinui_e2e_operation:${nuinui_e2e_host_abnormal_exit_recovery:-no}" in
+    host-status:*|host-recover:*|host-cleanup:yes) ;;
+    *) return 1 ;;
+  esac
+  for nuinui_e2e_vscode_identity_part in "${1%%:*}" "${1#*:}" "${2%%:*}" "${2#*:}"; do
+    case "$nuinui_e2e_vscode_identity_part" in ''|*[!0-9]*) return 1 ;; esac
+  done
+  [ "${1#*:}" = "${2#*:}" ] || return 1
+  [ -z "$(nuinui_e2e_host_vscode__process_ids_for_root \
+    "$nuinui_e2e_vscode_root")" ] || return 1
+  if nuinui_e2e__exists "$nuinui_e2e_vscode_root/process-owner-v1"; then
+    nuinui_e2e_host_vscode__read_process_record || return 1
+    ! kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null || return 1
+  fi
+  nuinui_e2e_vscode_identity_listeners=$(nuinui_e2e_host_vscode__listener_pids \
+    "$nuinui_e2e_host_port") || return 1
+  [ -z "$nuinui_e2e_vscode_identity_listeners" ]
+}
+
 nuinui_e2e_host_vscode__root_tree() {
   [ "$#" = 4 ] || return 2
-  python3 - "$1" "$2" "$3" "$4" <<'PYTHON'
+  nuinui_e2e_vscode_tree_identity=$(nuinui_e2e_host_vscode__root_identity "$1") || return 1
+  nuinui_e2e_host_vscode__identity_matches "$2" \
+    "$nuinui_e2e_vscode_tree_identity" || return 1
+  python3 - "$1" "$nuinui_e2e_vscode_tree_identity" "$3" "$4" <<'PYTHON'
 import os, shutil, stat, sys
 
 root, expected_identity, mode, action = sys.argv[1:]
@@ -548,8 +575,9 @@ nuinui_e2e_host_vscode__verify_root() {
     [ ! -L "$nuinui_e2e_vscode_verify_root" ] &&
     [ "$(realpath "$nuinui_e2e_vscode_verify_root" 2>/dev/null)" = \
       "$nuinui_e2e_vscode_root" ] &&
-    [ "$(nuinui_e2e_host_vscode__root_identity \
-      "$nuinui_e2e_vscode_verify_root")" = "$nuinui_e2e_host_root_identity" ] || return 1
+    nuinui_e2e_host_vscode__identity_matches "$nuinui_e2e_host_root_identity" \
+      "$(nuinui_e2e_host_vscode__root_identity \
+        "$nuinui_e2e_vscode_verify_root")" || return 1
   nuinui_e2e_host_vscode__root_tree "$nuinui_e2e_vscode_verify_root" \
     "$nuinui_e2e_host_root_identity" "$nuinui_e2e_vscode_verify_mode" verify || return 1
   if nuinui_e2e__exists "$nuinui_e2e_vscode_launch_args"; then
@@ -578,6 +606,13 @@ nuinui_e2e_host_vscode__verify_root() {
   fi
   if nuinui_e2e__exists "$nuinui_e2e_vscode_owner"; then
     nuinui_e2e__regular "$nuinui_e2e_vscode_owner" || return 1
+    nuinui_e2e_vscode_recorded_artifact_identity=$(nuinui_ownership_field \
+      "$nuinui_e2e_vscode_owner" vscode_artifact_identity) || return 1
+    nuinui_e2e_host_vscode__identity_matches \
+      "$nuinui_e2e_vscode_recorded_artifact_identity" \
+      "$nuinui_e2e_vscode_artifact_identity" || return 1
+    # Retain the durable owner bytes; only this command's comparison uses them.
+    nuinui_e2e_vscode_artifact_identity=$nuinui_e2e_vscode_recorded_artifact_identity
     nuinui_e2e_host_vscode__owner_content |
       cmp -s - "$nuinui_e2e_vscode_owner" || return 1
   elif [ "$nuinui_e2e_vscode_verify_mode" = complete ]; then
@@ -1207,7 +1242,7 @@ nuinui_e2e_host_vscode__remove_root() {
     fi
   done
   [ -z "$(find "$nuinui_e2e_vscode_root" -mindepth 1 -maxdepth 1 -print 2>/dev/null)" ] || return 1
-  [ "$(nuinui_e2e_host_vscode__root_identity "$nuinui_e2e_vscode_root")" = \
-    "$nuinui_e2e_host_root_identity" ] || return 1
+  nuinui_e2e_host_vscode__identity_matches "$nuinui_e2e_host_root_identity" \
+    "$(nuinui_e2e_host_vscode__root_identity "$nuinui_e2e_vscode_root")" || return 1
   rmdir "$nuinui_e2e_vscode_root"
 }
