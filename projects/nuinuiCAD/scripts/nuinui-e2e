@@ -2402,8 +2402,12 @@ nuinui_e2e__finish_start() {
   nuinui_e2e_finish_start_content=$(nuinui_e2e__starting_content \
     "$nuinui_e2e_finish_idle_sha") || return 1
   nuinui_e2e_finish_active_content=$(nuinui_e2e__record_base) || return 1
-  nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
-    "$nuinui_e2e_expected_tested" || return 1
+  # Normal start already fetched and validated the tested revision before
+  # publishing its intent. Recovery is a new command and must refresh afresh.
+  if [ "$nuinui_e2e_finish_interrupted" = no ]; then
+    nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || return 1
+  fi
   if nuinui_e2e__exists "$nuinui_e2e_finish_active"; then
     nuinui_e2e__read_expected_active "$nuinui_e2e_finish_active" &&
       nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
@@ -2419,7 +2423,6 @@ nuinui_e2e__finish_start() {
     return 0
   fi
 
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" || return 1
   [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
     git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
@@ -2451,13 +2454,14 @@ nuinui_e2e__finish_start() {
   fi
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_expected_tested" &&
-    nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
-      "$nuinui_e2e_expected_tested" || {
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_expected_tested" ] || {
         echo 'BLOCKED: tested checkout verification failed; startup intent retained'
         return 1
       }
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
-  nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" &&
+  [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
+    "$nuinui_e2e_manifest_sha" ] &&
+    nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" &&
     [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_expected_tested" || {
@@ -2637,14 +2641,13 @@ nuinui_e2e_start() {
       echo 'BLOCKED: Human-test idle checkout cannot safely transition to tested SHA'
       return 1
     }
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
   [ "$(git -C "$nuinui_e2e_expected_repo" rev-parse HEAD 2>/dev/null)" = \
     "$nuinui_e2e_idle_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_idle_sha" &&
-    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_expected_tested" ] || {
-        echo 'BLOCKED: freshness or checkout topology changed before startup intent'
+    [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
+      "$nuinui_e2e_manifest_sha" ] || {
+        echo 'BLOCKED: checkout or lane manifest changed before startup intent'
         return 1
       }
   nuinui_e2e_starting_content=$(nuinui_e2e__starting_content \
