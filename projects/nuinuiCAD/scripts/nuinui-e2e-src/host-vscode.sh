@@ -249,6 +249,7 @@ nuinui_e2e_host_vscode__app_info() {
 }
 
 nuinui_e2e_host_vscode__validate_artifacts() {
+  nuinui_e2e_vscode_artifacts_ready=no
   [ "$#" = 4 ] || return 2
   nuinui_e2e_vscode_tested=$1
   nuinui_e2e_vscode_fixture=$2
@@ -397,7 +398,8 @@ PY
   nuinui_e2e_vscode_artifact_identity=$nuinui_e2e_vscode_snapshot_stat
   nuinui_e2e_vscode_artifact_snapshot=$nuinui_e2e_vscode_snapshot
   nuinui_e2e_vscode_artifact_identity_name=$nuinui_e2e_vscode_selected
-  nuinui_e2e_host_vscode__configure_paths
+  nuinui_e2e_host_vscode__configure_paths || return 1
+  nuinui_e2e_vscode_artifacts_ready=yes
 }
 
 nuinui_e2e_host_vscode__configure_paths() {
@@ -1090,9 +1092,6 @@ nuinui_e2e_host_vscode__launch_and_ready() {
     echo 'BLOCKED: real VS Code activation requires explicit production mode'
     return 1
   fi
-  nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_host_tested" \
-    "$nuinui_e2e_host_fixture" "$nuinui_e2e_host_port" \
-    "$nuinui_e2e_host_locale" || return 1
   [ "$nuinui_e2e_vscode_fixture_sha" = "$nuinui_e2e_host_fixture_sha" ] || return 1
   nuinui_e2e_host_vscode__verify_root "$nuinui_e2e_vscode_root" complete || return 1
   nuinui_e2e_host_vscode__port_free "$nuinui_e2e_host_port" || return 1
@@ -1123,9 +1122,6 @@ nuinui_e2e_host_vscode__launch_and_ready() {
   while [ "$nuinui_e2e_vscode_attempt" -lt 120 ]; do
     if nuinui_e2e_host_vscode__readiness; then
       nuinui_e2e_host_vscode__verify_process_state ready || return 1
-      nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_host_tested" \
-        "$nuinui_e2e_host_fixture" "$nuinui_e2e_host_port" \
-        "$nuinui_e2e_host_locale" || return 1
       [ "$nuinui_e2e_vscode_fixture_sha" = "$nuinui_e2e_host_fixture_sha" ] || return 1
       nuinui_e2e_host_vscode__verify_root "$nuinui_e2e_vscode_root" complete || return 1
       nuinui_e2e_host_vscode__verify_owned_process \

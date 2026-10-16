@@ -299,9 +299,18 @@ nuinui_e2e_host__load_state() {
     fixture-no-process) ;;
     vscode-isolated)
       if [ "$nuinui_e2e_host_has_cleanup" = no ]; then
-        nuinui_e2e_host_vscode__validate_artifacts \
-          "$nuinui_e2e_host_tested" "$nuinui_e2e_host_fixture" \
-          "$nuinui_e2e_host_port" "$nuinui_e2e_host_locale" || return 1
+        # Reuse artifacts only within this host-prepare invocation. Other commands
+        # and different inputs must perform their own validation.
+        if [ "$nuinui_e2e_operation" != host-prepare ] ||
+          [ "${nuinui_e2e_vscode_artifacts_ready:-no}" != yes ] ||
+          [ "$nuinui_e2e_vscode_tested" != "$nuinui_e2e_host_tested" ] ||
+          [ "$nuinui_e2e_vscode_fixture" != "$nuinui_e2e_host_fixture" ] ||
+          [ "$nuinui_e2e_vscode_port" != "$nuinui_e2e_host_port" ] ||
+          [ "$nuinui_e2e_vscode_locale" != "$nuinui_e2e_host_locale" ]; then
+          nuinui_e2e_host_vscode__validate_artifacts \
+            "$nuinui_e2e_host_tested" "$nuinui_e2e_host_fixture" \
+            "$nuinui_e2e_host_port" "$nuinui_e2e_host_locale" || return 1
+        fi
         [ "$nuinui_e2e_vscode_fixture_sha" = "$nuinui_e2e_host_fixture_sha" ] || return 1
         nuinui_e2e_host_vscode__configure_paths || return 1
       fi
@@ -771,16 +780,15 @@ nuinui_e2e_host__assert_input_match() {
   }
 }
 
-nuinui_e2e_host_check() {
-  [ "$#" = 6 ] || return 2
+nuinui_e2e_host__check() {
+  [ "$#" = 7 ] || return 2
+  nuinui_e2e_host_check_operation=$1
+  shift
   nuinui_e2e_host_requested_adapter=${nuinui_e2e_host_adapter_arg:-fixture-no-process}
   case "$nuinui_e2e_host_requested_adapter" in fixture-no-process|vscode-isolated) ;; *) return 2 ;; esac
   nuinui_e2e_host_adapter=$nuinui_e2e_host_requested_adapter
-  nuinui_e2e_host__operation_context host-check "$1" "$2" "$3" || return 1
-  if [ "$nuinui_e2e_host_requested_adapter" = vscode-isolated ]; then
-    nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
-      "$4" "$5" "$6" || return 1
-  fi
+  nuinui_e2e_host__operation_context "$nuinui_e2e_host_check_operation" \
+    "$1" "$2" "$3" || return 1
   nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || {
     echo 'BLOCKED: host check requires the exact active native generation'
     return 1
@@ -794,10 +802,6 @@ nuinui_e2e_host_check() {
     echo 'BLOCKED: host-session metadata or resources are conflicting or malformed'
     return 1
   }
-  if [ "$nuinui_e2e_host_requested_adapter" = vscode-isolated ] &&
-    [ "$nuinui_e2e_host_state" = ABSENT ]; then
-    nuinui_e2e_host_vscode__port_free "$5" || return 1
-  fi
   nuinui_e2e_host__assert_input_match "$4" "$5" "$6" || {
     echo 'BLOCKED: host fixture request differs from the exact recorded session'
     return 1
@@ -806,6 +810,16 @@ nuinui_e2e_host_check() {
     ABSENT|READY) ;;
     *) echo "BLOCKED: host session is $nuinui_e2e_host_state"; return 1 ;;
   esac
+  if [ "$nuinui_e2e_host_requested_adapter" = vscode-isolated ] &&
+    [ "$nuinui_e2e_host_state" = ABSENT ]; then
+    nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
+      "$4" "$5" "$6" || return 1
+    nuinui_e2e_host_vscode__port_free "$5" || return 1
+  fi
+}
+
+nuinui_e2e_host_check() {
+  nuinui_e2e_host__check host-check "$@" || return $?
   if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
     nuinui_e2e_host_check_heading='HOST FIXTURE CHECK READY'
   else
@@ -819,20 +833,11 @@ nuinui_e2e_host_check() {
     "$nuinui_e2e_host_locale" "$nuinui_e2e_host_adapter" "$nuinui_e2e_host_state"
 }
 
-nuinui_e2e_host_prepare() {
-  [ "$#" = 6 ] || return 2
-  nuinui_e2e_host_requested_adapter=${nuinui_e2e_host_adapter_arg:-fixture-no-process}
-  case "$nuinui_e2e_host_requested_adapter" in fixture-no-process|vscode-isolated) ;; *) return 2 ;; esac
-  nuinui_e2e_host_check_output=$(nuinui_e2e_host_check \
-    "$1" "$2" "$3" "$4" "$5" "$6") || {
-      printf '%s\n' "$nuinui_e2e_host_check_output"
-      return 1
-    }
-  nuinui_e2e_host__operation_context host-prepare "$1" "$2" "$3" || return 1
-  nuinui_e2e_host_adapter=$nuinui_e2e_host_requested_adapter
+nuinui_e2e_host_prepare() (
+  # Keep resolved artifacts local to this command, including library callers.
+  nuinui_e2e_vscode_artifacts_ready=no
+  nuinui_e2e_host__check host-prepare "$@" || return $?
   if [ "$nuinui_e2e_host_adapter" = vscode-isolated ]; then
-    nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
-      "$4" "$5" "$6" || return 1
     { [ "$nuinui_e2e_vscode_fake_app" = yes ] ||
       { [ "$nuinui_e2e_self_test" = yes ] &&
         [ "$nuinui_e2e_vscode_test_app" = yes ]; } ||
@@ -841,17 +846,6 @@ nuinui_e2e_host_prepare() {
       return 1
     }
   fi
-  nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || {
-    echo 'BLOCKED: host preparation requires the exact active native generation'
-    return 1
-  }
-  nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-    "$nuinui_e2e_expected_tested" || return 1
-  nuinui_e2e_host__load_state || return 1
-  nuinui_e2e_host__assert_input_match "$4" "$5" "$6" || {
-    echo 'BLOCKED: host preparation parameters conflict with the exact recorded session'
-    return 1
-  }
   if [ "$nuinui_e2e_host_state" = READY ]; then
     if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
       echo 'HOST FIXTURE ALREADY READY (fixture-no-process)'
@@ -1011,7 +1005,7 @@ nuinui_e2e_host_prepare() {
   echo "generation=$nuinui_e2e_expected_generation"
   echo "root=$nuinui_e2e_host_root"
   echo 'mutation=yes'
-}
+)
 
 nuinui_e2e_host_status() {
   [ "$#" = 3 ] || return 2
