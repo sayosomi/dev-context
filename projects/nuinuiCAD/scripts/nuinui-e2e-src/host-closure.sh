@@ -2,43 +2,35 @@
 
 nuinui_e2e_host_closure() {
   [ "$#" = 3 ] || return 2
-  nuinui_e2e_host_closure_manifest=$1
-  nuinui_e2e_host_closure_lane=$2
-  nuinui_e2e_host_closure_issue=$3
-  nuinui_e2e_host__operation_context host-closure \
-    "$nuinui_e2e_host_closure_manifest" \
-    "$nuinui_e2e_host_closure_lane" \
-    "$nuinui_e2e_host_closure_issue" || return 1
+  echo 'HOST CLOSURE: checking session' >&2
+  nuinui_e2e_host__operation_context host-closure "$1" "$2" "$3" || return 1
   nuinui_e2e_host__load_state || {
     echo 'BLOCKED: host closure cannot resolve one exact validated native generation'
     return 1
   }
-  if [ "$nuinui_e2e_host_state" = ABSENT ]; then
-    echo 'BLOCKED: host closure requires an active native generation and its host session'
-    return 1
-  fi
-  if [ "$nuinui_e2e_host_state" != RELEASED ]; then
-    nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || {
-      echo 'BLOCKED: host closure requires the exact active native generation'
+  case "$nuinui_e2e_host_state" in
+    ABSENT)
+      echo 'BLOCKED: host closure requires an active native generation and its host session'
       return 1
-    }
-    nuinui_e2e_host_closure_cleanup_output=$(nuinui_e2e_host_cleanup \
-      "$nuinui_e2e_host_closure_manifest" \
-      "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_issue") || {
-        printf '%s\n' "$nuinui_e2e_host_closure_cleanup_output"
+      ;;
+    CLEANED|RELEASED) ;;
+    *)
+      nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" || {
+        echo 'BLOCKED: host closure requires the exact active native generation'
+        return 1
+      }
+      echo 'HOST CLOSURE: cleaning up host' >&2
+      # Stream stage output. Subshells keep stage-local context changes isolated.
+      (nuinui_e2e_host_abnormal_exit_recovery=no; nuinui_e2e_host__cleanup) || {
         echo 'BLOCKED: host-cleanup stage failed; evidence retained'
         return 1
       }
-    printf '%s\n' "$nuinui_e2e_host_closure_cleanup_output"
-  fi
-
-  nuinui_e2e_host__operation_context host-closure \
-    "$nuinui_e2e_host_closure_manifest" \
-    "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_issue" || return 1
-  nuinui_e2e_host__load_state || {
-    echo 'BLOCKED: host state changed after cleanup; native release was not attempted'
-    return 1
-  }
+      nuinui_e2e_host__load_state || {
+        echo 'BLOCKED: host state changed after cleanup; native release was not attempted'
+        return 1
+      }
+      ;;
+  esac
   case "$nuinui_e2e_host_state" in CLEANED|RELEASED) ;; *)
     echo 'BLOCKED: host cleanup is not durably verified; native release was not attempted'
     return 1 ;;
@@ -48,51 +40,31 @@ nuinui_e2e_host_closure() {
     return 1
   }
 
+  # Context and full topology/history were checked at entry. Reuse the existing
+  # stage bodies; each still verifies its current generation and mutation data.
   if [ "$nuinui_e2e_host_state" != RELEASED ]; then
-    nuinui_e2e_host_closure_release_output=$(nuinui_e2e_release \
-      "$nuinui_e2e_host_closure_manifest" \
-      "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_issue") || {
-        printf '%s\n' "$nuinui_e2e_host_closure_release_output"
-        echo 'BLOCKED: native release stage failed; receipt and recovery evidence retained'
-        return 1
-      }
-    printf '%s\n' "$nuinui_e2e_host_closure_release_output"
+    echo 'HOST CLOSURE: releasing native generation' >&2
+    (nuinui_e2e__release) || {
+      echo 'BLOCKED: native release stage failed; receipt and recovery evidence retained'
+      return 1
+    }
+    nuinui_e2e_host__load_state || {
+      echo 'BLOCKED: post-release host and native records are inconsistent'
+      return 1
+    }
   fi
-
-  nuinui_e2e_host__operation_context host-closure \
-    "$nuinui_e2e_host_closure_manifest" \
-    "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_issue" || return 1
-  nuinui_e2e_host__load_state || {
-    echo 'BLOCKED: post-release host and native records are inconsistent'
-    return 1
-  }
   [ "$nuinui_e2e_host_state" = RELEASED ] || {
     echo 'BLOCKED: exact native release receipt and idle checkout are not verified'
     return 1
   }
-  nuinui_e2e_host_closure_final_output=$(nuinui_e2e_closure \
-    "$nuinui_e2e_host_closure_manifest" \
-    "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_issue") || {
-      printf '%s\n' "$nuinui_e2e_host_closure_final_output"
-      echo 'BLOCKED: native final-closure stage failed; evidence retained'
-      return 1
-    }
-  printf '%s\n' "$nuinui_e2e_host_closure_final_output"
+  echo 'HOST CLOSURE: verifying completion' >&2
+  (nuinui_e2e__closure) || {
+    echo 'BLOCKED: native final-closure stage failed; evidence retained'
+    return 1
+  }
 
-  nuinui_e2e_host__operation_context host-closure \
-    "$nuinui_e2e_host_closure_manifest" \
-    "$nuinui_e2e_expected_lane" "$nuinui_e2e_expected_issue" || return 1
-  nuinui_e2e_host__load_state || return 1
-  [ "$nuinui_e2e_host_state" = RELEASED ] || return 1
   nuinui_e2e_host_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
   nuinui_e2e__read_expected_release "$nuinui_e2e_host_release" || return 1
-  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_r_idle_sha" ] &&
-    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-      "$nuinui_e2e_r_idle_sha" || {
-        echo 'BLOCKED: exact native receipt and authoritative clean detached idle checkout failed final verification'
-        return 1
-      }
   echo 'HOST AND NATIVE CLOSURE VERIFIED'
   echo "issue=$nuinui_e2e_expected_issue"
   echo "lane=$nuinui_e2e_expected_lane"

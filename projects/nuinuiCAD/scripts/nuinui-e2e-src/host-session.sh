@@ -1044,6 +1044,13 @@ nuinui_e2e_host_cleanup() {
     *) return 2 ;;
   esac
   nuinui_e2e_host__operation_context host-cleanup "$1" "$2" "$3" || return 1
+  nuinui_e2e_host__cleanup
+}
+
+# Shared cleanup body for an already selected and preflighted command context.
+nuinui_e2e_host__cleanup() {
+  [ "$#" = 0 ] || return 2
+  nuinui_e2e_operation=host-cleanup
   nuinui_e2e_host__load_state || {
     echo 'BLOCKED: host cleanup cannot prove exact session and resource ownership'
     return 1
@@ -1095,8 +1102,9 @@ nuinui_e2e_host_cleanup() {
     echo 'BLOCKED: injected interruption after verified fixture removal; cleanup intent retained'
     return 1
   }
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
-  nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" &&
+  [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
+    "$nuinui_e2e_manifest_sha" ] &&
+    nuinui_e2e__read_expected_active "$nuinui_e2e_host_active" &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_expected_tested" || {
         echo 'BLOCKED: exact active generation or tested checkout changed after resource removal'
@@ -1139,6 +1147,7 @@ nuinui_e2e_host_cleanup() {
 
 nuinui_e2e_host_recover() {
   [ "$#" = 3 ] || return 2
+  echo 'HOST RECOVERY: checking session' >&2
   nuinui_e2e_host_abnormal_exit_recovery=no
   nuinui_e2e_host__operation_context host-recover "$1" "$2" "$3" || return 1
   nuinui_e2e_host__load_state || {
@@ -1161,21 +1170,10 @@ nuinui_e2e_host_recover() {
         nuinui_e2e_host_abnormal_exit_recovery=yes
       fi
       nuinui_e2e_host_operation_before=$nuinui_e2e_host_state
-      nuinui_e2e_host_recovery_token=
-      [ "${nuinui_e2e_host_abnormal_exit_recovery:-no}" = yes ] &&
-        nuinui_e2e_host_recovery_token=abnormal-exit-recovery
-      if [ "$nuinui_e2e_host_recovery_token" = abnormal-exit-recovery ]; then
-        nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3" \
-          "$nuinui_e2e_host_recovery_token") || {
-            echo "$nuinui_e2e_host_recovered"
-            return 1
-          }
-      else
-        nuinui_e2e_host_recovered=$(nuinui_e2e_host_cleanup "$1" "$2" "$3") || {
-          echo "$nuinui_e2e_host_recovered"
-          return 1
-        }
-      fi
+      nuinui_e2e_host_recovered=$(nuinui_e2e_host__cleanup) || {
+        printf '%s\n' "$nuinui_e2e_host_recovered"
+        return 1
+      }
       printf '%s\n' "$nuinui_e2e_host_recovered"
       if [ "$nuinui_e2e_host_adapter" = fixture-no-process ]; then
         echo "HOST FIXTURE RECOVERED FROM $nuinui_e2e_host_operation_before"

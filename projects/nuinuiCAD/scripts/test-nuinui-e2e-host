@@ -322,6 +322,45 @@ fingerprint() {
   host_root_inventory
 }
 
+# Focused exit-path check without running the longer host lifecycle suite.
+if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = closure ]; then
+  new_fixture one
+  ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$fixture_file" 43123 default
+  host_ok host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  closure_tested_sha=$fixture_tested_sha
+  advance_default closure-idle
+  closure_idle_sha=$fixture_tested_sha
+  fixture_tested_sha=$closure_tested_sha
+  /bin/sh -x "$helper" host-closure --self-test --manifest "$fixture_manifest" \
+    --issue "$fixture_issue" --generation "$fixture_generation" \
+    --tested-sha "$fixture_tested_sha" --lane human >"$output" 2>&1 || fail 'closure'
+  contains 'HOST AND NATIVE CLOSURE VERIFIED'
+  closure_preflights=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e__preflight" {n++} END {print n+0}' "$output")
+  [ "$closure_preflights" = 1 ] || fail "closure repeated full preflight: $closure_preflights"
+  [ ! -e "$(active_path)" ] &&
+    [ ! -e "$(native_path releasing "$fixture_generation")" ] &&
+    [ -f "$(native_path release "$fixture_generation")" ] &&
+    [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$closure_idle_sha" ] || fail 'closure release boundary'
+  host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  contains 'HOST AND NATIVE CLOSURE VERIFIED'
+
+  # Start B with A retained as history, then close directly from READY.
+  fixture_generation=host-closure-next-0001
+  fixture_tested_sha=$closure_idle_sha
+  ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$fixture_file" 43123 default
+  host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  contains 'HOST FIXTURE CLEANUP VERIFIED'
+  contains 'HOST AND NATIVE CLOSURE VERIFIED'
+  [ ! -e "$(active_path)" ] &&
+    [ ! -e "$(host_root_path "$fixture_generation")" ] || fail 'direct closure cleanup'
+  echo 'HOST CLOSURE SELFTEST PASS (one full preflight; cleaned, duplicate and ready paths)'
+  exit 0
+fi
+
 # Zero Human-test lanes and strict host-specific CLI parsing.
 new_fixture zero
 host_blocked host-check "$fixture_issue" "$fixture_generation" '' \
@@ -480,16 +519,15 @@ contains 'mutation=no-op'
 host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 contains 'HOST SESSION CLEANED'
 
-# host-closure runs host cleanup, native release, then final native closure.
+# An already cleaned host proceeds directly to native release and final closure.
 if ! invoke host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"; then
   cat "$output" >&2
   fail 'checked host closure failed'
 fi
-cleanup_line=$(grep -n 'HOST FIXTURE ALREADY CLEANED' "$output" | cut -d: -f1)
 release_line=$(grep -n 'NATIVE E2E FIXTURE RELEASED' "$output" | cut -d: -f1)
 closure_line=$(grep -n 'NATIVE E2E FINAL CLOSURE VERIFIED' "$output" | cut -d: -f1)
-[ -n "$cleanup_line" ] && [ -n "$release_line" ] && [ -n "$closure_line" ] &&
-  [ "$cleanup_line" -lt "$release_line" ] && [ "$release_line" -lt "$closure_line" ] ||
+[ -n "$release_line" ] && [ -n "$closure_line" ] &&
+  [ "$release_line" -lt "$closure_line" ] ||
   fail 'host closure stages ran out of order'
 host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 contains 'HOST SESSION RELEASED'

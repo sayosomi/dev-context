@@ -1318,6 +1318,13 @@ nuinui_e2e_release() {
   nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e__release
+}
+
+# Internal stage for a context already selected and preflighted by its caller.
+nuinui_e2e__release() {
+  [ "$#" = 0 ] || return 2
+  nuinui_e2e_operation=release
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
   nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
   if ! nuinui_e2e__exists "$nuinui_e2e_active"; then
@@ -1379,8 +1386,9 @@ nuinui_e2e_release() {
   }
   # Durable intent is published before any checkout change. It records the
   # exact generation and target idle SHA needed by narrowly bounded recovery.
-  nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
-  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+  [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
+    "$nuinui_e2e_manifest_sha" ] &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
     "$nuinui_e2e_idle_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_expected_tested" || {
@@ -1591,6 +1599,13 @@ nuinui_e2e_closure() {
   nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
+  nuinui_e2e__closure
+}
+
+# Internal stage for a context already selected and preflighted by its caller.
+nuinui_e2e__closure() {
+  [ "$#" = 0 ] || return 2
+  nuinui_e2e_operation=closure
   nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
   nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
   nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
