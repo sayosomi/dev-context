@@ -352,6 +352,29 @@ advance_default() {
   git -C "$fixture_impl" push -q origin main || fail 'push advanced fixture main'
 }
 
+# Keep startup performance checks independent of the longer lifecycle suite.
+if [ "${NUINUI_E2E_TEST_CASE:-all}" = startup ]; then
+  new_fixture one
+  startup_idle_sha=$fixture_tested_sha
+  advance_default startup-performance
+  fixture_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+  expect_ok admit "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  /bin/sh -x "$helper" start --self-test --manifest "$fixture_manifest" \
+    --issue "$fixture_issue" --generation "$fixture_generation" \
+    --tested-sha "$fixture_tested_sha" --lane human >"$output" 2>&1 || fail 'startup'
+  assert_contains 'NATIVE E2E FIXTURE STARTED'
+  startup_preflights=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e__preflight" {n++} END {print n+0}' "$output")
+  startup_fetches=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e__refresh_tested_ref" {n++} END {print n+0}' "$output")
+  [ "$startup_preflights" = 1 ] && [ "$startup_fetches" = 1 ] ||
+    fail "startup repeated topology/history validation or fetch: $startup_preflights / $startup_fetches"
+  [ "$startup_idle_sha" != "$fixture_tested_sha" ] &&
+    [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_tested_sha" ] &&
+    [ -f "$(active_path)" ] &&
+    [ ! -e "$(metadata_path starting "$fixture_generation")" ] || fail 'startup fixation'
+  echo 'NATIVE STARTUP SELFTEST PASS (one preflight, one fetch)'
+  exit 0
+fi
+
 # Candidate identity conversions must be reversible and reject aliases.
 NUINUI_E2E_LIBRARY_ONLY=1
 export NUINUI_E2E_LIBRARY_ONLY

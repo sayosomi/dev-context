@@ -324,6 +324,11 @@ invoke() {
     set -- "$@" --fixture "$host_fixture_arg" --port "$host_port_arg" \
       --locale "$host_locale_arg" --adapter "$host_adapter_arg"
   fi
+  if [ "${fixture_trace_prepare:-no}" = yes ] && [ "$command_name" = host-prepare ]; then
+    set -- /bin/sh -x "$helper" "$@"
+  else
+    set -- "$helper" "$@"
+  fi
   if [ "$host_test_root_mode" = production ]; then
     env HOME="$host_test_home" NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT=yes \
       NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
@@ -331,14 +336,14 @@ invoke() {
       NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
       NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
       NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
-      "$helper" "$@" > "$output" 2>&1
+      "$@" > "$output" 2>&1
   else
     env NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
       NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
       NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
       NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
       NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
-      "$helper" "$@" > "$output" 2>&1
+      "$@" > "$output" 2>&1
   fi
 }
 
@@ -421,7 +426,12 @@ assert_no_mutation() { [ "$(fingerprint)" = "$before_fingerprint" ] || fail 'den
 prepare_generation() {
   fixture_generation=$1
   invoke admit "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" || { cat "$output" >&2; fail 'native admission'; }
+  fixture_start_time=$(python3 -c 'import time; print(time.monotonic())')
   invoke start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" || { cat "$output" >&2; fail 'native start'; }
+  python3 - "$fixture_start_time" <<'PYTHON'
+import sys,time
+print(f"CHECKOUT START SECONDS: {time.monotonic()-float(sys.argv[1]):.3f}")
+PYTHON
 }
 
 [ "$(uname -s)" = Darwin ] || fail 'VS Code adapter tests require macOS'
@@ -449,9 +459,24 @@ blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested
 assert_no_mutation
 mv "$fixture_root/extension.js.saved" "$extension_file"
 
+fixture_trace_prepare=yes
+fixture_prepare_time=$(python3 -c 'import time; print(time.monotonic())')
 ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
   "$fixture_file" "$fixture_port" default vscode-isolated
+fixture_trace_prepare=no
+python3 - "$fixture_prepare_time" <<'PYTHON'
+import sys,time
+print(f"HOST PREPARE SECONDS: {time.monotonic()-float(sys.argv[1]):.3f}")
+PYTHON
 contains 'HOST SESSION READY (adapter=vscode-isolated'
+validation_calls=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e_host_vscode__validate_artifacts" {n++} END {print n+0}' "$output")
+snapshot_calls=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e_host_vscode__snapshot_info" {n++} END {print n+0}' "$output")
+echo "STARTUP VALIDATION CALLS: $validation_calls; SNAPSHOT HASH PASSES: $snapshot_calls"
+[ "$validation_calls" = 1 ] && [ "$snapshot_calls" = 1 ] || fail 'startup must validate artifacts exactly once'
+if [ "${NUINUI_E2E_VSCODE_TEST_CASE:-all}" = startup ]; then
+  echo 'VSCODE STARTUP SELFTEST PASS'
+  exit 0
+fi
 direct_root=$(host_root_path "$fixture_generation")
 direct_pid=$(sed -n 's/^pid=//p' "$direct_root/process-owner-v1")
 kill -0 "$direct_pid" 2>/dev/null || fail 'direct application exited before status'
