@@ -85,11 +85,16 @@ new_production_root_fixture() {
 }
 
 call_helper() {
+  if [ "${fixture_trace_helper:-no}" = yes ]; then
+    set -- /bin/sh -x "$helper" "$@"
+  else
+    set -- "$helper" "$@"
+  fi
   if [ "$host_test_root_mode" = production ]; then
     env HOME="$host_test_home" NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT=yes \
-      "$helper" "$@"
+      "$@"
   else
-    "$helper" "$@"
+    "$@"
   fi
 }
 
@@ -323,8 +328,13 @@ fingerprint() {
 }
 
 # Focused exit-path check without running the longer host lifecycle suite.
-if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = closure ]; then
-  new_fixture one
+if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = closure ] ||
+  [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = critical-path ]; then
+  if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = critical-path ]; then
+    new_production_root_fixture
+  else
+    new_fixture one
+  fi
   ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
   host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
     "$fixture_tested_sha" "$fixture_file" 43123 default
@@ -333,9 +343,11 @@ if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = closure ]; then
   advance_default closure-idle
   closure_idle_sha=$fixture_tested_sha
   fixture_tested_sha=$closure_tested_sha
-  /bin/sh -x "$helper" host-closure --self-test --manifest "$fixture_manifest" \
+  fixture_trace_helper=yes
+  call_helper host-closure --self-test --manifest "$fixture_manifest" \
     --issue "$fixture_issue" --generation "$fixture_generation" \
     --tested-sha "$fixture_tested_sha" --lane human >"$output" 2>&1 || fail 'closure'
+  fixture_trace_helper=no
   contains 'HOST AND NATIVE CLOSURE VERIFIED'
   closure_preflights=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e__preflight" {n++} END {print n+0}' "$output")
   [ "$closure_preflights" = 1 ] || fail "closure repeated full preflight: $closure_preflights"
@@ -346,12 +358,47 @@ if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = closure ]; then
   host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
   contains 'HOST AND NATIVE CLOSURE VERIFIED'
 
+  if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = critical-path ]; then
+    completion=$(native_path release "$fixture_generation")
+    cp "$completion" "$fixture_root/completion.saved"
+    completion_before=$(shasum -a 256 "$completion")
+    printf 'broken completion\n' > "$completion"
+    blocked start "$fixture_issue" host-closure-next-0001 human "$closure_idle_sha"
+    cp "$fixture_root/completion.saved" "$completion"
+    mv "$completion" "$fixture_root/completion.missing"
+    blocked start "$fixture_issue" host-closure-next-0001 human "$closure_idle_sha"
+    mv "$fixture_root/completion.missing" "$completion"
+
+    # A stale root is still a conflict, including the former long HOME path.
+    stale_root=$(printf '%s/.nuinuicad/e2e-hosts/.nuinui-e2e-host-%s' "$host_test_home" \
+      "$(printf '%s\n' "$fixture_generation" | shasum -a 256 | awk '{print $1}')")
+    mkdir "$stale_root"
+    blocked start "$fixture_issue" host-closure-next-0001 human "$closure_idle_sha"
+    [ -d "$stale_root" ] || fail 'startup removed a conflicting old root'
+    rmdir "$stale_root"
+
+    # Completion alone is sufficient; retired preparation details are optional.
+    for retired_kind in intent handoff ready cleanup-pending cleanup; do
+      rm -f "$(host_path "$retired_kind" "$fixture_generation")"
+    done
+    rm "$(native_path cleanup "$fixture_generation")"
+    blocked start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+    [ "$(shasum -a 256 "$completion")" = "$completion_before" ] || fail 'completion record changed'
+  fi
+
   # Start B with A retained as history, then close directly from READY.
   fixture_generation=host-closure-next-0001
   fixture_tested_sha=$closure_idle_sha
   ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
   host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
     "$fixture_tested_sha" "$fixture_file" 43123 default
+  if [ "${NUINUI_E2E_HOST_TEST_CASE:-all}" = critical-path ]; then
+    current_root=$(host_root_path "$fixture_generation")
+    printf 'preserve\n' > "$current_root/foreign.txt"
+    host_blocked host-cleanup "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+    [ -f "$current_root/foreign.txt" ] || fail 'cleanup removed foreign data'
+    rm "$current_root/foreign.txt"
+  fi
   host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
   contains 'HOST FIXTURE CLEANUP VERIFIED'
   contains 'HOST AND NATIVE CLOSURE VERIFIED'
@@ -608,7 +655,7 @@ close_recovered_generation "$recovered_resources" "$after_resources_next" \
 complete_recovered_generation "$after_resources_next" "$after_intent_next" \
   after-host-intent after-intent-recovery
 
-# Corrupt native cleanup proof and missing native release receipt must both block B.
+# Corrupt completion proof and missing native release receipt must both block B.
 host_ok host-prepare "$fixture_issue" "$after_intent_next" human \
   "$fixture_tested_sha" "$fixture_file" 43123
 if ! invoke host-closure "$fixture_issue" "$after_intent_next" human \
@@ -617,22 +664,22 @@ if ! invoke host-closure "$fixture_issue" "$after_intent_next" human \
   fail 'ready generation could not close before final-evidence refusals'
 fi
 contains 'NATIVE E2E FINAL CLOSURE VERIFIED'
-recovered_native_cleanup=$(native_path cleanup "$recovered_resources")
+recovered_native_completion=$(native_path release "$recovered_resources")
 recovered_native_release=$(native_path release "$recovered_resources")
-cp "$recovered_native_cleanup" "$fixture_root/native-cleanup.saved" ||
-  fail 'could not save disposable native cleanup proof'
-printf 'corrupt evidence\n' > "$recovered_native_cleanup"
-advance_default after-corrupt-native-cleanup-proof
+cp "$recovered_native_completion" "$fixture_root/completion.saved" ||
+  fail 'could not save disposable completion receipt'
+printf 'corrupt evidence\n' > "$recovered_native_completion"
+advance_default after-corrupt-completion-proof
 before=$(fingerprint)
 if invoke start "$fixture_issue" host-fixture-block-corrupt-proof-0001 \
   human "$fixture_tested_sha"; then
-  fail 'generation started with corrupted native cleanup proof'
+  fail 'generation started with corrupted completion receipt'
 fi
 contains 'PREFLIGHT BLOCKED'
 [ "$(fingerprint)" = "$before" ] ||
-  fail 'blocked start changed metadata while native cleanup proof was corrupt'
-cp "$fixture_root/native-cleanup.saved" "$recovered_native_cleanup" ||
-  fail 'could not restore disposable native cleanup proof'
+  fail 'blocked start changed metadata while completion receipt was corrupt'
+cp "$fixture_root/completion.saved" "$recovered_native_completion" ||
+  fail 'could not restore disposable completion receipt'
 rm "$recovered_native_release"
 advance_default after-missing-native-release-receipt
 before=$(fingerprint)

@@ -332,6 +332,7 @@ PY
       echo 'BLOCKED: selected prepared artifact snapshot is missing or non-canonical'
       return 1
     }
+  echo 'HOST PREPARATION: verifying immutable build' >&2
   nuinui_e2e_vscode_snapshot_rows=$(nuinui_e2e_host_vscode__snapshot_info \
     "$nuinui_e2e_vscode_snapshot" "$nuinui_e2e_vscode_tested" \
     "$nuinui_e2e_vscode_selected") || return 1
@@ -359,6 +360,7 @@ PY
   else
     nuinui_e2e_vscode_app_root='/Applications/Visual Studio Code.app'
   fi
+  echo 'HOST PREPARATION: verifying VS Code application' >&2
   nuinui_e2e_vscode_app_rows=$(nuinui_e2e_host_vscode__app_info \
     "$nuinui_e2e_vscode_app_root") || {
       echo 'BLOCKED: Visual Studio Code application executable provenance could not be verified'
@@ -873,11 +875,11 @@ nuinui_e2e_host_vscode__classify_process_exit() {
 
 nuinui_e2e_host_vscode__readiness() {
   [ "$#" = 0 ] || return 2
-  nuinui_e2e_host_vscode__verify_owned_process \
-    "$nuinui_e2e_vscode_process_pid" || return 1
   nuinui_e2e_vscode_response=$(curl --noproxy '*' --silent --show-error \
     --max-time 1 --fail "http://127.0.0.1:$nuinui_e2e_host_port/json/version" \
     2>/dev/null) || return 1
+  nuinui_e2e_host_vscode__verify_owned_process \
+    "$nuinui_e2e_vscode_process_pid" || return 1
   nuinui_e2e_vscode_readiness_sha=$(printf '%s' "$nuinui_e2e_vscode_response" |
     shasum -a 256 | awk 'NR == 1 {print $1}') || return 1
   nuinui_e2e_valid_digest "$nuinui_e2e_vscode_readiness_sha" || return 1
@@ -1118,8 +1120,9 @@ nuinui_e2e_host_vscode__launch_and_ready() {
     echo 'BLOCKED: injected interruption after VS Code launch record; recovery evidence retained'
     return 1
   }
+  echo 'HOST PREPARATION: waiting for VS Code connection' >&2
   nuinui_e2e_vscode_attempt=0
-  while [ "$nuinui_e2e_vscode_attempt" -lt 120 ]; do
+  while [ "$nuinui_e2e_vscode_attempt" -lt 600 ]; do
     if nuinui_e2e_host_vscode__readiness; then
       nuinui_e2e_host_vscode__verify_process_state ready || return 1
       [ "$nuinui_e2e_vscode_fixture_sha" = "$nuinui_e2e_host_fixture_sha" ] || return 1
@@ -1128,14 +1131,13 @@ nuinui_e2e_host_vscode__launch_and_ready() {
         "$nuinui_e2e_vscode_process_pid" || return 1
       return 0
     fi
-    nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
-      "$nuinui_e2e_vscode_root") || return 1
-    if [ -z "$nuinui_e2e_vscode_owned_pids" ] &&
-      ! kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null; then
-      return 1
+    if ! kill -0 "$nuinui_e2e_vscode_process_pid" 2>/dev/null; then
+      nuinui_e2e_vscode_owned_pids=$(nuinui_e2e_host_vscode__process_ids_for_root \
+        "$nuinui_e2e_vscode_root") || return 1
+      [ -n "$nuinui_e2e_vscode_owned_pids" ] || return 1
     fi
     nuinui_e2e_vscode_attempt=$((nuinui_e2e_vscode_attempt + 1))
-    sleep 0.5
+    sleep 0.1
   done
   return 1
 }

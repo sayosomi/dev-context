@@ -371,6 +371,17 @@ if [ "${NUINUI_E2E_TEST_CASE:-all}" = startup ]; then
     [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_tested_sha" ] &&
     [ -f "$(active_path)" ] &&
     [ ! -e "$(metadata_path starting "$fixture_generation")" ] || fail 'startup fixation'
+  startup_before=$(state_fingerprint)
+  expect_ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  assert_contains 'mutation=no-op'
+  [ "$(state_fingerprint)" = "$startup_before" ] || fail 'duplicate startup changed records'
+  cp "$(active_path)" "$fixture_root/active.saved"
+  for malformed_field in schema_version generation; do
+    awk -F= -v key="$malformed_field" '$1 == key {print $0 " extra"; next} {print}' \
+      "$fixture_root/active.saved" > "$(active_path)"
+    expect_block status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  done
+  cp "$fixture_root/active.saved" "$(active_path)"
   echo 'NATIVE STARTUP SELFTEST PASS (one preflight, one fetch)'
   exit 0
 fi
