@@ -73,6 +73,83 @@ completion reporting continue to apply.
 
 Once the global activation checkpoint above is recorded, this is the normal GitHub-native implementation-agent route.
 
+### Autonomous conformance discovery and repair — explicit implementation-Issue opt-in
+
+Ordinary source implementation and blocking fixes continue to use Luna as the
+default implementation Coding Agent. After D1 is active, one canonical,
+open GitHub implementation Issue may instead explicitly authorize
+**autonomous conformance discovery and repair**. This is a per-Issue scope
+choice within the existing D1 route, not a new activation, approval round,
+label, lane, reservation, or metadata system. Compatible pre-existing SAY
+tasks remain under their existing legacy executor and lifecycle contract.
+For an opted-in native Issue, this section owns executor selection over
+generic Luna-default wording in implementation chat, issue-boundary, or
+skill-selection guidance; apply any relevant skill procedures without treating
+those ordinary-default references as an executor restriction.
+
+The current implementation Issue body must contain the explicit field
+`Autonomous conformance discovery and repair: authorized` and define every
+item below before the mode can start. This is plain Issue-body text, not a new
+label or metadata authority. Do not infer authorization from words such as
+“audit,” “debug,” “test,” or “conformance,” from a linked read-only audit, or
+from historical audit findings.
+
+- **Settled semantic oracle:** cite the current normative nui1 contract and
+  state the exact expected semantics needed to judge the cases. If expected
+  behavior is ambiguous or requires a product/spec decision, do not opt in.
+- **Closed exploration matrix:** enumerate the allowed inputs, transformations,
+  endpoints, and other dimensions precisely enough to establish when every
+  cell is complete. Do not authorize repo-wide or otherwise open-ended search.
+- **Semantic owners and boundaries:** identify the primary compiler,
+  evaluator, transport, or language-service owners in scope, plus any relevant
+  reference and production paths. Do not delegate new owner or architecture
+  choices to the Coding Agent.
+- **Hard numerical budgets:** provide numeric ceilings for accepted programs,
+  production Rust requests where applicable, and other bounded test resources
+  the work needs. Budgets are ceilings, not quotas. D2-C audit defaults of 3
+  defect families, 40 accepted programs, and 80 production Rust requests do
+  not apply to this separate implementation mode. There is no automatic
+  defect-family-count stop.
+- **Acceptance and verification:** define expected results, required controls,
+  reproduction and regression evidence, and the criteria for matrix
+  completion. State which production/reference parity checks apply.
+- **Exclusions and stop conditions:** name out-of-scope semantics, owners,
+  surfaces, resources, and decisions. Require a safe checkpoint if the oracle,
+  matrix, owner, checkout, or contract becomes ambiguous, if work would exceed
+  the authorized boundary or budgets, or if a product/architecture decision is
+  needed.
+
+One Human-selected implementation Coding Agent owns the complete in-scope
+loop for the Issue: generate discriminating compiler-valid cases and calculate
+expected results; run the applicable reference/production checks; independently
+reproduce and reduce each suspected defect with nearby passing controls; locate
+the useful incorrect boundary; add deterministic regressions; make the smallest
+owner-correct fix; and reverify the affected cells against the corrected
+candidate. Continue across multiple distinct defect families until the closed
+matrix is complete, a numeric ceiling is reached, or a real stop condition
+applies. A defect-family count alone never stops the run. Do not report cells
+contaminated by a known defect as evidence; rerun affected cells on the
+corrected candidate. One Issue may cover multiple in-scope defects; do not
+automatically create a separate Bug Issue for each family.
+
+Keep the source edits and tests inside the Issue's stated semantic owners and
+authorized paths. Do not change the product specification speculatively,
+redesign architecture, broaden the matrix, use external resources, or claim a
+Human-only GUI result. If scope or ownership must change, preserve a safe
+checkpoint and return the decision to ChatGPT. Record each distinct family,
+test seed, expected and actual result, exact candidate revision, completed and
+residual matrix cells, source changes, verification, and Git checkpoints in
+the existing Issue/PR surfaces.
+
+This mode remains an implementation Task: use the ordinary D1 Git-only
+admission, single registered implementation checkout, GitHub-native branch and
+checkpoint lifecycle, independent pushed-HEAD review, protected PR/CI, and
+Human Manual E2E requirements. It does not use D2-C audit admission,
+fixed-SHA read-only execution, audit reservations, or audit final-checkout
+closeout. Manual E2E remains Human-only. Human chooses the actual
+implementation-agent product, model, and effort in the Codex UI outside the
+prompt. Do not name, prescribe, or verify those selections in the prompt.
+
 ### Documentation / policy direct execution exception
 
 Repository-owned documentation / specification / policy workはsource-code implementationとは別のexecution classとする。

@@ -2,9 +2,11 @@
 
 ## Authority and scope
 
-This is the sole nuinuiCAD project-policy owner for open-ended evaluator correctness and semantic-conformance exploration. The work covered here is local nuinuiCAD compiler/evaluator/language-service correctness research. It is not a source-implementation role.
+This is the sole nuinuiCAD project-policy owner for read-only D2-C evaluator audits and their executor roles, evidence, budgets, and finding handoff. The work covered here is local nuinuiCAD compiler/evaluator/language-service correctness research. It is not a source-implementation role.
 
-The default first-pass executor is GPT-6.1 Sol at High reasoning. GPT-6 Astra is reserved for explicit escalation after a Sol pass. This policy defines both roles and the handoff for findings. Project checkout constraints are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Current Research/Improvement Work uses GitHub Issues under [`ISSUES.md`](./ISSUES.md): the Issue body owns current scope and acceptance, while comments retain material decisions and audit evidence.
+The default first-pass executor for read-only D2-C audits is GPT-6.1 Sol at High reasoning. GPT-6 Astra is reserved for explicit audit escalation after a Sol pass. This policy defines both audit roles and the handoff for findings. Project checkout constraints are owned by [`CHECKOUTS.md`](./CHECKOUTS.md). Current Research/Improvement Work uses GitHub Issues under [`ISSUES.md`](./ISSUES.md): the Issue body owns current scope and acceptance, while comments retain material decisions and audit evidence.
+
+The separate autonomous conformance discovery-and-repair mode is implementation-side Work, owned by [`CODING-AGENT.md`](./CODING-AGENT.md) and admitted through the D1 route in [`CHECKOUTS.md`](./CHECKOUTS.md). It is not a D2-C audit and does not use this document's fixed-SHA read-only boundary or audit-run limits. A read-only audit Issue, including #1379, never authorizes source changes; a separate canonical implementation Issue must explicitly opt in.
 
 The reservation-free route is the normal route for new GitHub-native evaluator audits only after the D2-C policy PR has been independently reviewed and merged, its change has been read back on authoritative dev-context `main`, and a separate explicit activation checkpoint has been recorded in dev-context #268. Until all three conditions are met, do not start a new reservation-free audit. The D2-B run on [product #1194](https://github.com/sayosomi/nuinuiCAD/issues/1194) is historical operational proof at its recorded SHA, not a fixed revision for future audits. Compatible pre-existing SAY audits already admitted through the reservation lifecycle remain under that lifecycle until a separate retirement checkpoint.
 
@@ -13,17 +15,17 @@ The reservation-free route is the normal route for new GitHub-native evaluator a
 | Owner | Responsibility |
 | --- | --- |
 | ChatGPT | Select Work and set the bounded exploration scope; make semantic and product decisions; triage findings; author or update Issues and implementation contracts; decide whether Astra escalation is warranted; review results and implementation. |
-| GPT-6.1 Sol High | Default first-pass executor for bounded evaluator semantic-conformance, differential, property/metamorphic, reduction, control, and first-boundary exploration. |
-| GPT-6 Astra in Codex | Escalation executor for an explicitly bounded residual or independent high-assurance second pass after Sol. Astra is not the default first-pass executor. |
-| Luna | Own source implementation and blocking fixes, deterministic regression tests, normal verification, integration, and implementation Git work. Luna remains the normal and only implementation Coding Agent. |
+| GPT-6.1 Sol High in the audit role | Default first-pass executor for bounded evaluator semantic-conformance, differential, property/metamorphic, reduction, control, and first-boundary exploration in read-only D2-C audits. |
+| GPT-6 Astra in the audit role | Escalation executor for an explicitly bounded residual or independent high-assurance second pass after Sol in a read-only D2-C audit. Astra is not the default first-pass audit executor. |
+| Ordinary implementation | Luna is the default owner of source implementation and blocking fixes, deterministic regression tests, normal verification, integration, and implementation Git work. |
 
-Neither Sol nor Astra implements fixes.
+In their D2-C audit roles, neither Sol nor Astra implements fixes. A separate implementation Issue may explicitly use the Human-selected Coding Agent mode defined in [`CODING-AGENT.md`](./CODING-AGENT.md); an agent's audit role does not authorize implementation or change the audit Issue's read-only boundary.
 
 ChatGPT reads the latest dev-context Project Context and relevant audit policy before writing a Sol audit prompt, then supplies a self-contained execution contract. Do not routinely send Sol to repeat general dev-context policy research already completed by ChatGPT. This does not waive mandatory current README checks, clarification of missing or conflicting rules, or Sol's own checkout admission, product source/spec verification, audit execution, and evidence duties.
 
 ## Default Sol first pass
 
-All new bounded evaluator exploration starts with GPT-6.1 Sol at High reasoning unless the Human explicitly overrides the model for a particular run.
+All new bounded read-only D2-C evaluator audits start with GPT-6.1 Sol at High reasoning unless the Human explicitly overrides the model for a particular audit run.
 
 Sol uses the same evidence threshold previously required for evaluator audits:
 
@@ -41,7 +43,7 @@ Sol uses the same evidence threshold previously required for evaluator audits:
 
 TypeScript/Rust agreement does not exonerate a shared compiler/lowering defect.
 
-The default Sol run is a bounded multi-family run. Unless the Human or current Work contract explicitly chooses a tighter bound, stop when any one of these limits is reached:
+The default Sol audit is a bounded multi-family run. Unless the Human or current audit Work contract explicitly chooses a tighter bound, stop when any one of these limits is reached:
 
 - **3 independently retained defect families**;
 - **40 distinct compiler-accepted programs**;
@@ -49,6 +51,8 @@ The default Sol run is a bounded multi-family run. Unless the Human or current W
 - an environment, platform, checkout, or other execution-boundary restriction.
 
 Each retained family must independently meet the full evidence threshold above before it counts toward the family cap.
+
+These family, accepted-program, and production-request limits govern read-only audit runs in this document. They do not cap a separate implementation Issue that explicitly opts into the autonomous mode and defines its own numerical ceilings under [`CODING-AGENT.md`](./CODING-AGENT.md).
 
 After retaining a family, Sol does not automatically return. It classifies the remaining owned matrix by contamination from the known defect:
 
@@ -58,7 +62,7 @@ After retaining a family, Sol does not automatically return. It classifies the r
 
 Continue only where evidence remains trustworthy at the same fixed revision. Return immediately before the normal cap when family isolation fails, the finding exposes a semantic/product-contract ambiguity that requires ChatGPT or Human judgment, the retained defect broadly contaminates the remaining owned domain, or the execution boundary itself becomes invalid.
 
-At the normal run stop, return all retained families together with explicit residual dispositions to ChatGPT for semantic/product triage. Do not insert Astra merely because the Work is exploratory. After ChatGPT confirms the findings, concrete implementation and deterministic regression coverage return to Luna under the normal implementation workflow.
+At the normal audit stop, return all retained families together with explicit residual dispositions to ChatGPT for semantic/product triage. Do not insert Astra merely because the Work is exploratory. Confirmed findings require a separate implementation Issue; Luna remains the ordinary implementation default, and only that implementation Issue may explicitly opt into the autonomous mode.
 
 ## Audit session continuity
 
@@ -151,7 +155,7 @@ For a Sol first pass:
 - after each retained family, Sol performs the contamination classification above and continues only with uncontaminated owned cells;
 - Sol returns all retained families together when the selected matrix closes, the 3-family cap is reached, the 40-program or 80-request budget is reached, or an immediate-return condition applies;
 - ChatGPT decides whether each returned family is a concrete Bug, a contract/spec ambiguity, an existing family, or non-actionable evidence;
-- confirmed Bugs are implemented by Luna;
+- confirmed Bugs require a separate implementation Issue and are ordinarily implemented by Luna; only that implementation Issue may explicitly opt into the autonomous mode;
 - unresolved residuals remain explicit rather than disappearing when the run budget ends;
 - after repair, resume on a fresh fixed authoritative-main revision with fresh runtime evidence; a multi-family run never continues on the old revision after a fix is merged;
 - a family-count or administrative stop while Sol is still converging normally leads to repair -> fresh-revision Sol continuation or a Sol successor residual Work item;
