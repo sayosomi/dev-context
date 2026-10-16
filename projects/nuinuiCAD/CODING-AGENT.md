@@ -104,20 +104,39 @@ from historical audit findings.
   evaluator, transport, or language-service owners in scope, plus any relevant
   reference and production paths. Do not delegate new owner or architecture
   choices to the Coding Agent.
-- **Hard numerical budgets:** provide numeric ceilings for accepted programs,
-  production Rust requests where applicable, and other bounded test resources
-  the work needs. Budgets are ceilings, not quotas. D2-C audit defaults of 3
-  defect families, 40 accepted programs, and 80 production Rust requests do
-  not apply to this separate implementation mode. There is no automatic
-  defect-family-count stop.
+- **Bounded distinct exploration:** provide a numeric ceiling on distinct
+  compiler-accepted exploratory programs, or an equally explicit countable
+  exploration-unit ceiling appropriate to the closed matrix. A distinct new
+  exploratory input consumes capacity once; reruns of the same input and
+  existing or unrelated suite fixtures run for verification do not consume
+  additional exploratory capacity. The ceiling constrains *new exploration*,
+  not the number of times authorized cases may be verified. There is no
+  automatic defect-family-count stop.
+- **Verification is not a cumulative count budget:** do not require hard
+  numerical ceilings for canonical compiler invocation attempts, production
+  persistent-Rust stdio requests, or repeats of focused regression, parity,
+  build, CI, and full-suite verification. These executions may be counted and
+  reported for diagnostics and cost awareness, but their totals alone must
+  never stop required retesting, independent review, or completion. Human-run
+  and agent-run verification obey the same scope and safety contract; changing
+  the executor does not bypass or expand the exploration boundary.
+- **Execution guardrails:** retain per-test and per-process timeouts, bounded
+  individual harness runs, resource and memory safety, detection of
+  non-progressing or repeating failures, and explicit process cleanup. On
+  actual hangs, resource exhaustion, or other safety failures, preserve a
+  safe pushed checkpoint and stop for diagnosis. Prefer existing runner
+  controls; do not add a new quota or ledger, promise endless execution, or
+  waive platform limits. D2-C read-only evaluator audits retain their own
+  separate per-run accepted-program and Rust-request budgets unchanged.
 - **Acceptance and verification:** define expected results, required controls,
   reproduction and regression evidence, and the criteria for matrix
   completion. State which production/reference parity checks apply.
 - **Exclusions and stop conditions:** name out-of-scope semantics, owners,
   surfaces, resources, and decisions. Require a safe checkpoint if the oracle,
   matrix, owner, checkout, or contract becomes ambiguous, if work would exceed
-  the authorized boundary or budgets, or if a product/architecture decision is
-  needed.
+  the authorized exploration-unit ceiling, or if a process hangs, resources
+  are exhausted, required execution cannot progress safely, or a
+  product/architecture decision is needed.
 
 One Human-selected implementation Coding Agent owns the complete in-scope
 loop for the Issue: generate discriminating compiler-valid cases and calculate
@@ -126,11 +145,16 @@ reproduce and reduce each suspected defect with nearby passing controls; locate
 the useful incorrect boundary; add deterministic regressions; make the smallest
 owner-correct fix; and reverify the affected cells against the corrected
 candidate. Continue across multiple distinct defect families until the closed
-matrix is complete, a numeric ceiling is reached, or a real stop condition
-applies. A defect-family count alone never stops the run. Do not report cells
-contaminated by a known defect as evidence; rerun affected cells on the
-corrected candidate. One Issue may cover multiple in-scope defects; do not
-automatically create a separate Bug Issue for each family.
+matrix is complete or a real stop condition applies. Exhausting the distinct
+exploration ceiling stops *new exploratory inputs*, not required re-execution
+of already authorized cases or necessary regression and full-suite checks.
+If completing the matrix would require new exploration beyond that ceiling,
+preserve a safe pushed checkpoint and return the contract decision to ChatGPT.
+A defect-family count or accumulated compiler/Rust/test invocation count
+alone never stops verification. Do not report cells contaminated by a known
+defect as evidence; rerun affected cells on the corrected candidate.
+One Issue may cover multiple in-scope defects; do not automatically create a
+separate Bug Issue for each family.
 
 Keep the source edits and tests inside the Issue's stated semantic owners and
 authorized paths. Do not change the product specification speculatively,
