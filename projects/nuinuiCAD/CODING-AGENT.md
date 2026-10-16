@@ -152,8 +152,9 @@ If completing the matrix would require new exploration beyond that ceiling,
 preserve a safe pushed checkpoint and return the contract decision to ChatGPT.
 A defect-family count or accumulated compiler/Rust/test invocation count
 alone never stops verification. Do not report cells contaminated by a known
-defect as evidence; rerun affected cells on the corrected candidate. One Issue may cover multiple in-scope defects; do not
-automatically create a separate Bug Issue for each family.
+defect as evidence; rerun affected cells on the corrected candidate.
+One Issue may cover multiple in-scope defects; do not automatically create a
+separate Bug Issue for each family.
 
 Keep the source edits and tests inside the Issue's stated semantic owners and
 authorized paths. Do not change the product specification speculatively,
