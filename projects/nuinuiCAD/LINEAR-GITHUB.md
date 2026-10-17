@@ -206,7 +206,7 @@ PR merge checkpointでは少なくとも次を確認する。
 - Manual E2Eが`Not Required` → completion条件を確認して`Done`
 - required Manual E2Eがあり、merge後すぐ実行可能 → leafのexecution ownershipを確認し、通常`In Review + Manual E2E: Ready to Run`
 - required Manual E2Eを意図的に後回し → `In Review + Manual E2E: Deferred`
-- `manual_e2e_only` transition条件を満たすleaf → [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のlabel/status条件を確認し、[`CHAT-E2E.md`](./CHAT-E2E.md) / [`MANUAL-E2E.md`](./MANUAL-E2E.md) のexecution ownerへhandoff
+- `manual_e2e_only` transition条件を満たすleaf → [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) のlabel/status条件を確認し、[`MANUAL-E2E.md`](./MANUAL-E2E.md) のHuman execution owner（existing SAY-compatible handoffは [`CHECKOUTS.md`](./CHECKOUTS.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)）へhandoff
 
 最初のfinal-merge release attemptがfail / interruptedした場合はphysical laneをunavailable capacityとして保持し、authoritative merge / remaining Work evidenceからstatus transitionを行う。normal E2E startupはrelease anomalyが解消するまで開始しない。
 

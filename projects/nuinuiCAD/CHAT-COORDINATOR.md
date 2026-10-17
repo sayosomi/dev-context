@@ -121,7 +121,7 @@ Coordinator chatはroutingとstatus整理をownerするが、role-specific execu
 - GitHub Issue作成 / 調査 / contract策定 → [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md)
 - GitHub-native implementation after the general D1 activation checkpoint → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) Git-only route
 - compatible pre-existing SAY implementation / blocking fix / integration → [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) legacy route
-- required Manual E2E → [`CHAT-E2E.md`](./CHAT-E2E.md)
+- required Human Manual E2E → [`MANUAL-E2E.md`](./MANUAL-E2E.md), [`CHECKOUTS.md`](./CHECKOUTS.md), [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md); no separate E2E chat role
 
 Coordinatorで候補を選んだだけではIssue statusやlane occupancyを変更しない。実際のrole startup gateを省略しない。
 

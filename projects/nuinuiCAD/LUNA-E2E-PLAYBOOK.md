@@ -15,7 +15,6 @@ It is **not current executable policy**.
 Current active authority is:
 
 - Manual E2E requirement, `Judgment`, PASS / FAIL / BLOCKED, Human runtime control, and result handling: [`MANUAL-E2E.md`](./MANUAL-E2E.md)
-- E2E chat lifecycle: [`CHAT-E2E.md`](./CHAT-E2E.md)
 - Human VS Code production-host baseline: [`VS-CODE-E2E.md`](./VS-CODE-E2E.md)
 - local helper mechanics and current Human startup/closure handoff: [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)
 - project routing and the Human-only executor decision: [`README.md`](./README.md)
@@ -27,7 +26,7 @@ If any historical text in this document conflicts with an active owner, the acti
 Before any future Luna Manual E2E execution, all of the following are required:
 
 1. Human explicitly decides to reconsider/reactivate Luna Manual E2E.
-2. Fresh-read current `README.md`, `MANUAL-E2E.md`, `CHAT-E2E.md`, `VS-CODE-E2E.md`, `LOCAL-TOOLS.md`, current helper behavior, and current nuinuiCAD production-host implementation.
+2. Fresh-read current `README.md`, `MANUAL-E2E.md`, `CHECKOUTS.md`, `VS-CODE-E2E.md`, `LOCAL-TOOLS.md`, current helper behavior, and current nuinuiCAD production-host implementation.
 3. Re-evaluate whether an agent executor provides durable value versus Human-only production-host execution and deterministic automation.
 4. Define current capability, evidence, environment, security, retry, failure-classification, and Human-control boundaries.
 5. Update the active owners so one coherent executor policy exists before the first reactivated run.
@@ -200,13 +199,13 @@ This principle remains active in `MANUAL-E2E.md`, now without any agent-executor
 
 ## Historical closure
 
-The current canonical Human closure helper remains active:
+Historical compatible SAY-only closure command (not current native GitHub E2E):
 
 ```bash
 nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
 ```
 
-Its current semantics are owned by `CHAT-E2E.md`, `LOCAL-TOOLS.md`, and the helper implementation. Historical Luna result handling does not change cleanup, `e2e-release`, `closure-check`, receipts, marker/session authority, duplicate/no-op behavior, or Human stop/pause precedence.
+The unchanged original SAY helper and [frozen E2E chat reference](https://github.com/sayosomi/dev-context/blob/910724f722ce9fa2143939a3d6c228470fee837b/projects/nuinuiCAD/CHAT-E2E.md) preserve historical compatible ownership and closure. Current native host/checkout authority instead belongs to `CHECKOUTS.md` and `LOCAL-TOOLS.md`. Historical Luna result handling never overrides Human stop/pause, receipts or fail-closed recovery.
 
 ## Archive maintenance rule
 
