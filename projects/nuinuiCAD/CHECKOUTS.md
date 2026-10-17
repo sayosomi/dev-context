@@ -497,7 +497,7 @@ These links preserve the **existing** compatible legacy contract for
 finishing/recovering an admitted generation; they are not an activation,
 independent permission to invoke legacy commands, or a second current route.
 Follow the applicable original helper and
-[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) / 
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) and
 [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) with exact read-only
 identity/ownership proof. Never infer an owner from checkout appearance,
 automatically clear ambiguous locks or markers, or apply a legacy
