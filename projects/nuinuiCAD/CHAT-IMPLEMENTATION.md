@@ -25,10 +25,7 @@ review、PR/merge、後続処理を調整する。**Chatは実行状態の正本
   checks before write; neither claims an implementation lane. If product source/runtime/DSL semantics, broad
   debugging, conflicts or integration-heavy work emerge, stop direct execution and return to the authorized
   implementation Coding Agent route.
-- **Manual E2E:** Human executes and judges under [MANUAL-E2E.md](./MANUAL-E2E.md) and
-  [CHAT-E2E.md](./CHAT-E2E.md). Native E2E general activation remains pending under #286; its already approved
-  bounded pilot is permitted after fresh admission. Host readiness, CI, or PR merge cannot establish Human E2E
-  PASS.
+- **Manual E2E:** Human alone executes and judges under [MANUAL-E2E.md](./MANUAL-E2E.md). Native GitHub E2E is active after the reviewed #286 checkpoint, subject to fresh [CHECKOUTS.md](./CHECKOUTS.md), [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) and [ISSUES.md](./ISSUES.md) admission/evidence. No separate E2E chat role is needed. Host readiness, CI or PR merge cannot establish Human E2E PASS.
 
 ## GitHub-native start and resume
 
