@@ -97,8 +97,8 @@ fixed Base -> implement / focused verify -> push checkpoint
 
 ChatGPT audits Base/current-main semantic drift and the current contract. The assigned implementation
 Coding Agent handles integration requiring source reasoning, conflict resolution, code changes, or
-verifier diagnosis. Only compatible pre-existing SAY work may instead use the bounded Human `nuinui
-integrate-clean` route described below.
+verifier diagnosis. Only compatible pre-existing SAY work may instead use
+Human `nuinui integrate-clean` only under the legacy conditions below.
 
 If a remote advance **materially invalidates** scope, semantics, owner, or prerequisite before this
 checkpoint, preserve current work remotely and stop for contract/slice re-evaluation rather than merging
@@ -120,7 +120,7 @@ If `main` advances after the watermark, inspect `Integration Watermark..current 
 
 - **NON-INTERFERING:** no material change to this slice's semantic owner, shared API/primitive,
   prerequisite, contract, mergeability, or review premise. Do **not** reintegrate just to follow `main`.
-- **RELEVANT:** material change to an owner/shared primitive/prerequisite/ contract, or the review
+- **RELEVANT:** material change to an owner/shared primitive/prerequisite/contract, or the review
   premise can no longer be maintained unambiguously. Require exception integration or contract/slice
   re-evaluation.
 - **MERGE-GATE:** actual conflict/unmergeable state, or the repository's current merge requirement
@@ -166,8 +166,9 @@ Choose one outcome:
   boundary; push a safe checkpoint and stop. Do not hide missing semantics through slicing.
 
 Intermediate PRs do not complete an Issue. For GitHub-native work, record each slice and remaining
-acceptance in Issue comments; re-read current Issue and latest `main` before the next slice. Use `Refs
-#N` for intermediate or still-incomplete acceptance, and `Closes #N` only when full acceptance—including
+acceptance in Issue comments; re-read current Issue and latest `main` before the next slice.
+Use `Refs #N` for intermediate or still-incomplete acceptance, and `Closes #N` only
+when full acceptance—including
 required Human Manual E2E—is verified. Exact PR linking, review, CI, merge, and completion gates belong
 to [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) and [`ISSUES.md`](./ISSUES.md).
 
@@ -179,12 +180,12 @@ values, serializer round-trip, or host-visible query result. Run appropriate bro
 verification at that checkpoint rather than automatically deferring it to final Issue completion.
 
 A confirmed Human Manual E2E implementation failure is **never fixed in the Human-test checkout**.
-Classify implementation/environment/ capability/oracle, identify failure class and semantic owner, decide
+Classify implementation/environment/capability/oracle, identify failure class and semantic owner, decide
 same Issue versus independent leaf, and return any implementation fix to an authorized implementation
 Coding Agent after proper checkout admission. For legacy parallel work, also satisfy parallel admission.
 Verify/review/merge the fix; rerun affected E2E units from their declared initial state at the **new
-exact tested commit**. Previously passed, unaffected units need not repeat unless shared owner/contract/
-lifecycle premises changed. Stabilization/re-entry and Human-only outcome judgment remain with
+exact tested commit**. Previously passed, unaffected units need not repeat unless shared owner/contract/lifecycle
+premises changed. Stabilization/re-entry and Human-only outcome judgment remain with
 [`MANUAL-E2E.md`](./MANUAL-E2E.md).
 
 ## Compatible pre-existing SAY only
@@ -214,8 +215,9 @@ performs its full declared-lane audit rather than requiring a second Human prefl
   merge the prerequisite, then rebuild dependent work at its next integration/restart checkpoint. No
   stacked PR by default.
 
-After a successful legacy begin, the selected Coding Agent executes the **exact** `nuinui handoff <SAY-N>
-<expected-main-sha>` in its checkout. Continue only on `HANDOFF VERIFIED`; failure stops without
+After a successful legacy begin, the selected Coding Agent executes the **exact**
+`nuinui handoff <SAY-N> <expected-main-sha>` in its checkout. Continue only on
+`HANDOFF VERIFIED`; failure stops without
 agent-side retry/repair or redundant Human proof. A chat/agent-session rotation, same-generation blocking
 fix, integration, or unrelated `main` advance alone does not require another begin/claim/preflight.
 Follow [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
