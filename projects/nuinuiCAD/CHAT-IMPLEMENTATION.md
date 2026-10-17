@@ -40,7 +40,7 @@ review、PR/merge、後続処理を調整する。**Chatは実行状態の正本
    [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md): existing registered implementation checkout,
    origin/worktrees, branch/HEAD, tracked and untracked status, remote topic/`main`, no conflicting legacy
    claim or fixed-SHA evaluator audit. Unmatched audit start/final-checkout proof blocks admission even if an
-   optional legacy preflight says `FREE`. Do not create a second product checkout or use the Human-test
+   a historical legacy preflight result says `FREE`. Do not create a second product checkout or use the Human-test
    checkout for implementation.
 3. For a new Task, establish the authorized clean/idle baseline and one normal topic branch. For a pushed
    continuation, prove the exact previously pushed checkpoint against local and remote state. Dirty, missing,
