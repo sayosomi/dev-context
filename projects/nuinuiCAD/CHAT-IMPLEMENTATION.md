@@ -1,317 +1,55 @@
 # nuinuiCAD Implementation chat
 
-## Purpose
-
-Implementation chatは、対応するimplementation startup policyで許可されたWorkのrepository implementation / blocking fix / verification / integration / blocking review / mergeを進めるchat。
-
-### GitHub-native and legacy startup boundary
-
-GitHub Issueはcurrent Work contractをownerする。普通の新規GitHub-native
-implementationは、D1の一般activation checkpointがdev-context #268に記録
-された後、Git-only routeへ進む。checkpoint前はstartupを停止する。checkpoint
-後に別のper-Task approval / activationは追加しない。新しいnative IssueをSAY-only
-`nuinui` helperへ渡さない。以下の`SAY-N` / `nuinui begin` / `handoff` /
-`release` procedureは、すでにそのlifecycleへ入ったcompatible pre-existing
-SAY taskにだけ適用する。
-
-実行capacityはchat数ではなく[`LANES.conf`](./LANES.conf)に宣言されたimplementation laneで決まる。各宣言laneは同時に1つのimplementation generationだけを保持する。
-
-chatを新しく作っただけではlaneをclaimしない。actual startup gate / lane assignment / Base checkpoint / durable claimが成立した時点でexecutionが開始する。
-
-通常のrepository implementation / blocking fixは[`CODING-AGENT.md`](./CODING-AGENT.md)に従い下位Coding Agentを既定とし、Humanの明示指定があれば上位Coding Agentが担当する。
-
-## Direct execution exceptions
-
-Direct executionの詳細なeligibility、禁止境界、executor routingは[`CODING-AGENT.md`](./CODING-AGENT.md)がcanonical ownerであり、このdocumentではcontractを二重定義しない。
-
-Implementation chatでは次の2種類のdirect execution exceptionを認識する。
-
-- **Documentation / policy direct execution exception** — repository-owned documentation / specification / policyに限定された変更。
-- **Narrow CI/tooling direct execution exception** — product implementationから独立し、scope・intended change・focused verificationが一意なCI / repository tooling / automation-only変更。
-
-いずれも`CODING-AGENT.md`の全条件を満たし、Humanがplan / target / intended changeを明示承認した場合だけ使う。該当時はdeclared execution lane、Base checkpoint、implementation-agent sessionをclaimせず、write直前にrequired remote / target freshnessを確認する。
-
-どちらのexceptionにも一意に該当しないTask、または途中でsource/runtime/DSL semantics、broad debugging、conflict resolution、integration-heavy work等へscopeが拡大したTaskはdirect executionを停止し、`CODING-AGENT.md`の通常の担当implementation Coding Agent lifecycleへ戻す。
-
-Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)をauthorityとする。
-
-## Implementation start / resume completion rule
-
-### GitHub-native implementation lifecycle — after general activation
-
-This is the ordinary route for future GitHub-native Work after the global D1
-activation checkpoint is recorded in
-[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). The
-checkpoint follows independent review, merge, and authoritative dev-context
-`main` read-back of the coordinated policy PR. Before that checkpoint, stop
-native implementation startup. After it, no separate per-Task approval or
-activation mechanism is required. The completed #1374 pilot was one-off
-operational proof under an expressly waived policy-amendment prerequisite; it
-was not strict compliance with the pre-activation policy and did not itself
-activate general startup.
-
-For each authorized implementation Task, the implementation chat will:
-
-1. Resolve the canonical GitHub Issue body and material comments. Re-audit
-   scope, acceptance, verification, non-goals, dependencies, latest product
-   code, normative specifications, relevant policy owners, and readiness.
-2. Perform the common checkout-identity, competing-work, and legacy-metadata
-   checks, plus either the new-Task independent read-only admission or the
-   same-Task exact pushed-checkpoint checks owned by
-   [CHECKOUTS.md](./CHECKOUTS.md) and
-   [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md).
-3. Generate the complete implementation-agent prompt from the current Issue
-   contract, following shared prompt style and completeness owners.
-4. Have the agent implement only the authorized slice, run focused tests and
-   required verification, commit, and push normally to the exact topic branch.
-5. Independently review the exact pushed SHA in ChatGPT. Use
-   [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) for protected required CI, blocking
-   review, reviewed auto-merge or ordinary merge; do not bypass its head, base,
-   authorization, or CI checks.
-6. Link the PR with `Refs #N`. Use `Closes #N` only if merge satisfies all
-   acceptance, including required Human Manual E2E, under the existing PR
-   policy.
-7. After confirmed merge, read back the authoritative GitHub merge and `main`,
-   the Issue, and remaining acceptance. Return the clean checkout to updated
-   `main` using the reset-free transition in [CHECKOUTS.md](./CHECKOUTS.md).
-8. Keep incomplete acceptance and required Human Manual E2E open. Record
-   material implementation, review, verification, and merge checkpoints in
-   GitHub Issue comments. Do not write new-Work lifecycle or lane semantics to
-   Linear.
-
-The D1 admission check also reads current evaluator-audit Issue checkpoints.
-An unmatched audit start or final checkout proof not verified against the
-checkout blocks implementation, even when an optional legacy preflight
-diagnostic reports `FREE`.
-This is sequential execution exclusion, not another per-Task activation gate;
-the detailed checkpoint and checkout rules remain with
-[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md), [`ISSUES.md`](./ISSUES.md),
-and [`CHECKOUTS.md`](./CHECKOUTS.md).
-
-For an interrupted run, inspect current GitHub PR, commit, remote topic, `main`,
-and Issue state, then inspect the exact local checkout and status before
-resuming. Continue only when local and remote state match a verified pushed
-checkpoint and the current contract remains valid. Lost terminal output does
-not authorize replaying commit, push, merge, or another mutation. Dirty, missing,
-or mismatched state stops for review and recovery; preserve all changes.
-
-Do not apply legacy Linear status, lane-release, claim, or checkpoint semantics
-to a new native Issue. The existing SAY implementation procedure remains
-separate and functional for compatible pre-existing tasks. Evaluator audit and
-Manual E2E remain under their separate policies; this document does not retire
-any existing helper.
-
-### Transitional Cloudflare mirror shutdown startup exception — #268 only
+## Purpose and route selection
 
-For only the Phase B write-barrier shutdown implementation of the existing
-Cloudflare Linear-to-GitHub mirror Worker and its focused tests / configuration,
-use `sayosomi/dev-context#268` as the approved task contract. Follow the
-admission proof in [`CHECKOUTS.md`](./CHECKOUTS.md) and the Git-only startup
-boundary in [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md): do not create a
-SAY Linear Issue or require `nuinui begin`, `nuinui handoff`, or
-`nuinui release`. This is still source-code work for the implementation Coding
-Agent, not a ChatGPT direct-execution exception. Do not record Linear status or
-checkpoint for this slice, and do not alter durable lane metadata. This Phase B
-exception is historical. C1 makes GitHub Issues the Work / contract
-authority. The SAY-only lifecycle below remains for compatible pre-existing SAY
-tasks; after the general D1 activation checkpoint, new GitHub-native work follows
-the Git-only route above.
+このchatは、承認されたWorkのimplementation、blocking fix、verification、integration、independent blocking review、PR/merge、後続処理を調整する。**Chatは実行状態の正本ではない。** 現在のIssue、GitHub、実checkoutから状態を再構築する。[CHAT-WORKFLOW.md](./CHAT-WORKFLOW.md)がrotationとchat間handoffをownerする。
 
-Compatible pre-existing SAY taskについてHumanが開始 / 再開 / 続行を指示した場合、remote / required legacy checkpoint / policyの再確認やblocker説明だけで停止しない。Activation checkpoint前のGitHub-native implementation requestは保留し、旧helperへhandoffしない。checkpoint後は上記Git-only routeへ進む。
+- **New GitHub-native Issue:** D1 Git-only route is active. Current scope/acceptance is the `sayosomi/nuinuiCAD#N` Issue body; material decisions/checkpoints are Issue comments. Use [CHECKOUTS.md](./CHECKOUTS.md) and [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md), not legacy SAY `nuinui begin/handoff/release` or Linear lifecycle. The historical activation/pilots are recorded in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268); no per-Task D1 activation is required.
+- **Compatible pre-existing SAY only:** Continue the already-admitted legacy generation and its minimum Linear checkpoint lifecycle until [dev-context #286](https://github.com/sayosomi/dev-context/issues/286) safely retires it. Follow the separate legacy section below. Do not treat chat creation or rotation as a new lane claim.
+- **Implementation executor:** [CODING-AGENT.md](./CODING-AGENT.md) owns the lower-tier default (e.g. Luna) and Human-explicit upper-tier choice (e.g. Astra / Sol Xhigh), selected outside the prompt. Explicit upper-tier selection is not the separate Issue-body opt-in required for autonomous conformance discovery/repair. That opted-in mode remains D1 implementation, not D2-C read-only auditing.
+- **Direct execution:** [CODING-AGENT.md](./CODING-AGENT.md) alone defines the documentation/policy and narrow CI/tooling exceptions. Both require the Human's explicit plan/target/change approval and fresh remote/target checks before write; neither claims an implementation lane. If product source/runtime/DSL semantics, broad debugging, conflicts or integration-heavy work emerge, stop direct execution and return to the authorized implementation Coding Agent route.
+- **Manual E2E:** Human executes and judges under [MANUAL-E2E.md](./MANUAL-E2E.md) and [CHAT-E2E.md](./CHAT-E2E.md). Native E2E general activation remains pending under #286; its already approved bounded pilot is permitted after fresh admission. Host readiness, CI, or PR merge cannot establish Human E2E PASS.
 
-その応答は次のどちらかへ到達して完了する。
+## GitHub-native start and resume
 
-1. ChatGPT側でactual execution開始まで進み、必要なlane assignment / checkpoint / implementation-agent handoffを開始する。
-2. Human actionが必要なら、その応答から直ちに実行できる最初の完全なhandoffを提示する。
+1. Read the current canonical Issue body and material comments, remaining acceptance, decisions and dependencies; re-audit readiness against latest remote product `main`, current normative specs, actual implementation, relevant dev-context owners and any merged work. Do not rely on a chat summary as authority. [ISSUES.md](./ISSUES.md) owns Work/contract checkpoints.
+2. Perform the exact read-only checkout and competing-work audit in [CHECKOUTS.md](./CHECKOUTS.md) and [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md): existing registered implementation checkout, origin/worktrees, branch/HEAD, tracked and untracked status, remote topic/`main`, no conflicting legacy claim or fixed-SHA evaluator audit. Unmatched audit start/final-checkout proof blocks admission even if an optional legacy preflight says `FREE`. Do not create a second product checkout or use the Human-test checkout for implementation.
+3. For a new Task, establish the authorized clean/idle baseline and one normal topic branch. For a pushed continuation, prove the exact previously pushed checkpoint against local and remote state. Dirty, missing, locked, mismatched, drifted or ambiguous state stops for safe diagnosis; do not reset, stash, force, rebase, overwrite, delete user work, or replay a possibly completed mutation.
+4. Settle the implementation slice and verification with [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md). Produce a complete prompt for the Human-selected Coding Agent using [shared Coding Agent workflow](../../shared/CODING-AGENT-WORKFLOW.md) and [prompt style](../../shared/AGENT-PROMPT-STYLE.md). The agent implements only the authorized slice, verifies, commits intended files and non-force pushes the exact topic branch.
+5. Independently review the **exact pushed HEAD** rather than trusting the agent's self-report. Resolve genuine failures and material contract/owner ambiguities before moving to the protected PR/CI/merge gate.
 
-Human action待ちになる場合:
+A chat change, implementation-agent session change, or lost terminal output is not a Task restart. Reconstruct current remote, Issue and checkout evidence before continuing; do not automatically repeat a commit/push/merge or discard a changed checkout.
 
-- `preflight結果待ち`等だけで停止しない;
-- 必要command / instructionを同じ応答に完全な形で出す;
-- concrete blockerには解除のnext actionを添える;
-- local evidence不足が唯一のblockerなら[`CHECKOUTS.md`](./CHECKOUTS.md)のpreflight diagnostic / routing ruleを使う;
-- current helperが使えるなら[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のexact invocationを使う;
-- Humanがfresh evidenceを現在conversationで提示済みなら機械的に再取得させない。
+## Review, merge and completion
 
-### Local-success-before-In-Progress rule
+- [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) alone owns PR linking, independent review, required CI, head/base freshness, safe auto-merge and ordinary merge. Use `Refs #N` for intermediate or incomplete acceptance; `Closes #N` only when the merge meets **all** acceptance, including any required Human Manual E2E.
+- When required CI is still running, only the policy's exact owner-authored `/auto-merge-reviewed` reservation may be used after a PASS review and fresh eligibility proof. Verify reservation read-back, then end that execution track without waiting/polling. A Discord bot merge/CI-failure notification does **not** authorize automatic continuation: resume only on Human instruction and fresh evidence. When required CI is already successful, perform a fresh merge-gate review and use the ordinary protected merge. Ambiguous, failed or missing required checks block; do not bypass or blindly retry.
+- After verified merge, read back authoritative GitHub `main`, PR/commit and Issue acceptance, record material checkpoints, and return the implementation checkout safely to its normal clean state using [CHECKOUTS.md](./CHECKOUTS.md)'s reset-free Git-only transition. Do not create Linear status/checkpoint or SAY claims for native Work.
+- Merge is not automatically Issue completion. Required Human Manual E2E or any other remaining acceptance stays open and is handed to the relevant owner. Never equate E2E host setup, automated verification or a PR merge with Human PASS. Follow [ISSUES.md](./ISSUES.md) for evidence and Issue closure.
 
-Linear `In Progress`は「開始予定」ではなくactual implementation laneでexecution開始済みを表す。
+When ChatGPT can complete independent remote read-back, blocking review, PR/CI routing or Issue bookkeeping with available tools, do not introduce gratuitous Human handoff steps. Return to the Human for genuine product/UX/scope decisions, required approval or observation, unsafe local state/destructive risk, uncertain contract, or a concrete unavailable tool/action.
 
-Human terminal handoffでnamed-argument `nuinui begin-command`、helper-generated canonical `nuinui begin`、またはexplicit low-level `nuinui start` / `nuinui resume`を使う場合:
+## Compatible pre-existing SAY start and continuation only
 
-1. fresh remote / Linear current implementation `In Progress`集合をIssue identity単位で照合し、target FREE declared implementation lane、caller-supplied Base、branchを決める。
-2. Humanがnamed `begin-command`を同じterminalで実行する。helperはfresh full preflight、canonical declaration-order inventory、target FREE、existing read-only verifyを行い、exact positional `begin` lineを生成する。
-3. Humanは`BEGIN COMMAND READY`の後に出力されたlineをChatGPTへ戻さず、同じterminalでverbatimに実行する。argumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ戻さない。
-4. 既存`begin`のfull local audit、mutation-time revalidation、successful `IMPLEMENTATION STARTED` envelopeが返り、lane / Issue / branch / Base / checkpoint / claimがintended handoffと一致した後で`In Progress`へ変更する。低レベル`start`を使う場合も、そのlocal envelopeを確認する。
-5. 同じcontinuationで`Implementation checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従いread-backする。
+The following rules apply **only** when the Task was already admitted into the legacy `nuinui` lifecycle. [CHECKOUTS.md](./CHECKOUTS.md) owns its durable lane state/recovery; [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md) owns handoff identity; [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) owns the exact command syntax; [LINEAR-ISSUES.md](./LINEAR-ISSUES.md) owns minimum legacy checkpoints.
 
-このflowは次のconceptual sequenceであり、通常startupにunconditionalなChatGPT/Human round-tripを追加しない。
+- Re-read remote/Issue contract, applicable historical Linear checkpoint and actual lane state. A request to start/resume must lead to actual execution or the **first complete actionable Human command**, not a needless extra preflight round trip. Never ask the Human to repeat fresh evidence already supplied.
+- If local legacy lane startup is required, use the canonical named-argument `nuinui begin-command` generator. The Human executes its generated exact `nuinui begin` line **in the same terminal**, without reconstructing arguments or returning the line to ChatGPT. Mark Linear `In Progress` and save the `Implementation checkpoint` / durable claim only **after** verified `IMPLEMENTATION STARTED` success and post-write read-back; a mere planned start is not `In Progress`.
+- Give the selected Coding Agent the exact `nuinui handoff <SAY-N> <expected-main-sha>` command. The agent executes it first; its façade derives lane, branch, Base, claim and remote-topic mode from verified durable evidence, not caller guesses. After `HANDOFF VERIFIED`, proceed with implementation. Failure blocks and returns to the appropriate owner; no automatic resume or blind retry. The Human does not run the agent's handoff or manage prompt/claim/token files.
+- Continuing the same durable generation across chat rotation, agent changes, blocking review/fix, integration or remote `main` changes does **not** by itself require a new `begin`, claim, or Human handoff. Refresh contract/remote identity and continue with the assigned generation.
+- If a tracked local mutation's terminal output disappears, use the **read-only** `nuinui last-result` first. A matching verified `recovery=READY` and `result=SUCCESS` permits continuation; `BLOCKED`/`ERROR` follows that evidence; `NONE`/`INVALID`/`INCOMPLETE` or identity mismatch requires existing diagnosis, not mutation replay. Never infer lane `FREE` from missing output.
+- At a settled integration checkpoint, eligible conflict-free merge-only work may use Human `nuinui integrate-clean` under [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md), [CODING-AGENT.md](./CODING-AGENT.md), and [LOCAL-TOOLS.md](./LOCAL-TOOLS.md). Integration drift/Review Head and focused review/CI obligations remain. Conflicts, relevant semantic drift, source change, failed verification or ambiguous diagnosis return to the implementation Coding Agent; do not force Human retries.
 
-```text
-ChatGPT selects Work, lane, Base, and branch
--> Human runs named-argument begin-command handoff
--> helper performs read-only fresh preflight and emits canonical existing begin command
--> Human executes the emitted line verbatim in the same terminal without returning to ChatGPT first
--> existing begin performs normal mutation-time revalidation
--> IMPLEMENTATION STARTED
--> normal checkpoint / continuation
-```
+### Legacy merge, release and E2E barrier
 
-If a Human reports terminal disappearance or lost output after `begin`, `start`, `resume`, `release`, `integrate-clean`, or another tracked mutation, request the single exact command `nuinui last-result` rather than asking for the mutation again. If it returns `recovery=READY` with the expected command and identity and `result=SUCCESS`, continue directly from the recovered checkpoint into the normal fresh remote / blocking-review / PR workflow. If `result=BLOCKED` or `result=ERROR`, continue from that exact terminal state. If recovery is `NONE`, `INVALID`, or `INCOMPLETE`, or the identity does not match the intended handoff, use the existing diagnostic/preflight routing. Do not demand duplicate state paste merely because stdout was lost.
+- Use the same independent pushed-HEAD review, protected PR and CI policy in [LINEAR-GITHUB.md](./LINEAR-GITHUB.md). Work completion and physical lane release are distinct.
+- When merge is authoritatively confirmed, the Human runs the named `nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <durable-claim>` generator and executes its generated exact positional release line **in the same terminal**. Do not transcribe main/merge SHA into a guessed topic checkpoint, reorder arguments or substitute a claimless signature. [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) and [CHECKOUTS.md](./CHECKOUTS.md) own generator identity, mutation-time proof, duplicate receipts and recovery.
+- If required Human Manual E2E alone remains after merge, **release the completed implementation generation first**, confirm `IMPLEMENTATION RELEASED` and read back its `Lane release checkpoint`; synchronize the minimum applicable Linear `In Review` status; only then admit an E2E run. Do not retain the old implementation claim while waiting for a Human-test checkout, and do not treat a BUSY Human-test lane as justification to postpone release.
+- If release is interrupted or fails, never guess physical `FREE`, revive the old claim, reset metadata, or start E2E until the actual release/cleanup is verified under [CHECKOUTS.md](./CHECKOUTS.md). Merged+E2E-only Work can remain `In Review` during release recovery; do not incorrectly revert it to `In Progress` because the physical checkout is still BUSY/BLOCKED/RELEASE-PENDING.
+- Declare **final closure** only after required acceptance and Human E2E finish, the actual legacy lane is proven `FREE`, required Linear status and Lane release checkpoint are recorded, and [LINEAR-ISSUES.md](./LINEAR-ISSUES.md)'s post-write verification succeeds. A successful physical release is not undone because Linear bookkeeping fails. Do not demand a duplicate preflight solely to re-prove a complete successful release envelope.
 
-start / resume後のidentity invariantは、physical BUSYなdeclared implementation laneから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数だけでは十分ではない。
+## Chat rotation, loading and maintenance
 
-same active durable generationのcontinuationでは、implementation-agent session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHumanをhandoff準備へ戻さない。ChatGPTはcurrent contractとfresh remote stateをpromptへ反映し、implementation agentへIssueとexpected-mainだけを含むcanonical commandを渡す。handoff façadeがdurable slotからfull identityとtopic modeを解決する。
+Rotation does not change Task status, Base, branch, slice, claim or lane occupancy. Reconstruct the present authoritative state, and use actual pause/release policy only if Work itself pauses. See [CHAT-WORKFLOW.md](./CHAT-WORKFLOW.md).
 
-Canonical `nuinui handoff <SAY-N> <expected-main-sha>`が`HANDOFF VERIFIED`を返した後は、通常そのまま担当implementation Coding Agentへ進む。handoffのidentityまたはsafety proofが失敗した場合は自動resume・retry・repairを行わず、implementation agentは停止してorchestratorへ戻す。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
-
-product / UX decision、approval-gated dev-context write、unsafe/destructive unknown-state recovery等のHuman判断boundaryは自動決定しない。その場合も必要な判断/actionを具体化する。
-
-## Implementation continuation completion rule
-
-implementation Coding Agentのimplementation / integration result後、残作業がChatGPTから直接扱えるremote / management stateだけならHumanへの細かなhandoffへ分割しない。
-
-典型:
-
-```text
-implementation agent result
--> pushed HEAD / latest main freshness
--> ChatGPT blocking review of exact pushed HEAD
--> required CI pending? YES -> owner issue comment /auto-merge-reviewed (head/base/review=PASS)
-   -> Actions exact-head reservation + remote read-back -> track ends without CI wait
-   -> GitHub bot merge + Discord notification -> Human explicit resume -> merged-state verification
-   -> release-command handoff -> generated release -> Linear synchronization
--> required CI already success? YES -> independent fresh merge-gate review
-   -> ordinary merge -> merged-state verification -> release-command handoff
-   -> generated release -> Linear synchronization
--> CI failure / HEAD or main drift / ambiguous checks? -> BLOCKED; no bypass
-```
-
-Auto-mergeのowner-comment syntax、reservation verification / CI race、CI failure terminal stop、CI-complete ordinary merge、Human resumeの境界は[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)を唯一のauthorityとする。旧`nuinui pr-auto-merge`をnormal pathでHumanに実行させない。Humanに何もする必要がないremote-only intermediate stateをhandoff boundaryにしない。
-
-Humanへ戻してよいのはproduct / UX / scope decision、unsafe local state、destructive operation、Human-only observation、required approval boundary、またはcurrent toolsで解消できないconcrete blocker等、Human actionが実際に必要な場合だけ。
-
-local deterministic releaseだけが残る場合はWork completion / Linear statusとphysical lane cleanupを混同しない。
-
-## Canonical implementation-release handoff
-
-通常のmerge後releaseでは、ChatGPTが観測したmain / merge SHAを手作業でrelease checkpointへ転記してHumanへ渡さない。Humanが同じterminalで次のnamed generatorを実行する。
-
-```bash
-nuinui release-command \
-  --lane <implementation-lane> \
-  --issue <SAY-123> \
-  --claim <durable-claim>
-```
-
-generatorはexact lane / Issue / durable claimを要求し、active generationのtopic checkpointをcurrent release authorityからread-onlyで導出する。topic checkpoint `T`とcurrent main / merge commit `M`が異なっても、`T`がauthoritative current mainにcontainedなら生成行には`T`を使う。active ownershipがない場合はarbitrary `FREE`を推測せず、exact completed-release receiptだけを既存#108 duplicate proofへ委譲する。
-
-成功時は次の2行がterminal formatting authorityになる。
-
-```text
-RELEASE COMMAND READY
-'<absolute-nuinui>' 'release' '<lane>' '<topic-checkpoint>' '<claim>'
-```
-
-Humanは生成されたrelease行をChatGPTへ戻さず、同じterminalでverbatimに実行する。generatorはread-onlyで、実際のmutation-time revalidation、release state machine、duplicate no-op、recovery boundaryは既存positional `nuinui release`が引き続きownerする。ChatGPTは別に観測したmain / merge SHAで生成checkpointを書き換えず、生成行のargument順・lane・checkpoint・claimを再構成しない。
-
-## Post-merge E2E-only handoff barrier (#129)
-
-implementationがmergeされ、authoritative read-backでrequired Manual E2Eだけが残ると確認できた場合は、次のbarrierを完了してからnormal E2E startupへ進む。
-
-- implementation executionは終了している。
-- non-local post-merge bookkeepingより先に、exact current implementation generationを`nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <durable-claim>`でread-onlyに証明し、生成された既存positional release行を同じterminalで実行する。
-- successful release後、`IMPLEMENTATION RELEASED`を確認し、Lane release checkpointをrecordしてread-backする。
-- release成功後にIssueを`In Review`へ同期する。
-- E2Eを待つ間も実行中も、old implementation claimを保持しない。
-- E2E laneのavailabilityは、completed implementation laneをreleaseするかどうかを制御しない。
-
-release anomalyがpost-merge E2E-only handoffで発生した場合:
-
-- 最初のrelease attempt後、authoritative merged + E2E-only evidenceに従ってWork statusを`In Review`へ同期し、すでに`In Review`ならそのまま保つ。
-- physical `FREE`を推測しない。
-- `BUSY`、`BLOCKED`、`RELEASE-PENDING`のcleanup stateはcapacity unavailableとして扱う。
-- release failureがslot rename前に起きた場合、physical laneが`BUSY`のままでもIssueを`In Progress`へ戻さない。
-- `RELEASE-PENDING`またはinterrupted cleanupは、recoveryでactual `FREE`が証明されるまでcapacity unavailableのまま扱う。
-- 既存のrelease / recovery mechanicsへrouteする。
-- release anomalyが解消するまでnormal E2Eをstartしない。
-- reset、stash、force-repair、old implementation claimのreviveを行わない。
-
-このbarrierは、[`CHECKOUTS.md`](./CHECKOUTS.md)のrelease state-machine mechanicsをduplicateまたは再定義しない。
-
-## Merge-only Human integration continuation
-
-ChatGPTがIntegration checkpointでBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、conflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、[`CODING-AGENT.md`](./CODING-AGENT.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のdeterministic Human routeとして`nuinui integrate-clean`へ直接handoffしてよい。first / routine checkpointではIntegration WatermarkまたはReview Headを要求しない。
-
-このrouteではnew implementation lane / Base / implementation-agent sessionを作らない。current active durable generationのIssue / claim / exact topic checkpoint（implementation checkpointまたはalready-reviewed Review Head）、fresh current main、settled verification script、optional expected-file manifestをexact inputとして渡す。既存のpost-review merge-gate refreshでは、Integration Watermark、Review Head、freshな`NON-INTERFERING` drift判定、focused merge-only review、およびfresh required CIを引き続き要求する。
-
-routine checkpointで`INTEGRATION PUSHED`を受けたら、ChatGPTはnew merge headのparents、effective diff / merge tree、verification evidence、remote topic/current mainをfresh確認してpushed-state blocking reviewを行い、normal PR / merge workflowへ進む。post-review refreshではfocused merge-only blocking reviewを行い、その後もfresh required PR CIを通常どおり満たす。
-
-helperが`BLOCKED:` / `ERROR:`を返した場合、stale / mechanical preconditionがsource reasoningなしに一意にrefreshできるかをChatGPTがfreshに再評価する。解決可能なら同じHuman routeを継続できるが、conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常の担当implementation Coding Agent lifecycleへ戻す。
-
-## Final closure declaration rule
-
-Issue `Done`とimplementation laneを含むexecution lifecycle final closureを区別する。
-
-declared implementation laneを使用したWorkで「完全終了」「追加作業なし」と宣言してよいのは:
-
-1. [`CHECKOUTS.md`](./CHECKOUTS.md)に従うlane release成功、actual lane FREE;
-2. current Linear Issueへ`Lane release checkpoint`記録;
-3. Work completion / Issue status synchronization完了;
-4. [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)のPost-write verification完了。
-
-merge後にrequired Manual E2Eだけが残る場合、このfinal closureではなく先にPost-merge E2E-only handoff barrierを完了する。E2E closureが終わるまでfinal closureを宣言しない。
-
-Human boundaryは次の1回だけにする。
-
-```text
-merge / Work completion evidence
--> release-command generator
--> generated exact nuinui release command
--> complete IMPLEMENTATION RELEASED envelope
--> Lane release checkpointの記録 / read-back
--> Work status synchronization / post-write verification
--> final closure
-```
-
-Humanからfresh successful release outputが返った場合はactual local evidenceとして扱い、Linear操作可能なら同じcontinuationでrelease checkpoint記録、Work status synchronization、read-backまで進める。complete `IMPLEMENTATION RELEASED` envelopeのためだけに別preflightを要求しない。
-
-IssueがDoneでもrelease / release checkpoint / read-backが残る場合はfinal closure未完了として報告する。Linear write失敗でsuccessful physical releaseを巻き戻さない。
-
-## Startup / execution boundary
-
-Implementation開始・再開ではREADME loading ruleに従いcurrent Linear / remote repository / required implementation policyを確認する。
-
-source-code implementationは[`CHECKOUTS.md`](./CHECKOUTS.md)の`begin` full-audit startup gateとdiagnostic preflight rule、slice / Base / integrationは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
-
-Direct execution exceptionではimplementation lane claim / Baseは不要だが、[`CODING-AGENT.md`](./CODING-AGENT.md)に従いwrite直前にrequired remote / target freshness、current relevant state、approved plan scopeを再確認する。
-
-web環境からdeclared checkoutへ直接accessできないことを理由に代替clone / extra worktree / direct-GitHub source implementationへ迂回しない。
-
-## Chat rotation
-
-Implementation chat rotation自体はTask pauseではない。rotationだけを理由にstatus、lane ownership、Base、branch、claim、current sliceを変更しない。
-
-Work自体をpause / releaseする場合だけ[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md) / [`CHECKOUTS.md`](./CHECKOUTS.md) / [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)のruleを使う。
-
-## Loading rule
-
-Implementation chatでは[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)とこのdocumentを読み、READMEのimplementation loading ruleに従う。
-
-## Durable ownership handoff
-
-declared implementation lane ownershipはGit-local durable claimで保持する。checkout branchだけからownershipを推測しない。state machine / recoveryは[`CHECKOUTS.md`](./CHECKOUTS.md)、CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)、implementation-agent handoffのfresh execution identity検証は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)をauthorityとする。
-
-new `nuinui begin`成功outputの`claim=<generation token>`を、`In Progress` transitionと同じcontinuationで`Implementation checkpoint`へ保存する。低レベル`start`を明示的に使った場合も同じく保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
-
-`nuinui handoff <SAY-N> <expected-main-sha>`は、requested Issueに一致する唯一のactive durable implementation generationをmanifest-declared lane stateから解決する。Branch、Base、Claim、current HEAD checkpoint、remote topic modeはcallerやpromptから受け取らず、matching durable slotとexact authoritative remote stateから導出して既存proofへ渡す。
-
-`release` handoffはexact saved / integration checkpointとclaimを使う。claimless legacy signatureへfallbackしない。
-
-handoffがslot / checkout mismatch、mutation lock、releasing tombstone、uninitialized ownership schema、malformed metadata等をBLOCKEDとして返した場合、laneをFREEと推測しない。handoffはresumeや一般repairを行わず、既存の診断・recovery ownerへ戻す。
-
-chat rotation / external-state recovery後にimplementation-agent handoffを生成するときはpast chatのclaimをauthorityにせず、fresh local durable evidenceからcurrent claimを読み直す。
-
-## Maintenance rule
-
-このdocumentはImplementation chat固有のstart / resume / continuation / handoff lifecycleだけをownerする。checkout state machine、slice semantics、Coding Agent detail、Linear lifecycleは各owner documentへ委譲する。
+Read this document and [CHAT-WORKFLOW.md](./CHAT-WORKFLOW.md) for implementation-chat lifecycle; load the phase-specific owners through [README.md](./README.md). Keep checkout state machines, agent eligibility, slicing, command mechanics, PR/CI and Linear status details in their existing canonical documents rather than copying them here.
