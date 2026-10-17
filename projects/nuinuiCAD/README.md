@@ -15,10 +15,11 @@ merged, read back on authoritative dev-context `main`, and recorded as the
 activation checkpoint in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268).
 Until all four conditions are met, do not start a GitHub-native implementation.
 Afterward, no separate per-Task approval or activation mechanism is required.
-Luna remains the ordinary implementation default. A current implementation
-Issue may choose the bounded autonomous conformance mode only through the
-explicit Issue-body opt-in owned by [`CODING-AGENT.md`](./CODING-AGENT.md);
-this is a per-Issue scope statement, not another D1 approval or activation.
+Ordinary implementation uses a lower-tier Coding Agent (e.g. Luna) by default;
+a Human-explicit selection may use an upper-tier agent (e.g. Astra or Sol Xhigh).
+The bounded autonomous conformance mode **separately** requires the exact
+Issue-body opt-in in [`CODING-AGENT.md`](./CODING-AGENT.md); it is not another
+D1 approval or activation.
 The opted-in Issue still uses the D1 checkout, checkpoint, review, PR/CI, and
 Human Manual E2E rules below and in [`CHECKOUTS.md`](./CHECKOUTS.md).
 
