@@ -371,69 +371,55 @@ evidence. Defer any synchronization until the audit has safely completed.
 ### Completion and interruption recovery
 
 After audit execution stops, Sol records the stop and executor final checkout
-proof in the current Research Issue using [`ISSUES.md`](./ISSUES.md). The proof
-must establish that all audit execution stopped and that
-`/Users/yosomi/Code/nuinuiCAD` remains on branch `main` at the original fixed
-audit SHA with tracked and untracked state clean. It also records the complete
-declared and registered two-checkout topology, including both repository
-identities, paths, roles, idle policies, and the exact Human-test checkout
-state. `/Users/yosomi/Code/nuinuiCAD-e2e` must remain registered, clean,
-detached, idle, and unchanged from its admission HEAD and state; no competing
-E2E generation, marker, session, host ownership, process, cleanup, or release
-operation may exist. The proof identifies the run's external evidence and
-checkpoints, residual findings, and the current read-only legacy ownership
-exclusion state (including any inconsistent records or unresolved owners). A
-newer remote `main` is allowed and must not be incorporated during completion.
+proof under [`ISSUES.md`](./ISSUES.md): both checkout identities and admitted
+states, current legacy/E2E ownership exclusion, stopped processes, retained
+evidence, residuals and any remote-main drift. Sol's proof is not independent
+verification or permission to reuse either checkout.
 
-The normal independent physical verification route is exactly one
-self-contained, read-only Mac terminal block prepared by ChatGPT after it has
-received Sol's final audit report and executor checkout proof. ChatGPT applies
-the existing [`human-terminal-instructions` skill](../../shared/skills/human-terminal-instructions/SKILL.md)
-when producing the block. The block is tailored to the current audit run's
-external evidence directory and original fixed SHA; it must not hardcode
-historical run-specific values or metadata counts. The Human executes it once
-and returns its complete output. ChatGPT independently assesses that output
-against the current Issue checkpoints and physical evidence; Sol's executor
-proof supports the assessment but is not independent verification. ChatGPT
-must not claim to have run the Human's local checker or ask for approval to run
-this normal read-only check.
+For independent closeout, ChatGPT prepares **one self-contained, read-only Mac
+terminal block**, following the existing
+[`human-terminal-instructions` skill](../../shared/skills/human-terminal-instructions/SKILL.md).
+The Human executes it once and returns the complete output without a separate
+approval round. The block collects **physical facts**, not a newly invented
+all-in-one verifier implementing GitHub reconciliation or historical metadata
+fingerprinting. Use standard read-only Git commands and existing proven
+read-only inspections where applicable. Take the current run's fixed SHA,
+Human-test admission HEAD and external evidence location from the actual
+Issue and executor proof; discover real evidence filenames. Do not invent file
+names, metadata counts, schema shapes or manually join relative Git paths.
 
-That one invocation verifies all of the following without changing local
-state. It must not fetch, switch or detach a checkout, reset, stash, clean,
-mutate a worktree, stop a process, change metadata, invoke a release command,
-or terminate the Human's shell:
+Gather enough evidence in that one invocation to establish:
 
-- The exact product repository and canonical origin / Git directory, plus the
-  complete current `LANES.conf` declared-checkout set against all registered
-  worktrees. Both the implementation `main` checkout and detached Human E2E
-  checkout must be present exactly once with their declared paths, shared
-  repository identity, roles, and idle policies; missing, extra, duplicate,
-  foreign, or ambiguous topology blocks PASS.
-- The implementation checkout is on `main` at the original fixed audit SHA
-  with tracked and untracked state clean. Do not require that SHA to equal a
-  newer remote `main`.
-- The Human E2E checkout is still detached, clean, and at its exact admission
-  HEAD, with its idle state unchanged and no active or pending E2E generation,
-  marker, session, host ownership, cleanup, or release operation.
-- Read-only inspection of current legacy ownership and audit metadata finds
-  no active implementation claim, mutation lock, release-pending state, audit
-  reservation, malformed or symlinked record, missing required record, or
-  other ambiguous owner. Use the existing ownership schemas and actual Git
-  directory, not guessed filenames or schema fields. A recursive historical
-  path/type/content-fingerprint comparison or admission snapshot is not a
-  release requirement. This verifies current safe reuse, not historical
-  metadata immutability; any observed unexplained change still blocks PASS.
-- The current run's external report, evidence, applicable start/progress/stop
-  checkpoint records, and executor final checkout proof are present and agree
-  on the audit identity, evidence directory, and original fixed SHA. ChatGPT
-  compares the returned results with the current Issue checkpoints. Preserve
-  residual findings and dispositions.
-- Audit-owned processes have stopped, and current process and occupancy
-  candidates show no audit-owned or conflicting implementation, evaluator
-  audit, Manual E2E, checkout transition, E2E host session, or other execution
-  involving either declared checkout. Reconcile candidates with the run's
-  evidence, including its evidence marker; unexplained candidates or occupancy
-  block PASS.
+- **Repository/topology:** `LANES.conf`, canonical origin/repository and all
+  registered Git worktrees agree on exactly the two declared paths, roles,
+  idle policies and common repository identity. Resolve Git directories
+  through Git; do not guess the common-dir path.
+- **Checkout state:** implementation is clean on `main` at the original fixed
+  SHA; Human-test is clean, detached, idle and unchanged at the recorded
+  admission HEAD. Remote `main` may have advanced without changing this proof.
+- **Exclusion/occupancy:** no active or ambiguous legacy claim, mutation lock,
+  releasing state, audit reservation, malformed/missing/symlinked required
+  record, native E2E generation/marker/session/host/cleanup, audit-owned
+  process, concurrent checkout work or unexplained process candidate.
+  Inspect current ownership under its existing schema; do not compare
+  historical metadata content snapshots.
+- **Physical evidence:** the actual external evidence directory exists and
+  contains the retained report and run records; list discovered entries for
+  reconciliation rather than assuming a generated filename.
+
+No fetch, branch switch/detach, reset, stash, clean, process termination,
+release, metadata mutation or interactive-shell termination is permitted.
+Do not repeat equivalent local checks for extra assurance theater. If a
+required local fact cannot be proven, return `BLOCKED`, not an optimistic PASS.
+
+ChatGPT—not Sol or the terminal block—independently compares the complete
+Human output against the current GitHub Issue's start, all material progress,
+stop and executor-proof checkpoints and the run's external evidence, using
+the exact fields and detailed reconciliation owned by
+[`ISSUES.md`](./ISSUES.md). Preserve file/checkpoint agreement on run identity,
+original fixed SHA, retained findings, evidence and checkout/process state.
+A printed local PASS or Sol's executor proof alone is insufficient. ChatGPT
+must not claim to have executed the Human's Mac commands.
 
 On independently verified PASS, ChatGPT immediately posts the
 `Independent final checkout verification PASS` checkpoint defined in
