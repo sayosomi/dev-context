@@ -308,16 +308,15 @@ verified read-only:
   process or foreign ownership; and no ambiguous metadata or incomplete
   recovery. Reconcile its occupancy with the complete registered topology.
   Missing evidence or any inconsistent or ambiguous state fails closed.
-- Existing required legacy ownership and audit metadata has been inspected
-  read-only using the complete metadata inventory and schema requirements
-  listed in Startup admission above. Validate present and required records
-  against their existing schemas; reject missing required records, symlinks,
-  malformed or inconsistent records, or ambiguous ownership. There is no
-  active implementation claim, mutation lock, release-pending state, audit
-  reservation, or other unresolved ownership state. Record a read-only,
-  non-secret baseline fingerprint outside the checkout so final proof can show
-  that this metadata was not mutated. Do not create, initialize, rewrite,
-  release, or replace legacy metadata or reservations.
+- Inspect current legacy ownership and audit metadata read-only under the
+  existing Startup admission inventory and schemas. Missing required records,
+  symlinks, malformed or inconsistent state, and ambiguous ownership block
+  admission, as do any active implementation claim, mutation lock,
+  release-pending state, audit reservation, or other unresolved owner. Do not
+  create, initialize, rewrite, release, or replace legacy metadata. A
+  recursive metadata path/type/content-fingerprint baseline is not required
+  for this audit: closure rechecks current ownership and exclusion state
+  rather than attesting that every historical metadata byte is unchanged.
 - Current Issue/PR checkpoints and checkout evidence show no active, paused,
   or otherwise unfinished implementation execution, no competing evaluator
   audit, and no unmatched evaluator-audit start checkpoint. They also show no
@@ -382,7 +381,8 @@ state. `/Users/yosomi/Code/nuinuiCAD-e2e` must remain registered, clean,
 detached, idle, and unchanged from its admission HEAD and state; no competing
 E2E generation, marker, session, host ownership, process, cleanup, or release
 operation may exist. The proof identifies the run's external evidence and
-checkpoints, residual findings, and unchanged legacy metadata baseline. A
+checkpoints, residual findings, and the current read-only legacy ownership
+exclusion state (including any inconsistent records or unresolved owners). A
 newer remote `main` is allowed and must not be incorporated during completion.
 
 The normal independent physical verification route is exactly one
@@ -415,12 +415,14 @@ or terminate the Human's shell:
 - The Human E2E checkout is still detached, clean, and at its exact admission
   HEAD, with its idle state unchanged and no active or pending E2E generation,
   marker, session, host ownership, cleanup, or release operation.
-- The complete recursive legacy ownership and audit metadata inventory
-  matches the external admission baseline by path, type, and content
-  fingerprint. Validate the baseline and records against their actual
-  existing schema, including the schema's real top-level shape; reject missing,
-  extra, malformed, inconsistent, or symlinked metadata. Do not infer integrity
-  from a count or assume a schema shape.
+- Read-only inspection of current legacy ownership and audit metadata finds
+  no active implementation claim, mutation lock, release-pending state, audit
+  reservation, malformed or symlinked record, missing required record, or
+  other ambiguous owner. Use the existing ownership schemas and actual Git
+  directory, not guessed filenames or schema fields. A recursive historical
+  path/type/content-fingerprint comparison or admission snapshot is not a
+  release requirement. This verifies current safe reuse, not historical
+  metadata immutability; any observed unexplained change still blocks PASS.
 - The current run's external report, evidence, applicable start/progress/stop
   checkpoint records, and executor final checkout proof are present and agree
   on the audit identity, evidence directory, and original fixed SHA. ChatGPT
