@@ -29,7 +29,6 @@ Chat roleは会話整理のための分類であり、Issue status、execution o
 | Coordinator | Project全体のstatus整理、Work選択、routing | [`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md) |
 | Issue Authoring | Issue作成・調査・仕様・contract・dependency整理 | [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md) |
 | Implementation | Ready Issueのimplementation / fix / verification / integration / review / merge | [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) |
-| E2E | required Manual E2Eの実行・再開 | [`CHAT-E2E.md`](./CHAT-E2E.md) |
 
 chatを新しく作っただけではIssue statusやexecution laneを変更しない。各role固有のstartup / handoffはそのowner documentに従う。
 
@@ -44,7 +43,7 @@ GitHub #123 authoring #1
 -> GitHub #123 authoring #2
 -> GitHub #123 implementation #1
 -> GitHub #123 implementation #2
--> GitHub #123 E2E
+-> GitHub #123 Human Manual E2E (same chat may continue)
 ```
 
 このchat分割自体はIssue decompositionではない。Issue boundaryは`CONTRACT-DECISIONS.md`、implementation sliceは`IMPLEMENTATION-SLICING.md`がauthority。
@@ -160,13 +159,13 @@ Human report / idea
       -> successful IMPLEMENTATION RELEASED
       -> Lane release checkpoint record and read-back
       -> implementation lane proven FREE
-      -> if a Human-test lane is FREE, normal e2e-start / E2E handoff
+      -> if a Human-test lane is FREE, compatible legacy E2E handoff under CHECKOUTS / LOCAL-TOOLS
       -> if all suitable Human-test lanes are BUSY, wait without retaining the implementation lane
       -> PASS
       -> legacy status completion checkpoint
 ```
 
-ImplementationからE2Eへのcanonical handoffでは、E2E startをimplementation release barrierより前に置かない。Human-test laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、selected Human-test laneがBUSYならimplementation laneを保持せずIn Reviewで待つ。
+Compatible already-admitted SAY implementationからHuman Manual E2Eへのhandoffでは、E2E startをlegacy implementation release barrierより前に置かない。Native GitHub Issueにはこのlegacy release gateを課さない。Human-test laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、selected Human-test laneがBUSYならimplementation laneを保持せずIn Reviewで待つ。
 
 roleを切り替える際も、destination roleのstartup gateを省略しない。同じchatを継続するか新chatへ切り替えるかはWork identityとは別判断。
 
@@ -177,7 +176,7 @@ roleを切り替える際も、destination roleのstartup gateを省略しない
 3. Coordinator workでは`CHAT-COORDINATOR.md`。
 4. Issue Authoringでは`CHAT-AUTHORING.md`。
 5. Implementationでは`CHAT-IMPLEMENTATION.md`。
-6. E2Eでは`CHAT-E2E.md`。
+6. Human Manual E2Eでは専用chat roleを設けず、READMEの`MANUAL-E2E.md`と必要なnative/host ownersへrouteする。
 7. 各role ownerを読んだ後、READMEのtopic-specific loading ruleに従う。
 
 ## Maintenance rule
