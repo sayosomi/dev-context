@@ -13,7 +13,7 @@ Each Manual E2E unit is classified by judgment only:
 
 `Judgment` does not select a different executor. Both kinds are executed by Human under current policy.
 
-The Linear `Manual E2E` label is aggregate state for the Issue. Do not create separate executor labels.
+Canonical GitHub Issue comments own Manual E2E plans, results and operational evidence under [ISSUES.md](./ISSUES.md). Only compatible already-admitted SAY generations retain applicable Linear bookkeeping.
 
 ## When Manual E2E is required
 
@@ -64,56 +64,11 @@ A post-merge confirmed product FAIL normally returns the Work to implementation 
 
 ## Post-merge implementation-backed reverse-map re-audit
 
-For Required Manual E2E whose timing is post-merge, do not finalize `Manual E2E: Ready to Run`, or synchronize it to `Ready to Run` after merge, until Sol High has freshly checked the latest merged tested ref and completed a focused reverse-map re-audit against the relevant current implementation.
+Before required post-merge Human E2E, verify the latest tested SHA and map each affected unit to its **actual current production path**. The Issue/normative product contract defines behavior; the implementation identifies entrypoint, host lifecycle/state transition and observable branch; the E2E plan supplies fixture, action, concrete expected observation and evidence. Never weaken the product oracle to match a defect.
 
-The authority order is:
+Follow relevant owners, guards and error paths, not the entire source tree. Host-independent deterministic checks belong in automation. A stale QuickPick test must actually reach its pending-QuickPick guard; an objective rewrite oracle must specify the concrete expected output, not merely “works correctly”.
 
-```text
-Issue / normative product contract
-    defines required behavior
-
-current tested implementation
-    defines the concrete production path that Manual E2E must exercise
-
-Manual E2E plan
-    proves the contract through that current production path
-```
-
-The current implementation is not the product-contract owner. If implementation and normative contract disagree, do not weaken or rewrite the E2E oracle to match the implementation. Treat the discrepancy as an implementation defect or contract mismatch and resolve it through the normal contract / implementation path.
-
-For each required post-merge Manual E2E unit, complete and retain a focused mapping equivalent to:
-
-```text
-current implementation owner / production entrypoint
-    -> actual host path / state transition / failure branch
-    -> user-observable behavior
-    -> fixture / action / expected observation / evidence
-```
-
-The re-audit follows only relevant implementation owners and paths; it does not require reading the entire source tree. When acceptance depends on them, check:
-
-- the actual production entrypoint, command, menu, context, and host wiring;
-- the relevant state guard, lifecycle path, and error branch;
-- exact user-facing label, message, result, transformation, or output shape when objectively derivable;
-- native-host boundaries such as Undo / Redo transactions, QuickPick, focus, and session behavior;
-- whether deterministic semantics are already sufficiently proven by automated tests and should therefore not be duplicated as Manual E2E units.
-
-The current Manual E2E plan must connect each unit's fixture, action, oracle, and evidence to this actual production owner / path.
-
-### Concrete drift examples
-
-The following SAY-224 examples describe the reverse-map failure mode; they are methodology examples, not SAY-224-specific permanent product requirements:
-
-- **Qualified / scoped rewrite:** when automated or current-implementation evidence objectively establishes a concrete result such as `@Outer::A -> @Other::B`, the Human oracle must name and check that concrete expected rewrite. A generic instruction such as “resolves correctly” leaves the tester to invent qualification semantics.
-- **Stale QuickPick guard:** when the implementation's stale path depends on a pending QuickPick observing a document-version or text change, the action must actually exercise that pending-QuickPick path and observe its specific stale result. An instruction that merely says “change Source while QuickPick is open” is insufficient if normal GUI focus behavior can dismiss the QuickPick before the guard is reached.
-
-### Tested-ref drift after mapping
-
-After an implementation-backed mapping has been established, a tested-ref change caused by a fix merge or other relevant implementation update makes affected owner / path mappings stale until they are re-audited. Sol High must fresh-read the affected production owner / path and revalidate affected units' fixture, action, oracle, and evidence mapping. Do not mechanically redesign unaffected units.
-
-If the tested ref changes but the relevant owners and paths do not drift, revalidate that the existing mapping remains valid; a full plan redesign is not required solely because commit identity changed.
-
-Issue #92 remains the owner of FAIL-time runtime control and Human stop / pause precedence.
+When the tested ref changes, revalidate affected owner/path mappings. Unaffected units do not need a full redesign merely because the SHA changed.
 
 ## Plan-time classification
 
@@ -208,49 +163,17 @@ Do not begin implementation-failure decomposition immediately when safely execut
 
 ## Execution-time freshness check
 
-Immediately before Human instructions, Sol High re-checks:
+Immediately before Human instructions, verify current Issue plan, tested SHA, valid fixture/action/oracle and affected implementation-backed paths, plus same-key stabilization and re-entry eligibility. If relevant owners/paths did not drift, the prior mapping remains valid; do not repeat a full redesign.
 
-1. latest Project Context;
-2. current Issue contract / Manual E2E plan;
-3. intended remote repository state / tested commit and whether tested ref or relevant implementation owners / paths have drifted;
-4. initial state / fixture / actions / expected observations and each unit's implementation-backed mapping;
-5. whether each planned unit still exercises the current tested implementation's actual production path and can observe the contract-defined oracle;
-6. whether any planned unit has become deterministic MCP/script-only work that should leave Manual E2E;
-7. whether a `Judgment: Human` quality gate has accidentally been reduced to an incomplete objective oracle;
-8. whether any selected `E2E Stabilization Key` is currently gated and, if so, whether every re-entry requirement below has been explicitly satisfied.
+Remove host-independent deterministic checks. Return ambiguous product oracles for contract clarification. Preserve intentional Human UX/visual judgment.
 
-When implementation-backed mapping was completed at `Ready to Run` time and tested ref and relevant owners / paths have not drifted, this check only needs to prove that the mapping remains valid; it does not require a full plan redesign.
+## Native GitHub Issue start and resume
 
-Safe changes:
+Starting or resuming required E2E means reaching an actionable Human handoff, not creating an E2E-specific chat or only changing state. First verify current Issue plan, tested SHA, reverse map, stabilization eligibility and exact checkout ownership.
 
-- host-independent deterministic unit → remove from Manual E2E and automate / script;
-- bounded environment / instruction issue → correct when reasonable without changing product oracle;
-- ambiguous product oracle → return contract / plan to non-Ready.
+For native Issues [CHECKOUTS.md](./CHECKOUTS.md) and [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) own `nuinui-e2e --production` admission/start/closure; [VS-CODE-E2E.md](./VS-CODE-E2E.md) owns VS Code host setup. Only the Human operates and judges GUI units. Record plan, start, observations, results and exact closure under [ISSUES.md](./ISSUES.md#native-github-manual-e2e-checkpoints); host readiness never means product PASS.
 
-## Meaning of start for In Review Manual E2E
-
-When the user asks to start, restart, or resume an `In Review` Issue whose current execution track is Manual E2E, do not stop after re-audit, classification, or Linear state transition.
-
-`Start` is complete only when Human has an immediately actionable first handoff in the same response, unless a concrete blocker prevents execution.
-
-Before that handoff:
-
-1. re-audit current Issue / Manual E2E plan;
-2. perform the execution-time freshness check, including stabilization-gate/re-entry state for every affected key;
-3. when local execution is required, fix semantic Issue / tested ref / fixture / locale / port inputs and use the canonical same-terminal startup generator in [`CHECKOUTS.md`](./CHECKOUTS.md);
-4. move Manual E2E to `Running` only when execution is actually beginning;
-5. provide the first executable handoff immediately.
-
-A gated key is not eligible for startup merely because a Human-test lane is `FREE`, a new tested SHA exists, or a narrow fix merged. Do not create the next generation for that key until the re-entry requirements are complete.
-
-For normal startup:
-
-- provide one named `nuinui e2e-start-command` invocation with semantic values fixed and `--executor human` as the current compatibility metadata;
-- Human executes the emitted continuation verbatim; do not ask Human to substitute commit SHAs, checkout paths, fixture source, ports, or positional argument order;
-- the generator must not choose tested ref, test oracle, stabilization eligibility, or ambiguous Human-test lane, and it must not create a checkout or run GUI actions;
-- if generation is `BLOCKED` because state is ambiguous, stale, dirty, malformed, or helper is unavailable, use exceptional read-only checkout/preflight and diagnosis paths in [`CHECKOUTS.md`](./CHECKOUTS.md), without turning output into a normal paste/reconstruction round-trip.
-
-Do not report an `In Review` Manual E2E Issue as newly started while the Human still has to ask separately for the first command.
+Do not use `nuinui e2e-start-command`, `nuinui-e2e-prepare`, SAY/Linear state or a legacy implementation-release gate for new native Issues. Exact compatible already-admitted SAY recovery remains reachable through CHECKOUTS / LOCAL-TOOLS legacy references.
 
 ## Result handling by Sol High
 
@@ -372,32 +295,13 @@ If an Objective prior failure cannot reasonably be automated, the contract / re-
 
 Completion of these requirements is an explicit stabilization-cycle re-entry record. That record is durable historical evidence for the key, so a later qualifying recurrence re-fires the gate immediately.
 
-### Implementation failure decomposition
+### Implementation failure follow-up
 
-For confirmed implementation failure when the stabilization gate has not fired, or after a gated key has completed the mandatory stabilization re-audit and has an executable consolidated repair scope:
+After actual-host triage confirms product failure, classify same-key stabilization history before routing. A gated key must complete the cross-owner re-audit and re-entry rules above; a first ungated qualifying failure permits one normal focused fix/rerun.
 
-1. before returning Work to implementation queue, perform focused contract re-audit against latest Project Context, current Issue record, and latest remote `main`; use [`CONTRACT-REAUDIT.md`](./CONTRACT-REAUDIT.md) and do not treat prior `Contract: Ready` or failed tested commit as current implementation authority;
-2. identify concrete failure class and semantic owner;
-3. determine Same Issue vs independent new leaf using [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md);
-4. determine smallest natural fix slice / safe checkpoint using [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md); for a gated key this slicing must stay within the consolidated whole-chain repair scope rather than reverting to symptom-only patches;
-5. synchronize re-audit result before implementation resumes:
-   - current authority uniquely determines fix contract / acceptance → `Contract: Ready`;
-   - a real product / UX / scope / compatibility decision remains → `Contract: Pending`;
-   - a prerequisite prevents executable contract → `Contract: Blocked`;
-   - keep `Manual E2E: Failed` as failure evidence until later rerun passes;
-6. only `Contract: Ready` + unblocked Work returns to normal implementation execution under [`CHECKOUTS.md`](./CHECKOUTS.md) and [`CODING-AGENT.md`](./CODING-AGENT.md):
-   - select a `FREE` manifest-declared implementation lane;
-   - freeze fix Base checkpoint SHA and record implementation checkpoint;
-   - implementation / blocking-fix Coding Agent performs repository implementation, verification, and Git work;
-   - never implement or repair product from a Human-test checkout;
-7. implement / verify / review / merge;
-8. when only required Manual E2E remains again, return to `manual_e2e_only + In Review` only if any applicable stabilization re-entry requirements are already satisfied.
+Use latest contract and implementation to identify failure class, semantic owner and fix scope. Record current decisions/evidence under [ISSUES.md](./ISSUES.md); consult [CONTRACT-REAUDIT.md](./CONTRACT-REAUDIT.md), [CONTRACT-DECISIONS.md](./CONTRACT-DECISIONS.md) and [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md) only as relevant. Product changes follow [CODING-AGENT.md](./CODING-AGENT.md), [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md), checkout and PR owners. Never modify product code in the Human-test checkout or create an Issue for every symptom.
 
-Do not create a direct web-ChatGPT implementation route for an E2E failure. ChatGPT owns failure classification, focused or stabilization re-audit, fix contract, slicing, lane assignment, blocking review, and management; the implementation Coding Agent owns repository implementation/fix execution.
-
-Multiple independent failure classes may become separate leaf Issues or sequential slices when natural. Do not create a new Issue mechanically for every Human comment or micro-fix.
-
-`Manual E2E: Passed` is set only after all required units pass.
+Verify, review, merge and rerun affected units; retain prior evidence and stabilization history. All required units must actually PASS before final Passed.
 
 ## Rerun after implementation fix
 
@@ -409,82 +313,11 @@ Previously passed unaffected units need not repeat mechanically. Repeat only whe
 
 Before rerunning an affected stabilization key, prove that it is either ungated with its normal first-failure rerun allowance, or that every re-entry requirement above has been completed. A merged fix alone is not re-entry evidence.
 
-## Aggregate Linear state
 
-Use existing aggregate workflow:
+## Result and closure boundary
 
-```text
-Plan Pending -> Ready to Run -> Running -> Passed
-Ready to Run -> Deferred -> Running -> Passed
-Running -> Failed
-```
-
-While only some units pass, keep `Running` while active, `Deferred` when intentionally paused, or `Failed` while a confirmed failure remains. A stabilization gate does not redefine `Failed`; it restricts the next execution route for its key.
-
-## Standard flow
-
-```text
-acceptance
-  ↓
-can automated test / deterministic script prove it without production host?
-  YES -> automate / script; no Manual E2E
-  NO
-  ↓
-Manual E2E plan
-  -> Judgment: Objective / Human
-  -> stable E2E Stabilization Key where applicable
-  ↓
-Human executes production-host unit
-  ↓
-implementation / automated verification / review / merge
-  ↓
-manual_e2e_only + Ready to Run
-  ↓
-startup freshness + stabilization eligibility check
-  ↓
-execute units
-  ↓
-unit FAIL candidate?
-  YES -> common runtime control:
-         stop dependent units; continue independent units
-         unless Human explicitly stops / pauses
-         -> collect available evidence
-  ↓
-runnable units complete or Human stops / pauses
-  ↓
-aggregate PASS / FAIL candidate / BLOCKED evidence
-  ↓
-FAIL candidate present?
-  YES -> mandatory Human actual-host focused triage
-         -> fixture / setup / environment / instruction / host-state problem:
-            correct setup / plan -> rerun necessary units; no streak increment
-         -> ambiguous oracle / new product decision: Contract / plan non-Ready; no streak increment
-         -> confirmed qualifying failure:
-            classify same-key history
-            -> first pre-stabilization qualifying failure:
-               focused latest-main re-audit -> fix -> merge -> one rerun allowed
-            -> second pre-stabilization qualifying failure OR post-stabilization recurrence
-               OR explicit Human stabilization override:
-               stabilization gate -> preserve evidence -> canonical current-generation closure
-               -> mandatory cross-owner full re-audit
-               -> no symptom-only implementation restart
-               -> re-entry requirements before another same-key Human generation
-         -> Human stops / pauses before triage completes:
-            record incomplete / not performed -> no inferred product FAIL
-  NO
-  ↓
-all required units PASS
-  -> reset ordinary pre-stabilization streak for passed key
-  ↓
-Manual E2E: Passed
-  ↓
-Done-before Ready contract freshness check
-  ↓
-Done
-```
+Human stop/pause overrides further operations. Otherwise finish safely executable independent units, preserve necessary transient failure evidence before teardown, complete focused Human actual-host triage, record PASS/FAIL/BLOCKED and unexecuted units, apply same-key stabilization rules and perform exact-generation closure through existing owners.
 
 ## Loading rule
 
-Read this document whenever planning, classifying, executing, retrying, or handling results for Manual E2E.
-
-For VS Code production-host environment setup also read `VS-CODE-E2E.md`. `LUNA-E2E-PLAYBOOK.md` is inactive historical reactivation reference and is not loaded or used during normal Manual E2E. For implementation fixes, return to normal implementation authorities rather than using the E2E operator role.
+Read this document for Human Manual E2E planning, execution, judgment and result handling. Load [VS-CODE-E2E.md](./VS-CODE-E2E.md) only for VS Code host work. [CHECKOUTS.md](./CHECKOUTS.md), [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) and [ISSUES.md](./ISSUES.md) own their existing native checkout, helper and checkpoint responsibilities. `LUNA-E2E-PLAYBOOK.md` is inactive history.
