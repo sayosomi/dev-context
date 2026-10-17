@@ -98,8 +98,9 @@ independently re-establish the following from current GitHub and local state:
   the independent read-only admission checks below. A `FREE` / `preflight=PASS`
   result from legacy `nuinui preflight` is not required and does not grant
   admission. Native GitHub work uses independent checkout and ownership checks,
-  not this historical diagnostic. For a same-Task native continuation on its expected topic branch, do not require
-  legacy preflight to classify the checkout as `FREE` or return `PASS`. A clean
+  not this historical diagnostic. For a same-Task native continuation on its
+  expected topic branch, do not require legacy preflight to classify the
+  checkout as `FREE` or return `PASS`. A clean
   topic branch without a legacy slot may be `BLOCKED` under the old classifier;
   that classification proves neither capacity nor permission to proceed. If
   any reason for `BLOCKED`, or any other execution state, is ambiguous, stop.
@@ -336,9 +337,8 @@ stop and repeat admission for the new intended revision.
 A new GitHub-native audit uses the independent read-only checks above instead
 of legacy `nuinui preflight`. A historical `FREE` output cannot override an
 active or ambiguous GitHub audit checkpoint. Do not run `nuinui audit-begin` or
-`nuinui audit-release` for a new GitHub-native audit. Do
-not create, initialize, rewrite, or automatically release legacy metadata or
-reservations.
+`nuinui audit-release` for a new GitHub-native audit. Do not create,
+initialize, rewrite, or automatically release legacy metadata or reservations.
 If local `main` is behind authoritative remote `main`, stop admission. Perform
 any needed synchronization separately through the established safe Git
 workflow, then repeat the complete admission check against a new fixed SHA.
