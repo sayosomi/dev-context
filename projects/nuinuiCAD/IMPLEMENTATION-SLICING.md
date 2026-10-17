@@ -30,13 +30,11 @@ Implementationはcurrent repository ownershipの自然なboundaryでsliceし、*
 - next safe checkpoint;
 - required verification。
 
-Ordinary implementation and compatible pre-existing SAY execution keep Luna
-xhigh as their default/current executor. A GitHub-native implementation Issue
-may use the Human-selected agent only when its current Issue body explicitly
-opts into the autonomous conformance mode defined in [`CODING-AGENT.md`](./CODING-AGENT.md).
-That choice applies to the Issue's authorized matrix, not separately to each
-defect family or slice. No other Work may select an alternative executor by
-implication.
+Ordinary and compatible pre-existing SAY implementation use a lower-tier
+Coding Agent by default. A Human-explicit choice may use an upper-tier agent
+without autonomous-conformance opt-in. That separate mode requires the exact
+current GitHub Issue-body opt-in in [`CODING-AGENT.md`](./CODING-AGENT.md) and
+applies across the authorized matrix, not only one defect family or slice.
 
 ## Pre-execution slicing audit
 
@@ -129,7 +127,7 @@ pushed implementation checkpoint
    or
 -> integration reasoning / conflict resolution / integration fix required
    -> the assigned implementation Coding Agent integrates and verifies
-      (Luna xhigh for ordinary work; the Human-selected agent for an opted-in Issue)
+      (selected implementation Coding Agent; conformance opt-in is separate)
    -> record Integration Watermark
    -> blocking review
 -> merge
@@ -177,7 +175,7 @@ first / routine checkpointではexact implementation checkpoint、same durable g
 
 既存のpost-review merge-gate refreshでは、already-reviewed exact Review Headと既存のIntegration Watermarkがあり、post-integration semantic driftをChatGPTがfreshに`NON-INTERFERING`と判定し、merge gateの唯一の要求がcurrent-base CI / branch freshnessであることが追加のpreconditionとなる。この場合もhelperはcurrent `main`をconflict-free merge-onlyで取り込み、verification後にnormal pushする。successful pushed merge headでIntegration Watermarkを更新し、parents / effective diff / verification evidence / remote stateを対象とするfocused blocking reviewとfresh required PR CIを行う。
 
-`integrate-clean`のstale / mechanical precondition failureが、source reasoningなしに一意にfreshへ更新できる場合は、ChatGPTのfresh re-evaluation後も同じdeterministic Human routeに残してよい。conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous repository stateが必要なintegrationは、current Workのimplementation Coding Agentが担当する（ordinary work and compatible SAY workではLuna xhigh、明示的にopt-inしたnative IssueではHuman-selected agent）。Human `integrate-clean`はdeterministic terminal assistanceであり、別のsource implementation executorではない。
+`integrate-clean`のstale / mechanical precondition failureが、source reasoningなしに一意にfreshへ更新できる場合は、ChatGPTのfresh re-evaluation後も同じdeterministic Human routeに残してよい。conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous repository stateが必要なintegrationは、current Workのimplementation Coding Agentが担当する（ordinary / compatible SAY / opted-in native Issueのいずれも担当implementation Coding Agent）。Human `integrate-clean`はdeterministic terminal assistanceであり、別のsource implementation executorではない。
 
 ### Verification boundary
 
@@ -202,7 +200,7 @@ implementation slice開始時は、ChatGPTがfresh remote state、Linear current
 - 全implementation laneがBUSY →新しいimplementationは開始しない;
 - `role=human-test` laneはimplementationへ使わない。
 
-same active durable generationのresume、blocking-fix、integration、new Luna session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけではdeclared-lane preflightへ戻らない。実装Agentはassigned checkoutで`nuinui handoff <SAY-N> <expected-main-sha>`を実行し、façadeがmanifestとdurable slotからBranch / Base / Claim / Checkpointとremote topic modeを解決して、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) のstandalone proofへ渡す。handoffが`HANDOFF VERIFIED`を返さなければ、実装Agentは変更せず停止してorchestratorへ戻る。resume、retry、repair、別のHuman handoff verificationは行わない。
+same active durable generationのresume、blocking-fix、integration、new implementation-agent session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけではdeclared-lane preflightへ戻らない。実装Agentはassigned checkoutで`nuinui handoff <SAY-N> <expected-main-sha>`を実行し、façadeがmanifestとdurable slotからBranch / Base / Claim / Checkpointとremote topic modeを解決して、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) のstandalone proofへ渡す。handoffが`HANDOFF VERIFIED`を返さなければ、実装Agentは変更せず停止してorchestratorへ戻る。resume、retry、repair、別のHuman handoff verificationは行わない。
 
 declared lane capacityを超えるparallelismをIssue / branch / worktree追加で表現しない。全laneを常時使用することも目標にしない。
 
@@ -318,17 +316,17 @@ Manual E2Eでconfirmed implementation failureが出たらHuman-test laneでfix�
 3. Same Issue vs new leafを判断;
 4. smallest natural fix sliceを決める;
 5. FREEなdeclared implementation laneへ載せる。ただし他laneが`BUSY`ならparallel admission gateを満たすこと;
-6. Luna fix / verification / integration / merge;
+6. 担当implementation Coding Agentがfix / verification / integration / merge;
 7. new exact tested commitでaffected E2E unitをrerun。
 
 previously passed unaffected unitsはshared owner / premiseが変わらない限り機械的にrepeatしない。
 
 ## Coding Agent execution
 
-Luna xhigh remains the default executor for ordinary implementation and the
-current executor for compatible pre-existing SAY work. The only alternate
-route is a GitHub-native Issue that explicitly opts into autonomous
-conformance discovery and repair under [`CODING-AGENT.md`](./CODING-AGENT.md).
+Lower-tier Coding Agents are the default for ordinary implementation and
+compatible pre-existing SAY work. Human-explicit upper-tier selection is
+permitted independently of autonomous conformance, which requires the separate
+Issue-body opt-in in [`CODING-AGENT.md`](./CODING-AGENT.md).
 
 ChatGPT sets the current slice's contract, lane, Base checkpoint, and safe
 checkpoint, then gives the assigned Coding Agent only that scoped work. The

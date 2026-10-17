@@ -64,7 +64,7 @@ LunaへManual E2E operator roleの中でimplementation fix、root-cause redesign
 
 ## Implementation skill selection
 
-nuinuiCADのrepository implementation / blocking fixはLuna xhighが実行する。ChatGPTはcurrent Taskに必要なskillを選び、implementation promptへconstraint / procedureとして反映する。
+nuinuiCADのrepository implementation / blocking fixは下位Coding Agent（Lunaなど）が既定。Humanが明示指定すれば上位Coding Agent（AstraやSol Xhighなど）を使用できる。選択のauthorityは[`CODING-AGENT.md`](./CODING-AGENT.md)。ChatGPTはcurrent Taskに必要なskillを選び、implementation promptへconstraint / procedureとして反映する。
 
 一般的なimplementation:
 
@@ -86,12 +86,12 @@ implementation後blocking review:
 
 ## Lane-aware use
 
-skill selectionは`main` / `sub`のどちらでも同じ。
+skill selectionは[`LANES.conf`](./LANES.conf)に宣言された`role=implementation` laneで共通。
 
 - laneのBase checkpointは [`CHECKOUTS.md`](./CHECKOUTS.md) / [`CODING-AGENT.md`](./CODING-AGENT.md) に従う;
 - skillを理由にactive slice途中でlatest mainをmerge / rebaseしない;
 - skillがscope expansionを要求しそうならcurrent workをcheckpointし、ChatGPTへ戻す;
-- `e2e` laneでimplementation skillを使わない。
+- `role=human-test` laneでimplementation skillを使わない。
 
 ## Manual E2E selection
 

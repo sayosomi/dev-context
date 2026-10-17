@@ -18,7 +18,7 @@ SAY taskにだけ適用する。
 
 chatを新しく作っただけではlaneをclaimしない。actual startup gate / lane assignment / Base checkpoint / durable claimが成立した時点でexecutionが開始する。
 
-通常のrepository implementation / blocking fixは[`CODING-AGENT.md`](./CODING-AGENT.md)に従いLuna xhighが担当する。
+通常のrepository implementation / blocking fixは[`CODING-AGENT.md`](./CODING-AGENT.md)に従い下位Coding Agentを既定とし、Humanの明示指定があれば上位Coding Agentが担当する。
 
 ## Direct execution exceptions
 
@@ -29,9 +29,9 @@ Implementation chatでは次の2種類のdirect execution exceptionを認識す�
 - **Documentation / policy direct execution exception** — repository-owned documentation / specification / policyに限定された変更。
 - **Narrow CI/tooling direct execution exception** — product implementationから独立し、scope・intended change・focused verificationが一意なCI / repository tooling / automation-only変更。
 
-いずれも`CODING-AGENT.md`の全条件を満たし、Humanがplan / target / intended changeを明示承認した場合だけ使う。該当時はdeclared execution lane、Base checkpoint、Luna sessionをclaimせず、write直前にrequired remote / target freshnessを確認する。
+いずれも`CODING-AGENT.md`の全条件を満たし、Humanがplan / target / intended changeを明示承認した場合だけ使う。該当時はdeclared execution lane、Base checkpoint、implementation-agent sessionをclaimせず、write直前にrequired remote / target freshnessを確認する。
 
-どちらのexceptionにも一意に該当しないTask、または途中でsource/runtime/DSL semantics、broad debugging、conflict resolution、integration-heavy work等へscopeが拡大したTaskはdirect executionを停止し、`CODING-AGENT.md`の通常Luna xhigh lifecycleへ戻す。
+どちらのexceptionにも一意に該当しないTask、または途中でsource/runtime/DSL semantics、broad debugging、conflict resolution、integration-heavy work等へscopeが拡大したTaskはdirect executionを停止し、`CODING-AGENT.md`の通常の担当implementation Coding Agent lifecycleへ戻す。
 
 Manual E2Eは[`MANUAL-E2E.md`](./MANUAL-E2E.md) / [`CHAT-E2E.md`](./CHAT-E2E.md)をauthorityとする。
 
@@ -121,7 +121,7 @@ Compatible pre-existing SAY taskについてHumanが開始 / 再開 / 続行を�
 
 その応答は次のどちらかへ到達して完了する。
 
-1. ChatGPT側でactual execution開始まで進み、必要なlane assignment / checkpoint / Luna handoffを開始する。
+1. ChatGPT側でactual execution開始まで進み、必要なlane assignment / checkpoint / implementation-agent handoffを開始する。
 2. Human actionが必要なら、その応答から直ちに実行できる最初の完全なhandoffを提示する。
 
 Human action待ちになる場合:
@@ -161,15 +161,15 @@ If a Human reports terminal disappearance or lost output after `begin`, `start`,
 
 start / resume後のidentity invariantは、physical BUSYなdeclared implementation laneから読めるIssue集合とLinear current implementation `In Progress`集合が一致すること。件数だけでは十分ではない。
 
-same active durable generationのcontinuationでは、Luna session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHumanをhandoff準備へ戻さない。ChatGPTはcurrent contractとfresh remote stateをpromptへ反映し、implementation agentへIssueとexpected-mainだけを含むcanonical commandを渡す。handoff façadeがdurable slotからfull identityとtopic modeを解決する。
+same active durable generationのcontinuationでは、implementation-agent session変更、blocking reviewからblocking fix、implementationからintegration、remote `main` advance、またはChatGPT chat rotationだけを理由にHumanをhandoff準備へ戻さない。ChatGPTはcurrent contractとfresh remote stateをpromptへ反映し、implementation agentへIssueとexpected-mainだけを含むcanonical commandを渡す。handoff façadeがdurable slotからfull identityとtopic modeを解決する。
 
-Canonical `nuinui handoff <SAY-N> <expected-main-sha>`が`HANDOFF VERIFIED`を返した後は、通常そのままLuna implementationへ進む。handoffのidentityまたはsafety proofが失敗した場合は自動resume・retry・repairを行わず、implementation agentは停止してorchestratorへ戻す。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
+Canonical `nuinui handoff <SAY-N> <expected-main-sha>`が`HANDOFF VERIFIED`を返した後は、通常そのまま担当implementation Coding Agentへ進む。handoffのidentityまたはsafety proofが失敗した場合は自動resume・retry・repairを行わず、implementation agentは停止してorchestratorへ戻す。handoffのsemantic ownershipとremote-topic authorityは[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)へ委譲する。
 
 product / UX decision、approval-gated dev-context write、unsafe/destructive unknown-state recovery等のHuman判断boundaryは自動決定しない。その場合も必要な判断/actionを具体化する。
 
 ## Implementation continuation completion rule
 
-Luna implementation / integration result後、残作業がChatGPTから直接扱えるremote / management stateだけならHumanへの細かなhandoffへ分割しない。
+implementation Coding Agentのimplementation / integration result後、残作業がChatGPTから直接扱えるremote / management stateだけならHumanへの細かなhandoffへ分割しない。
 
 典型:
 
@@ -243,11 +243,11 @@ release anomalyがpost-merge E2E-only handoffで発生した場合:
 
 ChatGPTがIntegration checkpointでBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、conflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、[`CODING-AGENT.md`](./CODING-AGENT.md) / [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のdeterministic Human routeとして`nuinui integrate-clean`へ直接handoffしてよい。first / routine checkpointではIntegration WatermarkまたはReview Headを要求しない。
 
-このrouteではnew implementation lane / Base / Luna sessionを作らない。current active durable generationのIssue / claim / exact topic checkpoint（implementation checkpointまたはalready-reviewed Review Head）、fresh current main、settled verification script、optional expected-file manifestをexact inputとして渡す。既存のpost-review merge-gate refreshでは、Integration Watermark、Review Head、freshな`NON-INTERFERING` drift判定、focused merge-only review、およびfresh required CIを引き続き要求する。
+このrouteではnew implementation lane / Base / implementation-agent sessionを作らない。current active durable generationのIssue / claim / exact topic checkpoint（implementation checkpointまたはalready-reviewed Review Head）、fresh current main、settled verification script、optional expected-file manifestをexact inputとして渡す。既存のpost-review merge-gate refreshでは、Integration Watermark、Review Head、freshな`NON-INTERFERING` drift判定、focused merge-only review、およびfresh required CIを引き続き要求する。
 
 routine checkpointで`INTEGRATION PUSHED`を受けたら、ChatGPTはnew merge headのparents、effective diff / merge tree、verification evidence、remote topic/current mainをfresh確認してpushed-state blocking reviewを行い、normal PR / merge workflowへ進む。post-review refreshではfocused merge-only blocking reviewを行い、その後もfresh required PR CIを通常どおり満たす。
 
-helperが`BLOCKED:` / `ERROR:`を返した場合、stale / mechanical preconditionがsource reasoningなしに一意にrefreshできるかをChatGPTがfreshに再評価する。解決可能なら同じHuman routeを継続できるが、conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常Luna lifecycleへ戻す。
+helperが`BLOCKED:` / `ERROR:`を返した場合、stale / mechanical preconditionがsource reasoningなしに一意にrefreshできるかをChatGPTがfreshに再評価する。解決可能なら同じHuman routeを継続できるが、conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常の担当implementation Coding Agent lifecycleへ戻す。
 
 ## Final closure declaration rule
 
@@ -300,7 +300,7 @@ Implementation chatでは[`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md)とこのdocume
 
 ## Durable ownership handoff
 
-declared implementation lane ownershipはGit-local durable claimで保持する。checkout branchだけからownershipを推測しない。state machine / recoveryは[`CHECKOUTS.md`](./CHECKOUTS.md)、CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)、Luna handoffのfresh execution identity検証は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)をauthorityとする。
+declared implementation lane ownershipはGit-local durable claimで保持する。checkout branchだけからownershipを推測しない。state machine / recoveryは[`CHECKOUTS.md`](./CHECKOUTS.md)、CLIは[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)、implementation-agent handoffのfresh execution identity検証は[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)をauthorityとする。
 
 new `nuinui begin`成功outputの`claim=<generation token>`を、`In Progress` transitionと同じcontinuationで`Implementation checkpoint`へ保存する。低レベル`start`を明示的に使った場合も同じく保存する。checkpoint-pause / chat rotation / handoffでもclaimを落とさない。
 
@@ -310,7 +310,7 @@ new `nuinui begin`成功outputの`claim=<generation token>`を、`In Progress` t
 
 handoffがslot / checkout mismatch、mutation lock、releasing tombstone、uninitialized ownership schema、malformed metadata等をBLOCKEDとして返した場合、laneをFREEと推測しない。handoffはresumeや一般repairを行わず、既存の診断・recovery ownerへ戻す。
 
-chat rotation / external-state recovery後にLuna handoffを生成するときはpast chatのclaimをauthorityにせず、fresh local durable evidenceからcurrent claimを読み直す。
+chat rotation / external-state recovery後にimplementation-agent handoffを生成するときはpast chatのclaimをauthorityにせず、fresh local durable evidenceからcurrent claimを読み直す。
 
 ## Maintenance rule
 
