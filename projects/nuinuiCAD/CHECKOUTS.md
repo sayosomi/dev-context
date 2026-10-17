@@ -16,7 +16,7 @@ The checked-in manifest declares one implementation lane and one Human-test lane
 
 | Lane | Checkout | Role |
 | --- | --- | --- |
-| `main` | `/Users/yosomi/Code/nuinuiCAD` | implementation Coding Agent (Luna xhigh by default; an explicitly opted-in Issue may use its Human-selected agent under `CODING-AGENT.md`) |
+| `main` | `/Users/yosomi/Code/nuinuiCAD` | implementation Coding Agent (lower-tier default; Human-explicit upper-tier under `CODING-AGENT.md`; autonomous conformance needs separate Issue-body opt-in) |
 | `human-e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Human-only native Manual E2E |
 
 Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
@@ -485,7 +485,7 @@ stash, clean, force-recover, or automatically release an existing reservation.
 
 ## Human terminal operations
 
-Humanがterminalでlocal checkoutへ行うmechanical / deterministic operationはlane ownershipそのものではなく、Luna implementation routeとは別の操作補助として扱う。
+Humanがterminalでlocal checkoutへ行うmechanical / deterministic operationはlane ownershipそのものではなく、implementation Coding Agent routeとは別の操作補助として扱う。
 
 Human terminal disappearance is an external-state recovery case. If terminal output disappears or is lost after a Human mutation command, do not blindly rerun that mutation. Run the official read-only command `nuinui last-result` first. An exact recovered terminal SUCCESS can continue through normal next-stage verification; a recovered BLOCKED or ERROR continues from that exact outcome. `NONE`, `INVALID`, or `INCOMPLETE` routes to the existing lane-specific diagnosis/preflight path. Do not reset, stash, force-switch, or otherwise repair state while recovering the lost output.
 
@@ -499,11 +499,11 @@ Humanへ任せてよい典型:
 
 Human向けterminal instructionを生成する場合はshared `human-terminal-instructions` skillを使い、absolute path、audit/mutation分離、mutation直前の再検証、mismatch時のfail-closed、current directoryや過去shell stateへの暗黙依存禁止を守る。
 
-versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent local clone上で利用可能なら、Human handoffではhelperを優先してよい。helper commandの存在はlane利用許可を意味しない。executor / lane選択はREADME routerとcurrent policyがauthorityである。
+versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent local clone上で利用可能なら、Human handoffではhelperを優先してよい。helper commandの存在はlane利用許可を意味しない。executor選択は[`CODING-AGENT.md`](./CODING-AGENT.md)、laneはcurrent manifestがauthorityである。
 
 ## Human-authorized exact source-fix exception
 
-明示的にautonomous conformance discovery and repairへopt-inしたIssueを除き、通常のsource-code implementation / blocking-fix executorはLuna xhighのままである。別の例外として、ChatGPTがcurrent implementation contract内の単一で自明なmechanical repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用のexact-fix boundaryを使える。このexceptionは一般的なsource implementation、debug loop、design判断、conflict resolution、または任意のlane mutationを許可しない。
+通常のsource-code implementation / blocking-fix executorは[`CODING-AGENT.md`](./CODING-AGENT.md)のtier選択に従い、autonomous conformanceのIssue-body opt-inとは独立する。別の例外として、ChatGPTがcurrent implementation contract内の単一で自明なmechanical repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用のexact-fix boundaryを使える。このexceptionは一般的なsource implementation、debug loop、design判断、conflict resolution、または任意のlane mutationを許可しない。
 
 exact-fixのeligibility / identity / Base / checkpoint / lock / release-pending / remote freshness semanticsはこのsectionがownerする。active durable implementation generationがIssueに対して一意であり、resolved checkoutがそのgenerationのbranch / Base / current remote topicへ一致し、expected authoritative mainがfreshであることを証明する。callerはlane、claim、Base、checkpoint、ticket、またはauthorization tokenを渡さず、helperが既存のhandoff / manifest / ownership primitiveから一意に解決する。zero / multiple / malformed generation、near-match、stale remote、dirty startup、または曖昧なidentityはmutation前にBLOCKEDとする。
 
@@ -521,7 +521,7 @@ nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-s
 
 このlegacy preflight / routing手順はcompatible pre-existing SAY taskだけに適用し、その既存startupで必要なpreflightを維持する。Native GitHub new Taskは上記のindependent read-only Git-only admissionを使う。`nuinui preflight`はnative Taskに対するoptional diagnosticであり、admission prerequisiteではない。Same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証し、native Taskをlegacy `begin` / `handoff`へrouteしない。
 
-`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation Luna handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
+`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation implementation-agent handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
 
 ```bash
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
@@ -589,7 +589,7 @@ Separate preflightを使う条件は次に限定する。
 - unexpected checkout、branch、dirty stateが報告された;
 - explicit recovery / diagnosisが必要。
 
-same Issue、same lane、same durable claim generation、Luna commit / push、blocking reviewからblocking fix、implementationからintegration、新しいLuna session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側でfreshに確認し、Issueとexpected-main SHAだけをimplementation promptへ渡す。`nuinui handoff <SAY-N> <expected-main-sha>`はそのIssueに一致するdurable generationをcanonical dev-context cloneから解決し、full startup literalsをpromptへ手作業転記しない。
+same Issue、same lane、same durable claim generation、implementation-agent commit / push、blocking reviewからblocking fix、implementationからintegration、新しいimplementation-agent session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側でfreshに確認し、Issueとexpected-main SHAだけをimplementation promptへ渡す。`nuinui handoff <SAY-N> <expected-main-sha>`はそのIssueに一致するdurable generationをcanonical dev-context cloneから解決し、full startup literalsをpromptへ手作業転記しない。
 
 Humanへ任せないもの:
 
@@ -619,7 +619,7 @@ remote `main` advanceは観測してよい。contract / ownershipを無効化す
 1. current sliceの実装とfocused verificationを完了する。
 2. branchへcommit / pushしcurrent stateをremote保存する。
 3. Base checkpoint以降のremote `main` changeを確認する。
-4. ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditする。conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使い、それ以外のintegration / conflict fixはそのlaneのLunaが行う。
+4. ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditする。conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使い、それ以外のintegration / conflict fixはそのlaneのimplementation Coding Agentが行う。
 5. integration後のrequired verificationを行う。
 6. blocking review / merge gateへ進む。
 
@@ -930,7 +930,7 @@ confirmed product implementation failureが出てもHuman-test laneでは修正�
 e2e FAIL
 -> failure classification / fix contract
 -> FREE declared implementation lane
--> Luna fix / verification / merge
+-> implementation Coding Agent fix / verification / merge
 -> new exact tested commit
 -> selected Human-test laneでaffected unit rerun
 ```
@@ -939,7 +939,7 @@ e2e FAIL
 
 ## CI reproduction
 
-CI reproductionも追加のexecution laneを作らない。必要ならFREEなdeclared implementation laneを一時利用し、exact failing SHA / workflowをauthorityとしてLunaが診断する。全implementation laneがBUSYならsafe checkpointまで待つ。詳細は[`CI-INCIDENTS.md`](./CI-INCIDENTS.md)。
+CI reproductionも追加のexecution laneを作らない。必要ならFREEなdeclared implementation laneを一時利用し、exact failing SHA / workflowをauthorityとして担当implementation Coding Agentが診断する。全implementation laneがBUSYならsafe checkpointまで待つ。詳細は[`CI-INCIDENTS.md`](./CI-INCIDENTS.md)。
 
 ## Prohibited patterns
 
