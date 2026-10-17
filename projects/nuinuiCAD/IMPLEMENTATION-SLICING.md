@@ -1,389 +1,315 @@
 # nuinuiCAD implementation slicing policy
 
-## Purpose
+## Scope and current routes
 
-1つのWorkを、implementation slice、Pull Request、safe checkpointとしてどこで区切るかを定義する。GitHub-native Workとcompatible pre-existing SAY WorkはIssue identityとcheckpoint storeを分ける。
+This document owns **implementation slice boundaries**, safe checkpoints, integration
+timing, and post-integration drift decisions. Work/Issue decomposition belongs to
+[`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md); checkout admission to
+[`CHECKOUTS.md`](./CHECKOUTS.md) and [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md);
+agent selection to [`CODING-AGENT.md`](./CODING-AGENT.md);
+PR/review/CI/merge to [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
 
-Work decompositionとimplementation slicingを混同しない。
+- **GitHub-native D1 (active):** use the existing single product implementation
+  checkout and Git-only lifecycle. The canonical `sayosomi/nuinuiCAD#N` Issue body
+  owns scope/acceptance; Issue comments own material decisions and exact pushed
+  checkpoints. No SAY identifier, Linear checkpoint, or legacy
+  `nuinui begin/handoff/release` applies.
+- **Compatible pre-existing SAY only:** already-admitted legacy generations
+  retain their declared lane, durable claim, minimum Linear checkpoints, and
+  eligible `nuinui integrate-clean` assistance. The last section adds these rules;
+  they never grant a native D1 route.
+- **Human Manual E2E:** remains Human-only. Native general activation and
+  eventual legacy-helper retirement belong to
+  [dev-context #286](https://github.com/sayosomi/dev-context/issues/286),
+  not this policy.
 
-- Work decomposition: native Workのoriginal scope / acceptanceをsame GitHub Issueに残すか、independent leaf Issueへ移すか。compatible pre-existing SAY Workは既存Linear identityを歴史的に保持する。
-- Implementation slicing: same Issueのimplementationを1つまたは複数のsequential slice / PRへどう分けるか。
-- Execution lane: current implementation sliceをどのmanifest-declared implementation laneで実行するか。
+One Issue may require several **sequential slices/PRs**. Same Issue does not
+mean same branch, PR, session, or uninterrupted track. Work decomposition
+(new leaf Issue) and implementation slicing (PR boundaries within one Issue)
+are separate decisions.
 
-Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md)、lane capacity / checkout isolationは [`CHECKOUTS.md`](./CHECKOUTS.md)、implementation executorは [`CODING-AGENT.md`](./CODING-AGENT.md) がauthority。
+## Plan the natural slice
 
-以下のlane assignmentとLinear checkpoint recordはcompatible pre-existing SAY executionにだけ適用する。GitHub-native slicingは末尾のsectionがownerし、一般D1 activation checkpoint後に通常適用する。それまではnative implementation startupを行わない。
+**One slice uses one authorized implementation checkout/lane and one fixed Base
+checkpoint through its next safe checkpoint.** Do not predeclare every future
+PR. Before execution, inspect the *whole current acceptance* against the latest
+repository and record:
 
-same Issueであることはsame branch、same PR、same Coding Agent session、same uninterrupted execution trackを意味しない。
+- current acceptance cluster, primary semantic owner/API/data-flow boundary,
+  and intended observable result;
+- prerequisite/downstream dependencies, shared owners, lifecycle/integration
+  boundaries, and competing work;
+- whether each candidate slice is independently verifiable and intermediate
+  merge leaves coherent repository state;
+- selected checkout/lane, fixed Base SHA, topic branch, next safe checkpoint,
+  and required verification.
 
-## Core rule
+A useful boundary sequence, only when it matches real ownership, is semantic
+/type foundation → host-neutral planner/transformation → adapter/protocol/runtime
+→ host lifecycle wiring → interactive/production-host acceptance.
 
-Implementationはcurrent repository ownershipの自然なboundaryでsliceし、**1 sliceを1 implementation lane上で、1つの固定Base checkpointから次のsafe checkpointまで完結させる。**
+**Do not force a split** when an intermediate merge would break the product,
+duplicate a source of truth/owner, require artificial temporary APIs or
+compatibility layers, interrupt an indivisible cross-boundary transaction,
+lack its own verification oracle, or increase overhead without improving
+review, diagnosis, or rollback. PR size, Issue count, and lane utilization
+are not goals.
 
-最初から全PR構成を確定する必要はない。current slice開始時には少なくとも次を固定する。
+For D1, keep one active product implementation track. For already-admitted
+SAY work with another BUSY lane, use the legacy parallel-admission rules below;
+a FREE lane alone is not authorization.
 
-- current acceptance cluster;
-- primary semantic owner / boundary;
-- selected lane: `<manifest-declared implementation lane>`;
-- Base checkpoint SHA;
-- branch;
-- next safe checkpoint;
-- required verification。
-
-Ordinary and compatible pre-existing SAY implementation use a lower-tier
-Coding Agent by default. A Human-explicit choice may use an upper-tier agent
-without autonomous-conformance opt-in. That separate mode requires the exact
-current GitHub Issue-body opt-in in [`CODING-AGENT.md`](./CODING-AGENT.md) and
-applies across the authorized matrix, not only one defect family or slice.
-
-## Pre-execution slicing audit
-
-Contract: ReadyのIssueでもacceptance全体をそのまま1 PRへ写像しない。
-
-implementation開始前にwhole current scopeを監査し、次を整理する。
-
-- acceptance cluster;
-- primary semantic owner / boundary;
-- upstream / downstream dependency;
-- independently verifiableか;
-- intermediate merge後もrepositoryが一貫するか;
-- later acceptanceがcurrent unmerged implementationへ暗黙依存しないか;
-- broad integration / lifecycle boundaryがどこか;
-- parallel laneで別Taskが同じowner / prerequisiteを持っていないか。
-
-別implementation laneが既に`BUSY`なら、Coordinatorの[`Parallel admission gate`](./CHAT-COORDINATOR.md)を通った候補であることを確認する。Implementation chatから直接start候補を決める場合も同等のinterference auditを行い、`LOW`と判断できない候補を「laneが空いている」という理由だけで開始しない。
-
-candidate選定後からactual startまでに相手laneのscopeがshared ownerへ拡大したsignalがあれば、Baseを固定する前にparallel admissionを再評価する。
-
-自然なboundary例:
-
-```text
-semantic / type foundation
--> host-neutral planner / transformation
--> adapter / protocol / runtime integration
--> host wiring / lifecycle integration
--> interactive UX / production-host acceptance
-```
-
-actual repository ownershipを優先する。
-
-## Do not force decomposition
-
-次の場合はsplitしない。
-
-- intermediate mergeがtemporary broken stateを作る;
-- duplicate source-of-truth / duplicate ownerが必要;
-- acceptanceが1つのcross-boundary transactionとしてしか意味を持たない;
-- slice単独のverification oracleがない;
-- artificial compatibility layerやtemporary APIが必要;
-- overheadだけ増え、review / diagnosis / rollback境界が改善しない。
-
-PRを小さくすること、Issue数を増やすこと、宣言されたcapacityを常時埋めること自体を目的にしない。
+The ordinary lower-tier Coding Agent default, Human-explicit upper-tier
+choice, and the **separate exact Issue-body autonomous-conformance opt-in**
+belong to [`CODING-AGENT.md`](./CODING-AGENT.md). An opted-in agent may
+investigate and repair multiple in-scope defect families under its closed
+matrix and distinct-input exploration budget; neither family count nor
+accumulated verification invocations alone requires stopping or splitting.
+Do not use slice boundaries to broaden the Issue oracle, owners, or budget.
 
 ## Safe checkpoints
 
 ### Implementation checkpoint
 
-current laneの作業をremote branchへ安全に保存し、別conversation / Coding Agent sessionから再開できる地点。
+The current work is committed/pushed to its authorized remote topic branch
+so another chat or agent session can resume without reconstructing unsaved
+work. Record the canonical Issue, slice/owner, Base SHA, branch, **exact pushed
+head**, completed and remaining acceptance, verification/failure classes,
+and next safe action.
 
-最低限:
-
-- current branch / pushed head;
-- Base checkpoint;
-- completed implementation;
-- remaining acceptance;
-- verification result / failure classes;
-- next safe action。
-
-pause / handoff時はここまで到達させる。checkpointしただけではlatest `main`を取り込まない。
+Pause/handoff at a pushed checkpoint. A checkpoint alone does **not**
+incorporate newer `main` or release a legacy lane. GitHub-native checkpoints
+go to current GitHub Issue comments; legacy SAY also retains its separately
+required minimum Linear record.
 
 ### Merge checkpoint
 
-current sliceをintended baseへmergeしてもrepositoryが一貫し、remaining acceptanceを後続sliceとして安全に実装できる地点。
-
-最低限:
-
-- current sliceがreview可能なsemantic changeとして説明できる;
-- focused verificationが完了;
-- remote branchへ保存済み;
-- remaining acceptanceがcurrent unmerged implementationへ暗黙依存しない。
+An intermediate slice may merge only if it forms a reviewable semantic
+change, completes focused verification, is pushed, leaves the intended
+base coherent, and permits remaining acceptance without an implicit
+dependency on unmerged work. Protected PR/CI and exact pushed-HEAD blocking
+review remain mandatory under [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
 
 ### Integration checkpoint
 
-**他line / latest remote `main`を取り込める唯一の通常checkpoint。**
-
-current slice implementationとfocused verificationを完了しremoteへ保存した後、blocking review / merge前に行う。
-
-```text
-pushed implementation checkpoint
--> inspect Base checkpoint..latest main
--> determine relevant drift
--> ChatGPT audits Base/current-main drift and current contract
--> deterministic conflict-free merge-only integration with settled verification?
-   -> Human `nuinui integrate-clean`
-   -> required verification
-   -> record Integration Watermark
-   -> blocking review
-   or
--> integration reasoning / conflict resolution / integration fix required
-   -> the assigned implementation Coding Agent integrates and verifies
-      (selected implementation Coding Agent; conformance opt-in is separate)
-   -> record Integration Watermark
-   -> blocking review
--> merge
-```
-
-active slice途中のroutine merge-main / rebase-mainは禁止。
-
-remote advanceがcurrent contractをmaterially invalidateした場合は、途中同期せずcurrent workを保存してcheckpointで停止し、contract / sliceを再評価する。
-
-#### Integration Watermark and post-integration drift
-
-Routine Integrationは**1 sliceにつき1回**を原則とする。latest intended `main`を取り込みrequired verificationを完了した時点で、その取り込んだ`main` SHAを`Integration Watermark`として記録し、routine Integration checkpointは到達済みとする。
-
-Integration Watermark到達後にblocking reviewでfixが必要になっても、それだけではIntegration checkpointを未到達へ戻さない。
+The ordinary point for incorporating current `main` is **after**
+implementation and focused verification have been pushed, **before**
+blocking review/merge. Never routine-merge/rebase `main`, cherry-pick
+unrelated work, or absorb another lane's unfinished branch mid-slice.
 
 ```text
-Integration Watermark reached
--> blocking review
--> blocking fix on the same topic branch
--> focused / required verification
--> pushed fix review
+fixed Base -> implement / focused verify -> push checkpoint
+-> inspect Base..current main and current contract
+-> integrate only as needed at the safe checkpoint
+-> required verification -> Integration Watermark
+-> independent exact pushed-HEAD blocking review -> protected PR/merge
 ```
 
-blocking fix中やreview中にremote `main`がadvanceした場合、その差分を`Post-integration Drift`として扱う。**mainがadvanceした事実だけではIntegration Watermark、blocking review、Review Headをinvalidateしない。**
+ChatGPT audits Base/current-main semantic drift and the current contract.
+The assigned implementation Coding Agent handles integration requiring
+source reasoning, conflict resolution, code changes, or verifier diagnosis.
+Only compatible pre-existing SAY work may instead use the bounded Human
+`nuinui integrate-clean` route described below.
 
-`Integration Watermark..current main`を確認し、次で分類する。
+If a remote advance **materially invalidates** scope, semantics, owner,
+or prerequisite before this checkpoint, preserve current work remotely
+and stop for contract/slice re-evaluation rather than merging mid-slice.
+An unrelated advance does not change the fixed Base.
 
-- `NON-INTERFERING`: current sliceのsemantic owner / shared API / prerequisite / contract / mergeabilityへmaterialな影響がない。再integrationしない。そのままreview / PR / merge gateへ進む。
-- `RELEVANT`: current sliceのsemantic owner / shared primitive / prerequisite / contractをmaterially変更している、またはcurrent review premiseを一意に維持できない。exception integrationまたはcontract / slice re-evaluationが必要。
-- `MERGE-GATE`: actual conflict / unmergeable state、またはrepositoryのcurrent merge requirementがbranch updateを明示的に要求する。必要なintegrationを行う。
+### Integration Watermark, Review Head, and later drift
 
-`NON-INTERFERING` driftについて、topic branchがcurrent `main`を含んでいないことだけを理由にroutine integrationを繰り返さない。PR作成後にさらに`main`がadvanceした場合も同じruleを使う。
-
-`RELEVANT`または`MERGE-GATE`でexception integrationを行った場合は、integration / required verification後のmain SHAで`Integration Watermark`を更新し、変更されたpremiseに応じたblocking reviewを行う。単なる最新化目的ではexception integrationを行わない。
-
-同じsliceでexception integrationが繰り返し必要になる場合、最新mainを追い続ける問題として扱わない。同じsemantic owner / shared primitiveをparallel laneが継続的に変更しているcontention signalとして、Coordinatorのparallel admission / lane schedulingを再評価し、必要なら片方を先にmergeするsequential executionへ戻す。
-
-blocking review PASS時にはexact topic SHAを`Review Head`として扱う。PR / auto-merge / merge直前はcurrent `main`と`Post-integration Drift`をfreshに確認するが、`NON-INTERFERING` driftならReview Headを作り直すためのintegrationを要求しない。
-
-#### Deterministic merge-only Human integration
-
-ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、integrationがconflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、source implementationとは別のdeterministic integration operationとしてHuman `nuinui integrate-clean`を使ってよい。これはfirst / routine Integration checkpointにも適用でき、prior Integration Watermarkまたはblocking Review Headを要求しない。
-
-first / routine checkpointではexact implementation checkpoint、same durable generation、fresh current main、known exact verification plan、no Manual E2E追加要求、conflict / source edit / integration fix / ambiguous diagnosis不要であることがpreconditionとなる。successful `INTEGRATION PUSHED`ではmerged current-main SHAを`Integration Watermark`として記録し、pushed-state blocking reviewとnormal PR / merge workflowへ進む。
-
-既存のpost-review merge-gate refreshでは、already-reviewed exact Review Headと既存のIntegration Watermarkがあり、post-integration semantic driftをChatGPTがfreshに`NON-INTERFERING`と判定し、merge gateの唯一の要求がcurrent-base CI / branch freshnessであることが追加のpreconditionとなる。この場合もhelperはcurrent `main`をconflict-free merge-onlyで取り込み、verification後にnormal pushする。successful pushed merge headでIntegration Watermarkを更新し、parents / effective diff / verification evidence / remote stateを対象とするfocused blocking reviewとfresh required PR CIを行う。
-
-`integrate-clean`のstale / mechanical precondition failureが、source reasoningなしに一意にfreshへ更新できる場合は、ChatGPTのfresh re-evaluation後も同じdeterministic Human routeに残してよい。conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous repository stateが必要なintegrationは、current Workのimplementation Coding Agentが担当する（ordinary / compatible SAY / opted-in native Issueのいずれも担当implementation Coding Agent）。Human `integrate-clean`はdeterministic terminal assistanceであり、別のsource implementation executorではない。
-
-### Verification boundary
-
-内部helper単体だけでなく、変更したboundaryを最後まで通したobservable resultを少なくとも1つ検証する。
-
-例:
-
-- candidate生成だけでなくadapter適用後のlabel / replace range / resulting source;
-- semantic valueだけでなくruntime consumerへ渡るresolved value;
-- serializer payloadだけでなくround-trip canonical source;
-- host-neutral queryだけでなくproduction host adapterが公開するresult。
-
-shared boundaryへ初めて接続したcheckpointでは、影響範囲に応じたbroad integration testをTask末尾まで延期しない。
-
-## Compatible legacy SAY lane assignment
-
-implementation slice開始時は、ChatGPTがfresh remote state、Linear current implementation occupancy、parallel-admission decisionからdeclared lane、Base、branch、complete inventory expectationを決め、known-Issueの通常startupではHumanへ [`nuinui begin`](./LOCAL-TOOLS.md) を1つ渡す。`begin`が [`CHECKOUTS.md`](./CHECKOUTS.md) のfull declared-lane auditを内部実行し、target FREEとcomplete inventoryを再検証するため、別Human preflightを先行させない。
-
-- declared implementation laneのいずれかがFREE → Coordinatorのparallel admissionに従い開始候補にできる;
-- BUSY laneがあり別のFREE laneがある場合も、`LOW`と判定できる独立Taskだけを開始してよい;
-- admissibleなTaskがない → FREE laneをそのまま残す;
-- 全implementation laneがBUSY →新しいimplementationは開始しない;
-- `role=human-test` laneはimplementationへ使わない。
-
-same active durable generationのresume、blocking-fix、integration、new implementation-agent session、ChatGPT chat rotation、またはunrelated remote `main` advanceだけではdeclared-lane preflightへ戻らない。実装Agentはassigned checkoutで`nuinui handoff <SAY-N> <expected-main-sha>`を実行し、façadeがmanifestとdurable slotからBranch / Base / Claim / Checkpointとremote topic modeを解決して、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) のstandalone proofへ渡す。handoffが`HANDOFF VERIFIED`を返さなければ、実装Agentは変更せず停止してorchestratorへ戻る。resume、retry、repair、別のHuman handoff verificationは行わない。
-
-declared lane capacityを超えるparallelismをIssue / branch / worktree追加で表現しない。全laneを常時使用することも目標にしない。
-
-## Cross-lane dependency rule
-
-各declared implementation laneはそれぞれのBase checkpointから独立して進める。
-
-禁止:
-
-- one declared laneが別のdeclared laneのunfinished branchを取り込む;
-- one declared laneが別laneのmid-slice commitをbaseにする;
-- 相手laneが進んだからという理由だけのroutine sync。
-
-real prerequisiteが判明した場合:
-
-1. dependent laneをremote保存済みcheckpointで止める;
-2. prerequisite laneをintended baseへmergeする;
-3. dependent laneは次のintegration / restart checkpointでlatest mainから再構成する。
-
-stacked PRをdefaultにしない。
-
-## Re-evaluation triggers
-
-次でboundary map / safe checkpointを再評価する。
-
-1. any implementation slice開始前;
-2. shared owner / adapter boundaryへ初めて接続した;
-3. Task pause / resume;
-4. implementationが当初owner / API / contract / data-flow boundaryを越えようとする;
-5. 複数の独立failure classが残った;
-6. current PRが複数の独立semantic changeを抱えた;
-7. Base checkpoint以降のremote main advanceがcontract / ownershipをmaterially変えた;
-8. blocking fix loopが新ownerへ広がる;
-9. Manual E2E FAILでnew failure class / ownerが露出した;
-10. Integration Watermark以降のPost-integration Driftが`RELEVANT`または`MERGE-GATE`になった;
-11. parallel active laneのscope expansionにより、開始時の`LOW` interference premiseがmaterially崩れた。
-
-`NON-INTERFERING`なmain advance、file数、diff行数、commit数、経過時間はそれ自体ではre-evaluation triggerにしない。
-
-## Decision outcomes
-
-### A. Same Issue + same slice
-
-remaining acceptanceがcurrent sliceと強く結合し、途中mergeで不整合を作る場合。
-
-same lane / branchで継続し、Base checkpointはintegration checkpointまで固定する。
-
-### B. Same Issue + next PR
-
-current sliceを安全にmergeでき、remaining acceptanceはsame Issue completionに必要な場合。
-
-- current sliceをintegration / verify / review / merge;
-- Issueはactive / resumableのまま;
-- implementation checkpointをLinearへ記録;
-- current laneをreleaseしてよい;
-- next slice開始時にlaneを改めて選び、latest remote mainから新しいBase checkpointを固定する。
-
-### C. New / extracted leaf Issue
-
-clusterが独立scope / acceptance / verification boundaryを持つ場合。
-
-Issue boundaryは [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従う。
-
-### D. Blocker / contract reset
-
-必要なenvironment / prerequisiteがない、またはnew product / UX / scope decisionが必要な場合。
-
-current workをremoteへ保存しsafe checkpointで停止する。slicingで未決定semanticsを隠さない。
-
-## Sequential PR rule
-
-1つのLinear Issueは複数のsequential PRを持ってよい。
-
-- intermediate PRはoriginal Issueの一部acceptanceだけを完了してよい;
-- remaining acceptanceがあればIssueは完了しない;
-- previous slice merge後、次sliceはnew lane startとしてlatest remote mainからBase checkpointを固定する;
-- previous slice merge後のnext sliceではprevious branch名を機械的に再利用せず、current sliceを識別できるfresh branchを選ぶ;
-- previous unmerged implementationへの依存があるなら先にmerge checkpointを完了する;
-- accidental stacked PRを作らない。
-
-## Compatible legacy SAY checkpoint record
-
-implementation lane開始 / pause / next PRでは少なくとも:
+Routine integration normally happens **once per slice**. After integrating
+a particular `main` SHA and completing required verification, record it
+as the **Integration Watermark**. A subsequent blocking fix does not
+erase that watermark or automatically restart routine integration:
 
 ```text
-Implementation checkpoint
-- Lane: <manifest-declared implementation lane>
-- Base checkpoint: <sha>
-- Branch: <branch>
-- PR / pushed head: <pr or sha>
-- Completed acceptance: <what is done>
-- Remaining acceptance: <what remains>
-- Current / next slice: <semantic boundary>
-- Next safe checkpoint: <implementation | integration | merge>
+watermark -> blocking review -> in-scope blocking fix
+-> focused / required verification -> pushed exact-head re-review
 ```
 
-Integration Watermark到達後は、rotation / handoffで誤ってroutine integrationを再開しないよう、必要に応じて同Issueのcheckpointへ次も記録する。
+If `main` advances after the watermark, inspect
+`Integration Watermark..current main` and classify **Post-integration Drift**:
 
-```text
-- Integration Watermark: <integrated main sha>
-- Review Head: <blocking-review-passed topic sha | pending>
-- Post-integration Drift: <none | NON-INTERFERING through sha | RELEVANT | MERGE-GATE>
-```
+- **NON-INTERFERING:** no material change to this slice's semantic owner,
+  shared API/primitive, prerequisite, contract, mergeability, or review
+  premise. Do **not** reintegrate just to follow `main`.
+- **RELEVANT:** material change to an owner/shared primitive/prerequisite/
+  contract, or the review premise can no longer be maintained unambiguously.
+  Require exception integration or contract/slice re-evaluation.
+- **MERGE-GATE:** actual conflict/unmergeable state, or the repository's
+  current merge requirement explicitly demands a branch update.
+  Perform the necessary integration and checks.
 
-細かなcommit logは複製しない。
+For a `RELEVANT` or `MERGE-GATE` exception, integrate, rerun required
+verification, update the watermark to the integrated `main` SHA, and
+perform blocking review appropriate to the changed premise. Do not
+exception-integrate merely to be current. Repeated exceptions caused by
+overlapping active legacy lanes indicate contention: reassess scheduling
+and prefer sequential merge, not repeated refresh.
 
-## Manual E2E failure
+A blocking review PASS identifies the exact topic SHA as **Review Head**.
+Before PR/auto-merge/merge, freshly check `main`, later drift, mergeability,
+required CI, and authorization. `NON-INTERFERING` drift alone neither
+invalidates Review Head nor forces integration; a fresh actual merge-gate
+requirement still applies. New source fixes or integration that changes
+the pushed head require the relevant independent review and CI gates.
+See [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
 
-Manual E2Eでconfirmed implementation failureが出たらHuman-test laneでfixしない。
+## Re-evaluate boundaries when evidence changes
 
-1. failureをimplementation / environment / capability / oracleへ分類;
-2. implementation failureならfailure classとsemantic ownerを特定;
-3. Same Issue vs new leafを判断;
-4. smallest natural fix sliceを決める;
-5. FREEなdeclared implementation laneへ載せる。ただし他laneが`BUSY`ならparallel admission gateを満たすこと;
-6. 担当implementation Coding Agentがfix / verification / integration / merge;
-7. new exact tested commitでaffected E2E unitをrerun。
+Re-evaluate the slice/owner map at the start of each slice and when:
 
-previously passed unaffected unitsはshared owner / premiseが変わらない限り機械的にrepeatしない。
+1. A shared owner/adapter is first connected, or implementation crosses
+   the agreed API, contract, owner, or data-flow boundary.
+2. A pause/resume exposes changed prerequisites, dependencies, or an
+   uncertain checkpoint; a material remote `main` change invalidates the premise.
+3. Multiple independent failure classes or semantic changes appear,
+   blocking fixes grow into a new owner, or Human Manual E2E reveals
+   a new failure class.
+4. Post-integration drift becomes `RELEVANT` / `MERGE-GATE`, or an active
+   legacy parallel lane expands and defeats its `LOW` interference premise.
 
-## Coding Agent execution
+File/line/commit counts, elapsed time, and `NON-INTERFERING` `main`
+advances alone are **not** triggers. A routine same-generation resume
+does not automatically require a fresh Base, claim, or integration.
 
-Lower-tier Coding Agents are the default for ordinary implementation and
-compatible pre-existing SAY work. Human-explicit upper-tier selection is
-permitted independently of autonomous conformance, which requires the separate
-Issue-body opt-in in [`CODING-AGENT.md`](./CODING-AGENT.md).
+Choose one outcome:
 
-ChatGPT sets the current slice's contract, lane, Base checkpoint, and safe
-checkpoint, then gives the assigned Coding Agent only that scoped work. The
-opted-in agent may continue across multiple in-scope defect families without
-a family-count stop; choose slice and PR boundaries by owner and repository
-coherence, never by the number of discovered defects.
+- **A — Same Issue, same slice:** inseparable acceptance or unsafe
+  intermediate merge; keep the authorized branch/lane and fixed Base
+  until integration.
+- **B — Same Issue, next PR:** current slice merges coherently and
+  remaining acceptance still belongs to this Issue; preserve the Issue,
+  then start the next slice from freshly verified `main` on a fresh
+  branch. Do not construct accidental stacked PRs.
+- **C — New/extracted leaf Issue:** truly independent scope, owner,
+  observable acceptance, and safe merge/verification boundary; follow
+  [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md), not PR size.
+- **D — Blocker/contract reset:** missing prerequisite, unsettled
+  product/UX/scope decision, or unsafe boundary; push a safe
+  checkpoint and stop. Do not hide missing semantics through slicing.
 
-## GitHub-native slicing and checkpoints — after general activation
+Intermediate PRs do not complete an Issue. For GitHub-native work, record
+each slice and remaining acceptance in Issue comments; re-read current
+Issue and latest `main` before the next slice. Use `Refs #N` for
+intermediate or still-incomplete acceptance, and `Closes #N` only when
+full acceptance—including required Human Manual E2E—is verified.
+Exact PR linking, review, CI, merge, and completion gates belong to
+[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) and [`ISSUES.md`](./ISSUES.md).
 
-Use this policy for ordinary GitHub-native Work after the general D1 activation
-checkpoint is recorded in [dev-context #268](https://github.com/sayosomi/dev-context/issues/268).
-That checkpoint follows independent review, merge, and authoritative dev-context
-`main` read-back of the coordinated policy PR. Until then, native implementation
-startup remains blocked. The completed #1374 pilot was one-off operational proof
-under an expressly waived policy-amendment prerequisite, not strict compliance
-with the unchanged pre-activation policy or general activation. Once the
-checkpoint is recorded, no separate per-Task approval or activation mechanism
-applies.
+## Verification and Human E2E failure
 
-Do not import the compatible SAY lane claims or Linear checkpoints below into a
-native Issue.
+At the first integration through a changed boundary, verify at least
+one **observable end-to-end result**, not just an internal helper:
+e.g. adapter output/resulting source, resolved runtime-consumed values,
+serializer round-trip, or host-visible query result. Run appropriate
+broad integration verification at that checkpoint rather than
+automatically deferring it to final Issue completion.
 
-An opted-in conformance Issue remains ordinary D1 implementation Work and
-uses the same single-checkout admission and GitHub-native checkpoints. Read
-[`CODING-AGENT.md`](./CODING-AGENT.md) for its required Issue-body contract;
-do not infer the mode from a D2-C audit Issue or wording in a prompt.
+A confirmed Human Manual E2E implementation failure is **never fixed
+in the Human-test checkout**. Classify implementation/environment/
+capability/oracle, identify failure class and semantic owner, decide
+same Issue versus independent leaf, and return any implementation
+fix to an authorized implementation Coding Agent after proper checkout
+admission. For legacy parallel work, also satisfy parallel admission.
+Verify/review/merge the fix; rerun affected E2E units from their
+declared initial state at the **new exact tested commit**. Previously
+passed, unaffected units need not repeat unless shared owner/contract/
+lifecycle premises changed. Stabilization/re-entry and Human-only
+outcome judgment remain with [`MANUAL-E2E.md`](./MANUAL-E2E.md).
 
-Keep Work decomposition separate from implementation slicing. Keep one
-product implementation active at a time. Choose slice boundaries by independent
-acceptance, semantic-owner boundaries, dependencies, verifiable outcomes, and
-whether each intermediate merge leaves the repository coherent. Do not split
-only to reduce PR size, and do not merge an intermediate slice that leaves a
-broken or owner-ambiguous state.
+## Compatible pre-existing SAY only
 
-For each GitHub-native slice, record its repository-qualified Issue identity,
-slice boundary, intended base SHA, topic branch, exact pushed checkpoint,
-completed and remaining acceptance, verification results, and next safe
-checkpoint in GitHub Issue comments. Re-read the latest Issue contract and
-latest main before starting the next slice. A next slice after an intermediate
-merge starts from a fresh topic branch at the newly verified main; do not
-continue from stale main or silently reuse the previous branch.
+**This section does not apply to a new GitHub-native Issue.**
+Existing admitted SAY generations keep their manifest-declared lane,
+durable claim/Base, minimum Linear records, and `nuinui` lifecycle
+until separate retirement under
+[#286](https://github.com/sayosomi/dev-context/issues/286).
+Current `LANES.conf` and [`CHECKOUTS.md`](./CHECKOUTS.md) own actual
+capacity/physical state; [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)
+owns durable handoff.
 
-For an opted-in conformance Issue, also record distinct defect families,
-reproduction seeds, expected/actual results, exact candidate revisions,
-completed and contaminated matrix cells, residuals, source changes, and
-verification in the same Issue/PR surfaces. Finding another in-scope family
-does not by itself end a slice, require a new Issue, or trigger a PR; retain
-the ordinary safe checkpoint, independent review, and protected CI gates.
+### Lane selection and cross-lane dependencies
 
-For interrupted work, resume only after rechecking the Issue, exact remote
-topic SHA, local branch/HEAD/status, and the recorded pushed checkpoint.
-Never infer a completed push from lost terminal output or replay a mutation
-without first reading back its authoritative state.
+Before a new legacy implementation start, ChatGPT reconciles fresh
+remote state, actual Linear occupancy, and the Coordinator's
+[parallel admission gate](./CHAT-COORDINATOR.md). Route an admitted
+start through the single `nuinui begin` operation described in
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md); that helper performs its full
+declared-lane audit rather than requiring a second Human preflight.
 
-Intermediate PRs use Refs #N and do not close the Issue. Use Closes #N only
-when the merge satisfies all remaining acceptance, including required Human
-Manual E2E, under [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) and
-[MANUAL-E2E.md](./MANUAL-E2E.md). Keep unfinished
-acceptance and required Human E2E explicit in the Issue. Do not create Linear
-checkpoint/status changes, SAY identifiers, or lane claims for native Work.
+- If all implementation lanes are BUSY, do not start another
+  implementation. The Human-test lane is never implementation capacity.
+- If another implementation lane is BUSY, admit a legacy Task only
+  with **LOW** interference: independent semantic owners, shared
+  APIs/prerequisites, and integration surfaces. `MEDIUM` / `HIGH`
+  or uncertain independence means no parallel start; leave FREE unused.
+- If the other lane's scope materially expands before actual start,
+  re-evaluate admission. Do not create extra lane/worktree capacity
+  or assign lanes merely to keep them busy.
+- Independent lanes keep separate fixed Bases. Never import another
+  lane's unfinished branch/mid-slice commit or sync just because it
+  advanced. If a real prerequisite emerges, push/pause the dependent
+  lane, merge the prerequisite, then rebuild dependent work at its
+  next integration/restart checkpoint. No stacked PR by default.
+
+After a successful legacy begin, the selected Coding Agent executes the
+**exact** `nuinui handoff <SAY-N> <expected-main-sha>` in its checkout.
+Continue only on `HANDOFF VERIFIED`; failure stops without agent-side
+retry/repair or redundant Human proof. A chat/agent-session rotation,
+same-generation blocking fix, integration, or unrelated `main`
+advance alone does not require another begin/claim/preflight.
+Follow [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md).
+
+### Deterministic Human integration exception
+
+At the first/routine Integration checkpoint, Human
+`nuinui integrate-clean` is eligible **only when** ChatGPT freshly
+audits Base/current-main drift and contract and confirms a conflict-free,
+merge-only operation with settled exact verification. It requires exact
+pushed implementation checkpoint, same durable generation, fresh `main`,
+known verification plan, and no source edit, conflict, integration fix,
+ambiguous diagnosis, or new Manual E2E request. **No prior watermark
+or Review Head is required for this first use.** Successful
+`INTEGRATION PUSHED` records merged main SHA as the watermark and
+proceeds to pushed-state blocking review.
+
+For a **post-review merge-gate refresh**, require the already-reviewed
+exact Review Head and existing watermark; ChatGPT must freshly classify
+drift `NON-INTERFERING` and establish that current-base CI/branch
+freshness is the *only* merge-gate demand. After successful helper
+push, update the watermark, perform focused independent blocking review
+of parents/effective diff/verification/remote state, and obtain fresh
+required PR CI.
+
+A stale or mechanical precondition failure may remain on this
+deterministic route only after ChatGPT uniquely re-evaluates it from
+fresh evidence, with no source reasoning. Conflict, relevant/ambiguous
+drift, code change, failed verification requiring diagnosis, or
+ambiguous repository state goes to the **assigned implementation
+Coding Agent**, never an ad-hoc Human integration/debug loop.
+The helper is terminal assistance, not a second source executor.
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) and
+[`CHECKOUTS.md`](./CHECKOUTS.md) own execution details.
+
+### Legacy checkpoint and release records
+
+At lane start/pause/next PR, preserve the minimum external
+`Implementation checkpoint` fields required by
+[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md), **including durable Claim**,
+lane, Issue, branch, immutable Base, exact pushed checkpoint,
+completed/remaining acceptance, current/next slice, and next safe action.
+Do not maintain a competing shortened template here. Record
+Integration Watermark, Review Head and Post-integration Drift as needed
+so a rotation does not repeat integration.
+
+A same-Issue next PR may use a newly admitted lane/branch and freshly
+verified Base after the prior slice merges; do not silently reuse the
+previous branch or release an active generation solely because an
+intermediate PR merged. Keep minimum Linear status/checkpoint semantics
+and actual lane release/recovery with
+[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md),
+[`CHECKOUTS.md`](./CHECKOUTS.md), and
+[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
+Do not apply these records or helper steps to GitHub-native D1.
