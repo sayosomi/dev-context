@@ -63,7 +63,7 @@ rules.
 
 | Task / condition | Read only the relevant owner(s) |
 | --- | --- |
-| Chat role selection, rotation, external-state recovery | [CHAT-WORKFLOW.md](./CHAT-WORKFLOW.md) and the role-specific [Coordinator](./CHAT-COORDINATOR.md), [Authoring](./CHAT-AUTHORING.md), [Implementation](./CHAT-IMPLEMENTATION.md) or [E2E](./CHAT-E2E.md) chat document |
+| Chat role selection, rotation, external-state recovery | [CHAT-WORKFLOW.md](./CHAT-WORKFLOW.md) and the role-specific [Coordinator](./CHAT-COORDINATOR.md), [Authoring](./CHAT-AUTHORING.md), [Implementation](./CHAT-IMPLEMENTATION.md) chat document; Human Manual E2E has no separate chat role |
 | New Work, Issue readiness, contract/decision re-audit | [ISSUES.md](./ISSUES.md), [CONTRACT-DECISIONS.md](./CONTRACT-DECISIONS.md), [CONTRACT-REAUDIT.md](./CONTRACT-REAUDIT.md) as applicable; current Issue and repository |
 | Native implementation start, recovery, checkout/branch/occupancy | [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md), [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md) |
 | Implementation-agent selection, blocking fix, autonomous conformance opt-in, direct execution | [CODING-AGENT.md](./CODING-AGENT.md); [shared coding workflow](../../shared/CODING-AGENT-WORKFLOW.md), [prompt style](../../shared/AGENT-PROMPT-STYLE.md) and [prompt preflight](../../shared/AGENT-PROMPT-PREFLIGHT.md) when constructing an agent prompt |
@@ -71,7 +71,7 @@ rules.
 | Slicing, Base/integration checkpoints, sequential PR, scope expansion | [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md) |
 | GitHub PR linking, independent review, CI, merge and auto-merge | [LINEAR-GITHUB.md](./LINEAR-GITHUB.md) |
 | D2-C read-only evaluator audit | [ASTRA-AUDIT.md](./ASTRA-AUDIT.md), [CHECKOUTS.md](./CHECKOUTS.md), [ISSUES.md](./ISSUES.md) |
-| Human Manual E2E | [MANUAL-E2E.md](./MANUAL-E2E.md), [CHECKOUTS.md](./CHECKOUTS.md), [CHAT-E2E.md](./CHAT-E2E.md), [LOCAL-TOOLS.md](./LOCAL-TOOLS.md); for VS Code host, [VS-CODE-E2E.md](./VS-CODE-E2E.md). Load [VS-CODE-E2E-LOCALE.md](./VS-CODE-E2E-LOCALE.md) only for locale-specific verification |
+| Human Manual E2E | [MANUAL-E2E.md](./MANUAL-E2E.md), [CHECKOUTS.md](./CHECKOUTS.md), [LOCAL-TOOLS.md](./LOCAL-TOOLS.md), [ISSUES.md](./ISSUES.md); for VS Code host, [VS-CODE-E2E.md](./VS-CODE-E2E.md). Load [VS-CODE-E2E-LOCALE.md](./VS-CODE-E2E-LOCALE.md) only for locale-specific verification |
 | Local helpers, context sync, command/result recovery | [LOCAL-TOOLS.md](./LOCAL-TOOLS.md); [CHECKOUTS.md](./CHECKOUTS.md) for Human exact-fix or legacy release/ownership |
 | Compatible already-admitted SAY task | [LINEAR.md](./LINEAR.md), applicable [LINEAR-ISSUES.md](./LINEAR-ISSUES.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md) and [LOCAL-TOOLS.md](./LOCAL-TOOLS.md); never for a new native Issue |
 | CI incident / lane-based reproduction | [CI-INCIDENTS.md](./CI-INCIDENTS.md) only with a strong CI-incident signal |
