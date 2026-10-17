@@ -376,8 +376,8 @@ states, current legacy/E2E ownership exclusion, stopped processes, retained
 evidence, residuals and any remote-main drift. Sol's proof is not independent
 verification or permission to reuse either checkout.
 
-For independent closeout, ChatGPT prepares **one self-contained, read-only Mac
-terminal block**, following the existing
+After receiving Sol's final report and executor proof, ChatGPT prepares **one
+self-contained, read-only Mac terminal block**, following the existing
 [`human-terminal-instructions` skill](../../shared/skills/human-terminal-instructions/SKILL.md).
 The Human executes it once and returns the complete output without a separate
 approval round. The block collects **physical facts**, not a newly invented
@@ -404,12 +404,13 @@ Gather enough evidence in that one invocation to establish:
   Inspect current ownership under its existing schema; do not compare
   historical metadata content snapshots.
 - **Physical evidence:** the actual external evidence directory exists and
-  contains the retained report and run records; list discovered entries for
-  reconciliation rather than assuming a generated filename.
+  contains the retained report and run records. Return their discovered paths
+  and sufficient record contents or verified facts to reconcile them with
+  GitHub checkpoints; a filename list alone is insufficient.
 
 No fetch, branch switch/detach, reset, stash, clean, process termination,
 release, metadata mutation or interactive-shell termination is permitted.
-Do not repeat equivalent local checks for extra assurance theater. If a
+Do not repeat equivalent local checks solely to expand the checklist. If a
 required local fact cannot be proven, return `BLOCKED`, not an optimistic PASS.
 
 ChatGPT—not Sol or the terminal block—independently compares the complete
