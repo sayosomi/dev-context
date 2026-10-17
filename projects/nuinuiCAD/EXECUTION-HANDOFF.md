@@ -78,7 +78,7 @@ state:
   Issues and their material comments for evaluator-audit start checkpoints.
   An unmatched start, final checkout proof not independently verified against
   the checkout, or ambiguous audit state blocks implementation even when an
-  optional legacy read-only preflight diagnostic says `FREE`.
+  historical legacy read-only preflight output says `FREE`.
   The Issue comments are operational checkpoints, not a machine-enforced lock;
   follow the sequential exclusion rule in [`CHECKOUTS.md`](./CHECKOUTS.md).
   This is an occupancy check, not a new per-Task D1 activation or approval gate.
@@ -87,7 +87,7 @@ state:
   validated checkout topology, current GitHub state, exact branch state, and
   legacy metadata / audit exclusion proofs. A `FREE` / `preflight=PASS` result
   from legacy `nuinui preflight` is not required and is not admission authority;
-  it remains available for optional diagnostics. For same-Task continuation,
+  new GitHub-native Work does not invoke it. For same-Task continuation,
   preserve the separate exact pushed-checkpoint proof below; do not require the
   legacy preflight to classify a clean native topic as `FREE` or `PASS`.
 - Inspect the exact Git directory and all existing legacy ownership and audit

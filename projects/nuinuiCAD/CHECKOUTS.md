@@ -97,9 +97,10 @@ independently re-establish the following from current GitHub and local state:
 - For a new Task, prove the checkout is in the declared idle `main` form using
   the independent read-only admission checks below. A `FREE` / `preflight=PASS`
   result from legacy `nuinui preflight` is not required and does not grant
-  admission; that command may be used for optional diagnostics only. For a
-  same-Task native continuation on its expected topic branch, do not require
-  legacy preflight to classify the checkout as `FREE` or return `PASS`. A clean
+  admission. Native GitHub work uses independent checkout and ownership checks,
+  not this historical diagnostic. For a same-Task native continuation on its
+  expected topic branch, do not require legacy preflight to classify the
+  checkout as `FREE` or return `PASS`. A clean
   topic branch without a legacy slot may be `BLOCKED` under the old classifier;
   that classification proves neither capacity nor permission to proceed. If
   any reason for `BLOCKED`, or any other execution state, is ambiguous, stop.
@@ -333,12 +334,11 @@ Re-read authoritative remote `main` after the other admission checks and
 immediately before the start checkpoint. If it no longer equals the fixed SHA,
 stop and repeat admission for the new intended revision.
 
-The existing read-only `nuinui preflight` may be used as a supplementary safety
-check, but it is not sufficient evidence of audit admission. A `FREE` result
-does not override an active or ambiguous GitHub audit checkpoint. Do not run
-`nuinui audit-begin` or `nuinui audit-release` for a new GitHub-native audit. Do
-not create, initialize, rewrite, or automatically release legacy metadata or
-reservations.
+A new GitHub-native audit uses the independent read-only checks above instead
+of legacy `nuinui preflight`. A historical `FREE` output cannot override an
+active or ambiguous GitHub audit checkpoint. Do not run `nuinui audit-begin` or
+`nuinui audit-release` for a new GitHub-native audit. Do not create,
+initialize, rewrite, or automatically release legacy metadata or reservations.
 If local `main` is behind authoritative remote `main`, stop admission. Perform
 any needed synchronization separately through the established safe Git
 workflow, then repeat the complete admission check against a new fixed SHA.
@@ -361,8 +361,8 @@ comments are operational checkpoints, not atomic or machine-enforced locks:
 this workflow does not provide the machine-enforced exclusion formerly
 supplied by the durable audit reservation. All participants must follow the
 sequence, and missing or ambiguous occupancy blocks execution. The D1
-implementation admission must check for an unfinished evaluator audit even
-when an optional legacy preflight diagnostic reports `FREE`.
+implementation admission must check for an unfinished evaluator audit regardless
+of any historical legacy preflight `FREE` output.
 
 If remote product `main` advances during an active audit, record the new SHA
 as drift in the Issue comments. Keep the local checkout and audit evidence at
@@ -519,7 +519,7 @@ nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-s
 
 ### Legacy SAY preflight diagnostic / routing rule
 
-このlegacy preflight / routing手順はcompatible pre-existing SAY taskだけに適用し、その既存startupで必要なpreflightを維持する。Native GitHub new Taskは上記のindependent read-only Git-only admissionを使う。`nuinui preflight`はnative Taskに対するoptional diagnosticであり、admission prerequisiteではない。Same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証し、native Taskをlegacy `begin` / `handoff`へrouteしない。
+このlegacy preflight / routing手順はcompatible pre-existing SAY taskだけに適用し、その既存startupで必要なpreflightを維持する。Native GitHub new Taskは上記のindependent read-only Git-only admissionを使う。`nuinui preflight`は旧SAY専用の診断であり、GitHub-native Taskでは実行せず、admission prerequisiteでもない。Same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証し、native Taskをlegacy `begin` / `handoff`へrouteしない。
 
 `nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation implementation-agent handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
 
