@@ -29,6 +29,8 @@ nuinuiCAD作業開始時はlocal cloneの有無にかかわらず、GitHub上の
 /Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-context
 ```
 
+`nuinui` / `nuinui-e2e-prepare` are retained for historical SAY reference and any independently proven in-flight recovery only; they are not the ordinary GitHub-native implementation or E2E route. Do not delete their source or durable records for #286. The current tools are `nuinui-context` for context and, after the explicit #286 activation checkpoint, `nuinui-e2e` for native Human E2E.
+
 このcloneはnuinuiCAD repositoryの追加execution laneではない。
 
 candidate source / edit / test / promotionは次のpersistent single-track development worktreeで行う。
@@ -494,15 +496,15 @@ clean=yes
 
 ### Standalone non-lane mechanics
 
-Route current independent context-only operations through `nuinui-context`. Keep E2E, doctor, transition-audit, the compatible legacy lifecycle and audit reservations, and their recovery on `nuinui`; its older context commands and independent result store remain available for compatibility. The two helpers' artifact identities and last-result stores are never interchangeable.
+Route current independent context-only operations through `nuinui-context`. Native GitHub Human E2E uses `nuinui-e2e --production` after the #286 activation checkpoint (approved bounded pilot beforehand). The legacy `nuinui` executable and its generator, source and tests are retained as historical/reference material; its diagnostic, SAY lifecycle and recovery commands must not become a default new GitHub-native route. Preserve only still-proven in-flight legacy recovery and durable result stores. Before final retirement from active use, address any consumers of legacy `nuinui preflight` rather than presuming it is unused. The two helpers' artifact identities and last-result stores are never interchangeable.
 
 旧`nuinui pr-auto-merge` CLIは1.14.0で廃止した。新規PRは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)のowner-comment GitHub Actions方式を使う。旧予約の専用runtime・GitHub PR補助・required-check判定・生成入力・CLI dispatchと旧専用回帰テストは削除済み。過去のvalidな`nuinui last-result` version=1 recordsはread-onlyで保持し、廃止済みCLIの再実行は拒否する。`test-nuinui-pr-auto-merge-retired`がCLI拒否・GitHub呼出し不在を確認する。
 
 Legacy `nuinui doctor --full`, `nuinui transition-audit`, `nuinui context-check`, `nuinui context-audit`, and `nuinui context-dev-audit` remain available with their existing read-only or guarded-mutation contracts for compatible historical operations. Current independent context work uses the standalone `nuinui-context` commands above; its audit / check operations remain read-only and its sync / transition commands preserve the existing exact-SHA and fail-closed boundaries. Neither helper performs cleanup, process stop, Issue selection, GitHub updates, merge decisions, one-time worktree migration, or generic worktree cleanup.
 
-## Native GitHub Manual E2E helper — bounded pilot permitted; general activation pending
+## Native GitHub Manual E2E helper — general activation checkpoint
 
-`scripts/nuinui-e2e` is the generated native Human E2E helper assembled from `nuinui-e2e-src/` by `generate-nuinui-e2e`. The Human-test checkout is registered, and the existing #286 approval permits its bounded real-host pilot after fresh exact production admission. The first attempt was blocked before GUI, recovered, and fully released; the host-root defect was fixed by PR [#290](https://github.com/sayosomi/dev-context/pull/290) and synchronized. No Human GUI outcome or Manual E2E PASS is established. General native activation remains pending an actual Human-operated macOS VS Code GUI PASS, independently verified checkout closure, and a separate explicit checkpoint. This general gate does not prohibit the already approved bounded pilot. The fixture-only regression mode requires explicit `--self-test --manifest`; live operations require explicit `--production` and automatically select the canonical versioned `LANES.conf` plus the signed Microsoft `vscode-isolated` adapter.
+`scripts/nuinui-e2e` is the generated native Human E2E helper assembled from `nuinui-e2e-src/` by `generate-nuinui-e2e`. The Human-test checkout is registered. A real signed VS Code Human GUI E2E exercised the host and found a product completion defect, followed by exact-generation checked closure ([#1373](https://github.com/sayosomi/nuinuiCAD/issues/1373#issuecomment-6210238535)); later independent checkout verification passed ([#1379](https://github.com/sayosomi/nuinuiCAD/issues/1379#issuecomment-6228687181)). Product FAIL is not an infrastructure FAIL. After reviewed policy merge and explicit #286 activation checkpoint the general native tool route is enabled, without waiting for #1373's product-fix rerun. Before that checkpoint, only the already approved bounded pilot may run. The fixture-only regression mode requires explicit `--self-test --manifest`; live operations require explicit `--production` and automatically select the canonical versioned `LANES.conf` plus the signed Microsoft `vscode-isolated` adapter.
 
 ```text
 nuinui-e2e admit --production --issue <canonical-GitHub-Issue> --generation <token> --tested-sha <40-lowercase-sha> [--lane human-e2e]
@@ -523,7 +525,7 @@ Production authority is limited to the canonical installed helper, a clean stand
 
 Use `host-closure` for the checked host cleanup, native release, and final read-only closure sequence. `host-recover` and `recover` handle only their exact recorded interruption cases; any mismatch remains blocked for bounded diagnosis. The full lifecycle owner and checkout-registration gate are in [`CHECKOUTS.md`](./CHECKOUTS.md); VS Code launch requirements remain in [`VS-CODE-E2E.md`](./VS-CODE-E2E.md).
 
-The `human-e2e` checkout at `/Users/yosomi/Code/nuinuiCAD-e2e` is already registered under #286; do not create, remove, or register it again. The existing bounded-pilot permission remains available after the full fresh production admission above. General native Manual E2E remains gated on a genuine Human GUI PASS, independent checkout closure, and explicit activation; that general gate does not prohibit this bounded pilot. Its approval does not start the pilot automatically.
+The `human-e2e` checkout at `/Users/yosomi/Code/nuinuiCAD-e2e` is already registered under #286; do not create, remove, or register it again. The approved bounded pilot remains available after full fresh production admission until explicit #286 activation; after that ordinary native use has the same gate. Human product-acceptance PASS is not a tool-activation requirement. Neither activation nor registration automatically starts a new E2E generation.
 
 ## Human Manual E2E preparation helper
 

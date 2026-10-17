@@ -156,20 +156,9 @@ E2E chatでは [`CHAT-WORKFLOW.md`](./CHAT-WORKFLOW.md) とこのdocumentを読�
 
 このdocumentはE2E chat固有のlifecycle boundaryだけをownerする。Manual E2E semantics、Human production-host setup、checkout detailはそれぞれのowner documentへ置く。Inactive Luna E2E materialは`LUNA-E2E-PLAYBOOK.md`だけに隔離する。
 
-## Native GitHub Manual E2E route — bounded pilot permitted; general activation pending
+## Native GitHub Manual E2E route — general activation checkpoint
 
-The native `nuinui-e2e --production` lifecycle is implemented and synchronized.
-The Human-test checkout was physically registered under dev-context #286, and
-the already approved bounded real-host pilot is permitted under its fresh
-production admission gates. Its first attempt was blocked before GUI, recovered
-and fully released; the host-root defect was fixed by PR
-[#290](https://github.com/sayosomi/dev-context/pull/290) and synchronized.
-No Human GUI outcome or Manual E2E PASS is established. General native Manual
-E2E activation remains pending a genuine Human-operated macOS VS Code GUI PASS,
-independently verified checkout closure, and a separate explicit activation
-checkpoint. That general gate does not prohibit the already approved bounded
-pilot. Compatible pre-existing SAY procedures above continue to use their
-existing helper.
+The native `nuinui-e2e --production` helper and registered Human-test checkout were exercised in a real signed macOS VS Code GUI test. The host functioned, a product completion defect was found, and exact host/native closure passed ([#1373](https://github.com/sayosomi/nuinuiCAD/issues/1373#issuecomment-6210238535)). A later independent local checkout and legacy-metadata check passed ([#1379](https://github.com/sayosomi/nuinuiCAD/issues/1379#issuecomment-6228687181)). A product FAIL is not E2E infrastructure FAIL: reviewed policy merge plus an explicit dev-context #286 checkpoint enable ordinary native E2E **without** waiting for a second #1373 product run. Before the checkpoint, only the approved bounded pilot is permitted. Historical in-flight SAY operations retain exact recovery; legacy `nuinui` is reference material, not a normal native route.
 
 A native GitHub Issue has no legacy `nuinui` implementation generation or
 claim. Native Manual E2E admission must not require `IMPLEMENTATION RELEASED`,
@@ -189,9 +178,9 @@ must be rechecked, and all of these facts must be proved together:
 
 The manifest declares the already registered `human-e2e` lane at
 `/Users/yosomi/Code/nuinuiCAD-e2e`; do not register, remove, or recreate this
-checkout. Its registration does not activate the general native route. The
-existing bounded-pilot permission remains subject to the full fresh admission
-above and in [`CHECKOUTS.md`](./CHECKOUTS.md). Fixture-only `--self-test`
+checkout. Registration alone does not activate the general native route. The reviewed
+policy merge and explicit #286 checkpoint do; both bounded pilot and normal
+native E2E continue to require full fresh admission in [`CHECKOUTS.md`](./CHECKOUTS.md). Fixture-only `--self-test`
 regression mode does not authorize production operation. A Required Manual E2E remains governed by
 [`MANUAL-E2E.md`](./MANUAL-E2E.md); this route does not waive its acceptance or
 change its Human-only executor, oracle, result, stabilization, actual-host
@@ -199,15 +188,13 @@ evidence, or post-merge verification rules.
 
 The native start checkpoint and later progress, stop, result, and closure
 evidence belong in the canonical GitHub Issue comments described by
-[`ISSUES.md`](./ISSUES.md#native-github-manual-e2e-checkpoints-activation-pending).
+[`ISSUES.md`](./ISSUES.md#native-github-manual-e2e-checkpoints).
 Closure must prove the exact generation was safely cleaned up and released,
 then independently prove the final checkout state. An interrupted or ambiguous
 generation remains blocked until its exact recovery evidence is independently
 resolved; do not infer closure from a merge, result comment, or stale receipt.
 
-For the approved bounded pilot, use the production command contract and exact checkout gates
-owned by [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) and
-[`CHECKOUTS.md`](./CHECKOUTS.md); use that same contract for the general native
-route after its separate activation checkpoint. A native host-ready result
+Both pre-checkpoint bounded pilots and post-checkpoint ordinary native E2E use the same production command and exact checkout gates in [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) and [`CHECKOUTS.md`](./CHECKOUTS.md). A native host-ready result
 remains setup evidence; only the Human operates and judges Manual E2E. The
-existing approval permits the bounded pilot and does not report it as passed.
+prior pilot demonstrated working infrastructure while detecting a product FAIL;
+this does not make #1373 a product PASS.

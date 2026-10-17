@@ -140,13 +140,9 @@ Linearは新しいWorkやDocumentの作成先ではなく、既存SAY taskの旧
 
 本documentはGitHub Issueのauthoring、current contract、readiness、freshness、completion、history preservationをownerする。Cutover checkpointは[#268](https://github.com/sayosomi/dev-context/issues/268)、GitHub PR linking / mergeは[`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md)、checkout / implementation lifecycleは[`CHECKOUTS.md`](./CHECKOUTS.md)、[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md)、および各role ownerが定める。個別TaskのSHA、branch、progressをこのdurable policyへ保存しない。
 
-## Native GitHub Manual E2E checkpoints (activation pending)
+## Native GitHub Manual E2E checkpoints
 
-This section defines Issue evidence for the native route. It does not activate
-native E2E or change the current Work-contract authority: the Issue body continues to
-own current scope, acceptance, and Manual E2E eligibility; comments retain
-operational evidence and decisions. A merge, even a reviewed and verified
-merge, is never a Manual E2E PASS.
+This section defines Issue evidence for the native route. General tool activation requires a separately reviewed policy merge and explicit dev-context #286 checkpoint; this document alone is not activation. The product Issue body owns scope, acceptance and Human Manual E2E eligibility, while comments retain operational evidence and decisions. Tool activation and a merge never amount to a product Manual E2E PASS.
 
 ### Native identity
 
@@ -198,10 +194,4 @@ evidence, not an atomic lane lock or a substitute for checkout proof.
   An unmatched start, missing closure proof, ambiguous owner, or unresolved
   interruption blocks reuse and rerun.
 
-These checkpoints do not create lane metadata or synthetic receipts. The
-manifest declares one Human-test lane, but its checkout is unregistered and
-remains a hard block under
-[`CHECKOUTS.md`](./CHECKOUTS.md#native-github-manual-e2e-checkout-contract-activation-pending).
-Native Manual E2E cannot be invoked until the implementation is merged and
-verified, the checkout is separately registered after activation, and the
-explicit activation checkpoint is recorded.
+These checkpoints do not create lane metadata or synthetic receipts. The manifest-declared Human-test checkout is already registered. Prior to the explicit #286 general tool activation checkpoint, only the approved bounded pilot may run. After that checkpoint, normal native Manual E2E is permitted with the same exact-SHA, checkout topology, ownership, Human-executor and cleanup gates in [`CHECKOUTS.md`](./CHECKOUTS.md). The #1373 product repair rerun remains governed by that product Issue; it does not condition the E2E tool's activation.

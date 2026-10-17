@@ -25,21 +25,12 @@ Repository: `sayosomi/nuinuiCAD`
   [LOCAL-TOOLS.md](./LOCAL-TOOLS.md), for independent context audit/sync, development worktree operations and
   their result read-back. Check the Git artifact and installed executable identities separately; do not
   substitute the legacy `nuinui` artifact.
-- **Native Human Manual E2E (bounded pilot only):** The registered Human-test checkout and its approved pilot
-  may be used after fresh admission. **General native E2E activation remains pending** a genuine
-  Human-operated GUI PASS, independently verified checkout closure and explicit checkpoint under
-  [dev-context #286](https://github.com/sayosomi/dev-context/issues/286). Registration or host readiness is
-  not E2E PASS. [CHECKOUTS.md](./CHECKOUTS.md), [VS-CODE-E2E.md](./VS-CODE-E2E.md) and
-  [MANUAL-E2E.md](./MANUAL-E2E.md) own the details; the executor and outcome judge are always Human.
-- **Compatible pre-existing SAY only:** Already-admitted SAY tasks keep their existing `nuinui` lifecycle,
-  required minimum Linear checkpoints and durable records until #286 proves safe retirement. See
-  [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md),
-  [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) and the applicable [Linear legacy owner](./LINEAR.md). Do not start new
-  SAY/Linear Work or delete compatibility evidence.
+- **Native Human Manual E2E (general route after #286 checkpoint):** The registered Human-test checkout supported a real signed VS Code GUI test that detected a product defect and completed checked host/checkout closure ([#1373 evidence](https://github.com/sayosomi/nuinuiCAD/issues/1373#issuecomment-6210238535)); later independent local checkout verification passed ([#1379 proof](https://github.com/sayosomi/nuinuiCAD/issues/1379#issuecomment-6228687181)). Product FAIL does not mean E2E infrastructure FAIL. General tool use follows the reviewed policy merge and an explicit [#286](https://github.com/sayosomi/dev-context/issues/286) activation checkpoint, **not** a product-fix rerun. Before that checkpoint only the approved bounded pilot is allowed. Every new run requires fresh exact admission and Human-only judgment; see [CHECKOUTS.md](./CHECKOUTS.md), [VS-CODE-E2E.md](./VS-CODE-E2E.md) and [MANUAL-E2E.md](./MANUAL-E2E.md).
+- **Legacy `nuinui` (reference retention):** Do not start new SAY/Linear Work or route GitHub-native tasks through old product commands. Preserve the old executable, generator, source, tests and durable SAY history as historical reference instead of deleting them. Existing in-flight legacy ownership and required exact recovery remain protected until final exclusion under [#286](https://github.com/sayosomi/dev-context/issues/286). See [CHECKOUTS.md](./CHECKOUTS.md), [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md) and [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) for transitional compatibility.
 
 The historical cutover and Cloudflare Phase B exception are recorded in
 [#268](https://github.com/sayosomi/dev-context/issues/268); remaining native E2E activation and legacy
-product-helper retirement are tracked solely in [#286](https://github.com/sayosomi/dev-context/issues/286).
+product-lifecycle retirement from active use are tracked solely in [#286](https://github.com/sayosomi/dev-context/issues/286).
 Those histories are not normal startup procedures.
 
 ## Sources of truth
