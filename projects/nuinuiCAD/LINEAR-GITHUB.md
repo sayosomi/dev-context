@@ -92,8 +92,7 @@ Before the comment, prove from fresh GitHub state:
 
 The OWNER comment triggers
 [`.github/workflows/auto-merge-reviewed.yml`](https://github.com/sayosomi/nuinuiCAD/blob/main/.github/workflows/auto-merge-reviewed.yml).
-It rechecks eligibility immediately before mutation and calls `enablePullRequestAutoMerge(expectedHeadOid,
-mergeMethod: MERGE)` to **reserve**, never to directly merge. No `mergePullRequest`, `gh pr merge --auto`,
+It rechecks eligibility immediately before mutation and calls `enablePullRequestAutoMerge(expectedHeadOid, mergeMethod: MERGE)` to **reserve**, never to directly merge. No `mergePullRequest`, `gh pr merge --auto`,
 force/admin/bypass, or direct-merge fallback is allowed.
 
 Call the reservation successful only after both the workflow's success output and fresh PR read-back prove
@@ -129,8 +128,7 @@ preparation, CI, or PR merge as E2E PASS.
 
 ## Compatible legacy SAY and completed cutover — historical references only
 
-No new Linear/SAY Work, Linear status synchronization for native Issues, mirror repair, or old `nuinui
-pr-auto-merge` route is authorized here. For actually pre-admitted compatible SAY generations, retain the
+No new Linear/SAY Work, Linear status synchronization for native Issues, mirror repair, or old `nuinui pr-auto-merge` route is authorized here. For actually pre-admitted compatible SAY generations, retain the
 original PR linking (including `Fixes SAY-N`), exact release/recovery and minimum Linear checkpoint semantics
 under [`LINEAR.md`](./LINEAR.md), [`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md), [`CHECKOUTS.md`](./CHECKOUTS.md),
 and [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md). Do not interpret those rules as a new GitHub-native
@@ -138,6 +136,5 @@ execution route.
 
 The **immutable pre-simplification policy** [`LINEAR-GITHUB.md` at
 `402c93e80a524a46b9f9f9c3a717c8a585b3b57c`](https://github.com/sayosomi/dev-context/blob/402c93e80a524a46b9f9f9c3a717c8a585b3b57c/projects/nuinuiCAD/LINEAR-GITHUB.md)
-preserves the complete old PR/Linear status ordering, Linear PR automations, and completed #268 Phase B `Refs
-sayosomi/dev-context#268` exception. The disabled mirror and provenance are historical under
+preserves the complete old PR/Linear status ordering, Linear PR automations, and completed #268 Phase B `Refs sayosomi/dev-context#268` exception. The disabled mirror and provenance are historical under
 [`GITHUB-ISSUES-SYNC.md`](./GITHUB-ISSUES-SYNC.md); never restart mirroring.
