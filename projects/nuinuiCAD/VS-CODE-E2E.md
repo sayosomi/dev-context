@@ -1,352 +1,80 @@
 # nuinuiCAD VS Code Manual E2E environment
 
-## Purpose
+## Scope and authority
 
-VS Code extensionのuser-facing behaviorをManual E2Eで確認するときの**isolated Extension Development Host baseline**を定義する。
+This document owns the **native VS Code production-host-specific baseline**: isolation, signed app, immutable tested build, profile/fixture, host readiness, generation/session ownership, and safe teardown/recovery.
 
-- test unitの`Judgment`、PASS / FAIL / BLOCKED、result handlingは [`MANUAL-E2E.md`](./MANUAL-E2E.md) がauthority。
-- current Manual E2E executorはHuman only。
-- local versioned helperのavailability / sync / repair / fallbackは [`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) がauthority。
-- locale-specific / translated-UI verificationは必要な場合だけ [`VS-CODE-E2E-LOCALE.md`](./VS-CODE-E2E-LOCALE.md) を追加で読む。
-- abnormal mouse / pointer state（例: idle `MouseEvent.buttons === 16`）の切り分けは [`VS-CODE-E2E-INPUT-TROUBLESHOOTING.md`](./VS-CODE-E2E-INPUT-TROUBLESHOOTING.md) を読む。
-- この文書はHumanが操作するVS Code production-hostのisolation / local preparation / launch baselineをownerとする。
+- [MANUAL-E2E.md](./MANUAL-E2E.md): when Manual E2E is required, declared units/oracles, Human execution/judgment, stop/pause, failure triage and evidence.
+- [CHECKOUTS.md](./CHECKOUTS.md#native-human-manual-e2e): manifest-declared Human-test checkout, native lifecycle, identity/ownership, interrupted state and final proof.
+- [LOCAL-TOOLS.md](./LOCAL-TOOLS.md): active `nuinui-e2e --production` interface and legacy helper boundary.
+- [ISSUES.md](./ISSUES.md#native-github-manual-e2e-checkpoints): canonical GitHub Issue plan, start, progress, Human results, recovery and closure checkpoints.
+- [VS-CODE-E2E-LOCALE.md](./VS-CODE-E2E-LOCALE.md): locale-specific test only.
+- [VS-CODE-E2E-INPUT-TROUBLESHOOTING.md](./VS-CODE-E2E-INPUT-TROUBLESHOOTING.md): abnormal pointer/mouse state only.
 
-`LUNA-E2E-PLAYBOOK.md`はinactive historical reactivation referenceであり、normal Human Manual E2Eのhost authorityではない。
+The **Human alone** operates the real GUI and makes PASS/FAIL judgments. Helper admission, immutable-build validation, fixture check and host readiness are setup evidence, not product PASS.
 
-## Responsibility split
+## Native Human production-host flow
 
-Current Human Manual E2Eでは標準責務を次のように分ける。
+For a new GitHub-native Issue, use the existing registered `role=human-test` checkout and `nuinui-e2e --production` helper. No new checkout, alternate E2E chat role or manually built launcher is needed.
 
-```text
-ChatGPT / Sol High
-  exact tested state / fixture / action / oracle / evidence planを固定
-      ↓
-Human terminal handoff
-  versioned helperでexact checkoutを準備
-  build
-  fresh profile / fixtureを生成
-  isolated Extension Development Hostを起動
-      ↓
-Human production-host execution
-  declared initial stateを確認
-  product action
-  observe / judge
-  evidenceを返す
-      ↓
-ChatGPT / Sol High
-  PASS / FAIL candidate / BLOCKEDを分類してroute
-```
+1. ChatGPT fixes the Issue's accepted test plan, exact authoritative merged tested SHA, affected production-path mapping, needed external fixture, generation, locale/port inputs and stabilization/re-entry eligibility. Respect competing checkout/audit ownership.
+2. The native helper admits and starts the **exact** generation on the already registered Human-test checkout. It requires verified clean detached and manifest-compliant state, current authoritative SHA and ownership.
+3. The helper's host checks verify the existing **immutable dogfood snapshot** for the exact tested SHA (extension bundle, Rust `evaluation_stdio` binary, manifest/hash/path and Mac platform/architecture), plus the **signed Microsoft VS Code app** and selected port/process availability. The snapshot is produced by the existing dogfood build owner; the E2E helper does not rebuild source in the checkout.
+4. `host-prepare` launches an isolated VS Code Extension Development Host with fresh profile, isolated extensions, external task fixture and exact generation-owned session/process/loopback CDP metadata.
+5. After host readiness, the Human establishes each declared initial state, runs the product actions in VS Code, observes and judges them, and returns concise result/evidence. A ready host never supplies a product PASS.
+6. Record relevant observations and necessary transient failure evidence **before** teardown. Normal `host-closure` performs checked owned-host cleanup, checkout release and independent final clean/idle proof for the same generation.
 
-Host preparation itself is not a product test result. `READY FOR HUMAN E2E`は「declared product actionを開始できるisolated hostが準備済み」というreadiness evidenceであり、PASSを意味しない。
-
-## Human GUI execution
-
-terminal preparationが完了した後、HumanはVS Code Extension Development Hostへ移動してproduct test unitを直接実行する。
-
-HumanはTaskのdeclared action / oracleに必要な範囲で:
-
-- VS Code GUIを見る;
-- mouse / keyboardを操作する;
-- Objective observationを確認する;
-- visual / interaction qualityを判断する;
-- screenshotを撮ってChatGPTへ提出する。
-
-Screenshotのcase grouping、Human judgmentとの境界、追加evidenceの要求条件は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のHuman execution / screenshot evidence ruleをauthorityとする。1枚で複数caseを明確に判定できる場合は、fixture / viewportを構成してその1枚へまとめる。
-
-## Baseline
-
-Manual E2Eでは普段使いのVS Code profileをそのまま使わない。
-
-標準環境:
-
-- exact tested checkout / commit
-- fresh `--user-data-dir`
-- empty `--extensions-dir`
-- VS Code built-in completion OFF
-- task-specific fixtureをcheckout外へ生成
-- current tested checkoutで`npm run build:vscode`
-- 必要なhost-neutral Rust `evaluation_stdio` binaryをtested checkoutの`rust-evaluator` crateからbuild
-- `NUINUICAD_RUST_EVALUATION_BINARY`でexact binaryを明示
-- `--extensionDevelopmentPath="$CHECKOUT/vscode-extension"`
-- `--disable-workspace-trust`
-- welcome / sessions welcome / release notesを抑止
-- repository workspace folderへ依存せずfixture fileを直接open
-- live observation / CDP / `NUINUICAD_MCP_OBSERVATION=1`はcurrent Manual E2E contractやversioned helper lifecycleが必要とする場合だけ使用し、Human testだからという理由だけでoracleへ追加しない
-
-通常user settings、word-based suggestions、inline suggestions、keybindings、installed extensions等が結果へ混入すると、nuinuiCAD extension自体のPASS / FAILを判定できない。
-
-## Tested-state preparation ownership
-
-ChatGPT / Sol HighがHuman向けsetup commandを生成する前に:
-
-1. latest remote stateを確認する。
-2. testするexact commitを決める。
-3. native `nuinui-e2e --production` pathでは、production lifecycleが要求するexact authoritative `main` SHAを固定する。既存SAY / `nuinui-e2e-prepare` routeでのみ、必要に応じてstable remote E2E refを使う。
-4. fixture sourceとrequired binaries / extension bundleを決める。
-5. locale-specific verificationが必要ならlocaleを固定する。
-6. selected Human-test topologyにexplicit portが必要ならcaller-controlled portを固定する。
-7. Humanへ渡すcanonical startup handoffへexact semantic valuesを埋める。
-
-Humanはtested stateやoracleを設計しない。Human terminal stepはChatGPTが固定したstateを機械的に準備するだけにする。
-
-## Human terminal setup contract
-
-Compatible pre-existing SAY Manual E2Eのhost-preparation handoffは、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録されたversioned `nuinui-e2e-prepare` helperを使う。GitHub-native Issueではcanonical `nuinui-e2e --production` を使用する。review / merge / authoritative read-back / guarded sync済みtool、登録済みHuman-test checkout、fresh production admissionが必要である。dev-context #286のreviewed policy mergeとexplicit general activation checkpointまでは既存承認済みbounded pilotとしてのみ実行でき、checkpoint後は同じ安全条件で通常運用する。製品バグの発見をE2E基盤の失敗と混同しない。
-
-current local dev-context cloneでhelperが利用可能でcurrent operationをsupportしている場合:
-
-- ChatGPTはsemantic intentを固定し、`nuinui e2e-start-command --issue <SAY-123> --tested-ref <full-sha> --executor human --fixture <absolute-path> [--lane <human-test-lane>] [--locale <default|ja>] [--port <port>]`をHumanへ渡す;
-- Humanはgeneratorを同じterminalで実行し、fresh read-only validation後に出るshell-quoted `e2e-start && prepare` continuationをverbatimに実行する。成功したgenerator outputをChatGPTへ戻してargument orderingを再構成しない;
-- `--port`はcaller-controlledであり、Human-test laneが2つ以上のときは明示する。singleton topologyでは省略時の既定port互換を維持する;
-- active policyは`--executor human`だけを使う。helperのlegacy parser/runtime compatibilityが別metadataを受け付けても、この文書はそれをcurrent execution pathとしてadvertiseしない;
-- helperはexecutor selection、GUI action、test oracleを実行・生成しない;
-- 同じbuild / fresh profile / VS Code launch / readiness / session metadata lifecycleを長いinline shellとして再実装しない;
-- helper実行後のsession rootやlaunch PIDはhelper metadata / `status`をauthorityとし、temporary directoryを`find`等で再探索して推測しない。
-
-Successful Manual E2E closure is also a single named terminal handoff after ChatGPT / Sol High authorizes closure:
-
-```bash
-nuinui-e2e-prepare closure-command --issue SAY-123 [--lane <human-test-lane>]
-```
-
-The helper resolves fresh lane, tested ref, and E2E root from local marker/session/receipt authority and serializes existing `cleanup -> e2e-release -> closure-check` public boundaries. Humanはlane、ref、rootを手でsubstituteしない。Exact duplicate success continues immediately; `BLOCKED` / `ERROR` stops later stages and returns to ChatGPT for bounded diagnosis. Existing cleanup, release, closure-check mutation/read-back ownership, PASS / FAIL judgment, and Human stop / pause semantics remain unchanged.
-
-helperが未install、stale / broken、またはcurrent operationをsupportしない場合だけ、[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)のfallback / repair ruleに従ってinline setupへ降りる。helperのunexpected failureを受けて、その場で別の手書きlauncherへ迂回することはfallback条件にしない。
-
-Native production `nuinui-e2e`では手書きlauncherへのfallbackを行わない。`host-check` / `host-prepare`は既存 `npm run dogfood:build` ownerが作るexact SHAのimmutable snapshotと署名済みMicrosoft VS Codeだけを使う。Buildはdogfood ownerのclean `main` gateで行い、別のartifact-generation systemを作らない。`host-prepare`のreadinessはHumanへのhandoff準備であり、Manual E2E resultではない。Issue #286ではHumanが実機GUIを操作して製品不具合を発見し、exact-generation host / checkout closureを記録済みで、その後の独立checkout検証もPASSしている。一般native E2E tool activationは、これら**基盤の動作証拠**とreviewed policy mergeに基づく明示的な#286 checkpointで成立する。製品不具合修正後の再E2Eや製品oracleのPASSはtool activation条件ではない。各実行ではfresh exact-SHA production admission、immutable artifact、signed VS Code、host ownership、Human-only GUI判定とchecked closureを省略しない。checkpoint前は承認済みbounded pilotのみ使用できる。
-
-fallback inline setupが必要な場合も、Human向け準備は可能な限り**1つのcopy/paste block**へまとめる。
-
-対話shell自体を誤って終了させないため、strict modeをHumanのcurrent shellへ直接設定しない。標準形は子shellに閉じ込める。
-
-```bash
-bash <<'BASH'
-set -Eeuo pipefail
-trap 's=$?; echo; echo "FAILED at line $LINENO: $BASH_COMMAND"; echo "exit=$s"; exit "$s"' ERR
-
-# preparation commands
-BASH
-```
-
-Human setupは成功時に次のfinal markerを出す。
+### Public native CLI shape
 
 ```text
-READY FOR HUMAN E2E
+nuinui-e2e <operation> --production --issue <canonical-GitHub-Issue> --generation <token> --tested-sha <40-lowercase-sha> [--lane human-e2e]
 ```
 
-失敗時はTerminalを閉じず、失敗command / line / exit statusを表示する。
+Use the named `admit`, `start`, `host-check`, `host-prepare`, `host-status` and `host-closure` commands for their actual phases, not a reconstructed command sequence. `host-check` and `host-prepare` additionally require `--fixture <absolute-external-file> --port <1-65535>`; optional locale is `--locale default|ja`. Keep exact values tied to the Issue, generation, tested SHA and current helper. See LOCAL-TOOLS for the authoritative current interface and CHECKOUTS for start/closure admission.
 
-Human setupはproduct oracleを実行しない。例えばCompletionを開く、Canvasをclickする、Renameを実行する等はsetupに含めない。`READY FOR HUMAN E2E`後のGUI操作はHuman test unit本体として扱う。
+Production rejects caller-provided manifests/adapters, `NUINUI_E2E_TEST_*` overrides and wrong/missing checkout/session/process identity. `--self-test` is fixture-only, not production authorization. There is no native hand-written shell, SAY helper or launcher fallback.
 
-## Fresh profile settings
+## Isolated VS Code and fixture baseline
 
-最低限、fresh profileへ次を設定する。
+The production host must not silently inherit the Human's normal VS Code profile, settings, keybindings or installed extensions. The helper owns:
 
-```json
-{
-  "editor.wordBasedSuggestions": "off",
-  "editor.inlineSuggest.enabled": false,
-  "editor.quickSuggestions": false,
-  "editor.snippetSuggestions": "none"
-}
-```
+- isolated `--user-data-dir`, initially empty `--extensions-dir`, required `--extensionDevelopmentPath`, disabled workspace-trust prompts and suppressed welcome/release-note surfaces;
+- profile settings that prevent built-in word-based, inline, quick and snippet suggestions from confounding nuinuiCAD completion/interaction observations;
+- the exact tested immutable extension and Rust evaluator artifacts; do not rebuild or substitute binaries from a different checkout;
+- identifiable task-specific `.nui` fixture outside every source checkout/worktree, opened as a file rather than relying on the repository workspace;
+- owned host process, root, profile, CDP listener and session metadata bound to one exact native E2E generation.
 
-普段のVS Code側でsettingsやextensionを手動無効化する方法を標準手順にしない。
+Those are preparation conditions, not extra Human product test cases. For exact profile flags and fixture materialization, use the versioned helper implementation rather than copying a large inline launcher or changing the Human's everyday VS Code settings.
 
-## Fixture rule
+Before a declared action, confirm the intended fixture and initial state actually exist and the relevant contributed extension/language registration is usable. A source-specific command must be checked on the surface that exposes it, not in an unrelated Canvas-only context. Missing activation, unexpected modal or wrong fixture is setup `BLOCKED`, not an immediate product failure.
 
-- Task-specific fixtureは`/private/tmp`等checkout/worktreeを汚さない場所へ生成する。macOSの`/tmp`は`/private/tmp`へのaliasなので、fixtureの通常例ではcanonicalな`/private/tmp`を使う。
-- setup lifecycle内でfixtureをmaterializeし、そのfileを起動時に明示的にopenする。
-- current runのfixtureはunique filename / identityを持たせ、古いE2E hostやfixtureと客観的に区別できるようにする。
-- fixture/state/action/oracleはcurrent IssueのManual E2E planをauthorityとする。
-- Human visual runで複数caseを一画面へ安全に配置できる場合は、`MANUAL-E2E.md`のscreenshot evidence grouping ruleに従ってfixture側でまとめてよい。
+## Meaningful VS Code test coverage
 
-## Surface lifecycle coverage
+[MANUAL-E2E.md](./MANUAL-E2E.md) owns test-unit grouping, screenshot evidence, Objective/Human judgment and implementation-backed mapping. For Webview/Canvas/Output commands, preserve **cold vs warm** surface paths when they materially change execution. If a command must open a surface, the same invocation must also complete the requested focus, selection/navigation or operation. Add active/inactive cases only for genuinely different behavior; do not make a Cartesian matrix of every state.
 
-VS Code command / actionがCanvas、Output Preview、その他のWebview surfaceを新規作成・open・reveal・reuseできる場合、Manual E2E planはそのsurface lifecycleがuser-facing resultへ影響し得るかを確認する。
+For theme-sensitive Human visual acceptance, retain one representative **Light and Dark** theme, with theme names in evidence. After a theme-specific fix, repeat the exact failing theme; if shared theme-resolution logic changes, confirm both. Do not repeat nonvisual Objective units across themes.
 
-同じactionが次のmaterially different pathを持つなら、原則として別test unitで扱う。
+Combine scenarios/screenshots when one fixture/initial state safely proves them; live Human observation is needed for drag, focus, transition and other dynamic behavior not proved by a static screenshot. Additional screenshots are driven by failure or ambiguity, not a fixed count. User-profile interoperability is a separately declared test, not part of the isolated baseline.
 
-- **cold path** — matching surface/sessionがまだ存在しない、またはclosed。command自身がsurfaceをopenして、その同じinvocationで要求されたselection / focus / navigation / operationまで完了する必要がある。
-- **warm path** — matching surface/sessionが既にopenでauthoritative。commandが既存surfaceをreuseして同じ要求を完了する。
-- **active / inactive path** — focus、command routing、view lifecycle等によって実装pathやacceptanceが変わる場合だけ追加する。
+## Host failure, interruption and safe recovery
 
-全commandでclosed/open/active/inactiveのCartesian productを機械的に回さない。実装path、host readiness、focus handoff、session reuse等が意味を持つ場合だけ分ける。
+For unexpected `host-prepare` errors, hangs, process exits or session mismatch:
 
-cold pathのacceptanceを、事前にtesterがsurfaceを手動openしてからactionを実行する手順で代替しない。commandがsurfaceを開く契約なら、`surfaceが開いた`だけでなく、open後に要求されたselection / focus / pan / target state等まで同じinvocationで成立したことを確認する。
+1. Classify it as host/setup `BLOCKED` until actual-host evidence proves otherwise; never infer a product FAIL from a failed launch.
+2. Read `host-status` for the **same** Issue, generation and tested SHA, with responsible checkout/helper metadata. Preserve material start/stop evidence in the canonical Issue.
+3. Apply only an authorized exact-generation `host-recover` / `recover` or other helper-owned cleanup procedure whose process/root/marker/session ownership is freshly proved. Ambiguity, live/foreign owners, changed snapshots or malformed receipts remain blocked.
+4. Restore required fresh initial state before any rerun and retain failure evidence where still possible.
 
-## Theme-sensitive visual coverage
+Do **not** search temporary parents to guess a session root, synthesize a PID, kill/delete foreign processes, edit markers/metadata, recreate the Human-test checkout, bypass recovery with an inline launcher, or turn a helper error into an alternate old SAY workflow. Proven exact duplicate/no-op success needs no redundant confirmation; near matches do not count.
 
-Human visual acceptanceがVS Code theme由来のcolor tokenやcontrastに依存する場合、少なくとも代表的な**Light theme 1つ + Dark theme 1つ**で確認する。
+Host/OS permissions and modal prerequisites (e.g. macOS privacy prompt, VS Code trust or missing registration) are environmental `BLOCKED`. Correct only the specific prerequisite; do not require Full Disk Access for all runs. For widespread abnormal Canvas pointer behavior, consult [input troubleshooting](./VS-CODE-E2E-INPUT-TROUBLESHOOTING.md) before concluding product failure.
 
-対象例:
+## Relaunch and checked closure
 
-- selection / focus / hover color
-- frame / border / guide / handle
-- label / icon / foreground-background contrast
-- theme tokenから派生するCanvas presentation
+A changed tested SHA/build, repaired shared runtime, invalidated profile/fixture or lost host requires fresh exact-generation admission/preparation under the canonical helper. An old VS Code process cannot prove a new tested build. Recreate declared cold/initial states for affected units; previously passed unaffected units need not repeat merely for completeness.
 
-選んだtheme名はevidenceまたはtest resultへ記録する。特定themeで不具合が見つかった場合、fix後は少なくともそのexact themeを再確認する。shared theme-resolution logicを変更した場合は、final PASS前にLight / Dark双方の代表確認を維持する。
+Collect material transient evidence before cleanup when required for Human actual-host failure classification. Human stop/pause supersedes further operations without inventing PASS/FAIL. After authorization, `host-closure` binds the exact generation's cleanup receipt to checkout release and independently proves returned idle topology, detached revision and clean state. Incomplete/ambiguous closure prevents reuse until exact recovery is settled.
 
-非visualなObjective unitまでthemeごとに重複実行しない。themeがbehaviorそのものを変える契約でない限り、theme pairはtheme-sensitiveなvisual acceptanceだけに適用する。
+## Immutable legacy reference
 
-## Host isolation
-
-Human Manual E2E hostはproduction user profileと分離する。versioned preparation helperがselected generationのroot、profile、fixture、process、session metadataをownerし、fresh isolated hostを作る。
-
-- stale or foreign host/processをcurrent generationとして推測しない;
-- current runのowned processだけをhelper identityから管理する;
-- helperが`BLOCKED`したprocess/session ambiguityをad-hoc kill / deleteでrepairしない;
-- normal user VS Code processを「Manual E2Eだから」という理由だけで無条件に全終了するruleは置かない;
-- current Taskがhost isolationのためにdedicated process policyを必要とする場合は、そのrequirementをplan / helper authorityで明示する。
-
-## Legacy reference / fallback Human launch shape
-
-以下はhost-preparation contractのreference implementationであり、versioned `nuinui-e2e-prepare` が利用可能な通常のHuman handoffでChatGPTが再生成するtemplateではない。
-
-`LOCAL-TOOLS.md`のfallback条件が成立した場合、またはhelper自体のrepair / developmentでbaselineを確認する場合にだけ、Task-specific valueを差し替えて使う。CDP / observation flagsはcurrent Task contractまたはhelper compatibility上必要な場合だけ追加する。
-
-```bash
-EXPECTED="<tested commit>"
-CHECKOUT="<tested checkout>"
-
-cd "$CHECKOUT"
-
-test "$(git rev-parse HEAD)" = "$EXPECTED"
-test -z "$(git status --porcelain)"
-
-npm run build:vscode
-cargo build --manifest-path rust-evaluator/Cargo.toml --bin evaluation_stdio
-
-RUST_BIN="$CHECKOUT/rust-evaluator/target/debug/evaluation_stdio"
-test -x "$RUST_BIN"
-test -f "$CHECKOUT/vscode-extension/dist/extension.js"
-
-E2E_ROOT="$(mktemp -d /private/tmp/nuinui-vscode-e2e.XXXXXX)"
-mkdir -p \
-  "$E2E_ROOT/user-data/User" \
-  "$E2E_ROOT/extensions" \
-  "$E2E_ROOT/evidence"
-
-cat > "$E2E_ROOT/user-data/User/settings.json" <<'EOF'
-{
-  "editor.wordBasedSuggestions": "off",
-  "editor.inlineSuggest.enabled": false,
-  "editor.quickSuggestions": false,
-  "editor.snippetSuggestions": "none"
-}
-EOF
-
-FIXTURE="$E2E_ROOT/<task-fixture>.nui"
-cat > "$FIXTURE" <<'EOF'
-<task-specific fixture source>
-EOF
-
-APP="/Applications/Visual Studio Code.app"
-EXEC_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
-APP_BIN="$APP/Contents/MacOS/$EXEC_NAME"
-test -x "$APP_BIN"
-
-NUINUICAD_RUST_EVALUATION_BINARY="$RUST_BIN" \
-"$APP_BIN" --new-window \
-  --user-data-dir="$E2E_ROOT/user-data" \
-  --extensions-dir="$E2E_ROOT/extensions" \
-  --extensionDevelopmentPath="$CHECKOUT/vscode-extension" \
-  --skip-welcome \
-  --skip-sessions-welcome \
-  --skip-release-notes \
-  --disable-workspace-trust \
-  "$FIXTURE" </dev/null
-```
-
-macOSでshellの`code` commandがunavailableでも、app bundle内のexecutableを直接使う。
-
-`evaluation_stdio`のowner/pathはlatest repositoryをauthorityとする。過去promptの古いRust pathを流用しない。
-
-`--enable-smoke-test-driver`等、通常のVS Code Extension Development Host pathを別test harnessへ変えるflagはTask contractが明示しない限り追加しない。
-
-## Versioned helper failure routing
-
-`nuinui-e2e-prepare prepare`または、activation後のnative `nuinui-e2e host-prepare`がunexpected error、hang、session/state mismatchで完了しない場合は、次の順序を固定する。
-
-1. product FAILとして扱わない。
-2. Legacy runでは`nuinui-e2e-prepare status <human-test-lane>`、native runでは`nuinui-e2e host-status --production --issue <Issue> --generation <token> --tested-sha <sha>`を使い、selected checkout / marker / session metadata / recorded root / launch PIDをread-only確認する。
-3. valid sessionが残りcleanupが必要なら、そのhelperが所有する exact-generation cleanup / recovery commandだけを使う。
-4. helper defect / stale local clone / unsupported operation / environment blockerを分類し、`LOCAL-TOOLS.md`のrepair / fallback ruleへ進む。
-
-失敗したprepareの復旧で次を行わない。
-
-- `/private/tmp`や他temporary parentを`find`等で走査して「前回のE2E root」を推測する;
-- session metadataを無視してPID / root / fixtureを再構築する;
-- helper failure直後に別のad-hoc VS Code launcherを生成して同じrunを継続する;
-- marker / checkout mismatchを手書きscriptでrepairする。
-
-Legacy helper自体が未install、stale / broken、またはcurrent operationをsupportしないと確認された場合だけ、`LOCAL-TOOLS.md`のformal fallback条件へ移る。Native production helperのambiguous stateはfail closedし、manual launchやlegacy SAY helperへfallbackしない。
-
-## Environment blockers
-
-Host preparationまたはHuman executionにGUI-only permission / modal / OS prerequisiteが現れ、declared actionを信頼できるinitial stateで実行できない場合はenvironment `BLOCKED`として扱う。product FAILへ変換しない。
-
-例:
-
-- macOS privacy / App Data permission prompt
-- unexpected GUI confirmation dialog
-- System Settings prerequisite
-- VS Code trust / modal that invalidates declared initial state
-- required host prerequisiteを客観確認できない状態
-
-Prerequisiteを解決した後は、current planが要求するfresh stateからsetupをやり直す。Full Disk Access等を全runのbaseline requirementとして先回りで要求しない。
-
-Canvasのselection / drag / pan等が広く死に、VS Code / Electron側のabnormal mouse-button stateが疑われる場合は、product FAILへ確定する前に [`VS-CODE-E2E-INPUT-TROUBLESHOOTING.md`](./VS-CODE-E2E-INPUT-TROUBLESHOOTING.md) のboundary checkを実行する。
-
-## Extension-registration / initial-state check
-
-Product unitへ入る前にHumanはcurrent planで必要なinitial stateを確認する。必要に応じて:
-
-1. current runのunique `.nui` fixtureをactiveにする。
-2. language modeが`nui` / nuinuiCADでありPlain Textでないことを確認する。
-3. required contributed commandを、そのcommandのdeclared Palette scopeに含まれるsurfaceをactiveにして確認する。
-4. fresh profile / extension registrationがcurrent tested buildに対応することを確認する。
-
-command registration確認はsurface-awareに行う。Source commandをCanvas-only surfaceで要求したり、その逆を行わない。
-
-Initial-state/setup failureはproduct FAILではなくenvironment / setup `BLOCKED`またはplan correctionへrouteする。
-
-## Relaunch rule
-
-次の場合はfresh isolated hostを準備し直す。
-
-- `npm run build:vscode`をやり直した後
-- branch / commitを切り替えた後
-- blocking fix後の再試験
-- fresh profile stateが壊れた、またはinitial stateが不明になった場合
-- previous runがenvironment `BLOCKED`となりhostを再構築する場合
-
-古いhostをreuseして新しいbundleやcommitを検証したことにしない。
-
-正式なrerunでは、`MANUAL-E2E.md`のruleに従ってaffected unitのdeclared initial stateを再構築する。例えば`Canvas closed`がinitial stateなら、action前にmatching Canvas sessionが存在しない状態から開始し、既にopenしたCanvasをそのまま使ってcold-path PASSとしない。
-
-## Test-unit grouping
-
-同じfixture・同じeditor state・同じ種類の操作で確認できる項目は、まとまったtest unitとして一度に実行する。
-
-分割するのは主に次の場合:
-
-- 結果によって次のfixture/stateが変わる
-- source mutation / revertが必要
-- failureが後続判定を無効にする
-- source close / dispose等の破壊的操作を最後へ分離する必要がある
-- surface/sessionのcold / warm等、lifecycle pathがmaterially different
-- Objective observationとHuman visual/UX judgmentを独立して判定できる
-
-最後の2点は [`MANUAL-E2E.md`](./MANUAL-E2E.md) のtest-unit boundary ruleを優先する。同じfixtureを使えることだけを理由に、異なるlifecycle pathや独立したObjective/Human oracleを1つへまとめない。
-
-visual evidenceでは、同じ画面で複数caseを明確に判定できるなら1枚のscreenshotへまとめる。screenshot枚数を増やすためだけにcaseを分割しない。静止画で表現できないinteractionはHuman live observationで確認し、failure / ambiguity時に必要な追加screenshotを取る。
-
-completion testでは、自動popupの有無だけに依存せず、必要に応じて`Trigger Suggest`を明示実行してnuinuiCAD providerの候補を確認する。
-
-## Profile-dependent tests
-
-通常user profileでのみ再現する問題は、isolated environmentのManual E2E failureと混同しない。profile / interoperability固有の別問題として扱う。
-
-Task-specific Manual E2Eが意図的にexisting user settings / installed extensionsとのinteroperabilityを検証する場合だけ、このisolated baselineに加えて別途profile-dependent testを行う。
+Compatible **already-admitted SAY** operations can still use their original historical preparation and release under [CHECKOUTS.md](./CHECKOUTS.md#compatible-pre-existing-say-nuinui-operations--historical-reference) and [LOCAL-TOOLS.md](./LOCAL-TOOLS.md#legacy-say-compatibility--historical-not-a-new-work-route). The [frozen pre-cleanup VS Code inline launch and SAY guidance](https://github.com/sayosomi/dev-context/blob/910724f722ce9fa2143939a3d6c228470fee837b/projects/nuinuiCAD/VS-CODE-E2E.md) is immutable legacy reference **only**, never a fallback for `nuinui-e2e --production`. `LUNA-E2E-PLAYBOOK.md` likewise remains inactive and must not be loaded in normal Human E2E.
