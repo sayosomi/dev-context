@@ -15,6 +15,9 @@ post-integration drift decisions. Work/Issue decomposition belongs to
 - **Compatible pre-existing SAY only:** already-admitted legacy generations retain their declared lane,
   durable claim, minimum Linear checkpoints, and eligible `nuinui integrate-clean` assistance. The last
   section adds these rules; they never grant a native D1 route.
+- **D2-C evaluator audit:** fixed-SHA and read-only under its separate admission; no concurrent product
+  implementation or conversion of audit findings into source-edit permission. See
+  [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md) and [`CHECKOUTS.md`](./CHECKOUTS.md).
 - **Human Manual E2E:** remains Human-only. Native general activation and eventual legacy-helper
   retirement belong to [dev-context #286](https://github.com/sayosomi/dev-context/issues/286), not this
   policy.
@@ -52,9 +55,10 @@ lane, use the legacy parallel-admission rules below; a FREE lane alone is not au
 The ordinary lower-tier Coding Agent default, Human-explicit upper-tier choice, and the **separate exact
 Issue-body autonomous-conformance opt-in** belong to [`CODING-AGENT.md`](./CODING-AGENT.md). An opted-in
 agent may investigate and repair multiple in-scope defect families under its closed matrix and
-distinct-input exploration budget; neither family count nor accumulated verification invocations alone
-requires stopping or splitting. Do not use slice boundaries to broaden the Issue oracle, owners, or
-budget.
+numeric distinct-input exploration budget; neither family count nor accumulated verification invocations
+alone requires stopping or splitting. Exhausting that discovery budget stops new inputs, not required
+re-execution of authorized cases or regression/full-suite verification. Do not broaden the Issue oracle,
+owners, or budget through slicing.
 
 ## Safe checkpoints
 
