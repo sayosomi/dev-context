@@ -1,77 +1,43 @@
 # nuinuiCAD execution lane / checkout policy
 
-## Purpose
+## Scope and declared checkouts
 
-nuinuiCADのlocal execution capacityとlane ownershipを、versioned `LANES.conf`に宣言されたcheckoutから導出して管理する。
+The checked-in [`LANES.conf`](./LANES.conf) and registered Git worktrees
+define execution capacity; Issue count and agent/chat count do not. Generic
+roles, capacity, ownership, locks and recovery states belong to
+[shared declared-lane execution](../../shared/DECLARED-LANE-EXECUTION.md).
+No dynamic implementation or Human-test checkout may be created to gain
+capacity. Each declared checkout keeps its role.
 
-宣言されたcheckoutは再利用候補ではなく、**存在を許可するexecution laneそのもの**である。Issue数、Ready数、worker数を理由に動的なlane / worktree / clone / checkoutを作らない。
-
-再利用可能なexecution semantics（role、capacity、FREE/BUSY/RELEASE-PENDING/BLOCKED、durable claim/Base/checkpoint、lock、release tombstone/receipt）は shared [`DECLARED-LANE-EXECUTION.md`](../../shared/DECLARED-LANE-EXECUTION.md) がsole ownerする。この文書はnuinuiCAD固有のmanifest、implementation lane policy、Human-only Manual E2E policyをownerする。
-
-Evaluator auditのexecutor selection、finding threshold、Sol-first / Astra-escalation handoffは[`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md)がownerする。この文書は、既存checkoutを一時的なread-only / execution-only探索に使う場合のlane境界をownerする。
-
-## Declared lanes
-
-The checked-in manifest declares one implementation lane and one Human-test lane; the names and paths are data, not the capacity model. Both declared checkouts are registered. The existing #286 approval permits its bounded real-host pilot after fresh production admission. Human-operated native VS Code GUI testing detected a real product defect and completed exact-generation closure; a later independent checkout proof passed. General tool activation follows reviewed policy merge and an explicit #286 checkpoint, not the product repair rerun. Before the checkpoint only the approved bounded pilot is permitted.
-
-| Lane | Checkout | Role |
+| Lane | Checkout | Role / idle |
 | --- | --- | --- |
-| `main` | `/Users/yosomi/Code/nuinuiCAD` | implementation Coding Agent (lower-tier default; Human-explicit upper-tier under `CODING-AGENT.md`; autonomous conformance needs separate Issue-body opt-in) |
-| `human-e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Human-only native Manual E2E |
+| `main` | `/Users/yosomi/Code/nuinuiCAD` | implementation / `branch` |
+| `human-e2e` | `/Users/yosomi/Code/nuinuiCAD-e2e` | Human-test / `detached` |
 
-Lane names are identifiers from `LANES.conf`; they are not special aliases. An implementation lane may checkout a task branch when its declared idle policy and lifecycle proof permit it.
+These are current manifest values, not permanent assumptions about lane
+names. Both are already registered. This document owns their nuinuiCAD-specific
+physical admission, D1/D2-C exclusion and Human E2E checkout boundaries;
+[execution handoff](./EXECUTION-HANDOFF.md),
+[evaluator policy](./ASTRA-AUDIT.md),
+[Manual E2E](./MANUAL-E2E.md) and
+[GitHub Issue checkpoints](./ISSUES.md) own their respective details.
 
-Capacity and routing rules:
+Only the **active** GitHub-native routes below admit new Work:
+D1 Git-only implementation (activated in
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268)),
+D2-C reservation-free read-only audit (separate #268 checkpoint), and native
+Human E2E (activated under [#286](https://github.com/sayosomi/dev-context/issues/286)).
+Historical SAY `nuinui` lifecycle and Phase B are not new-work routes.
+Activation checkpoints already recorded do not need repeating per Task.
 
-- implementation capacity is the number of declared `role=implementation` lanes.
-- Human-test capacity is the number of declared `role=human-test` lanes.
-- A declared Human-test lane supplies capacity only when its exact real checkout is registered and passes complete topology / idle-state admission. `/Users/yosomi/Code/nuinuiCAD-e2e` is registered. The already approved bounded pilot may proceed under fresh exact admission; general native E2E follows its reviewed policy merge and explicit #286 checkpoint. Required product Manual E2E remains required and cannot be waived or marked PASS merely because the tool worked.
-- a lane is never reassigned across roles, and declared paths are not inferred from lane names.
-- the one authorized forensic worktree exception below is inventory-only and adds no execution capacity.
-- capacity is an upper bound, not a utilization target; leave a safe lane FREE when no admitted Work needs it.
+## D1 — GitHub-native Git-only implementation
 
-## Historical Phase B Cloudflare mirror shutdown and repair exception — #268 only
-
-このsectionは歴史的なPhase B exceptionを記録する。declared-lane Linear ownershipと`nuinui begin` / implementation-agent `nuinui handoff` / `nuinui release`は、すでにそのlifecycleへadmitされたcompatible pre-existing SAY taskだけに適用する。一般activation checkpoint後のordinary GitHub-native implementationは下記Git-only routeを使い、legacy lifecycleへ入らない。Phase Bで認められたのは、`sayosomi/dev-context#268` の既存Cloudflare mirror Worker write-barrier / shutdown実装、ならびにcutover前に必要な既存Linear→GitHub mirrorのlossless reconciliation / history repair（Linear-to-GitHub identity mapping、status drift、Issue / Document comments、Linear Document reconciliation）と、その範囲を証明するfocused tests / configurationだけであり、既存のnuinuiCAD checkoutを使うsequential Git workflowで実施した。repairは既存mirror recordに限り、GitHub Issueのidentityや既存historyを保持する。Issueのdelete / recreate、historyの欠落・重複、reverse sync、または一般的なnuinuiCAD implementationを許可しない。新しいlane、worktree、clone、SAY Issue、またはdurable implementation generationは作らない。
-
-Phase B当時、このexceptional workflowの開始前には、read-onlyなcheckout auditで次をすべて確認する必要があった。
-
-- 対象は既存manifest-declared nuinuiCAD checkoutであり、repository / registered-worktree identityとfresh remote `main`が明確である。
-- active implementation claim、audit reservation、mutation lock、release-pending / tombstone、または未解決のdurable ownership stateがない。
-- checkoutがcleanで、current branch / HEADが説明可能であり、unrelated tracked / untracked workがない。
-- 他のimplementationまたはevaluator auditが同じproduct checkoutを使用中でなく、このsliceを別作業と並行させない。
-
-1つでも確認できない、またはstateがambiguousなら開始を止める。existing durable metadataを削除、書換え、初期化、またはexceptionのために解放してはならず、既存claim / reservationがある場合はそのownerの通常lifecycleが結論するまで待つ。
-
-Phase Bでは上記auditの後、fresh verified `main`からordinary topic branchを使い、`nuinui begin` / `nuinui handoff` / `nuinui release`を要求しない1つのsequential sliceを許可した。durable claim/checkpoint metadataは作成・変更せず、既存のGitHub CI、pushed-head independent blocking review、PR protection、safe merge gateを維持した。この例外はPhase Bに限られ、一般activation checkpoint後のGitHub-native implementationは上記Git-only routeを使う。compatible pre-existing SAY implementationはlegacy lifecycleを継続する。Evaluator auditとHuman Manual E2Eはそれぞれ別の既存policyに従う。
-
-## GitHub-native single-checkout Git-only workflow — general activation gate
-
-This D1 workflow is the normal startup and continuation route for ordinary
-future GitHub-native nuinuiCAD implementation Tasks. It becomes effective only
-after the coordinated policy PR is independently reviewed, merged, read back on
-authoritative dev-context `main`, and recorded as the activation checkpoint in
-[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). Until
-that global checkpoint is recorded, GitHub-native implementation startup stays
-blocked. Once recorded, this policy requires no separate per-Task approval or
-activation step.
-
-The completed [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
-proved the Git-only operational cycle under the one-run policy-amendment waiver
-recorded in [#268 comment 6125057400](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6125057400).
-It was successful one-off operational proof, not strict compliance with the
-unchanged pre-activation policy and not general activation. This coordinated
-policy change is the separate general-activation step.
-
-The route uses only the existing product checkout at
-`/Users/yosomi/Code/nuinuiCAD`. It does not change the manifest, declared-lane
-classification, or existing claim, lock, reservation, initialization, or
-release algorithms. Compatible pre-existing SAY tasks already admitted to the
-legacy lifecycle continue there until a separate retirement checkpoint.
-Evaluator audits follow the reservation-free GitHub-native route below only
-after its separate D2-C activation checkpoint; D1 implementation activation
-does not activate reservation-free audits.
-Manual E2E policy is unchanged.
+Use only the registered implementation checkout. New GitHub Issues never use
+legacy `nuinui preflight/begin/handoff/release`, create SAY claims or write
+Linear checkpoints. The Human-selected implementation agent follows
+[`CODING-AGENT.md`](./CODING-AGENT.md); Issue-body autonomous conformance
+opt-in also remains D1, not a D2-C audit. D1 cannot proceed during an
+unfinished D2-C audit or active/ambiguous legacy ownership.
 
 ### Startup admission
 
@@ -205,52 +171,7 @@ origin/main. If switching or fast-forwarding is unsafe, stop. Keep the merged
 topic branch and unrelated local branches; do not reset main or delete local
 branches as cleanup.
 
-### D1 pilot record and general activation boundary
-
-The controlled [pilot #1374](https://github.com/sayosomi/nuinuiCAD/issues/1374)
-completed the one-off Git-only operational cycle: [PR #1375](https://github.com/sayosomi/nuinuiCAD/pull/1375)
-passed independent exact-pushed-head review and required CI run
-[38256280538](https://github.com/sayosomi/nuinuiCAD/actions/runs/38256280538),
-was merged, and authoritative product `main` was read back. The final clean,
-reset-free local return was reported by the Human in
-[#1374 comment 6125424675](https://github.com/sayosomi/nuinuiCAD/issues/1374#issuecomment-6125424675).
-
-The Human expressly waived the pilot's prior policy-owner amendment
-prerequisite for that single run in
-[#268 comment 6125057400](https://github.com/sayosomi/dev-context/issues/268#issuecomment-6125057400).
-The pilot therefore records successful one-off operational proof under that
-waiver; it must not be described as strict compliance with the unchanged
-pre-activation policy or as general activation.
-
-General GitHub-native startup becomes effective only after this coordinated
-policy PR is independently reviewed, merged, read back on authoritative
-dev-context `main`, and recorded as the activation checkpoint in
-[#268](https://github.com/sayosomi/dev-context/issues/268). Before that
-checkpoint, native implementation startup remains blocked. After it, the
-Git-only workflow above is the ordinary route and requires no additional
-per-Task approval or activation mechanism. Evaluator-audit replacement,
-product legacy-helper retirement, and Human Manual E2E policy remain separate
-work and are not activated by this checkpoint.
-
-### Per-Issue autonomous conformance implementation stays on D1
-
-A canonical GitHub implementation Issue may explicitly opt into autonomous
-conformance discovery and repair only under [`CODING-AGENT.md`](./CODING-AGENT.md).
-That is still source-code implementation, so it uses this same D1 admission,
-the sole registered `role=implementation` checkout, the ordinary topic-branch
-and exact-checkpoint lifecycle, and all normal independent review and protected
-PR/CI gates. D1 admission must still prove the complete registered two-checkout
-topology, clean expected state, no active implementation or evaluator audit,
-and valid legacy ownership metadata.
-
-This mode does not use D2-C read-only fixed-main audit occupancy or the legacy
-audit reservation lifecycle. It does not create another lane, checkout,
-worktree, claim, or metadata owner. An unfinished D2-C audit blocks
-implementation admission, and no implementation runs concurrently with that
-audit. The registered Human-test checkout remains isolated for Human-only
-Manual E2E; implementation work cannot use it or claim a GUI result.
-
-## Human-authorized forensic worktree exception
+## Human-authorized forensic inventory exception
 
 通常policyは`LANES.conf`に宣言されたlaneだけを許可する。現在の1 implementation lane / 1 Human-test laneはmanifestの現行構成であり、別の有効な宣言数・名前・pathも同じgeneric policyで扱う。
 
@@ -260,18 +181,15 @@ current `preflight` / `begin` / `start` invocationで認識できるsupplied reg
 
 exceptionを使う場合も、supplied pathはcanonical absolute directoryであり、同じnuinuiCAD repositoryにregisteredされた唯一のextra worktreeでなければならない。standalone clone、別repositoryのworktree、alias path、declared lane path、追加のunknown worktreeはBLOCKする。forensic checkoutのdirty state、branch、HEADはinventory validationの対象外だが、宣言laneに対する通常のlane safety checkはすべて引き続き適用される。
 
-## Reservation-free GitHub-native evaluator audits — D2-C
+## D2-C — fixed-SHA, read-only evaluator audit
 
-After general activation, every new GitHub-native Research/Improvement
-evaluator audit uses this reservation-free fixed-SHA route. Activation is
-effective only after the D2-C policy PR is independently reviewed and merged,
-the change is read back on authoritative dev-context `main`, and a separate
-explicit activation checkpoint is recorded in dev-context #268. Before that
-checkpoint, do not start a new reservation-free audit. The D2-B run is
-historical operational proof; its product SHA is not the fixed revision for
-future runs. Evaluator role, semantic scope, evidence, budgets, and escalation
-are owned by [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md); GitHub Issue checkpoint
-fields are owned by [`ISSUES.md`](./ISSUES.md).
+D2-C uses the existing implementation checkout only, at a freshly admitted
+fixed authoritative product `main` SHA. It does not reserve a legacy SAY
+slot, change either checkout or implement defects. Role, evidence, budgets
+and escalation belong to [`ASTRA-AUDIT.md`](./ASTRA-AUDIT.md);
+GitHub start/progress/stop/independent PASS fields belong to
+[`ISSUES.md`](./ISSUES.md). The old D2-B pilot SHA is historical, not a
+future fixed SHA.
 
 ### Admission
 
@@ -447,508 +365,18 @@ that lifecycle.
 Any forensic worktree use remains subject to its separate explicit Human
 authorization and inventory rule.
 
-### Compatible pre-existing SAY audit reservations
-
-This physical reservation lifecycle applies only to evaluator audits already
-admitted through the compatible legacy SAY flow. It does not apply to new
-GitHub-native evaluator audits using the reservation-free D2-C route.
-
-The legacy owner selects the Research/Improvement Issue, declared lane, exact
-authoritative `main` revision, and bounded scope, then uses the existing
-`nuinui audit-begin` command. That command validates the manifest, full
-registered-worktree inventory, clean canonical idle form, durable ownership,
-and live remote `main`; when allowed, it records a generation-bound durable
-reservation before detaching at the exact audit SHA. A valid legacy
-reservation is `BLOCKED reason=audit-reservation` for implementation
-`begin`/`start` admission. Do not infer this reservation from detached HEAD.
-
-The legacy executor stays on that fixed revision with tracked source
-read-only and all harnesses, reducers, logs, evidence, outputs, and caches
-outside the checkout. Dirty, malformed, interrupted, or ambiguous state
-retains the reservation and fails closed. After execution stops, the legacy
-owner uses the matching `nuinui audit-release` command to verify the exact
-reservation and restore the recorded canonical checkout form and post-
-fast-forward base. A newer remote `main` may leave the released lane
-`FREE / STALE`; release does not incorporate that newer commit. Never reset,
-stash, clean, force-recover, or automatically release an existing reservation.
-
-## Human terminal operations
-
-Humanがterminalでlocal checkoutへ行うmechanical / deterministic operationはlane ownershipそのものではなく、implementation Coding Agent routeとは別の操作補助として扱う。
-
-Human terminal disappearance is an external-state recovery case. If terminal output disappears or is lost after a Human mutation command, do not blindly rerun that mutation. Run the official read-only command `nuinui last-result` first. An exact recovered terminal SUCCESS can continue through normal next-stage verification; a recovered BLOCKED or ERROR continues from that exact outcome. `NONE`, `INVALID`, or `INCOMPLETE` routes to the existing lane-specific diagnosis/preflight path. Do not reset, stash, force-switch, or otherwise repair state while recovering the lost output.
-
-Humanへ任せてよい典型:
-
-- read-only audit: `git status`, `git rev-parse`, `git worktree list`, branch / HEAD / upstream / path確認;
-- safety conditionが確定した後の単純な`git fetch`, fast-forward, exact checkout / detached checkout;
-- cleanで不要と証明済みのworktree整理;
-- E2E markerの作成 / 読み取り / 削除;
-- dev host / test hostの起動・停止など、implementationを含まない環境操作。
-
-Human向けterminal instructionを生成する場合はshared `human-terminal-instructions` skillを使い、absolute path、audit/mutation分離、mutation直前の再検証、mismatch時のfail-closed、current directoryや過去shell stateへの暗黙依存禁止を守る。
-
-versioned helperが[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md)に登録済みでcurrent local clone上で利用可能なら、Human handoffではhelperを優先してよい。helper commandの存在はlane利用許可を意味しない。executor選択は[`CODING-AGENT.md`](./CODING-AGENT.md)、laneはcurrent manifestがauthorityである。
-
-## Human-authorized exact source-fix exception
-
-通常のsource-code implementation / blocking-fix executorは[`CODING-AGENT.md`](./CODING-AGENT.md)のtier選択に従い、autonomous conformanceのIssue-body opt-inとは独立する。別の例外として、ChatGPTがcurrent implementation contract内の単一で自明なmechanical repairを特定し、Humanがその1回のexact-fix invocationを明示的にauthorizeした場合だけ、専用のexact-fix boundaryを使える。このexceptionは一般的なsource implementation、debug loop、design判断、conflict resolution、または任意のlane mutationを許可しない。
-
-exact-fixのeligibility / identity / Base / checkpoint / lock / release-pending / remote freshness semanticsはこのsectionがownerする。active durable implementation generationがIssueに対して一意であり、resolved checkoutがそのgenerationのbranch / Base / current remote topicへ一致し、expected authoritative mainがfreshであることを証明する。callerはlane、claim、Base、checkpoint、ticket、またはauthorization tokenを渡さず、helperが既存のhandoff / manifest / ownership primitiveから一意に解決する。zero / multiple / malformed generation、near-match、stale remote、dirty startup、または曖昧なidentityはmutation前にBLOCKEDとする。
-
-許可されるpatchは、resolved checkoutの既存tracked regular fileだけに対するexact textual modificationで、file declarationの集合と完全一致しなければならない。add / delete / rename / copy / binary / submodule / symlink ambiguity / outside-repository input / unknown tracked・untracked・ignored changeは受理しない。absolute patch fileとabsolute executable verifierをsnapshotして、patch applicability、deterministic diff、verifier、post-verifier diff、fresh pre-commit proofを同じresolved checkoutで確認した後、helperが宣言fileだけをstageし、supplied messageでordinary one-commitを作り、normal non-force pushを行う。
-
-commit前の失敗は、authorized pathsだけが触られ、original HEAD / branch / lock / generation identityが変わっていないことを証明できる場合に限りexact restorationする。証明できない場合は状態を保持してmutation=unknownで停止し、reset / stash / clean / rebase / force操作はしない。push failure後はlocal commitを保持してlast-resultで復旧する。success envelopeはverification=PASS、file_set=VERIFIED、mutation=yes、clean=yes、lane / Issue / claim / branch / Base / prior topic / new HEAD / expected mainを返す。tracked exact-fix resultは既存のcommand-result storeへ記録し、別registryを作らない。
-
-canonical interface:
-
-~~~
-nuinui exact-fix --issue <SAY-N> --expected-topic <40-sha> --expected-main <40-sha> --patch <absolute-patch-file> --verify <absolute-verifier-file> --message <commit-message> --file <repo-relative-path> [--file <repo-relative-path> ...]
-~~~
-
-### Legacy SAY preflight diagnostic / routing rule
-
-このlegacy preflight / routing手順はcompatible pre-existing SAY taskだけに適用し、その既存startupで必要なpreflightを維持する。Native GitHub new Taskは上記のindependent read-only Git-only admissionを使う。`nuinui preflight`は旧SAY専用の診断であり、GitHub-native Taskでは実行せず、admission prerequisiteでもない。Same-Task continuationはGitHub Issueに記録されたexact pushed checkpointを検証し、native Taskをlegacy `begin` / `handoff`へrouteしない。
-
-`nuinui preflight`はread-onlyのinventory / routing commandであり、known-Issueの通常startやsame-generation continuationに対する別のHuman handoffではない。通常のknown-Issue implementation startは、ChatGPTがWork、target implementation lane、caller-supplied Base、branchを確定した後、Humanが同じterminalでnamed-argument startup mutationを実行する。same-generation implementation-agent handoffでは、ChatGPTがfresh audit済みのIssueとexpected authoritative main SHAをpromptへ渡し、実装Agentがassigned checkoutでcanonical handoffを実行する。Manual E2E startupには、下記の`e2e-start-command` façadeを使う。
-
-```bash
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui begin-command --lane <implementation-lane> --issue <SAY-123> --base <expected-base-sha> --branch <branch> [--forensic-worktree <absolute-path>]
-```
-
-このhelperはnormal runtime manifestをread-onlyで解決し、global topology / registered-worktree proof、implementation-scoped admission、canonical declaration-order inventory、target `FREE`、existing read-only verifyを行って、copy/paste-readyな次の既存positional commandを出力する。strictな`nuinui preflight`は引き続き全roleのdiagnostic commandであり、Human-test role-local runtime failureがあってもこのimplementation capacityのproofとは混同しない。
-
-```text
-BEGIN COMMAND READY
-<absolute-helper> begin <lane> <issue> <base> <branch> <canonical-inventory> [--forensic-worktree <absolute-path>]
-```
-
-Humanはその出力行をChatGPTへ戻さず、同じterminalでverbatimに実行する。既存`begin`が同じimplementation-scoped admissionと通常のmutation-time revalidationを行い、成功後に`IMPLEMENTATION STARTED`、normal checkpoint / continuationへ進む。generated lineはargumentをreorderせず、positional commandをreconstructせず、inventoryを再serializeせず、forensic optionを移動せず、older syntaxへ変換しない。
-
-### Canonical Manual E2E startup handoff
-
-通常のManual E2E startupは、ChatGPTがsemanticなIssue、tested ref、executor、fixture、locale、portを確定し、Humanが次の短いnamed generator commandを同じterminalで1回実行する。
-
-```bash
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui e2e-start-command \
-  --issue SAY-123 \
-  --tested-ref <full-tested-sha> \
-  --executor <human|luna> \
-  --fixture <absolute-fixture-path> \
-  [--lane <human-test-lane>] \
-  [--locale <default|ja>] \
-  [--port <port>]
-```
-
-このgeneratorはread-onlyで、runtime manifest、全laneの既存preflight、選択Human-test laneの`lane_execution_nuinui_human_test_classify`をfreshに読む。selected laneが`FREE`なら生成を許可し、exact same Issue/refの`BUSY`だけは既存duplicate/no-op ownerへ委譲する候補として許可する。別Issue/refの`BUSY`、malformed marker/session、dirty/named/wrong-ref/ambiguous/blocked stateはfail closedする。複数のHuman-test laneで`--lane`を省略した場合もlaneを推測しない。
-
-成功時はterminalが次のbounded continuationのformatting authorityになる。
-
-```text
-E2E START COMMAND READY
-'<absolute-nuinui>' 'e2e-start' '<lane>' '<Issue>' '<tested-ref>' && '<absolute-prepare>' 'prepare' '<lane>' '<Issue>' '<tested-ref>' '<fixture>' [<port>] [--locale ja]
-```
-
-Humanはこの1行をChatGPTへ戻さず、同じterminalでverbatimに実行する。`&&`により`e2e-start`失敗時はprepareを実行しない。生成された値はshell-quoted済みであり、ChatGPTがlane/ref/prepareの順序を再構成しない。generatorはcheckout、marker、session、host、GUI、test oracleを変更せず、既存`nuinui e2e-start`と`nuinui-e2e-prepare prepare`がexecution-time revalidation、race protection、duplicate/no-op、host readiness、cleanup safetyを引き続きownerする。
-
-`--executor`はChatGPTが決めるsemantic metadataであり、generatorはHumanとLunaを分類しない。`human`ではprepare後のsetupをHuman E2E unitへ渡し、`luna`では既存prepare outputのshort `handoff=` path / session identityをcurrent Luna playbookへ渡す。大きなLuna promptはterminal outputから生成しない。現行の`e2e-start-local-main`はinactive interim workflowの互換commandとして残るが、通常のこのgeneratorは標準`e2e-start`だけを出力する。
-
-generatorが`BLOCKED`、ambiguous、stale、または利用不能な場合だけ、下記のread-only preflightと既存diagnosis / recovery pathへ戻る。preflight outputをpasteしてChatGPTに通常commandを再構成させる流れは標準startupではない。
-
-これはChatGPT/Humanのunconditionalなround-tripではない。以下の別diagnostic preflight / recovery条件はそのまま維持する。
-
-ChatGPTがactual local inventoryを知らず、begin / resume / releaseがBLOCKEDを返した、またはexplicit diagnosis / recoveryが必要な場合は、current helperが利用可能ならその応答内でcopy/paste-readyなexact preflight invocationを提示する。実装Agentの`nuinui handoff` identity / safety failureはHuman preflightや再実行へ変換せず、Agentを停止してorchestratorへ返す。
-
-```bash
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui preflight
-```
-
-helperが未install、stale / broken、またはunsupportedなら、同じ応答内で全宣言laneを含むread-only inventory audit blockを提示する。
-
-preflight evidenceは少なくとも全宣言laneのrole、path、branch/detached HEAD、HEAD SHA、cleanliness、registered worktree state、durable ownership state、Human-test marker stateを一度に確認できること。auditへfetch、checkout、switch、reset、stash、clean、marker mutationを混ぜない。
-
-Humanからfresh audit outputが返ったら、それをcurrent evidenceとして扱う。material state changeのsignalがない限り同じpreflightを機械的に要求し直さない。
-
-Separate preflightを使う条件は次に限定する。
-
-- Coordinatorがcurrent lane occupancyを知らず、Workのselect / route前にinventoryが必要;
-- current execution identityを一意に再構成できない;
-- `begin`、`resume`、`release`、またはIssue #84 exception外の`nuinui handoff`が`BLOCKED`を返した;
-- crash / interrupted lifecycle operationが疑われる;
-- unexpected checkout、branch、dirty stateが報告された;
-- explicit recovery / diagnosisが必要。
-
-same Issue、same lane、same durable claim generation、implementation-agent commit / push、blocking reviewからblocking fix、implementationからintegration、新しいimplementation-agent session、ChatGPT chat rotation、unrelated remote `main` advanceだけではpreflight invalidationにならない。remote `main` freshnessはChatGPT側でfreshに確認し、Issueとexpected-main SHAだけをimplementation promptへ渡す。`nuinui handoff <SAY-N> <expected-main-sha>`はそのIssueに一致するdurable generationをcanonical dev-context cloneから解決し、full startup literalsをpromptへ手作業転記しない。
-
-Humanへ任せないもの:
-
-- product code implementation / blocking fix;
-- code changeや広いiterationを伴うimplementation-side diagnosis;
-- merge / rebase conflict resolutionやintegration fix;
-- 状態不明checkoutへのreset / stash / force-switch / force-push;
-- unrelated Human workを破棄・上書きするcleanup。
-
-## Lane isolation rule
-
-implementation laneはTask / current slice開始時に**Base checkpoint SHA**を固定する。
-
-active slice途中では次を行わない。
-
-- remote `main` advanceのroutine merge / rebase / cherry-pick;
-- もう一方のimplementation laneのunfinished change取り込み;
-- unrelated PR branchの取り込み;
-- 「最新にしておく」ことだけを目的としたbase refresh。
-
-remote `main` advanceは観測してよい。contract / ownershipを無効化する重大な変更が見つかった場合はcurrent workを安全にremote保存してcheckpointで停止し、途中同期して継続しない。
-
-## Legacy SAY integration checkpoint
-
-他line / latest `main`を取り込めるのはcurrent sliceが明確なintegration checkpointへ到達したときだけ。
-
-1. current sliceの実装とfocused verificationを完了する。
-2. branchへcommit / pushしcurrent stateをremote保存する。
-3. Base checkpoint以降のremote `main` changeを確認する。
-4. ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditする。conflict-free merge-only operationとsettled verificationだけで完了するeligibleなIntegration checkpointはHuman `nuinui integrate-clean`を使い、それ以外のintegration / conflict fixはそのlaneのimplementation Coding Agentが行う。
-5. integration後のrequired verificationを行う。
-6. blocking review / merge gateへ進む。
-
-integration checkpoint前に相手laneの進行中branchへ依存しない。dependencyが必要なら依存先mergeまでsafe checkpointで止める。Post-integration Driftの扱いは[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md)をauthorityとする。
-
-### Conflict-free merge-only Human integration exception
-
-first / routine Integration checkpointで、ChatGPTがBase checkpointとcurrent `main`のdriftおよびcurrent contractをauditし、conflict-free merge-only operationとsettled verificationだけで完了するとfreshに判定した場合は、prior Integration WatermarkまたはReview Headなしで`nuinui integrate-clean`をsame active durable generationでHumanが実行してよい。既存のpost-review refreshでは、Integration Watermark到達後のalready-reviewed topic、freshな`NON-INTERFERING` drift判定、およびcurrent-base freshnessだけを要求するmerge gateを引き続き要求する。
-
-このhelperはnew lane claim / Base refresh / source implementation routeではない。current durable slotをconsumeし、exact Issue / claim / branch / Base / local topic / remote topic / current main / clean stateをmutation boundaryで再検証する。conflict resolutionやintegration fixは行わず、conflictまたはpre-commit failureではoriginal topic checkpointへのexact rollbackを証明する。push failure後はverified local merge commitを保持してfresh diagnosisへ戻す。
-
-## Compatible pre-existing SAY durable implementation ownership
-
-以下のdurable lane ownership、lane start / resume / release、Linear checkpoint手順は、compatible pre-existing SAY taskがすでにadmittedされたlegacy lifecycleだけに適用する。Native GitHub Workは上記D1 Git-only routeを使い、legacy slotをclaimせずLinear checkpointを記録しない。
-
-### Authority
-
-宣言されたimplementation laneのprimary ownership evidenceはcheckout appearanceやLinear statusではなく、そのlane固有Git directoryに保存するdurable metadataである。
-
-- durable metadata: physical ownership / generation authority;
-- Linear checkpoint: restart / handoff identityの外部evidence;
-- checkout: durable identityとのconsistency evidence。
-
-chat rotation、past prompt、branch名だけ、Linear `In Progress`だけからownershipを再構成しない。
-
-metadata root:
-
-```text
-$(git -C <lane> rev-parse --absolute-git-dir)
-```
-
-permanent v1 files:
-
-```text
-nuinui-implementation-v1
-nuinui-implementation-slot/
-  state
-nuinui-implementation-lock/
-  state
-nuinui-implementation-slot.releasing.<claim>/
-  state
-  checkpoint
-```
-
-active slot `state`:
-
-```text
-version=1
-issue=SAY-123
-branch=<exact Task branch>
-base=<exact durable Base checkpoint SHA>
-claim=<unique generation token>
-```
-
-`claim`はlane取得generationのidentity。同じIssue / branch / Baseを後で再取得してもnew claimを使い、stale resume / releaseを別generationとして拒否する。
-
-mutation lockは`version`, `operation`, `issue`, `branch`, `base`, `checkpoint`, `claim`をexactly once保持する。v1で許可するoperationは`start | resume | release | init`。release tombstoneはactive slot identityとexact checkpointを保持する。
-
-`version=1`はhelper versionとは独立したpermanent ownership metadata schemaである。helper releaseだけを理由にversionを上げない。
-
-v1 stateはstrict schema。required key missing / duplicate、unknown key、unsupported version、invalid Issue / branch / SHA / claimは`BLOCKED / UNKNOWN`。malformed / incomplete metadataを推測して自動削除しない。
-
-### Classification priority
-
-`nuinui preflight`は各宣言laneを次の優先順位で分類する。
-
-1. mutation lockあり → `BLOCKED`。validならoperation / claimを表示し、invalidならinvalid lockとしてBLOCK。
-2. active slotあり → releasing stateがなく、slot valid、checkout branch=slot.branch、slot.baseがcurrent HEAD ancestorなら`BUSY`。working treeのdirtyだけでは`BUSY`を`BLOCKED`にしない。branch / Base / metadata identityの不一致は`BLOCKED`。
-3. releasing tombstoneあり → single valid stateなら`RELEASE-PENDING`。multiple / malformed / suffix-claim mismatchは`BLOCKED`。
-4. ownership stateなし → valid initialization marker + declared clean/form idle stateなら`FREE`。それ以外は`BLOCKED`。
-
-`clean main`、`slotなし`、branch名だけをFREE根拠にしない。topic branchなのにslotがない状態もFREEではない。
-
-active implementation laneがvalidなdurable ownershipを保持している場合、working treeのdirtyは診断上`clean=no`として表示するが、ownership identityが有効なら`state=BUSY`である。`FREE`のexact idle stateと`start` / `resume` / `release`のmutation preconditionでは、既存どおりworking tree cleanが必須である。
-
-implementation occupancy is derived from each lane's declared `idle` policy: the checkout must be initialized and clean, have valid checkout/HEAD evidence, have no ownership/lock/release-pending state, and satisfy the declared branch or detached form. A clean correctly formed unowned checkout that is behind the authoritative default is still `FREE`; preflight may report that separate freshness evidence as `freshness=STALE` and never normalizes the checkout. `begin` / `start` retain the stronger mutation-boundary proof that the authoritative default equals the caller-supplied exact Base and then create the topic at that exact Base. Release and other canonical-idle contracts retain their existing exact-current-default proof.
-
-### Mutation lock and crash safety
-
-start / resume / release / explicit recovery / initializationのlane mutationはper-lane atomic lockで直列化する。lock取得後にsafety-critical factsを再確認する。
-
-lockは時間でexpireしない。ageを理由に削除しない。crashでlockが残った場合はlaneをBLOCKし、known operation / claim / metadata / checkout状態を一意に証明できるときだけ`recover`する。
-
-startはTask branch switchより先にownership slotをdurable化する。外部processが後で別branchへswitchしてもslotは残り、claim-checkout mismatchとしてBLOCKする。
-
-releaseはactive slotをclaim固有`releasing.<claim>`へatomic renameしてからidle transitionを行う。cleanupはtombstoneを先、mutation lockを最後に削除する。古いrelease cleanupがnew claimを削除してはならない。
-
-## Ownership schema initialization
-
-宣言されたimplementation laneを新規作成 / 正当に再作成し、まだv1 initialization markerが存在しない場合だけ:
-
-```text
-nuinui lane-init <implementation-lane>
-```
-
-を使う。
-
-`lane-init`はownershipの推測・adoption commandではない。slot / lock / releasing stateが存在せず、fresh authoritative `origin/main`に対するexact safe idleを再証明できる場合だけmarkerを書く。
-
-active-looking checkoutやclaimless legacy checkpointからownershipを生成するpublic adoption pathは持たない。ownershipをcurrent durable metadataから一意に証明できないlaneは`BLOCKED / UNKNOWN`のまま扱い、Human reviewなしにcheckout appearanceからreseedしない。
-
-## Lane start
-
-### Declared implementation lane
-
-Canonical normal Human handoff:
-
-```text
-nuinui begin <implementation-lane> <SAY-123> <expected-base-sha> <branch> <complete-implementation-inventory>
-```
-
-`begin` performs the full read-only declared-lane safety audit inside the same Human command, including registered worktree inventory, role validation, target FREE, and exact complete implementation occupancy. It then revalidates target start conditions immediately before delegating to the existing start mutation semantics. An inventory mismatch never starts the target lane. A successful result includes the complete verified `IMPLEMENTATION STARTED` envelope.
-
-成功時のstable envelope:
-
-```text
-IMPLEMENTATION STARTED
-lane=<implementation-lane>
-issue=<SAY-N>
-branch=<exact branch>
-base=<exact base>
-checkpoint=<actual HEAD>
-claim=<durable generation claim>
-clean=yes
-state=BUSY
-implementation_inventory=<declaration-order lane=FREE|SAY-N entries>
-preflight=PASS
-```
-
-Lower-level lifecycle primitive retained for self-test / explicit routing:
-
-```text
-nuinui start <implementation-lane> <SAY-123> <expected-base-sha> <branch>
-```
-
-`start` is not the normal separate first half of a known-Issue Human start. It keeps the existing low-level mutation and recovery semantics; its output identifies the local transition and does not replace ChatGPT's external occupancy / parallel-admission decision. Use `begin` for the normal Human handoff.
-
-helperはnew claim generationを作成し、mutation lockとdurable slotをbranch switchより先に取得する。その後fresh remote / exact Base / branch absence / safe idleを再確認し、必要なsafe normalization後にTask branchをcreate/switchする。final checkout / Base / cleanlinessを再確認してlockを削除し、成功outputへclaimを返す。
-
-`begin` / `start` successはlane、Issue、branch、Base、actual checkpoint、claim、cleanliness、BUSY stateを返す。`begin`はさらにcaller expectationと照合済みのdeclaration-order implementation inventoryと`preflight=PASS`を返す。canonical normal startupでは`begin`を使い、成功した`begin`のclaimを既存のIssue checkpointへ同じcontinuationで保存する。
-
-branch作成前にcrashしてもslot / lockがlaneを保持する。precondition failureでexact pre-start stateを一意に証明できる場合だけ自分が作ったmetadataをrollbackしてよい。判定不能なら保持してBLOCKする。
-
-### implementation resume
-
-remote保存済みactive branchをsame durable generationへ戻す場合はnew startにしない。
-
-```text
-nuinui resume <implementation-lane> <SAY-123> <expected-base-sha> <expected-checkpoint-sha> <branch> <expected-claim>
-```
-
-callerはcurrent external checkpointからLane / Issue / durable Base / exact checkpoint / branch / claimを復元する。通常のpushed checkpointではremote topicも同じcheckpointであることを要求する。`begin`直後の初回push前に限り、remote topicの成功したabsence、local topic = Base = expected checkpoint、cleanな既存topic、safeなidle identityをすべて証明できた場合だけ、そのlocal topicへ復帰できる。Baseをancestryだけから再推定したり、local slotのclaimをcaller expectationの代わりに採用しない。
-
-slot identityがexact一致し、working tree、local branch checkpoint、authoritative remote branch、worktree occupancyがsafe-resume条件を満たす場合だけexisting branchへswitchする。authoritative main確認はactive Baseを更新するためではない。latest mainのmerge / rebase / reset / stash / force-switchを行わない。
-
-already target branch / exact checkpointならidempotent successとしてよい。slotがownershipを保持しているのにcheckoutが別branchへ変わっている場合はpreflightのBLOCKEDを維持し、explicit resumeで安全にrestoreできた後だけBUSYへ戻す。
-
-same active durable generationのresume / continuationでは、fresh local preflightを別途要求しない。ChatGPTがcurrent Issueとexpected authoritative main SHAをpromptへ含め、implementation Agentの最初の`nuinui handoff <SAY-N> <expected-main-sha>`がdurable slot、checkout、remote topic、remote mainを再検証する。matchなら継続し、mismatchなら`BLOCKED / STALE_EXECUTION_CONTEXT`としてAgentを停止してorchestratorへ戻す。
-
-resume success envelope:
-
-```text
-IMPLEMENTATION RESUMED
-lane=<implementation-lane>
-issue=<SAY-N>
-branch=<exact branch>
-base=<exact base>
-checkpoint=<actual HEAD>
-claim=<durable generation claim>
-clean=yes
-state=BUSY
-```
-
-## Lane release
-
-### Declared implementation lane
-
-通常のHuman handoffは、ChatGPTがcheckpoint SHAを再構成せず、同じterminalで次のread-only generatorを実行する。
-
-```text
-nuinui release-command --lane <implementation-lane> --issue <SAY-123> --claim <durable-claim>
-```
-
-成功時は次の行がterminal formatting authorityになる。
-
-```text
-RELEASE COMMAND READY
-'<absolute-nuinui>' 'release' '<lane>' '<topic-checkpoint>' '<claim>'
-```
-
-generatorはexact lane / Issue / durable claimを検証し、active generationのtopic checkpoint `T`をcurrent release authorityから導出する。current authoritative main `M`はcontainment authorityだけであり、`T != M`でも`T`が`M`にcontainedなら`T`を生成する。active ownershipがない場合はarbitrary `FREE`をrelease evidenceにせず、exact completed-release receiptだけを既存#108 duplicate-release proofへ渡す。Humanは生成されたrelease行をChatGPTへ戻さず、同じterminalでverbatimに実行する。
-
-generatorはcheckout、durable slot、receipt、lock、tombstone、working treeを変更しない。実行後のmutation-time revalidation、release tombstone / receipt、duplicate no-op、recovery boundary、idle transitionは下記の既存positional `release` state machineがsole authorityする。このgeneratorは下記 mechanicsを再定義せず、checkpointを別のmain / merge SHAへ書き換えない。
-
-underlying post-merge helper / mutation-time primitive:
-
-```text
-nuinui release <implementation-lane> <merged-checkpoint-sha> <expected-claim>
-```
-
-`lane + checkpoint`だけではgenerationを区別できないためclaimは必須。
-
-releaseはvalid active slotがexpected claimを所有し、caller checkpoint / claimがvalidで、durable Issue / branch / Base / claim identityがunchangedであることを確認してからlocal branch relationを分類する。claimed local topic branch refがcaller指定checkpointにexact一致する場合は通常のrelease pathであり、missing refはcheckpoint mismatchではなくbranch identity failureとして診断する。fresh `origin/main`がcheckpointをancestorとして含むことを再証明し、slotへcheckpointをpersistしてclaim固有tombstoneへrenameした後、安全なidle transitionを行う。
-
-PR merge後にremote topic refが自動削除されていても、それ自体をBLOCK条件にしない。authoritative evidenceはsaved exact checkpointとcurrent `origin/main` ancestryである。別のsafe mergeで`origin/main`がさらにadvanceしていてもcheckpointがancestorならlatest `origin/main`へreleaseしてよい。
-
-post-mergeに実装laneのcheckoutだけがdriftした場合、release自身が次の狭い条件をすべて満たすときだけ復旧して続行できる。active slotがdurable Issue / branch / Base / claimとexact一致し、lock / tombstoneがなく、checkpoint / caller claimもexact一致することを先に確認する。claimed local refがcheckpointにある場合は、manifest-declared `idle=branch` laneのcleanなdefault-branch checkout、または`idle=detached` laneのcleanなdetached checkoutを、そのlaneの宣言されたidle policyどおり復旧でき、cleanなexact-checkpoint differently named branchからもexisting local claimed topicへexact `git switch`できる。current HEAD / checkpointがfresh authoritative default branchに含まれ、topicが別worktreeでcheckoutされていないことを再証明する。remote topicはabsentでもよいが、存在する場合は同じcheckpointのexact refでなければならない。
-
-この復旧はreleaseの既存mutation lock取得後、slotをreleasing tombstoneへrenameする前に行う。claimed local refがmissingでも、current checkoutがcleanなnamed non-default branch、current branch refがcheckpoint、HEADがcheckpoint、fresh authoritative default branch / Base ancestry、remote topic、別worktree不存在、lock / tombstone不存在をすべてexactに証明できる場合だけ、switch直前にcritical factsを再取得・再検証して`git branch -m <durable-claimed-branch>`を一度だけ行う。existing claimed refのpathでは`git switch <durable-claimed-branch>`だけを使い、missing-ref pathではそのexact renameだけを使う。Issue textやstring similarityからbranchを推測せず、durable slotのbranchを唯一の意図されたidentityとする。branch生成、reset、stash、merge、rebase、cherry-pick、force操作、durable metadata rewriteは行わない。wrong checkpoint / claim / ref SHA、dirty、別named branch、別worktree、remote / ancestry / metadata ambiguity、lock / tombstone conflictは`BLOCKED: release claimed branch mismatch`または既存の厳密なmismatchとしてactive slotを保持する。repair後に完了を証明できない場合はrelease lockを残してrecoverへ渡し、`resume` / `recover` / generic claim-checkout mismatchの意味はこのrelease-only recoveryで変更しない。
-
-idle state:
-
-- declared `idle=branch`: clean local default-branch form at latest authoritative default;
-- declared `idle=detached`: clean detached HEAD at latest authoritative default.
-
-release開始時にlane自身がclaimed topic branchをcheckoutしていた場合だけ、idle transition後にそのlocal branchをcleanup candidateとする。local refがsaved checkpointのまま、checkpointがcurrent mainに含まれ、他worktreeにcheckoutされていないことを再確認し、expected-old SHA付きexact deletionを行う。
-
-すでにidle stateからrelease continuationを行う場合、release開始時に使っていなかったlocal branchesを探索・一括削除しない。unmerged pause branch、別Issue / slice、`main`、他worktree使用中branchは保持する。
-
-slot rename前のknown failureでcheckout / slot不変を証明できる場合はreleaseが取得した自分のlockだけrollbackしてよい。rename後のfailure / crashはtombstoneとlockを保持してexplicit recoveryへ渡す。
-
-release成功後はcurrent Issueへ`Lane release checkpoint`を記録し、[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に従ってread-backする。physical FREEのauthorityはactual local stateであり、Linear write failureでsuccessful releaseを巻き戻さない。
-
-successful release outputはIssue、saved checkpoint、released claim / branch、idle branch、idle HEAD、authoritative origin main、`clean=yes`、`state=FREE`をself-containedに返す。fresh successful release envelopeを得た後、release checkpointのためだけに別preflightを行わない。
-
-```text
-IMPLEMENTATION RELEASED
-lane=<implementation-lane>
-issue=<released Issue>
-saved_checkpoint=<exact checkpoint>
-released_claim=<claim>
-released_branch=<topic branch>
-idle_branch=<default-branch|DETACHED>
-idle_head=<actual final HEAD>
-origin_main=<authoritative main used for release>
-clean=yes
-state=FREE
-```
-
-### Explicit recovery
-
-```text
-nuinui recover <implementation-lane> <expected-claim>
-```
-
-recoverは一般repair commandではない。valid lock / tombstoneとexpected claimをexact照合し、known interrupted `init | start | resume | release` stateだけを継続またはlock-only cleanupする。
-
-multiple tombstones、claim mismatch、dirty、malformed state、wrong Base/history、wrong branch/HEAD等はrecoverしない。reset / stash / force-switch / broad cleanupへのfallbackは禁止。
-
-## E2E marker
-
-Human-test lanes are normally detached and hold a Git-local marker only while an exact test generation is active.
-
-```bash
-$(git -C <human-test-lane-path> rev-parse --git-dir)/nuinui-slot
-```
-
-format:
-
-```text
-issue=SAY-123
-ref=<40-character tested commit SHA>
-```
-
-markerはworking treeへ置かない。E2E releaseの最後に削除する。
-
-active markerがある間は、そのIssue/ref generationがauthorityであり、古いcompleted receiptから別callerが新しいmarkerを採用・releaseしてはならない。exact duplicate startはstrict marker、caller identity、clean checkout、HEAD、optional sessionをread-onlyで証明した場合だけno-op成功する。receiptはmarkerとsessionがないidle stateで、caller identityとcurrent authoritative default branch HEADが完全一致するときだけcompleted-release authorityになる。
-
-### e2e start
-
-1. selected Human-test laneがmanifest上FREEであることを確認する。
-2. exact tested commit / stable refを決める。
-3. detached checkoutしactual HEADを確認する。
-4. markerへIssue / refを書く。
-5. Manual E2Eを宣言されたtested stateでHumanが実行する。
-
-E2E中にremote `main`が進んでもtested stateを途中更新しない。
-
-### e2e release
-
-Canonicalなsuccessful Human E2E closure handoffは、Sol High / ChatGPTが成功後のclosureを承認したうえで、Humanが同じterminalから次の短いnamed handoffを1回実行する。
-
-```bash
-nuinui-e2e-prepare closure-command --issue <Issue> [--lane <human-test-lane>]
-```
-
-`closure-command`はfreshなlocal authorityからtested ref、E2E root、current Human-test lane、active / cleanup-complete / released generationをread-onlyで解決し、terminal outputをcanonicalな実行記録として`cleanup -> e2e-release -> closure-check`の順に既存public commandへ渡す。Humanはlane、ref、rootを手で置換・再構成しない。`--lane`はcaller constraintであり、複数laneでは省略可能なのはrequested Issueのmatching generationが1つだけfreshに証明できる場合だけである。
-
-Exact duplicate cleanup / releaseは既存authorityのsuccess envelopeのまま直ちに次stageへ進む。release後はcleanupのexact duplicateがcheckout/marker lifecycle上有効でないため、strict cleanup receiptで過去のcleanupを証明できる場合に限り、既存release duplicateからclosure-checkへ進む。このprojectionは新しいclosure stateやreceipt解釈を作らない。
-
-`cleanup <Issue> <tested-ref> <e2e-root>`はIssue/refに加えてexact rootをsession-generation identityとして照合し、prepared sessionのowned process、temporary root、handoff、session metadataを削除するが、tested same-Issue markerは意図的に保持する。完了時はGit dirへstrictな`version=1 / issue / ref / root`の`nuinui-e2e-cleanup-receipt`を先に保存する。したがってcleanup成功後にmarkerが残り、session metadataがない状態がnormalなrelease-ready stateである。markerの削除は`e2e-release`だけがownerする。
-
-`e2e-release <Issue> <tested-ref>`はcaller identityをmarkerと照合し、session metadataの不在、valid repository/origin、clean detached checkout、tested HEADをmutation前に要求する。fetch/prune後に同じproofを再検証し、current authoritative `origin/main`を取得する。Git dirへstrictな`version=1 / issue / ref`の`nuinui-e2e-release-receipt`をatomically write/replaceしてから安全に`origin/main`へdetachし、最後にmarkerを削除する。receipt writeに失敗した場合はmarkerを保持してBLOCKEDで停止する。
-
-markerがない場合、同じcaller Issue/ref、strict receipt、session metadata不在、clean detached checkout、current authoritative `origin/main` HEADをread-onlyで完全一致証明できる場合だけ、`E2E ALREADY RELEASED` / `mutation=no-op`として受理する。active markerはreceiptより常に優先され、staleなreceiptから別Issueのreleaseを推測しない。
-
-`nuinui-e2e-prepare closure-check [<human-test-lane>] <Issue>`はrelease後にだけ実行するfinal read-only closure proofである。通常のrelease前validationとしてcleanupとe2e-releaseの間に実行しない。同一Issueのmarkerが残っている場合、closure-checkは引き続き`BLOCKED`でなければならない。
-
-各stageの実行時再検証、cleanup receipt、release receipt、marker、session/root/process cleanup、release mutation、final closure proofはそれぞれ従来のownerが保持する。どのstageでも`BLOCKED` / `ERROR`なら後続stageを実行せず、HumanはChatGPTへbounded diagnosisを返す。Manual E2EのPASS / FAIL judgmentとHumanのstop / pause semanticsは変更しない。
-
-`nuinui-e2e-prepare prepare`でhostを起動した場合は、先に`nuinui-e2e-prepare cleanup [<human-test-lane>] <Issue> <tested-ref> <e2e-root>`でsession metadata / temporary root / handoff / owned processesをcleanupする。session metadataが残る間はe2e releaseしない。
-
-## E2E failure
-
-confirmed product implementation failureが出てもHuman-test laneでは修正しない。
-
-```text
-e2e FAIL
--> failure classification / fix contract
--> FREE declared implementation lane
--> implementation Coding Agent fix / verification / merge
--> new exact tested commit
--> selected Human-test laneでaffected unit rerun
-```
-
-すべてのdeclared implementation laneがBUSYなら既存Taskを壊してslotを作らない。
-
-## CI reproduction
-
-CI reproductionも追加のexecution laneを作らない。必要ならFREEなdeclared implementation laneを一時利用し、exact failing SHA / workflowをauthorityとして担当implementation Coding Agentが診断する。全implementation laneがBUSYならsafe checkpointまで待つ。詳細は[`CI-INCIDENTS.md`](./CI-INCIDENTS.md)。
-
-## Prohibited patterns
-
-- Issueごとのdisposable worktree;
-- persistent unregistered extra checkout;
-- `/Users/yosomi/Code/nuinuiCAD-ci-repro`;
-- active slice途中のroutine merge-main / rebase-main;
-- unfinished parallel branch同士の取り込み;
-- `NON-INTERFERING`なPost-integration Driftだけを理由にroutine integrationを繰り返すこと;
-- FREE laneを埋めるためだけのparallel start;
-- E2E checkoutでのproduct fix;
-- checkout capacity不足をworktree追加で解消すること;
-- checkout appearanceからclaimを推測生成すること;
-- malformed / stale durable metadataのage-based deletion。
-
-並列性はmanifestに宣言されたimplementation lane数で表現する。それ以上のdynamic laneを作らず、全laneを同時に使うこと自体も目的にしない。
-
-## Native GitHub Manual E2E checkout contract — general activation checkpoint
-
-The native `nuinui-e2e` production lifecycle is implemented and synchronized, with a registered Human-test checkout. A real Human operated the signed VS Code GUI, detected a product completion defect, and safely closed the exact native generation ([#1373 evidence](https://github.com/sayosomi/nuinuiCAD/issues/1373#issuecomment-6210238535)). Independent worktree and legacy metadata verification later passed ([#1379 proof](https://github.com/sayosomi/nuinuiCAD/issues/1379#issuecomment-6228687181)). This is infrastructure success, **not** product #1373 PASS. General native-tool use follows a reviewed policy merge and explicit dev-context #286 activation checkpoint; before that, the already approved bounded pilot is permitted. Every fresh E2E retains the same exact-SHA admission, ownership, Human-only operation and checked closure. Compatible historical SAY recovery and records remain protected while any live legacy ownership is resolved.
+## Native Human Manual E2E
+
+Native GitHub E2E uses only the declared, already registered
+`role=human-test` checkout and `nuinui-e2e --production`, never the legacy
+SAY helper or implementation lane. The Human alone executes/judges the real
+GUI; infrastructure success does not imply product PASS. The complete
+[Manual E2E contract](./MANUAL-E2E.md),
+[VS Code host isolation](./VS-CODE-E2E.md),
+[local tool lifecycle](./LOCAL-TOOLS.md), and
+[Issue checkpoints](./ISSUES.md#native-github-manual-e2e-checkpoints)
+remain authoritative. No new registration, replacement checkout, automatic
+E2E judgment or inferred PASS is permitted.
 
 ### Production lifecycle
 
@@ -986,86 +414,10 @@ markers / sessions / processes / listeners, malformed receipts, and artifact
 mismatches fail closed before the relevant mutation. The helper does not
 choose an oracle, operate the GUI, or judge product behavior.
 
-### Admission and checkout identity
-
-The current [`LANES.conf`](./LANES.conf) declares exactly one `role=human-test`
-lane named `human-e2e`, with `idle=detached` at
-`/Users/yosomi/Code/nuinuiCAD-e2e`. This checkout was authorized and registered
-under dev-context #286. Registration alone does not activate general native Manual
-E2E; a reviewed policy merge and an explicit #286 checkpoint do. The existing
-bounded pilot remains permitted before that checkpoint, with the same full
-fresh admission required for normal runs after activation. Do not register, remove, or recreate the
-existing checkout, reuse the implementation lane, or invent another
-checkout. A Required Manual E2E cannot be waived or reported PASS without the
-Human's actual result.
-
-### Historical one-time Human-test checkout registration and recovery
-
-The one-time Human-authorized registration was completed under dev-context
-#286. This procedure is retained as historical context only. The destination
-is already registered: do not run `worktree add` again, re-register it, or
-remove and recreate it. Registration did not activate native E2E; its separate
-activation checkpoint remains pending.
-
-At the historical registration boundary, the complete registered-worktree
-list, both declared paths, destination path, and Git-local ownership records
-were inspected read-only. The implementation checkout was the only registered
-lane, the destination path was absent, and no operation or ownership state was
-active or pending. The full authoritative `main` SHA was used as the idle
-commit:
-
-```bash
-git -C /Users/yosomi/Code/nuinuiCAD worktree add --detach \
-  /Users/yosomi/Code/nuinuiCAD-e2e <authoritative-main-sha>
-```
-
-After the historical `worktree add`, `git worktree list --porcelain`, the
-Human-test checkout's origin / Git directory / detached HEAD / clean status,
-and the full manifest-to-worktree topology were independently re-read. Do not
-overwrite an existing path or use reset, force, prune, or cleanup to make
-registration appear successful.
-
-The historical recovery rule for an interrupted registration was to leave the
-destination and Git metadata untouched. Any uncertain state required
-read-only inspection of the complete worktree list, destination, `.git`
-pointer, checkout origin, HEAD, status, and ownership records. An unknown,
-partial, or conflicting state remained `BLOCKED`; repeating `worktree add`,
-removing the path, or running `worktree repair` / `prune` did not resolve it.
-
-For each native generation, the selected checkout must be a manifest-
-declared `role=human-test` lane with the required `idle=detached` topology. At
-the admission boundary, verify all of the following from fresh Git and manifest
-state:
-
-- the exact repository is `sayosomi/nuinuiCAD`, with the expected canonical
-  remote and Git directory;
-- the exact checkout path, registered worktree identity, lane name, and role
-  match the manifest;
-- the complete registered-worktree topology for the repository is inventoried
-  and reconciled with declared lanes; no checkout has an unknown or competing
-  owner;
-- the authoritative tested commit and exact tested ref are fixed before
-  startup. For a new generation, require an independently proven FREE,
-  clean, detached Human-test checkout in its manifest-declared idle form.
-  Do not require that idle checkout to already be at the tested ref: only
-  the separately approved guarded start mutation may detach it to that
-  exact ref, verify the clean tested-ref HEAD, and establish the active
-  generation marker. Throughout the active generation, keep HEAD fixed
-  at the tested ref. An exact duplicate start instead proves the existing
-  marker and tested-ref checkout without changing either;
-- the product implementation checkout has a separately verified safe return
-  to its idle state, with no competing implementation or evaluator audit;
-- the current Issue acceptance, Manual E2E eligibility, Human-only executor,
-  and exact generation identity agree with the Issue record.
-
-Do not advance the tested ref or move the detached HEAD during a generation.
-Any mismatch, dirty or named checkout, incomplete topology, stale authority,
-or foreign ownership fails closed before mutation.
-
-### Generation and recovery evidence
+### Native generation, occupancy and recovery
 
 The native Work identity is the canonical GitHub identity in
-[`ISSUES.md`](./ISSUES.md#native-github-manual-e2e-checkpoints-activation-pending).
+[`ISSUES.md`](./ISSUES.md#native-github-manual-e2e-checkpoints).
 The native helper stores the reserved `GH-sayosomi-nuinuiCAD-<N>` token and
 reverse-maps it exactly to that Issue. The old `nuinui` and
 `nuinui-e2e-prepare` executables remain SAY-compatible only; never pass the
@@ -1103,3 +455,50 @@ These native requirements do not change the existing legacy closure order
 `cleanup -> e2e-release -> closure-check` or remove its `SAY-N` release gates.
 Manual E2E judgment and execution semantics remain owned by
 [`MANUAL-E2E.md`](./MANUAL-E2E.md).
+
+## Human terminal and fail-closed boundary
+
+Use [Human terminal instructions](../../shared/skills/human-terminal-instructions/SKILL.md)
+for Mac commands; keep read-only inspection separate from mutation and do
+not terminate the Human's shell. Commands must establish the exact checkout,
+identity and expected state, recheck mutation preconditions, and explain
+`BLOCKED` instead of guessing or destructively repairing state. Lost
+terminal output is not proof that mutation failed: inspect actual state and
+the responsible helper's recorded result before any retry.
+
+No reset, stash, force-switch, forced history rewrite, unexplained cleanup,
+metadata deletion, ownership adoption or extra worktree may be used to make
+a lane look free. Product fixes never run in the Human-test checkout.
+CI reproduction follows [`CI-INCIDENTS.md`](./CI-INCIDENTS.md); active D1
+slice integration/drift follows
+[`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md).
+
+## Compatible pre-existing SAY `nuinui` operations — historical reference
+
+**Do not start a new SAY/Linear Work or route a new GitHub-native Issue
+through the old helper.** The legacy executable, source, tests, persistent
+metadata, receipts and historical Issue/Linear evidence are preserved. An
+already admitted, unresolved SAY claim, release tombstone/lock, audit
+reservation or E2E marker still blocks conflicting native admission.
+
+For an actually existing pre-admitted SAY generation, retain its original
+strict schema, claim/Issue/Base/checkpoint identity, lifecycle and exact
+recovery rules. The [frozen pre-reduction CHECKOUTS.md](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md)
+is the complete compatible SAY-only operational reference, including:
+
+- [Phase B exception, historical only](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md#L33-L47);
+- [SAY audit reservation](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md#L450-L474);
+- [Human exact source-fix, preflight and legacy E2E handoff](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md#L475-L590);
+- [legacy integration and durable ownership/start/resume/release/recover](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md#L604-L860);
+- [legacy E2E marker/cleanup/release and failure paths](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md#L861-L928);
+- [one-time native checkout registration and recovery record](https://github.com/sayosomi/dev-context/blob/78dbbdc42322d69f202f6694523f4437891085cd/projects/nuinuiCAD/CHECKOUTS.md#L1002-L1064).
+
+These links preserve the **existing** compatible legacy contract for
+finishing/recovering an admitted generation; they are not an activation,
+independent permission to invoke legacy commands, or a second current route.
+Follow the applicable original helper and
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md) / 
+[`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) with exact read-only
+identity/ownership proof. Never infer an owner from checkout appearance,
+automatically clear ambiguous locks or markers, or apply a legacy
+`FREE` result to override an unresolved GitHub-native audit checkpoint.
