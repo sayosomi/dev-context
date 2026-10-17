@@ -247,7 +247,7 @@ ChatGPTがIntegration checkpointでBase checkpointとcurrent `main`のdriftお�
 
 routine checkpointで`INTEGRATION PUSHED`を受けたら、ChatGPTはnew merge headのparents、effective diff / merge tree、verification evidence、remote topic/current mainをfresh確認してpushed-state blocking reviewを行い、normal PR / merge workflowへ進む。post-review refreshではfocused merge-only blocking reviewを行い、その後もfresh required PR CIを通常どおり満たす。
 
-helperが`BLOCKED:` / `ERROR:`を返した場合、stale / mechanical preconditionがsource reasoningなしに一意にrefreshできるかをChatGPTがfreshに再評価する。解決可能なら同じHuman routeを継続できるが、conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常Luna lifecycleへ戻す。
+helperが`BLOCKED:` / `ERROR:`を返した場合、stale / mechanical preconditionがsource reasoningなしに一意にrefreshできるかをChatGPTがfreshに再評価する。解決可能なら同じHuman routeを継続できるが、conflict、verifier failureのdiagnosisまたはcode change、source edit、integration fix、relevant / ambiguous semantic drift、ambiguous diagnosis、debuggingが必要ならHuman retryで押し通さず通常の担当implementation Coding Agent lifecycleへ戻す。
 
 ## Final closure declaration rule
 
