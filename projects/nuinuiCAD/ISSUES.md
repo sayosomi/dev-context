@@ -61,8 +61,9 @@ Use explicit comment headings and record:
 - `Evaluator audit final checkout proof`: unchanged repository/worktree
   identity, branch `main`, HEAD equal to the original fixed SHA, clean tracked
   and untracked state, complete declared/registered two-checkout topology,
-  unchanged detached Human E2E checkout and idle state, unchanged legacy
-  ownership metadata, and retained evidence/residuals. Record remote-main
+  unchanged detached Human E2E checkout and idle state, current read-only
+  legacy ownership exclusion state with no unresolved owner or malformed
+  required record, and retained evidence/residuals. Record remote-main
   drift without incorporating it. This is Sol's executor proof, not
   independent verification and not a release checkpoint.
 - `Independent final checkout verification PASS`: ChatGPT posts this
@@ -80,13 +81,15 @@ Use explicit comment headings and record:
   topology result; each checkout's lane, absolute path, canonical repository
   identity, declared role and idle policy, and verified state (`main` at the
   exact fixed SHA and clean; `human-e2e` detached at its unchanged admission
-  HEAD and clean/idle); the recursive legacy
-  metadata path/type/content-fingerprint match and validation against the
-  actual baseline schema; the retained report, evidence, and matching start,
-  any progress, stop, and executor-proof checkpoints; and the process/occupancy
-  conclusion that audit-owned processes stopped and no conflicting or
-  unexplained activity involves either checkout. State explicitly that this
-  PASS ends the audit-specific exclusion for both checkouts.
+  HEAD and clean/idle); the current read-only legacy ownership and audit
+  exclusion state, with no active claim, lock, release-pending state,
+  reservation, malformed or missing required record, or ambiguous owner;
+  the retained report, evidence, and matching start, any progress, stop,
+  and executor-proof checkpoints; and the process/occupancy conclusion
+  that audit-owned processes stopped and no conflicting or unexplained
+  activity involves either checkout. A historical metadata snapshot or
+  recursive fingerprint comparison is not required. State explicitly that
+  this PASS ends the audit-specific exclusion for both checkouts.
 
   This checkpoint establishes physical checkout reuse eligibility only. It
   does not close the Research Issue or admit a later implementation, evaluator
