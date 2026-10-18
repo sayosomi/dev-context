@@ -2,6 +2,7 @@
 set -eu
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-checkout-check-test.XXXXXX")
+root=$(CDPATH= cd -- "$root" && pwd -P) || exit 1
 trap 'rm -rf "$root"' EXIT HUP INT TERM
 fail() { echo "CHECKOUT CHECK TEST FAIL: $*" >&2; exit 1; }
 remote=$root/sayosomi/nuinuiCAD.git
