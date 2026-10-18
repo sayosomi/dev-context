@@ -121,8 +121,10 @@ printf 'active\n' >"$gitdir/nuinui-github-e2e-active-v1"
 expect_block native-e2e-marker new_check "$base"
 rm "$gitdir/nuinui-github-e2e-active-v1"
 expect_block stale-remote-main new_check 0000000000000000000000000000000000000000
-git -C "$impl" switch -q -c "$topic"
+git -C "$impl" branch "$topic"
 expect_block local-topic-collision new_check "$base"
+git -C "$impl" branch -D "$topic" >/dev/null
+git -C "$impl" switch -q -c "$topic"
 printf 'topic\n' >"$impl/topic"
 git -C "$impl" add topic
 git -C "$impl" commit -qm topic
@@ -140,6 +142,7 @@ expect_pass remote-only-continuation cont_check "$checkpoint"
 git -C "$seed" commit -qm advance --allow-empty
 git -C "$seed" push -q origin main
 advanced=$(git -C "$seed" rev-parse HEAD)
+topic=sayosomi/issue-1234-next
 expect_block drift-invalidates-previous-pass new_check "$base"
 expect_pass stale-clean-main new_check "$advanced"
 echo 'CHECKOUT CHECK TEST PASS'
