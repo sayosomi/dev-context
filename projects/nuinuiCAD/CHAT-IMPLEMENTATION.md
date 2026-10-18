@@ -29,21 +29,27 @@ review、PR/merge、後続処理を調整する。**Chatは実行状態の正本
 
 ## GitHub-native start and resume
 
-1. Read the current canonical Issue body and material comments, remaining acceptance, decisions and
-   dependencies; re-audit readiness against latest remote product `main`, current normative specs, actual
-   implementation, relevant dev-context owners and any merged work. Do not rely on a chat summary as
-   authority. [ISSUES.md](./ISSUES.md) owns Work/contract checkpoints.
-2. Perform the exact read-only checkout and competing-work audit in [CHECKOUTS.md](./CHECKOUTS.md) and
-   [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md): existing registered implementation checkout,
-   origin/worktrees, branch/HEAD, tracked and untracked status, remote topic/`main`, no conflicting legacy
-   claim or fixed-SHA evaluator audit. Unmatched audit start/final-checkout proof blocks admission even if an
-   a historical legacy preflight result says `FREE`. Do not create a second product checkout or use the Human-test
-   checkout for implementation.
-3. For a new Task, establish the authorized clean/idle baseline and one normal topic branch. For a pushed
-   continuation, prove the exact previously pushed checkpoint against local and remote state. Dirty, missing,
-   locked, mismatched, drifted or ambiguous state stops for safe diagnosis; do not reset, stash, force,
-   rebase, overwrite, delete user work, or replay a possibly completed mutation.
-4. Settle the implementation slice and verification with
+1. ChatGPT re-reads the canonical Issue body and material comments, remaining acceptance, decisions and
+   dependencies; re-audits readiness against latest remote product `main`, normative specs, actual
+   implementation and relevant dev-context owners. Verify relevant D2-C audit start/stop and independent
+   final-checkout proof, including unmatched or unresolved audit/ownership exclusions, then supply the exact
+   new-Task or same-Task continuation arguments. Chat summaries are not authority;
+   [ISSUES.md](./ISSUES.md) owns Work/contract checkpoints.
+2. Human confirms no otherwise-unobservable competing implementation, evaluator or E2E activity and runs
+   **one** read-only `nuinui-checkout-check` invocation for `new` or `continue`, as routed by
+   [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md). Only use `--human-clear` when that assertion is true;
+   [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) owns exact command syntax. `LOCAL CHECK PASS` is local evidence at
+   check time, **not** Issue authorization. Legacy SAY `nuinui preflight FREE` is not native admission.
+3. The selected Coding Agent consumes that PASS and, **immediately before branch or source mutation**, runs
+   the existing `git fetch origin --prune` and only the bounded volatile recheck: expected remote
+   `main`/topic checkpoint, local branch/HEAD/cleanliness, conflicting live ownership and PASS freshness.
+   Stale/expired proof, drift, a wrong or missing pushed checkpoint, unexpected/dirty checkout, or
+   unresolved audit/E2E/legacy ownership stops. Do **not** reconstruct the full Human
+   manifest/worktree/legacy-metadata inventory or demand another approval.
+   [CHECKOUTS.md](./CHECKOUTS.md) owns physical admission and all stop/recovery rules.
+4. After those gates, start only the authorized unused topic branch for a new Task, or resume the exact
+   pushed same-Task checkpoint; never silently switch Task identity or repair an ambiguous checkout.
+   Settle the implementation slice and verification with
    [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md). Produce a complete prompt for the Human-selected
    Coding Agent using [shared Coding Agent workflow](../../shared/CODING-AGENT-WORKFLOW.md) and
    [prompt style](../../shared/AGENT-PROMPT-STYLE.md). The agent implements only the authorized slice,
@@ -51,9 +57,10 @@ review、PR/merge、後続処理を調整する。**Chatは実行状態の正本
 5. Independently review the **exact pushed HEAD** rather than trusting the agent's self-report. Resolve
    genuine failures and material contract/owner ambiguities before moving to the protected PR/CI/merge gate.
 
-A chat change, implementation-agent session change, or lost terminal output is not a Task restart. Reconstruct
-current remote, Issue and checkout evidence before continuing; do not automatically repeat a commit/push/merge
-or discard a changed checkout.
+A chat change, implementation-agent session change, or lost terminal output is not a Task restart. Refresh
+current Issue and remote evidence; if local admission must be re-established, use the same one-command
+route instead of a separate full checkout inventory. Do not automatically repeat a commit/push/merge or
+discard a changed checkout.
 
 ## Review, merge and completion
 
