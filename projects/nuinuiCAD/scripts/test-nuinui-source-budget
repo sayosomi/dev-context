@@ -98,7 +98,7 @@ source_budget_check() {
   if ! while IFS= read -r source_path || [ -n "$source_path" ]; do
     source_name=${source_path##*/}
     case "$source_name" in
-      nuinui|nuinui-context|nuinui-e2e|nuinui-handoff-check|nuinui-e2e-prepare|generate-*|test-*)
+      nuinui|nuinui-checkout-check|nuinui-context|nuinui-e2e|nuinui-handoff-check|nuinui-e2e-prepare|generate-*|test-*)
         continue
         ;;
     esac
@@ -107,6 +107,14 @@ source_budget_check() {
     echo "SOURCE BUDGET BLOCKED: discovery=top-level-classification path=$source_budget_script_dir" >&2
     rm -rf "$source_budget_workspace"
     return 1
+  fi
+  # Optional in synthetic legacy fixtures; mandatory size limit when present.
+  if [ -d "$source_budget_script_dir/nuinui-checkout-check-src" ]; then
+    if ! find "$source_budget_script_dir/nuinui-checkout-check-src" -type f -print >> "$source_budget_unsorted_list"; then
+      echo 'SOURCE BUDGET BLOCKED: native checkout source discovery failed' >&2
+      rm -rf "$source_budget_workspace"
+      return 1
+    fi
   fi
   if ! LC_ALL=C sort "$source_budget_unsorted_list" > "$source_budget_list"; then
     echo "SOURCE BUDGET BLOCKED: discovery=sort path=$source_budget_unsorted_list" >&2

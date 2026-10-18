@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+[ "$#" = 1 ] && [ -n "$1" ] || { echo 'Usage: generate-nuinui-checkout-check <output-path>' >&2; exit 2; }
+output=$1
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+root=$(CDPATH= cd -- "$script_dir/../../.." && pwd -P)
+manifest_source=$root/shared/local-tools/lane-execution/manifest.sh
+ownership_source=$root/shared/local-tools/lane-execution/ownership.sh
+preflight_source=$root/shared/local-tools/lane-execution/preflight.sh
+check_source=$script_dir/nuinui-checkout-check-src/check.sh
+for source in "$manifest_source" "$ownership_source" "$preflight_source" "$check_source"; do
+  [ -f "$source" ] && [ ! -L "$source" ] || { echo "BLOCKED: unsafe generator source: $source" >&2; exit 1; }
+done
+outdir=$(CDPATH= cd -- "$(dirname -- "$output")" && pwd -P)
+target=$outdir/$(basename -- "$output")
+for source in "$manifest_source" "$ownership_source" "$preflight_source" "$check_source"; do
+  [ "$target" != "$source" ] || { echo 'BLOCKED: generator output overlaps source' >&2; exit 1; }
+done
+[ ! -L "$target" ] && [ ! -d "$target" ] || { echo 'BLOCKED: unsafe output' >&2; exit 1; }
+temporary=$(mktemp "$outdir/.nuinui-checkout-check.XXXXXX")
+cleanup() { result=$?; trap - EXIT HUP INT TERM; rm -f "$temporary"; exit "$result"; }
+trap cleanup EXIT HUP INT TERM
+(umask 077; {
+  printf '#!/bin/sh\nLANE_EXECUTION_SOURCE_DIR=\nLANE_EXECUTION_PREFLIGHT_EXECUTE=0\n'
+  cat "$manifest_source"
+  printf '\n'
+  cat "$ownership_source"
+  printf '\n'
+  cat "$preflight_source"
+  printf '\n'
+  cat "$check_source"
+} > "$temporary")
+chmod 755 "$temporary"
+mv -f "$temporary" "$target"
+trap - EXIT HUP INT TERM

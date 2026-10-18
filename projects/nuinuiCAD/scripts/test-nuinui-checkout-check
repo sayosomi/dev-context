@@ -1,0 +1,149 @@
+#!/bin/sh
+set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+root=$(mktemp -d "${TMPDIR:-/tmp}/nuinui-checkout-check-test.XXXXXX")
+root=$(CDPATH= cd -- "$root" && pwd -P) || exit 1
+trap 'rm -rf "$root"' EXIT HUP INT TERM
+fail() { echo "CHECKOUT CHECK TEST FAIL: $*" >&2; exit 1; }
+remote=$root/sayosomi/nuinuiCAD.git
+seed=$root/seed
+impl=$root/impl
+human=$root/human
+project=$root/project
+mkdir -p "$(dirname "$remote")" "$project/scripts"
+git init -q --bare "$remote"
+git init -q -b main "$seed"
+git -C "$seed" config user.name fixture
+git -C "$seed" config user.email fixture@example.invalid
+printf 'base\n' >"$seed/base"
+git -C "$seed" add base
+git -C "$seed" commit -qm base
+git -C "$seed" remote add origin "$remote"
+git -C "$seed" push -q origin main
+git clone -q --branch main "$remote" "$impl"
+git -C "$impl" worktree add -q --detach "$human" main
+git -C "$impl" config user.name fixture
+git -C "$impl" config user.email fixture@example.invalid
+cp "$script_dir/nuinui-checkout-check" "$project/scripts/nuinui-checkout-check"
+chmod 755 "$project/scripts/nuinui-checkout-check"
+cat >"$project/LANES.conf" <<EOF
+version=1
+repository=sayosomi/nuinuiCAD
+default_branch=main
+
+[lane main]
+role=implementation
+path=$impl
+idle=branch
+
+[lane human-e2e]
+role=human-test
+path=$human
+idle=detached
+EOF
+gitdir=$(git -C "$impl" rev-parse --absolute-git-dir)
+printf 'version=1\n' >"$gitdir/nuinui-implementation-v1"
+cmd=$project/scripts/nuinui-checkout-check
+base=$(git -C "$impl" rev-parse HEAD)
+issue=sayosomi/nuinuiCAD#1234
+topic=sayosomi/issue-1234-checkout
+new_check() { "$cmd" new --issue "$issue" --main "$1" --branch "$topic" --human-clear; }
+cont_check() { "$cmd" continue --issue "$issue" --checkpoint "$1" --branch "$topic" --human-clear; }
+expect_pass() {
+  label=$1; shift
+  if "$@" >"$root/check.out" 2>&1; then
+    grep -Fq 'LOCAL CHECK PASS' "$root/check.out" || fail "$label missing PASS"
+  else cat "$root/check.out"; fail "$label unexpectedly BLOCKED"; fi
+  echo "PASS: $label"
+}
+expect_block() {
+  label=$1; shift
+  if "$@" >"$root/check.out" 2>&1; then
+    cat "$root/check.out"; fail "$label unexpectedly passed"
+  fi
+  grep -Fq 'LOCAL CHECK BLOCKED reason=' "$root/check.out" ||
+    { cat "$root/check.out"; fail "$label missing reason"; }
+  echo "PASS: $label"
+}
+expect_pass clean-idle new_check "$base"
+expect_block human-occupancy-unconfirmed "$cmd" new --issue "$issue" --main "$base" --branch "$topic"
+expect_block invalid-issue "$cmd" new --issue other/nuinuiCAD#1234 --main "$base" --branch "$topic" --human-clear
+printf 'dirty\n' >>"$impl/base"
+expect_block dirty-tracked new_check "$base"
+git -C "$impl" checkout -- base
+printf 'untracked\n' >"$impl/untracked"
+expect_block dirty-untracked new_check "$base"
+rm "$impl/untracked"
+printf 'untracked\n' >"$human/untracked"
+expect_block dirty-human-worktree new_check "$base"
+rm "$human/untracked"
+git -C "$impl" switch -q -c temporary
+expect_block wrong-branch new_check "$base"
+git -C "$impl" switch -q main
+git -C "$impl" branch -D temporary >/dev/null
+git -C "$impl" worktree add -q --detach "$root/unexpected" main
+expect_block unexpected-worktree new_check "$base"
+git -C "$impl" worktree remove "$root/unexpected"
+git -C "$impl" remote set-url origin "$root/unknown.git"
+expect_block wrong-origin new_check "$base"
+git -C "$impl" remote set-url origin "$remote"
+ln -s "$root/symlink-target" "$gitdir/nuinui-implementation-lock"
+expect_block symlink-lock new_check "$base"
+rm "$gitdir/nuinui-implementation-lock"
+printf 'broken\n' >"$gitdir/nuinui-implementation-v1"
+expect_block malformed-initialization new_check "$base"
+printf 'version=1\n' >"$gitdir/nuinui-implementation-v1"
+mkdir "$gitdir/nuinui-implementation-slot"
+cat >"$gitdir/nuinui-implementation-slot/state" <<EOF
+version=1
+issue=SAY-1234
+branch=$topic
+base=$base
+claim=claim-12345678
+EOF
+expect_block legacy-active-claim new_check "$base"
+rm -rf "$gitdir/nuinui-implementation-slot"
+mkdir "$gitdir/nuinui-implementation-lock"
+cat >"$gitdir/nuinui-implementation-lock/state" <<EOF
+version=1
+operation=start
+issue=SAY-1234
+branch=$topic
+base=$base
+checkpoint=$base
+claim=claim-12345678
+EOF
+expect_block legacy-lock new_check "$base"
+rm -rf "$gitdir/nuinui-implementation-lock"
+printf 'bad\n' >"$gitdir/nuinui-audit-reservation-v1"
+expect_block malformed-audit new_check "$base"
+rm "$gitdir/nuinui-audit-reservation-v1"
+printf 'active\n' >"$gitdir/nuinui-github-e2e-active-v1"
+expect_block native-e2e-marker new_check "$base"
+rm "$gitdir/nuinui-github-e2e-active-v1"
+expect_block stale-remote-main new_check 0000000000000000000000000000000000000000
+git -C "$impl" branch "$topic"
+expect_block local-topic-collision new_check "$base"
+git -C "$impl" branch -D "$topic" >/dev/null
+git -C "$impl" switch -q -c "$topic"
+printf 'topic\n' >"$impl/topic"
+git -C "$impl" add topic
+git -C "$impl" commit -qm topic
+git -C "$impl" push -q origin "$topic"
+checkpoint=$(git -C "$impl" rev-parse HEAD)
+expect_pass exact-continuation cont_check "$checkpoint"
+expect_block moved-checkpoint cont_check "$base"
+git -C "$impl" switch -q main
+expect_block conflicting-local-branch cont_check "$checkpoint"
+git -C "$impl" branch -D "$topic" >/dev/null
+expect_pass remote-only-continuation cont_check "$checkpoint"
+# The check never fetches a remote commit or changes a checkout.
+[ "$(git -C "$impl" symbolic-ref --short HEAD)" = main ] || fail 'check changed branch'
+[ "$(git -C "$impl" rev-parse HEAD)" = "$base" ] || fail 'check changed HEAD'
+git -C "$seed" commit -qm advance --allow-empty
+git -C "$seed" push -q origin main
+advanced=$(git -C "$seed" rev-parse HEAD)
+topic=sayosomi/issue-1234-next
+expect_block drift-invalidates-previous-pass new_check "$base"
+expect_pass stale-clean-main new_check "$advanced"
+echo 'CHECKOUT CHECK TEST PASS'

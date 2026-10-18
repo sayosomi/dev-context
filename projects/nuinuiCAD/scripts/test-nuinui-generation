@@ -176,6 +176,16 @@ test_generator nuinui "$script_dir/generate-nuinui" "$script_dir/nuinui" 1.15.0
 test_generator nuinui-handoff-check "$script_dir/generate-nuinui-handoff-check" "$script_dir/nuinui-handoff-check" 1.1.1
 test_generator nuinui-e2e-prepare "$e2e_prepare_generator" "$e2e_prepare_artifact" 1.8.2
 
+checkout_candidate_a=$root/nuinui-checkout-check-a
+checkout_candidate_b=$root/nuinui-checkout-check-b
+"$script_dir/generate-nuinui-checkout-check" "$checkout_candidate_a"
+"$script_dir/generate-nuinui-checkout-check" "$checkout_candidate_b"
+cmp -s "$checkout_candidate_a" "$checkout_candidate_b" || fail 'native checkout candidate generation is not deterministic'
+cmp -s "$checkout_candidate_a" "$script_dir/nuinui-checkout-check" || fail 'native checkout artifact differs from source generation'
+[ "$("$checkout_candidate_a" version)" = 'nuinui-checkout-check 1.0.0' ] || fail 'native checkout candidate version mismatch'
+[ "$(stat -f '%Lp' "$checkout_candidate_a")" = 755 ] || fail 'native checkout candidate mode mismatch'
+echo 'PASS: native checkout generation and identity'
+
 fanbox_prompt_checker=$repo_root/projects/fanbox-level-manager/scripts/fanbox-prompt-check
 fanbox_prompt_test=$repo_root/projects/fanbox-level-manager/scripts/test-fanbox-prompt-check
 [ -x "$fanbox_prompt_checker" ] || fail 'fanbox prompt checker was removed'

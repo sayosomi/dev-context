@@ -39,79 +39,42 @@ Linear checkpoints. The Human-selected implementation agent follows
 opt-in also remains D1, not a D2-C audit. D1 cannot proceed during an
 unfinished D2-C audit or active/ambiguous legacy ownership.
 
-### Startup admission
+### Startup admission — one Human command, one mutation-boundary recheck
 
-Before a new GitHub-native Task, ChatGPT and the implementation agent must
-independently re-establish the following from current GitHub and local state:
+The native GitHub D1 entrypoint is the generated, read-only
+[`nuinui-checkout-check`](./scripts/nuinui-checkout-check). Its public
+usage and invocation examples are owned by [LOCAL-TOOLS.md](./LOCAL-TOOLS.md).
+It does not call legacy SAY preflight and does not grant authorization by
+itself.
 
-- Resolve the canonical nuinuiCAD Issue URL or repository-qualified issue
-  number. Read the current Issue body and material comments, latest product
-  main, applicable current policy owners, and relevant normative specifications.
-  Confirm the Issue remains open and its approved scope, acceptance,
-  verification, and non-goals remain executable.
-- Prove the repository identity and exact registered product worktree at
-  /Users/yosomi/Code/nuinuiCAD. Inspect the complete registered-worktree
-  inventory, current branch and HEAD, and tracked and untracked status.
-- Validate the current `LANES.conf` against its existing manifest schema
-  before deriving the expected checkout set. Reject missing, malformed,
-  duplicate, or ambiguous declarations, repository/path mismatches, and any
-  registered-worktree set that differs from the authorized declared paths.
-  This is a read-only check; do not change the manifest or create a checkout.
-- Confirm there is no other active product implementation or evaluator audit.
-  GitHub branches or PRs alone do not prove local execution is idle; if current
-  execution occupancy cannot be established, stop.
-- For a new Task, prove the checkout is in the declared idle `main` form using
-  the independent read-only admission checks below. A `FREE` / `preflight=PASS`
-  result from legacy `nuinui preflight` is not required and does not grant
-  admission. Native GitHub work uses independent checkout and ownership checks,
-  not this historical diagnostic. For a same-Task native continuation on its
-  expected topic branch, do not require legacy preflight to classify the
-  checkout as `FREE` or return `PASS`. A clean
-  topic branch without a legacy slot may be `BLOCKED` under the old classifier;
-  that classification proves neither capacity nor permission to proceed. If
-  any reason for `BLOCKED`, or any other execution state, is ambiguous, stop.
-- For a native continuation, independently verify that the current Issue
-  checkpoint names this exact Issue and slice, topic branch, and pushed SHA;
-  the local topic branch and HEAD and freshly fetched remote topic ref must all
-  equal that SHA. The checkout must be clean, and no competing implementation
-  or evaluator audit may be active. This exact continuation proof does not
-  require or assign a legacy `FREE` / `BUSY` classification.
-- For either entry type, inspect the exact Git directory from
-  `git rev-parse --absolute-git-dir` and inventory the existing legacy
-  ownership/audit metadata using read-only operations. This includes the
-  `nuinui-implementation-v1` initialization state,
-  `nuinui-implementation-slot/state`,
-  `nuinui-implementation-lock/state`, every
-  `nuinui-implementation-slot.releasing.<claim>/state` and `checkpoint`, and
-  `nuinui-audit-reservation-v1`. Validate present and required records under
-  their existing schemas and reject symlinks. A missing required record, or a
-  malformed, symlinked, inconsistent, or ambiguous record, is a hard stop. Any
-  active legacy claim, mutation lock, release-pending tombstone, or audit
-  reservation is also a hard stop; do not silently ignore it or infer
-  execution capacity from its absence or from a generic preflight `BLOCKED`
-  result. This inventory does not require a SAY identifier or begin, handoff,
-  or release command. Do not create, initialize, release, rewrite, or replace
-  legacy metadata for the proposed route, and do not add a second ownership
-  state machine or alter the existing classifier.
-- Fetch origin with prune and verify the authoritative GitHub main SHA and
-  target branch state. The expected repository, remote, branch, and exact
-  checkpoint must match the approved startup contract.
-- Require a clean checkout before a new Task. For a new Task, the current
-  branch must be local main at the exact fresh intended base or at a clean
-  ancestor eligible for the ordinary fast-forward below. After synchronization,
-  main must equal that exact base. For a same-Task continuation, branch and
-  HEAD must equal the exact pushed checkpoint named by the current Issue.
-- After all admission checks pass, a clean local main that is behind current
-  origin/main may be advanced only by ordinary fast-forward. Recheck remote
-  main and ancestry immediately before the operation. If fast-forward is not
-  possible, stop.
-- For a new Task, re-read remote main immediately before creating a fresh topic
-  branch from the verified intended base. If main advanced, re-audit and
-  establish the new exact base first. Use the existing product checkout only.
-  Do not create another worktree, dynamic lane, SAY-number requirement, or new
-  durable nuinui claim.
-- Use ordinary commits and non-force pushes. Do not reset, stash, force-switch,
-  force-push, clean, overwrite, or destructively remove checkout or branch data.
+1. ChatGPT verifies the open GitHub Issue, approved scope, exact pushed
+   checkpoint for continuation, current product remote main, and audit
+   start/stop/independent-final-proof records. Unfinished audits or unresolved
+   occupancy block before handoff. ChatGPT fixes all command arguments.
+2. Human runs exactly one `nuinui-checkout-check new` or `continue`
+   invocation and explicitly asserts `--human-clear` only when no
+   unobservable concurrent implementation, evaluator or Human E2E activity
+   exists. The command emits `LOCAL CHECK PASS` or `LOCAL CHECK BLOCKED`
+   with a reason. The PASS proves local Git/topology/legacy metadata at the
+   instant of execution, not GitHub Issue readiness or Human occupancy.
+3. Immediately before source/branch mutation, the selected Agent runs the
+   existing required `git fetch origin --prune` and one bounded volatile
+   check of expected remote main/topic SHA, branch/HEAD, clean state, and
+   conflicting ownership/E2E evidence. A changed or expired Human proof stops;
+   do not repeat the full Human inventory or demand a second approval.
+   A stale clean local main may fast-forward only after the fetched commit
+   proves ancestry. A remote-only continuation may create only the verified
+   exact local tracking branch. No speculative Git repair.
+4. Implementation then proceeds in the declared checkout on the exact
+   approved branch. Neither this command nor the Agent allocates a new
+   legacy slot, receipt, lock or worktree.
+
+The checker derives exact paths from `LANES.conf` and reuses the existing
+manifest parser, registered-worktree inventory, repository identity and
+legacy ownership validators. It fails closed for mismatched/missing metadata,
+dirty or unknown checkouts, unexpected branches, drift, stale checkpoint,
+active SAY ownership, audit reservation, native E2E marker, and unknown
+occupancy. Legacy `nuinui preflight FREE` is not a native admission result.
 
 ### Defined state handling
 
@@ -226,9 +189,11 @@ verified read-only:
   process or foreign ownership; and no ambiguous metadata or incomplete
   recovery. Reconcile its occupancy with the complete registered topology.
   Missing evidence or any inconsistent or ambiguous state fails closed.
-- Inspect current legacy ownership and audit metadata read-only under the
-  existing Startup admission inventory and schemas. Missing required records,
-  symlinks, malformed or inconsistent state, and ambiguous ownership block
+- Inspect current legacy ownership and audit metadata read-only using the
+  existing v1 schemas in `shared/local-tools/lane-execution/ownership.sh` and
+  retained compatible SAY records. The native D1 checkout checker is not D2-C
+  audit authorization. Missing required records, symlinks, malformed or
+  inconsistent state, and ambiguous ownership block
   admission, as do any active implementation claim, mutation lock,
   release-pending state, audit reservation, or other unresolved owner. Do not
   create, initialize, rewrite, release, or replace legacy metadata. A

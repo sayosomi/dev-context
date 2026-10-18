@@ -21,70 +21,31 @@ facts against latest remote `sayosomi/nuinuiCAD`, its current `AGENTS.md`, and
 relevant normative specifications. [ISSUES.md](./ISSUES.md) owns Issue readiness
 and checkpoints. [CODING-AGENT.md](./CODING-AGENT.md) owns the Human's choice of
 agent product, model, effort and session, plus authorized direct-execution
-exceptions. An agent's claimed model identity is not startup evidence; the
-selected implementation agent performs the actual checkout and Git proof.
+exceptions. An agent's claimed model identity is not startup evidence. Human-provided
+local admission and the Agent's subsequent minimal mutation-boundary check
+follow the single route below.
 
-## New Task startup
+## Active new-Task and same-Task route
 
-Before product source or branch mutation, ChatGPT and the implementation agent
-independently establish current authority and execution eligibility:
+ChatGPT verifies the current GitHub Issue, decisions, required checkpoints,
+latest product main and relevant audit final proof, then supplies exact
+arguments for the [single Human command](./LOCAL-TOOLS.md#active-native-d1-checkout-admission-nuinui-checkout-check).
+Human checks that there is no otherwise unobservable concurrent implementation,
+evaluator or E2E owner, and runs `nuinui-checkout-check new` with the approved
+main SHA and unused topic, or `continue` with the exact pushed topic checkpoint.
+`LOCAL CHECK PASS` is a read-only local proof, not Issue authorization.
 
-1. Resolve the canonical repository-qualified GitHub Issue. Re-read its body,
-   material comments, remaining acceptance, dependencies, approved scope,
-   non-goals, and applicable policy/spec owners against fresh remote `main`.
-   Stop if readiness, contract or intended base is uncertain.
-2. Admit only the existing registered `role=implementation` checkout
-   `/Users/yosomi/Code/nuinuiCAD`, not `human-e2e` or an invented worktree.
-   Validate the current `LANES.conf`, complete registered worktree topology,
-   repository/origin identity, branch, HEAD, and tracked/untracked cleanliness
-   using the independent [CHECKOUTS.md D1 admission](./CHECKOUTS.md#d1--github-native-git-only-implementation).
-3. Prove no conflicting implementation, Human E2E checkout transition, or
-   evaluator audit. Inspect current GitHub Research/Improvement audit Issue
-   start/stop checkpoints and independent final checkout verification. An
-   unmatched audit start, missing independent final proof, or ambiguous
-   occupancy blocks D1; Issue comments are operational evidence, not an atomic
-   lock. GitHub branches/PRs and historical legacy preflight output alone
-   cannot prove the checkout is idle.
-4. Inspect the **resolved Git directory** and existing legacy ownership/audit
-   records read-only under the schemas in `CHECKOUTS.md`. Missing required,
-   malformed, symlinked, inconsistent or ambiguous records; an active legacy
-   claim, lock, release-pending tombstone or audit reservation block startup.
-   Do not create, initialize, alter, release or infer ownership from the
-   absence of records.
-5. The implementation agent fetches `origin` with prune, verifies the fresh
-   authoritative remote `main`, an exact approved new base, and an unused
-   local/remote topic branch. A new Task starts from the declared clean, idle
-   `main`. Only after all admission proofs pass may a stale, clean local
-   `main` fast-forward normally, following fresh origin/ancestry checks.
-   Re-read remote `main` before topic creation; if it advanced, re-audit the
-   intended base and relevant contract first. Then create the topic branch in
-   the same checkout using ordinary Git.
-
-ChatGPT rechecks remote freshness immediately before agent handoff; the agent's
-own fetch and state comparison remain a separate execution-time proof. Agent
-implementation, verification, ordinary commit and non-force push then follow
-[CODING-AGENT.md](./CODING-AGENT.md) and
-[IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md); PR/review/merge
-follow [LINEAR-GITHUB.md](./LINEAR-GITHUB.md). No redundant Human terminal
-verification or new runtime handoff helper is required for native D1.
-
-## Same-Task continuation
-
-A chat change, agent change, lost output, blocking fix or unrelated remote-main
-advance does **not** create a new Task or admit a continuation by itself.
-Re-read the current Issue and checkout. The Issue's pushed checkpoint must name
-the **exact Issue and slice, topic branch, and pushed SHA**. The clean local
-branch/HEAD and freshly fetched remote topic ref must all match that SHA.
-If only the local branch is absent and the remote checkpoint matches exactly,
-create only a local tracking branch at that remote ref. A missing or moved
-remote checkpoint, dirty checkout, uncertain occupancy, or any mismatch stops;
-never infer continuation from branch naming or a prior session's output.
-
-Apply the same execution/audit/legacy ownership exclusion as for new startup,
-without demanding a legacy `FREE` classification on a clean native topic.
-Current remote-main drift and slice integration remain governed by
-[IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md), not by an automatic
-mid-slice merge/rebase.
+The implementation Agent consumes the short PASS result; immediately before
+mutation it performs the minimal volatile recheck required in
+[CHECKOUTS.md](./CHECKOUTS.md#startup-admission--one-human-command-one-mutation-boundary-recheck):
+fetch with prune; compare remote main/topic, local branch/HEAD/cleanliness,
+and conflicting live ownership. Stop on drift. Do not reconstruct the entire
+Human inventory, repeat approval, or treat legacy SAY `FREE` as evidence.
+After a successful bounded check, perform the exact authorized native D1
+branch start/continuation and implementation. Fresh remote-main ancestry is
+required for any stale-main fast-forward; a missing local continuation branch
+may be created only at its exact independently verified pushed checkpoint.
+Slicing and integration remain with [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md).
 
 ## Fail-closed and recovery boundary
 

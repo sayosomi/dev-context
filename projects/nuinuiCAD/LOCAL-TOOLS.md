@@ -12,7 +12,29 @@ This document identifies the **active local helpers**, their safe command bounda
 
 Authoritative tool/source state is the latest GitHub `sayosomi/dev-context` `main`. The standard clone `/Users/yosomi/Code/dev-context` is a production/cache/toolbox checkout, **not** a place to edit tracked files. Local development edits use the persistent `/Users/yosomi/Code/dev-context-dev` worktree, or the approved GitHub-direct route. Neither checkout is an extra nuinuiCAD product lane. Do not infer the current state from a previous chat or a local clone alone.
 
-## Active: standalone dev-context helper (`nuinui-context`)
+## Active: native D1 checkout admission (`nuinui-checkout-check`)
+
+After syncing the standard dev-context clone to the authoritative merged
+artifact, ChatGPT supplies exactly one of these forms with the current Issue,
+main or checkpoint SHA, and topic branch:
+
+~~~text
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-checkout-check new --issue sayosomi/nuinuiCAD#N --main <fresh-40-character-main-sha> --branch <unused-topic> --human-clear
+/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui-checkout-check continue --issue sayosomi/nuinuiCAD#N --branch <exact-topic> --checkpoint <pushed-40-character-sha> --human-clear
+~~~
+
+`--human-clear` is the Human's affirmative confirmation that no otherwise
+unobservable implementation, evaluator or Human E2E owner is active. Do not
+supply it when occupancy cannot be established. The check is read-only and
+does not fetch, create a branch, write checkout metadata, or change a slot.
+`LOCAL CHECK PASS` means local admission conditions matched at check time;
+only ChatGPT verifies Issue/audit authority, and the Agent rechecks volatile
+conditions immediately before mutation. A `BLOCKED` result is final for
+that invocation; never run the retired `nuinui preflight` as a fallback.
+The short responsibility router is [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)
+and the state owner is [CHECKOUTS.md](./CHECKOUTS.md).
+
+
 
 `projects/nuinuiCAD/scripts/nuinui-context` is the active standalone context-only executable. It does not own product implementation, evaluator audit reservations, or E2E. Its separate generated artifact and installed executable identities must be verified for each guarded operation. The expected artifact is the **`nuinui-context` blob on freshly verified authoritative `main`**, never the legacy `nuinui` blob.
 
