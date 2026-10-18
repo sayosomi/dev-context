@@ -32,15 +32,20 @@ review、PR/merge、後続処理を調整する。**Chatは実行状態の正本
 1. ChatGPT re-reads the canonical Issue body and material comments, remaining acceptance, decisions and
    dependencies; re-audits readiness against latest remote product `main`, normative specs, actual
    implementation and relevant dev-context owners. Verify relevant D2-C audit start/stop and independent
-   final-checkout proof, including unmatched or unresolved audit/ownership exclusions, then supply the exact
-   new-Task or same-Task continuation arguments. Chat summaries are not authority;
-   [ISSUES.md](./ISSUES.md) owns Work/contract checkpoints.
+   final-checkout proof, including unmatched or unresolved audit/ownership exclusions. Settle the
+   implementation slice and verification with [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md);
+   prepare the complete prompt for the Human-selected Coding Agent using
+   [shared Coding Agent workflow](../../shared/CODING-AGENT-WORKFLOW.md) and
+   [prompt style](../../shared/AGENT-PROMPT-STYLE.md), then supply exact new-Task or same-Task
+   continuation arguments. Chat summaries are not authority; [ISSUES.md](./ISSUES.md) owns
+   Work/contract checkpoints.
 2. Human confirms no otherwise-unobservable competing implementation, evaluator or E2E activity and runs
    **one** read-only `nuinui-checkout-check` invocation for `new` or `continue`, as routed by
    [EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md). Only use `--human-clear` when that assertion is true;
    [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) owns exact command syntax. `LOCAL CHECK PASS` is local evidence at
    check time, **not** Issue authorization. Legacy SAY `nuinui preflight FREE` is not native admission.
-3. The selected Coding Agent consumes that PASS and, **immediately before branch or source mutation**, runs
+3. The selected Coding Agent consumes that PASS and the prepared implementation prompt and,
+   **immediately before branch or source mutation**, runs
    the existing `git fetch origin --prune` and only the bounded volatile recheck: expected remote
    `main`/topic checkpoint, local branch/HEAD/cleanliness, conflicting live ownership and PASS freshness.
    Stale/expired proof, drift, a wrong or missing pushed checkpoint, unexpected/dirty checkout, or
@@ -49,11 +54,8 @@ review、PR/merge、後続処理を調整する。**Chatは実行状態の正本
    [CHECKOUTS.md](./CHECKOUTS.md) owns physical admission and all stop/recovery rules.
 4. After those gates, start only the authorized unused topic branch for a new Task, or resume the exact
    pushed same-Task checkpoint; never silently switch Task identity or repair an ambiguous checkout.
-   Settle the implementation slice and verification with
-   [IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md). Produce a complete prompt for the Human-selected
-   Coding Agent using [shared Coding Agent workflow](../../shared/CODING-AGENT-WORKFLOW.md) and
-   [prompt style](../../shared/AGENT-PROMPT-STYLE.md). The agent implements only the authorized slice,
-   verifies, commits intended files and non-force pushes the exact topic branch.
+   The Agent implements only the authorized slice, verifies, commits intended files and non-force
+   pushes the exact topic branch.
 5. Independently review the **exact pushed HEAD** rather than trusting the agent's self-report. Resolve
    genuine failures and material contract/owner ambiguities before moving to the protected PR/CI/merge gate.
 
