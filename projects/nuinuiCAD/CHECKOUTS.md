@@ -189,9 +189,11 @@ verified read-only:
   process or foreign ownership; and no ambiguous metadata or incomplete
   recovery. Reconcile its occupancy with the complete registered topology.
   Missing evidence or any inconsistent or ambiguous state fails closed.
-- Inspect current legacy ownership and audit metadata read-only under the
-  existing Startup admission inventory and schemas. Missing required records,
-  symlinks, malformed or inconsistent state, and ambiguous ownership block
+- Inspect current legacy ownership and audit metadata read-only using the
+  existing v1 schemas in `shared/local-tools/lane-execution/ownership.sh` and
+  retained compatible SAY records. The native D1 checkout checker is not D2-C
+  audit authorization. Missing required records, symlinks, malformed or
+  inconsistent state, and ambiguous ownership block
   admission, as do any active implementation claim, mutation lock,
   release-pending state, audit reservation, or other unresolved owner. Do not
   create, initialize, rewrite, release, or replace legacy metadata. A

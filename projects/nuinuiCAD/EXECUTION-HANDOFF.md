@@ -21,8 +21,9 @@ facts against latest remote `sayosomi/nuinuiCAD`, its current `AGENTS.md`, and
 relevant normative specifications. [ISSUES.md](./ISSUES.md) owns Issue readiness
 and checkpoints. [CODING-AGENT.md](./CODING-AGENT.md) owns the Human's choice of
 agent product, model, effort and session, plus authorized direct-execution
-exceptions. An agent's claimed model identity is not startup evidence; the
-selected implementation agent performs the actual checkout and Git proof.
+exceptions. An agent's claimed model identity is not startup evidence. Human-provided
+local admission and the Agent's subsequent minimal mutation-boundary check
+follow the single route below.
 
 ## Active new-Task and same-Task route
 
