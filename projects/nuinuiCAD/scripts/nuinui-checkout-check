@@ -1,4 +1,6 @@
 #!/bin/sh
+LANE_EXECUTION_SOURCE_DIR=
+LANE_EXECUTION_PREFLIGHT_EXECUTE=0
 #!/bin/sh
 
 # Data-only lane topology manifest API.

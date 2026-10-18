@@ -21,7 +21,7 @@ temporary=$(mktemp "$outdir/.nuinui-checkout-check.XXXXXX")
 cleanup() { result=$?; trap - EXIT HUP INT TERM; rm -f "$temporary"; exit "$result"; }
 trap cleanup EXIT HUP INT TERM
 (umask 077; {
-  printf '#!/bin/sh\n'
+  printf '#!/bin/sh\nLANE_EXECUTION_SOURCE_DIR=\nLANE_EXECUTION_PREFLIGHT_EXECUTE=0\n'
   cat "$manifest_source"
   printf '\n'
   cat "$ownership_source"
