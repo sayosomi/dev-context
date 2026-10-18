@@ -1,249 +1,120 @@
-# nuinuiCAD execution handoff authority
+# nuinuiCAD implementation startup and continuation
 
-This document owns the implementation-agent startup boundary for nuinuiCAD.
-The implementation agent, not the Human or ChatGPT, runs the public handoff
-command after receiving the complete prompt.
+This document routes **active GitHub-native D1** implementation startup and
+same-Task continuation. Physical admission and safe Git transitions belong to
+[CHECKOUTS.md](./CHECKOUTS.md); this document does not duplicate that proof.
 
-## Executor selection boundary
+## Active D1 route
 
-The Human selects the Coding Agent product, model, effort, and concrete UI
-session outside the implementation prompt and outside this handoff contract.
-The prompt may define the implementation-agent role and repository contract,
-but it must not require or validate a specific product, model name, or effort
-level. A runtime's self-reported model identity is not authorization evidence
-and is not a valid reason to reject an otherwise authorized implementation run.
+GitHub-native Git-only D1 is active following the completed
+[dev-context #268](https://github.com/sayosomi/dev-context/issues/268)
+checkpoint. There is no new per-Task activation or separate approval round.
+New `sayosomi/nuinuiCAD#N` Work uses ordinary Git in the single registered
+implementation checkout. It does **not** use a SAY identifier, Linear execution
+checkpoint, `nuinui preflight`, `nuinui begin`, `nuinui handoff`, `nuinui release`,
+or a new durable legacy slot. Legacy `FREE` / `preflight=PASS` is not native
+admission evidence and legacy `BLOCKED` alone does not diagnose native state.
 
-This handoff validates durable repository execution identity and startup safety
-only: Issue, lane, claim, branch, Base, checkpoint, checkout state, and
-authoritative remote state. It does not validate model identity.
+The current GitHub Issue body owns the approved scope and acceptance; its
+material comments own decisions and execution checkpoints. Verify implemented
+facts against latest remote `sayosomi/nuinuiCAD`, its current `AGENTS.md`, and
+relevant normative specifications. [ISSUES.md](./ISSUES.md) owns Issue readiness
+and checkpoints. [CODING-AGENT.md](./CODING-AGENT.md) owns the Human's choice of
+agent product, model, effort and session, plus authorized direct-execution
+exceptions. An agent's claimed model identity is not startup evidence; the
+selected implementation agent performs the actual checkout and Git proof.
 
-## Transitional Cloudflare mirror shutdown and repair exception — #268 only
+## New Task startup
 
-The normal public handoff contract below remains required for ordinary
-nuinuiCAD implementation. For only the Phase B Worker write-barrier / shutdown
-implementation and the approved lossless repair of existing mirror history
-and reconciliation required before cutover (Linear-to-GitHub identity mapping,
-status drift, Issue / Document comments, and Linear Document reconciliation),
-plus corresponding focused tests / configuration authorized by
-`sayosomi/dev-context#268`, do not require a new SAY Linear Issue or
-`nuinui begin`, this `nuinui handoff`, or `nuinui release`.
+Before product source or branch mutation, ChatGPT and the implementation agent
+independently establish current authority and execution eligibility:
 
-Before any edit, the implementation agent uses the existing product checkout
-and performs a read-only Git / durable-state proof required by
-[`CHECKOUTS.md`](./CHECKOUTS.md): exact repository and registered checkout,
-fresh authoritative remote `main`, clean and understood branch / HEAD, no
-active implementation claim or audit reservation, no unrelated changes, and
-no concurrent product implementation or evaluator audit. If any fact is
-missing or ambiguous, stop without mutation. Do not create, delete, initialize,
-or rewrite durable metadata for this exception. Continue only with ordinary
-sequential Git branch, commit, push, CI, independent blocking review, and safe
-PR / merge rules. All other implementation runs use the canonical handoff
-below.
+1. Resolve the canonical repository-qualified GitHub Issue. Re-read its body,
+   material comments, remaining acceptance, dependencies, approved scope,
+   non-goals, and applicable policy/spec owners against fresh remote `main`.
+   Stop if readiness, contract or intended base is uncertain.
+2. Admit only the existing registered `role=implementation` checkout
+   `/Users/yosomi/Code/nuinuiCAD`, not `human-e2e` or an invented worktree.
+   Validate the current `LANES.conf`, complete registered worktree topology,
+   repository/origin identity, branch, HEAD, and tracked/untracked cleanliness
+   using the independent [CHECKOUTS.md D1 admission](./CHECKOUTS.md#d1--github-native-git-only-implementation).
+3. Prove no conflicting implementation, Human E2E checkout transition, or
+   evaluator audit. Inspect current GitHub Research/Improvement audit Issue
+   start/stop checkpoints and independent final checkout verification. An
+   unmatched audit start, missing independent final proof, or ambiguous
+   occupancy blocks D1; Issue comments are operational evidence, not an atomic
+   lock. GitHub branches/PRs and historical legacy preflight output alone
+   cannot prove the checkout is idle.
+4. Inspect the **resolved Git directory** and existing legacy ownership/audit
+   records read-only under the schemas in `CHECKOUTS.md`. Missing required,
+   malformed, symlinked, inconsistent or ambiguous records; an active legacy
+   claim, lock, release-pending tombstone or audit reservation block startup.
+   Do not create, initialize, alter, release or infer ownership from the
+   absence of records.
+5. The implementation agent fetches `origin` with prune, verifies the fresh
+   authoritative remote `main`, an exact approved new base, and an unused
+   local/remote topic branch. A new Task starts from the declared clean, idle
+   `main`. Only after all admission proofs pass may a stale, clean local
+   `main` fast-forward normally, following fresh origin/ancestry checks.
+   Re-read remote `main` before topic creation; if it advanced, re-audit the
+   intended base and relevant contract first. Then create the topic branch in
+   the same checkout using ordinary Git.
 
-## GitHub-native Git-only startup and continuation
+ChatGPT rechecks remote freshness immediately before agent handoff; the agent's
+own fetch and state comparison remain a separate execution-time proof. Agent
+implementation, verification, ordinary commit and non-force push then follow
+[CODING-AGENT.md](./CODING-AGENT.md) and
+[IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md); PR/review/merge
+follow [LINEAR-GITHUB.md](./LINEAR-GITHUB.md). No redundant Human terminal
+verification or new runtime handoff helper is required for native D1.
 
-This route governs ordinary future GitHub-native implementation Tasks after the
-general D1 activation checkpoint in
-[dev-context #268](https://github.com/sayosomi/dev-context/issues/268). That
-checkpoint is recorded only after the coordinated policy PR is independently
-reviewed, merged, and read back on authoritative dev-context `main`. Until it
-is recorded, stop native implementation startup. Once recorded, no separate
-per-Task approval or activation mechanism is required. The completed #1374
-pilot was one-off operational proof under its expressly waived policy-amendment
-prerequisite, not strict pre-activation policy compliance or general
-activation.
+## Same-Task continuation
 
-This Git-only route is separate from the SAY-only public handoff below. It does
-not send a new GitHub Issue to the legacy helper and does not require a SAY
-identifier, `nuinui begin`, `nuinui handoff`, `nuinui release`, or a new durable
-slot.
+A chat change, agent change, lost output, blocking fix or unrelated remote-main
+advance does **not** create a new Task or admit a continuation by itself.
+Re-read the current Issue and checkout. The Issue's pushed checkpoint must name
+the **exact Issue and slice, topic branch, and pushed SHA**. The clean local
+branch/HEAD and freshly fetched remote topic ref must all match that SHA.
+If only the local branch is absent and the remote checkpoint matches exactly,
+create only a local tracking branch at that remote ref. A missing or moved
+remote checkpoint, dirty checkout, uncertain occupancy, or any mismatch stops;
+never infer continuation from branch naming or a prior session's output.
 
-Before any repository mutation, ChatGPT and the implementation agent must
-re-establish from the current GitHub Issue, current policy owners, and local Git
-state:
+Apply the same execution/audit/legacy ownership exclusion as for new startup,
+without demanding a legacy `FREE` classification on a clean native topic.
+Current remote-main drift and slice integration remain governed by
+[IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md), not by an automatic
+mid-slice merge/rebase.
 
-- Resolve the canonical GitHub Issue URL or repository-qualified Issue number.
-  Read its current body and material comments, latest product `main`, relevant
-  repository policies and normative specifications. Confirm its approved
-  scope, acceptance, verification, non-goals, dependencies, and implementation
-  readiness remain valid.
-- Prove the exact existing `/Users/yosomi/Code/nuinuiCAD` repository and
-  registered-worktree identity. Inspect all registered worktrees, current
-  branch and HEAD, full tracked/untracked status, origin, and relevant local
-  and remote branch state.
-- Confirm there is no competing implementation or evaluator audit on the
-  product checkout. GitHub branches or PRs alone do not prove local execution
-  is idle; if current occupancy cannot be established, stop.
-- For D1 implementation admission, inspect current GitHub Research/Improvement
-  Issues and their material comments for evaluator-audit start checkpoints.
-  An unmatched start, final checkout proof not independently verified against
-  the checkout, or ambiguous audit state blocks implementation even when an
-  historical legacy read-only preflight output says `FREE`.
-  The Issue comments are operational checkpoints, not a machine-enforced lock;
-  follow the sequential exclusion rule in [`CHECKOUTS.md`](./CHECKOUTS.md).
-  This is an occupancy check, not a new per-Task D1 activation or approval gate.
-- For a new Task, require the declared idle `main` form and complete the
-  independent read-only admission in [`CHECKOUTS.md`](./CHECKOUTS.md), including
-  validated checkout topology, current GitHub state, exact branch state, and
-  legacy metadata / audit exclusion proofs. A `FREE` / `preflight=PASS` result
-  from legacy `nuinui preflight` is not required and is not admission authority;
-  new GitHub-native Work does not invoke it. For same-Task continuation,
-  preserve the separate exact pushed-checkpoint proof below; do not require the
-  legacy preflight to classify a clean native topic as `FREE` or `PASS`.
-- Inspect the exact Git directory and all existing legacy ownership and audit
-  metadata read-only. Validate present and required records under their current
-  schemas and reject symlinks. Missing required records, malformed, symlinked,
-  inconsistent, or ambiguous state, active legacy claims, locks,
-  release-pending states, reservations, or a competing audit/implementation
-  block startup. Do not infer capacity from absence of a record or a generic
-  `BLOCKED` preflight. Do not create, initialize, release, rewrite, or replace
-  legacy metadata.
-- Fetch `origin` with prune and verify authoritative product `main` and the
-  exact approved topic-branch state. A new Task uses the exact freshly approved
-  base and unused branch. A same-Task continuation uses the exact pushed
-  checkpoint recorded in the current Issue.
-- Require a clean checkout. After all admission checks pass, advance a clean
-  stale local `main` only by ordinary fast-forward after rechecking origin and
-  ancestry. Re-read `main` before creating a fresh topic branch; if it advanced,
-  re-audit and establish the exact new base first.
-- Use the existing product checkout, ordinary Git operations, ordinary commits,
-  and non-force pushes. Do not introduce a replacement runtime helper as a
-  prerequisite. Never reset, stash, force-switch, force-push, clean,
-  overwrite, destructively remove checkout/branch data, or create another
-  worktree.
+## Fail-closed and recovery boundary
 
-For same-Task continuation, the current GitHub Issue checkpoint must name the
-exact Issue and slice, topic branch, and pushed SHA. The local branch and HEAD
-and freshly fetched remote topic ref must all equal that SHA, with clean status.
-If the local branch is absent but the remote checkpoint is exact, create only a
-local tracking branch from that remote ref. Any mismatch, missing remote
-checkpoint, or uncertain execution state is a hard stop.
+Unexpected tracked/untracked changes; a wrong checkout, branch, HEAD, origin,
+base or checkpoint; competing or unresolved implementation/audit/E2E ownership;
+legacy metadata anomalies; and unclear Issue/policy/remote state are hard
+stops. Preserve the checkout and evidence and report the blocker. Do not
+reset, stash, clean, force-switch, force-push, overwrite, delete branch/worktree
+data, create extra worktrees, or silently repair legacy records. Lost command
+output is not proof that a mutation failed; inspect real state before any
+separately authorized recovery. No blind retry or new mandatory safety gate.
 
-Unexpected dirty or untracked state, repository or branch mismatch, changed
-main or topic checkpoint, active legacy ownership, an audit reservation,
-conflicting execution, or unresolved policy/contract drift is a hard stop.
-Preserve state and report the blocker. Lost terminal output does not authorize
-replaying a mutation. Do not retry, repair, rebase, force-switch, force-push, or
-infer a checkpoint from branch naming.
+## Compatible pre-existing SAY only — immutable reference
 
-The active legacy SAY public contract, durable identity resolution, retained
-startup proof, and failure behavior below remain unchanged for compatible
-pre-existing SAY Tasks only.
+An actually **already admitted** SAY generation remains bound to its original
+claim, Issue, lane, Base, checkpoint, release and exact recovery contract; it
+must not be silently converted into native D1. Its compatible public
+`nuinui handoff <SAY-N> <expected-main-sha>` command, durable identity
+resolution, remote-topic modes, retained startup proof, `HANDOFF VERIFIED`,
+terminal failure rules and old Human/agent order are preserved in the
+[immutable pre-reduction EXECUTION-HANDOFF.md](https://github.com/sayosomi/dev-context/blob/a387b3b02460683fb8ccdf743600c0a5032d7990/projects/nuinuiCAD/EXECUTION-HANDOFF.md).
+Use that history only with [CHECKOUTS.md](./CHECKOUTS.md),
+[LOCAL-TOOLS.md](./LOCAL-TOOLS.md), [LINEAR.md](./LINEAR.md), and
+[LINEAR-ISSUES.md](./LINEAR-ISSUES.md) for an exact existing legacy owner.
+Completed Cloudflare Phase B is historical in [#268](https://github.com/sayosomi/dev-context/issues/268),
+not a new-work exception. Do not remove old executable, metadata or evidence.
 
-## Public contract
+## Maintenance boundary
 
-```text
-/Users/yosomi/Code/dev-context/projects/nuinuiCAD/scripts/nuinui handoff <SAY-N> <expected-main-sha>
-```
-
-The Issue and expected authoritative nuinuiCAD `main` SHA are the only public
-handoff inputs. The command does not accept or require a prompt file,
-expected-context file, lane, claim, branch, Base, checkpoint, topic mode,
-ticket, nonce, or caller-managed token.
-
-The expected-main argument is the race-sensitive coordinator expectation used
-by the retained exact authoritative-main proof. It does not identify the
-execution generation.
-
-## Durable identity resolution
-
-The façade enumerates manifest-declared `role=implementation` lanes using the
-existing manifest API and reads each lane's existing durable implementation
-slot using `nuinui_ownership_parse_slot`. It must establish exactly one valid
-active slot whose durable `issue` equals the requested Issue.
-
-From that one slot and its current checkout it derives:
-
-- lane and checkout repository;
-- durable Issue, branch, Base, and claim;
-- current local HEAD as the checkpoint.
-
-No second ownership parser or execution-state model is allowed. A missing
-match, duplicate matching Issue, malformed slot, invalid checkout, or any
-other ambiguous identity is `BLOCKED` or `ERROR`. Resolution is read-only.
-
-## Deterministic remote topic mode
-
-The façade queries exact authoritative remote state with:
-
-```text
-git ls-remote --exit-code --heads origin refs/heads/<durable-branch>
-```
-
-It derives the internal proof mode as follows:
-
-- remote topic absent: accept `absent` only when local HEAD equals durable
-  Base;
-- remote topic present: accept `exact` only when remote HEAD equals local
-  HEAD;
-- network errors, ambiguous refs, mismatches, or absent topic with HEAD
-  different from Base: `BLOCKED` or `ERROR`.
-
-The façade never pushes, switches, resumes, repairs, reserves, or otherwise
-mutates repository state during handoff. The topic mode is not caller input.
-
-## Retained startup proof
-
-After resolving identity and topic mode, the façade calls the standalone
-`projects/nuinuiCAD/scripts/nuinui-handoff-check` proof with those resolved
-values. That helper remains the authority for clean state, claimed branch,
-durable claim, Base ancestry, checkpoint / HEAD, mutation lock,
-release-pending state, exact remote topic, exact authoritative remote main,
-and race-sensitive rechecks. It returns `HANDOFF VERIFIED` only after all
-startup facts remain stable.
-
-The standalone helper's internal arguments are not a second public contract.
-Its focused tests remain because the proof is retained as the single safety
-authority.
-
-## Failure behavior
-
-Any handoff failure is terminal for the implementation-agent startup. The
-agent performs no repository mutation and returns control to ChatGPT or the
-orchestrator. The canonical façade has no automatic branch-mismatch resume,
-retry, recovery decision tree, ticket reservation, or replacement-ticket
-path.
-
-The implementation agent does not run a second handoff command to diagnose a
-failure. The orchestrator must fresh-audit current authority before any later
-continuation.
-
-## Human / ChatGPT ordering
-
-The normal implementation sequence is:
-
-```text
-Human asks ChatGPT to implement
--> ChatGPT performs current-state and contract work
--> Human runs one short local startup mutation only when genuinely required
--> ChatGPT outputs the complete implementation-agent prompt directly in chat
--> Human copies it to the implementation agent
--> implementation agent runs canonical nuinui handoff
--> HANDOFF VERIFIED
--> implementation / test / commit / push
--> result returns to ChatGPT
-```
-
-The Human does not run implementation-agent handoff verification and does not
-manage prompt files, expected-context files, ticket refs, ticket tokens,
-claims, or checkpoints as transport artifacts. Lane lifecycle still owns
-durable claims and checkpoints locally; they are discovered by the handoff,
-not transcribed into the public command.
-
-## Versioned owners
-
-- public façade source: `scripts/nuinui-src/handoff.sh`;
-- standalone proof source: `scripts/nuinui-handoff-check-src/handoff-body.sh`;
-- generated public helper: `scripts/nuinui`;
-- generated standalone proof: `scripts/nuinui-handoff-check`;
-- focused tests: `scripts/test-nuinui-handoff` and
-  `scripts/test-nuinui-handoff-check`.
-
-The public helper is regenerated by `scripts/generate-nuinui`; generated
-artifacts are never hand-edited.
-
-## Maintenance rule
-
-Keep this document focused on implementation-agent identity resolution and the
-single retained startup proof. Lane mutation, release, integration, and
-implementation slicing remain owned by their existing documents.
+Keep only the native implementation handoff/startup routing here. The named
+owners retain checkout admission, agent choice, Git mechanics, integration,
+review, PR/CI, Manual E2E and legacy release/recovery. Do not add duplicate
+checks, commands or obsolete migration procedures to this active loading path.
