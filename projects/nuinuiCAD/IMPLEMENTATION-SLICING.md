@@ -66,7 +66,8 @@ per-file approval, provided the authorized semantic mission, owner/interface con
 verification remain unchanged. Evidence-based re-identification of the actual first-incorrect producer
 within that unchanged semantic mission is not itself semantic ownership redesign; a material change to
 the owner/interface contract still requires re-evaluation. Record new file/owner paths and causal
-evidence. This does not change the fixed Base, closed exploration ceiling, checkpoints, integration, review, CI or E2E gates.
+evidence. This does not
+change the fixed Base, closed exploration ceiling, checkpoints, integration, review, CI or E2E gates.
 Lower-tier agents keep their strict Issue-specific writable paths; changing tier mid-Task requires
 rechecking the intended scope before further mutation. See [`CODING-AGENT.md`](./CODING-AGENT.md).
 
