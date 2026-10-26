@@ -2,7 +2,7 @@
 
 ## Current and legacy routes
 
-This document owns nuinuiCAD implementation Coding Agent selection, its project role boundary, the two direct-execution exceptions, and the autonomous-conformance Issue opt-in. Detailed checkout, handoff, slicing, integration and E2E mechanics remain with their existing owners.
+This document owns nuinuiCAD implementation Coding Agent selection, its project role boundary and tier-specific causal repair authority, the two direct-execution exceptions, and the autonomous-conformance Issue opt-in. Detailed checkout, handoff, slicing, integration and E2E mechanics remain with their existing owners.
 
 - **Native GitHub D1:** consume the single Human `nuinui-checkout-check` PASS and perform only the prescribed mutation-boundary recheck; use the activated Git-only checkout/startup route in [`CHECKOUTS.md`](./CHECKOUTS.md) and [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md). Current contract and material checkpoints live in GitHub Issue body/comments; execution evidence in commits/PR/checks. Do not use legacy SAY identifiers, Linear checkpoints or `nuinui begin/handoff/release` for native Issues.
 - **Compatible pre-existing SAY:** retain the legacy admitted claim, Base, Integration Watermark, Linear minimum checkpoints and canonical `nuinui handoff` only until that lifecycle is retired. [`CHECKOUTS.md`](./CHECKOUTS.md), [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) and [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md) own the details.
@@ -21,11 +21,21 @@ The Human chooses the actual product/model/effort and UI session outside the imp
 
 Web ChatGPT may not directly edit nuinuiCAD product source through GitHub. Ordinary source implementation/repair uses an existing manifest-declared `role=implementation` checkout.
 
+## GitHub-native D1 causal repair authority — Human-selected upper tier only
+
+This rule applies **only while the Human has explicitly selected an upper-tier implementation Coding Agent** in the actual UI for the current GitHub-native D1 Task. The lower-tier default (Luna, etc.) retains the existing strict Issue-specific writable file/owner limits and escalation; neither a prompt nor an agent self-report proves upper-tier selection. Switching the executor/tier mid-Task requires ChatGPT/Human to recheck the intended tier-specific Issue scope **before any additional mutation**. This rule does not broaden compatible SAY or convert D2-C read-only audit work into implementation.
+
+The Issue must still bound the **semantic mission and observable acceptance**, independent semantic oracle, relevant producing owners/interfaces, required verification, exclusions, and safety limits. For the Human-selected upper tier only, anticipated file/symbol paths are **guidance, not an exhaustive mutation allowlist**. Once a defect has been independently reproduced against Base and its earliest incorrect producing owner identified, the agent may make the **smallest causally necessary first-owner correction** and directly affected source, tests, fixtures and expected values across previously unlisted paths, without a new per-file Human scope approval. The newly reached files/owners and causal reasons must be reported. Retain exact Base FAIL, neighboring controls, corrected PASS, and required contract-preserving regression, parity and full-suite verification.
+
+An unrelated historical test path qualifies only when the authorized correctness repair itself made an existing assertion/fixture stale **and** the corrected expectation is established independently from the semantic oracle. Never skip, relax, waive or weaken a check, or add a compensating production bypass, to make a failure disappear.
+
+A truly new feature/mission, unresolved semantic oracle or product decision, material semantic-owner/interface/API/architecture/dependency redesign, Human-only GUI/host proof, unsafe/unowned checkout, unexpected drift, exceeding a closed exploration ceiling, or actual process/resource risk still requires a safe checkpoint and **BLOCKED**. Merely crossing an anticipated file-path boundary within the unchanged authorized semantic mission is not a stop condition for the eligible upper tier. All ordinary D1 Human LOCAL CHECK, volatile ownership recheck, non-force Git, independent exact-HEAD review, protected PR/CI, and Human Manual E2E gates remain mandatory. Upper-tier selection **alone** never authorizes autonomous conformance discovery; that mode still needs the separate exact Issue-body opt-in below.
+
 ## Execution safety and evidence
 
 Use [`CHECKOUTS.md`](./CHECKOUTS.md) and [`EXECUTION-HANDOFF.md`](./EXECUTION-HANDOFF.md) for canonical exact admission/startup. After the Human's one-command PASS, verify only changed/volatile remote `main` and topic refs, branch/HEAD/clean state, and conflicting ownership immediately before mutation; do not rebuild the full inventory. Re-read the current Issue scope and comments. A dirty/untracked file, wrong branch, lock/release state, remote drift, ownership conflict or ambiguity is a stop. Preserve state; no reset, stash, rebase, force, overwrite, deleting user work, new checkout/worktree or legacy-metadata repair. Never merge/rebase main mid-slice; integrate only at the checkpoint in [`IMPLEMENTATION-SLICING.md`](./IMPLEMENTATION-SLICING.md).
 
-Keep changes within the settled semantic owner and agreed verification; commit intended files only, normal non-force push, and report branch, Base SHA, exact pushed HEAD, changes, commands/results, acceptance, blockers and residual risks. Retain independent pushed-HEAD blocking review, protected PR/CI and required Human Manual E2E gates. On ambiguous scope, oracle, dependencies or safety, preserve only a safe checkpoint and return to ChatGPT/Human.
+Keep changes within the settled semantic mission and agreed verification, applying the tier-specific path/owner boundary above; commit intended files only, normal non-force push, and report branch, Base SHA, exact pushed HEAD, changes, commands/results, acceptance, blockers and residual risks. Retain independent pushed-HEAD blocking review, protected PR/CI and required Human Manual E2E gates. On ambiguous scope, oracle, dependencies or safety, preserve only a safe checkpoint and return to ChatGPT/Human.
 
 For compatible pre-existing SAY, target the assigned checkout irrespective of initial `pwd` and execute the **exact** supplied `nuinui handoff <SAY-N> <expected-main-sha>` as its first identity operation. A failed handoff stops; do not redundantly rebuild helper-owned proof or blindly retry. This command is never a native GitHub startup step.
 
@@ -103,14 +113,19 @@ defect as evidence; rerun affected cells on the corrected candidate.
 One Issue may cover multiple in-scope defects; do not automatically create a
 separate Bug Issue for each family.
 
-Keep the source edits and tests inside the Issue's stated semantic owners and
-authorized paths. Do not change the product specification speculatively,
-redesign architecture, broaden the matrix, use external resources, or claim a
-Human-only GUI result. If scope or ownership must change, preserve a safe
-checkpoint and return the decision to ChatGPT. Record each distinct family,
-test seed, expected and actual result, exact candidate revision, completed and
-residual matrix cells, source changes, verification, and Git checkpoints in
-the existing Issue/PR surfaces.
+Keep edits and tests within the Issue's authorized semantic mission,
+owners/interfaces and verification boundary. Only a Human-selected upper-tier
+GitHub-native D1 executor may also follow the first-owner and causally stale
+regression path exception above; a newly discovered file/producer within the
+unchanged mission is not by itself a material scope expansion. Lower-tier
+agents retain strict Issue-specific writable boundaries. Do not change the
+product specification speculatively, redesign architecture, broaden the matrix,
+use external resources, or claim a Human-only GUI result. If the semantic
+mission/owner/interface contract materially changes, preserve a safe checkpoint
+and return the decision to ChatGPT. Record each distinct family, test seed,
+expected and actual result, exact candidate revision, completed and residual
+matrix cells, source changes, verification, and Git checkpoints in the existing
+Issue/PR surfaces.
 
 This mode remains an implementation Task: use the ordinary D1 Git-only
 admission, single registered implementation checkout, GitHub-native branch and
