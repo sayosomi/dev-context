@@ -113,6 +113,16 @@ Detailed physical admission and recovery remain owned by
 
 Issue作成・変更前にlatest product repository、関連するrepository owner / specification、target Issueとmaterial comments、関連Issue / PRをfreshに読む。作成・変更が明示的に承認されたscopeに限る。Linearの枠不足を理由にBug報告を止めず、Linearへduplicate Workを作らない。
 
+### Tier-specific native D1 implementation scope
+
+Native D1 implementation Issueは、boundedな**semantic mission / observable acceptance**、独立したsemantic oracle、関連するproducing owner / interface、required verification、non-goals、safety/stop limitsを具体的に記載する。
+
+**Humanが実際のUIで上位implementation Coding Agentを明示選択した場合だけ**、Issue中の想定source file/symbol一覧は調査のguideであり、修正可能なpathの網羅的allowlistではない。independent Base FAILとfirst-incorrect producing ownerの証拠に基づく必要最小限の横断修正、および正当な修正によって古くなったhistorical regression fixture/assertionの意味的に検証済みの更新は、[`CODING-AGENT.md`](./CODING-AGENT.md)の制約下で追加のper-file Human approvalなしに実施できる。新しいpath/ownerと因果関係は報告する。新機能・別mission・materialなsemantic/architecture/API/依存関係変更まで許可するものではない。
+
+**下位Coding Agentには従来のIssue-specificな厳格なwritable file/owner boundariesを明示して維持する。** 事前に許可していないpathやmaterial scopeへ進む前に従来どおりescalateする。Issueの表現、prompt、agent自身の申告から上位tierを推定しない。executor/tierを途中変更する場合はChatGPT/Humanがtier-specificなcontractを再確認してから追加mutationする。
+
+上位tierの選択だけでautonomous conformance discoveryは始められない。closed matrix、独立oracle、budgetおよび**別個のIssue本文の完全一致opt-in** `Autonomous conformance discovery and repair: authorized` が必要。D2-Cのfixed-SHA read-only auditはimplementationに変わらず、compatible pre-existing SAYやcheckout、review、CI、Human Manual E2Eのgateも緩和しない。
+
 ## Contract state and Work completion
 
 GitHub Issueの `open` は未完了Work、`closed` はfull acceptanceを独立に確認した完了Workを表す。PR、branch、checkの存在だけでIssueを完了と判断しない。

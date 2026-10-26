@@ -60,6 +60,14 @@ alone requires stopping or splitting. Exhausting that discovery budget stops new
 re-execution of authorized cases or regression/full-suite verification. Do not broaden the Issue oracle,
 owners, or budget through slicing.
 
+For a Human-selected **upper-tier GitHub-native D1 implementation executor only**, a previously unlisted
+first-incorrect producer or causally stale regression fixture may be repaired across file paths without
+per-file approval, provided the authorized semantic mission, owner/interface contract, oracle and
+verification remain unchanged. Record new file/owner paths and their causal evidence. This does not
+change the fixed Base, closed exploration ceiling, checkpoints, integration, review, CI or E2E gates.
+Lower-tier agents keep their strict Issue-specific writable paths; changing tier mid-Task requires
+rechecking the intended scope before further mutation. See [`CODING-AGENT.md`](./CODING-AGENT.md).
+
 ## Safe checkpoints
 
 ### Implementation checkpoint
@@ -145,16 +153,22 @@ review and CI gates. See [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md).
 
 Re-evaluate the slice/owner map at the start of each slice and when:
 
-1. A shared owner/adapter is first connected, or implementation crosses the agreed API, contract, owner,
-   or data-flow boundary.
+1. A shared owner/adapter changes the material API, contract or data-flow boundary, or a repair
+   requires a materially new semantic mission, owner/interface contract or architecture (not merely
+   an unlisted first-incorrect file inside the unchanged authorized mission).
 2. A pause/resume exposes changed prerequisites, dependencies, or an uncertain checkpoint; a material
    remote `main` change invalidates the premise.
-3. Multiple independent failure classes or semantic changes appear, blocking fixes grow into a new owner,
-   or Human Manual E2E reveals a new failure class.
+3. Failure classes or semantic changes require acceptance outside the agreed oracle, blocking fixes
+   require material semantic owner/architecture expansion, or Human Manual E2E reveals a new failure class.
 4. Post-integration drift becomes `RELEVANT` / `MERGE-GATE`, or an active legacy parallel lane expands
    and defeats its `LOW` interference premise.
 
 File/line/commit counts, elapsed time, and `NON-INTERFERING` `main` advances alone are **not** triggers.
+For the Human-selected upper-tier D1 implementation executor, crossing anticipated file paths to fix
+an independently demonstrated first-incorrect producer or causally stale historical test is also
+**not by itself** a slice/owner reauthorization trigger. Re-evaluate material semantic expansion, not
+file-path drift; retain causal evidence and all relevant regression controls. For lower-tier agents,
+existing explicit writable file limits and escalation still apply.
 A routine same-generation resume does not automatically require a fresh Base, claim, or integration.
 
 Choose one outcome:
