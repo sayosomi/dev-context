@@ -119,7 +119,7 @@ Native D1 implementation Issueは、boundedな**semantic mission / observable ac
 
 **Humanが実際のUIで上位implementation Coding Agentを明示選択した場合だけ**、Issue中の想定source file/symbol一覧は調査のguideであり、修正可能なpathの網羅的allowlistではない。independent Base FAILとfirst-incorrect producing ownerの証拠に基づく必要最小限の横断修正、および正当な修正によって古くなったhistorical regression fixture/assertionの意味的に検証済みの更新は、[`CODING-AGENT.md`](./CODING-AGENT.md)の制約下で追加のper-file Human approvalなしに実施できる。新しいpath/ownerと因果関係は報告する。新機能・別mission・materialなsemantic/architecture/API/依存関係変更まで許可するものではない。
 
-**下位Coding Agentには従来のIssue-specificな厳格なwritable file/owner boundariesを明示して維持する。** 事前に許可していないpathやmaterial scopeへ進む前に従来どおりescalateする。Issueの表現、prompt、agent自身の申告から上位tierを推定しない。executor/tierを途中変更する場合はChatGPT/Humanがtier-specificなcontractを再確認してから追加mutationする。
+**下位Coding Agentには従来のIssue-specificな厳格なwritable file/owner boundariesを明示して維持する。** 事前に許可していないpathやmaterial scopeへ進む前に従来どおりescalateする。Issueの表現、prompt、agent自身の申告から上位tierを推定しない。Humanによる当該Taskの上位tier選択を確認できない場合は、下位tierの厳格な境界を適用する。executor/tierを途中変更する場合はChatGPT/Humanがtier-specificなcontractを再確認してから追加mutationする。
 
 上位tierの選択だけでautonomous conformance discoveryは始められない。closed matrix、独立oracle、budgetおよび**別個のIssue本文の完全一致opt-in** `Autonomous conformance discovery and repair: authorized` が必要。D2-Cのfixed-SHA read-only auditはimplementationに変わらず、compatible pre-existing SAYやcheckout、review、CI、Human Manual E2Eのgateも緩和しない。
 
