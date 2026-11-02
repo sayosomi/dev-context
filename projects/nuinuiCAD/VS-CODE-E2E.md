@@ -24,6 +24,12 @@ For a new GitHub-native Issue, use the existing registered `role=human-test` che
 5. After host readiness, the Human establishes each declared initial state, runs the product actions in VS Code, observes and judges them, and returns concise result/evidence. A ready host never supplies a product PASS.
 6. Record relevant observations and necessary transient failure evidence **before** teardown. Normal `host-closure` performs checked owned-host cleanup, checkout release and independent final clean/idle proof for the same generation.
 
+### Low-round-trip Human setup handoff
+
+For a native Human E2E launch, ChatGPT first confirms the current Issue/approved test plan and exact remote tested SHA, then fixes the generation, external fixture, port and locale. Present the complete canonical `admit`, `start`, `host-check` and `host-prepare` command invocations **together in execution order**, with consistent exact inputs. Explain implementation-checkout and immutable dogfood-snapshot prerequisites up front; GitHub evidence alone does **not** prove local readiness. If a build is required, use only the existing clean-main `dogfood:build` owner under its normal safety requirements, not a build inside the Human-test checkout. Do not combine the phases into a new shell script, helper or alternate launcher.
+
+The Human executes each command separately **only after checking the previous result for success and matching identity**. Unambiguous intermediate successes need no ChatGPT round trip; after `HOST SESSION READY`, report the generation-bound result before beginning the declared GUI units. On `BLOCKED`, nonzero exit, mismatch, ambiguous state or Human stop/pause, stop immediately and report the actual phase/output. Retain exact-generation recovery and ownership rules; do not infer success, automatically retry/release, skip per-command fresh preflight or treat host readiness as product PASS.
+
 ### Public native CLI shape
 
 ```text
