@@ -417,6 +417,18 @@ host_root_path() {
   fi
 }
 
+host_record_path() {
+  printf '%s/nuinui-github-e2e-host-%s-v1.%s\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$1" \
+    "$(printf '%s\n' "$2" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
+native_record_path() {
+  printf '%s/nuinui-github-e2e-%s-v1.%s\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$1" \
+    "$(printf '%s\n' "$2" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
 fingerprint() {
   python3 - "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$(host_root_path "$fixture_generation")" <<'PY'
 import hashlib, os, stat, sys
@@ -465,6 +477,44 @@ new_fixture one
 host_test_root_mode=production
 host_test_home=$fixture_root/private-home
 mkdir -m 0700 "$host_test_home" || fail 'private test HOME'
+fixture_generation=vscode-absent-artifact-0001
+prepare_generation "$fixture_generation"
+setup_vscode_artifacts
+fixture_port=$(choose_port)
+
+echo 'VSCODE HOST SELFTEST: artifact rejection followed by absent-host closure'
+extension_file=$fixture_snapshot/extension/dist/extension.js
+cp "$extension_file" "$fixture_root/extension.js.saved"
+printf 'invalid immutable snapshot\n' >> "$extension_file"
+fingerprint_before_denial
+blocked host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+assert_no_mutation
+mv "$fixture_root/extension.js.saved" "$extension_file"
+artifact_failure_root=$(host_root_path "$fixture_generation")
+[ ! -e "$artifact_failure_root" ] && [ ! -L "$artifact_failure_root" ] ||
+  fail 'artifact failure created a host root before session creation'
+for record_kind in intent handoff ready cleanup-pending cleanup; do
+  artifact_failure_record=$(host_record_path "$record_kind" "$fixture_generation")
+  [ ! -e "$artifact_failure_record" ] && [ ! -L "$artifact_failure_record" ] ||
+    fail 'artifact failure created a host session record'
+done
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'NATIVE E2E NO-HOST CLEANUP PROOF RECORDED'
+contains 'NATIVE E2E NO-HOST CLOSURE VERIFIED'
+contains 'host_state=ABSENT'
+contains 'host_session=none'
+if grep -Eq 'HOST (FIXTURE )?CLEANUP VERIFIED|HOST SESSION CLEANED|Human E2E PASSED' "$output"; then
+  fail 'absent-host closure claimed a session cleanup or product E2E pass'
+fi
+artifact_failure_cleanup=$(native_record_path cleanup "$fixture_generation")
+grep -Fqx 'proof=fixture-no-host-session' "$artifact_failure_cleanup" ||
+  fail 'artifact-failure closure did not reuse the no-host cleanup proof'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_tested_sha" ] &&
+  [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+  [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
+    fail 'artifact-failure closure did not leave a clean detached checkout'
+
 fixture_generation=vscode-isolated-cleanup-0001
 prepare_generation "$fixture_generation"
 setup_vscode_artifacts
