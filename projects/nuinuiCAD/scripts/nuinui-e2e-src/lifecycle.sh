@@ -1253,37 +1253,85 @@ nuinui_e2e_cleanup_proof() {
   nuinui_e2e__selected_context "$nuinui_e2e_manifest_arg" \
     "$nuinui_e2e_lane_arg" "$nuinui_e2e_issue_arg" || return 1
   nuinui_e2e__preflight "$nuinui_e2e_manifest_path" >/dev/null || return 1
-  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
-  nuinui_e2e_host_state=${nuinui_e2e_host_state:-ABSENT}
-  [ "$nuinui_e2e_host_state" = ABSENT ] || {
-    echo 'BLOCKED: bare cleanup-proof cannot bypass a host-session record'
+  nuinui_e2e__record_no_host_cleanup_proof cleanup-proof
+}
+
+# Shared internal writer. Production callers may reach this only through
+# the already-validated host-closure operation.
+nuinui_e2e__record_no_host_cleanup_proof() {
+  [ "$#" = 1 ] || return 2
+  case "$1:$nuinui_e2e_operation:${nuinui_e2e_production:-no}" in
+    cleanup-proof:cleanup-proof:no) ;;
+    host-closure:host-closure:yes|host-closure:host-closure:no) ;;
+    *)
+      echo 'BLOCKED: no-host cleanup evidence requires fixture cleanup-proof or verified host-closure'
+      return 1
+      ;;
+  esac
+  nuinui_e2e_host__load_state || {
+    echo 'BLOCKED: no-host cleanup proof found conflicting or unsafe host state'
     return 1
   }
+  [ "$nuinui_e2e_host_state" = ABSENT ] || {
+    echo 'BLOCKED: no-host cleanup proof cannot bypass a host-session record'
+    return 1
+  }
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
   nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+  nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
   nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
     echo 'BLOCKED: cleanup proof requires the exact active generation'
     return 1
   }
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_expected_tested" || {
-      echo 'BLOCKED: fixture cleanup proof requires a clean detached tested checkout'
+      echo 'BLOCKED: no-host cleanup proof requires a clean detached tested checkout'
       return 1
     }
-  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
-  nuinui_e2e_cleanup_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_cleanup_content=$nuinui_e2e_cleanup_content$(printf '\nproof=fixture-no-host-session\n')
+  if nuinui_e2e__exists "$nuinui_e2e_release" || nuinui_e2e__exists "$nuinui_e2e_releasing"; then
+    echo 'BLOCKED: no-host cleanup proof conflicts with native release evidence'
+    return 1
+  fi
   if nuinui_e2e__exists "$nuinui_e2e_cleanup"; then
     nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || return 1
+    [ "$nuinui_e2e_r_proof" = fixture-no-host-session ] || {
+      echo 'BLOCKED: existing cleanup receipt does not prove an absent host session'
+      return 1
+    }
     echo 'NATIVE E2E CLEANUP PROOF ALREADY RECORDED'
     echo 'mutation=no-op'
     return 0
   fi
+
+  # Revalidate immediately before publishing the native cleanup receipt.
+  nuinui_e2e_host__load_state || {
+    echo 'BLOCKED: host state changed before no-host cleanup evidence was recorded'
+    return 1
+  }
+  [ "$nuinui_e2e_host_state" = ABSENT ] &&
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" &&
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" &&
+    ! nuinui_e2e__exists "$nuinui_e2e_cleanup" &&
+    ! nuinui_e2e__exists "$nuinui_e2e_release" &&
+    ! nuinui_e2e__exists "$nuinui_e2e_releasing" || {
+      echo 'BLOCKED: active generation or absent-host state changed before cleanup evidence publication'
+      return 1
+    }
+  nuinui_e2e_cleanup_content=$(nuinui_e2e__record_base)
+  nuinui_e2e_cleanup_content=$nuinui_e2e_cleanup_content$(printf '\nproof=fixture-no-host-session\n')
   nuinui_e2e__atomic_create "$nuinui_e2e_cleanup" "$nuinui_e2e_cleanup_content" || {
     echo 'BLOCKED: cleanup proof could not be atomically published'
     return 1
   }
-  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || return 1
-  echo 'NATIVE E2E FIXTURE CLEANUP PROVED'
+  nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" &&
+    [ "$nuinui_e2e_r_proof" = fixture-no-host-session ] || return 1
+  if [ "$1" = host-closure ]; then
+    echo 'NATIVE E2E NO-HOST CLEANUP PROOF RECORDED'
+  else
+    echo 'NATIVE E2E FIXTURE CLEANUP PROVED'
+  fi
   echo 'proof=fixture-no-host-session'
   echo "generation=$nuinui_e2e_expected_generation"
   echo 'mutation=yes'
