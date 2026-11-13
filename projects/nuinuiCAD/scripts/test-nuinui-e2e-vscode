@@ -144,6 +144,8 @@ setup_vscode_artifacts() {
   mkdir -p "$fixture_dogfood/snapshots" \
     "$fixture_root/fake-extension/extension/dist" \
     "$fixture_root/fake-extension/extension/syntaxes" \
+    "$fixture_root/fake-extension/extension/snippets" \
+    "$fixture_root/fake-extension/extension/runtime-data" \
     "$fixture_root/fake-extension/bin" \
     "$fixture_app/Contents/MacOS"
   printf '{"main":"./dist/extension.js"}\n' > "$fixture_root/fake-extension/extension/package.json"
@@ -152,6 +154,17 @@ setup_vscode_artifacts() {
   printf 'webview-stub\n' > "$fixture_root/fake-extension/extension/dist/webview.js"
   printf 'body{}\n' > "$fixture_root/fake-extension/extension/dist/webview.css"
   printf 'syntax-stub\n' > "$fixture_root/fake-extension/extension/syntaxes/nuinui.tmLanguage.json"
+  cat > "$fixture_root/fake-extension/extension/snippets/nui.json" <<'JSON'
+{
+  "Nui": {
+    "scope": "source.nui",
+    "prefix": "nui",
+    "body": ["shape ${1:name}"]
+  }
+}
+JSON
+  printf '{"kind":"runtime-resource","version":1}\n' \
+    > "$fixture_root/fake-extension/extension/runtime-data/manifest-probe.json"
   printf '#!/bin/sh\nexit 0\n' > "$fixture_root/fake-extension/bin/evaluation_stdio"
   chmod 755 "$fixture_root/fake-extension/bin/evaluation_stdio"
       cat > "$fixture_root/disposable-vscode-host.c" <<'C'
@@ -300,6 +313,15 @@ meta = {
 with open(os.path.join(root, "snapshot.json"), "w", encoding="utf-8") as stream:
     json.dump(meta, stream, separators=(",", ":"))
     stream.write("\n")
+for relative in ("extension/snippets/nui.json", "extension/runtime-data/manifest-probe.json"):
+    path = os.path.join(root, *relative.split("/"))
+    with open(path, "rb") as stream:
+        actual = hashlib.sha256(stream.read()).hexdigest()
+    if meta["files"].get(relative) != actual:
+        raise SystemExit(f"fixture manifest does not contain the actual digest for {relative}")
+print("FIXTURE MANIFEST RESOURCES: " + ", ".join(
+    f"{relative}={meta['files'][relative]}" for relative in (
+        "extension/snippets/nui.json", "extension/runtime-data/manifest-probe.json")))
 with open(os.path.join(os.path.dirname(root), "..", "current.json"), "w", encoding="utf-8") as stream:
     json.dump({"schemaVersion": 1, "identity": identity}, stream, separators=(",", ":"))
     stream.write("\n")
@@ -450,14 +472,88 @@ fixture_port=$(choose_port)
 
 echo 'VSCODE HOST SELFTEST: direct launch, HTTP CDP, status and isolated cleanup'
 # Preserve immutable artifact admission without repeating the shared identity matrix.
+snapshot_metadata=$fixture_snapshot/snapshot.json
+cp "$snapshot_metadata" "$fixture_root/snapshot.json.saved"
+snapshot_rejected() {
+  fingerprint_before_denial
+  blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+    "$fixture_file" "$fixture_port" default vscode-isolated
+  assert_no_mutation
+}
+snapshot_restore_metadata() {
+  cp "$fixture_root/snapshot.json.saved" "$snapshot_metadata"
+}
+python3 - "$snapshot_metadata" <<'PYTHON'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as stream: meta = json.load(stream)
+del meta["files"]["extension/dist/webview.js"]
+meta["files"] = dict(sorted(meta["files"].items()))
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(meta, stream, separators=(",", ":")); stream.write("\n")
+PYTHON
+snapshot_rejected
+snapshot_restore_metadata
+
+runtime_resource=$fixture_snapshot/extension/runtime-data/manifest-probe.json
+mv "$runtime_resource" "$fixture_root/manifest-probe.saved"
+snapshot_rejected
+mv "$fixture_root/manifest-probe.saved" "$runtime_resource"
+
 extension_file=$fixture_snapshot/extension/dist/extension.js
 cp "$extension_file" "$fixture_root/extension.js.saved"
 printf 'tampered\n' >> "$extension_file"
-fingerprint_before_denial
-blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
-  "$fixture_file" "$fixture_port" default vscode-isolated
-assert_no_mutation
+snapshot_rejected
 mv "$fixture_root/extension.js.saved" "$extension_file"
+
+python3 - "$snapshot_metadata" <<'PYTHON'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as stream: meta = json.load(stream)
+meta["files"]["extension/runtime-data/manifest-probe.json"] = "0" * 64
+meta["files"] = dict(sorted(meta["files"].items()))
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(meta, stream, separators=(",", ":")); stream.write("\n")
+PYTHON
+snapshot_rejected
+snapshot_restore_metadata
+
+python3 - "$snapshot_metadata" <<'PYTHON'
+import json, sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as stream: meta = json.load(stream)
+meta["files"]["extension/../outside.json"] = "0" * 64
+meta["files"] = dict(sorted(meta["files"].items()))
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(meta, stream, separators=(",", ":")); stream.write("\n")
+PYTHON
+snapshot_rejected
+snapshot_restore_metadata
+
+mkdir "$fixture_snapshot/runtime"
+printf 'unexpected\n' > "$fixture_snapshot/runtime/extra.bin"
+python3 - "$snapshot_metadata" "$fixture_snapshot/runtime/extra.bin" <<'PYTHON'
+import hashlib, json, os, sys
+path, extra = sys.argv[1:]
+with open(path, encoding="utf-8") as stream: meta = json.load(stream)
+with open(extra, "rb") as stream: digest = hashlib.sha256(stream.read()).hexdigest()
+relative = os.path.relpath(extra, os.path.dirname(path)).replace(os.sep, "/")
+meta["files"][relative] = digest
+meta["files"] = dict(sorted(meta["files"].items()))
+with open(path, "w", encoding="utf-8") as stream:
+    json.dump(meta, stream, separators=(",", ":")); stream.write("\n")
+PYTHON
+snapshot_rejected
+snapshot_restore_metadata
+rm -rf "$fixture_snapshot/runtime"
+
+printf 'unmanifested\n' > "$fixture_snapshot/extension/runtime-data/unmanifested.bin"
+snapshot_rejected
+rm "$fixture_snapshot/extension/runtime-data/unmanifested.bin"
+
+ln -s "$fixture_file" "$fixture_snapshot/extension/runtime-data/unsafe-link"
+snapshot_rejected
+rm "$fixture_snapshot/extension/runtime-data/unsafe-link"
 
 fixture_trace_prepare=yes
 fixture_prepare_time=$(python3 -c 'import time; print(time.monotonic())')
@@ -469,6 +565,7 @@ import sys,time
 print(f"HOST PREPARE SECONDS: {time.monotonic()-float(sys.argv[1]):.3f}")
 PYTHON
 contains 'HOST SESSION READY (adapter=vscode-isolated'
+echo 'VALID EXTENSION MANIFEST RESOURCES PASSED HOST ARTIFACT GATE'
 validation_calls=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e_host_vscode__validate_artifacts" {n++} END {print n+0}' "$output")
 snapshot_calls=$(awk '$1 ~ /^\++$/ && $2 == "nuinui_e2e_host_vscode__snapshot_info" {n++} END {print n+0}' "$output")
 echo "STARTUP VALIDATION CALLS: $validation_calls; SNAPSHOT HASH PASSES: $snapshot_calls"
