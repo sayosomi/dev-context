@@ -1,5 +1,77 @@
 # Checked host-cleanup -> native release -> native final-closure sequence.
 
+nuinui_e2e_host__closure_without_session() {
+  [ "$#" = 0 ] || return 2
+  nuinui_e2e_active=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" active) || return 1
+  nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
+  nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
+
+  if ! nuinui_e2e__exists "$nuinui_e2e_active"; then
+    nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || {
+      echo 'BLOCKED: absent-host closure requires exact native cleanup evidence'
+      return 1
+    }
+    [ "$nuinui_e2e_r_proof" = fixture-no-host-session ] || {
+      echo 'BLOCKED: cleanup receipt does not prove the host session was absent'
+      return 1
+    }
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" || {
+      echo 'BLOCKED: absent-host closure cannot resume without the exact completed release receipt'
+      return 1
+    }
+    (nuinui_e2e__closure) || {
+      echo 'BLOCKED: native no-host final closure failed; existing evidence retained'
+      return 1
+    }
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
+    nuinui_e2e_host_no_session_idle_sha=$nuinui_e2e_r_idle_sha
+    nuinui_e2e_host_no_session_mutation=no-op
+  else
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" || {
+      echo 'BLOCKED: absent-host closure requires the exact active native generation'
+      return 1
+    }
+    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: absent-host closure requires a clean detached tested checkout'
+        return 1
+      }
+    nuinui_e2e__record_no_host_cleanup_proof host-closure || return 1
+    echo 'HOST CLOSURE: releasing native generation without a host session' >&2
+    (nuinui_e2e__release) || {
+      echo 'BLOCKED: native release stage failed; receipt and recovery evidence retained'
+      return 1
+    }
+    nuinui_e2e_host__load_state || {
+      echo 'BLOCKED: host state changed after native release; final closure was not attempted'
+      return 1
+    }
+    [ "$nuinui_e2e_host_state" = ABSENT ] || {
+      echo 'BLOCKED: a host session appeared during no-host closure'
+      return 1
+    }
+    (nuinui_e2e__closure) || {
+      echo 'BLOCKED: native no-host final closure failed; evidence retained'
+      return 1
+    }
+    nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
+    nuinui_e2e_host_no_session_idle_sha=$nuinui_e2e_r_idle_sha
+    nuinui_e2e_host_no_session_mutation=yes
+  fi
+
+  echo 'NATIVE E2E NO-HOST CLOSURE VERIFIED'
+  echo "issue=$nuinui_e2e_expected_issue"
+  echo "lane=$nuinui_e2e_expected_lane"
+  echo "tested_sha=$nuinui_e2e_expected_tested"
+  echo "idle_sha=$nuinui_e2e_host_no_session_idle_sha"
+  echo "generation=$nuinui_e2e_expected_generation"
+  echo 'host_state=ABSENT'
+  echo 'host_session=none'
+  echo 'clean=yes'
+  echo 'detached=yes'
+  echo "mutation=$nuinui_e2e_host_no_session_mutation"
+}
+
 nuinui_e2e_host_closure() {
   [ "$#" = 3 ] || return 2
   echo 'HOST CLOSURE: checking session' >&2
@@ -10,8 +82,8 @@ nuinui_e2e_host_closure() {
   }
   case "$nuinui_e2e_host_state" in
     ABSENT)
-      echo 'BLOCKED: host closure requires an active native generation and its host session'
-      return 1
+      nuinui_e2e_host__closure_without_session
+      return $?
       ;;
     CLEANED|RELEASED) ;;
     *)

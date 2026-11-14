@@ -182,6 +182,13 @@ host_blocked() {
   grep -Eq 'BLOCKED|blocked|ERROR:' "$output" || fail "host refusal was unexplained: $1"
 }
 
+closure_blocked() {
+  before_closure=$(fingerprint)
+  host_blocked host-closure "$@"
+  [ "$(fingerprint)" = "$before_closure" ] ||
+    fail 'blocked host closure mutated native or host evidence'
+}
+
 host_failpoint() {
   failpoint=$1
   shift
@@ -426,6 +433,126 @@ if "$helper" host-status --self-test --manifest "$fixture_manifest" \
   fail 'host-status accepted contradictory host-only options'
 fi
 contains 'only valid for host-check and host-prepare'
+
+# An absent host session still permits only exact, verified native closure.
+new_fixture one
+fixture_generation=host-absent-closure-0001
+no_host_tested_sha=$fixture_tested_sha
+ok start "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+host_ok host-status "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+contains 'HOST SESSION ABSENT'
+
+closure_blocked 'sayosomi/nuinuiCAD#269' "$fixture_generation" human "$no_host_tested_sha"
+closure_blocked "$fixture_issue" wrong-generation-0001 human "$no_host_tested_sha"
+closure_blocked "$fixture_issue" "$fixture_generation" implementation "$no_host_tested_sha"
+closure_blocked "$fixture_issue" "$fixture_generation" human \
+  '0000000000000000000000000000000000000000'
+
+active=$(active_path)
+cp "$active" "$fixture_root/active.saved"
+sed 's/^generation=.*/generation=foreign-generation-0001/' \
+  "$fixture_root/active.saved" > "$active"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+mv "$fixture_root/active.saved" "$active"
+mv "$active" "$fixture_root/active.missing"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+mv "$fixture_root/active.missing" "$active"
+
+cp "$fixture_manifest" "$fixture_root/LANES.saved"
+printf '# changed after admission\n' >> "$fixture_manifest"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+mv "$fixture_root/LANES.saved" "$fixture_manifest"
+
+printf 'dirty checkout\n' >> "$fixture_human/fixture.txt"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+git -C "$fixture_human" checkout -- fixture.txt
+
+absent_host_root=$(host_root_path "$fixture_generation")
+ln -s "$fixture_root" "$absent_host_root"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+rm "$absent_host_root"
+malformed_host_intent=$(host_path intent "$fixture_generation")
+printf 'foreign host record\n' > "$malformed_host_intent"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+rm "$malformed_host_intent"
+
+conflicting_cleanup=$(native_path cleanup "$fixture_generation")
+cp "$active" "$conflicting_cleanup"
+printf 'proof=fixture-host-session-cleaned\nhost_cleanup_sha256=%064d\n' 0 \
+  >> "$conflicting_cleanup"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+rm "$conflicting_cleanup"
+conflicting_release=$(native_path release "$fixture_generation")
+cp "$active" "$conflicting_release"
+printf 'idle_sha=%s\nrecord_state=complete\n' "$no_host_tested_sha" \
+  >> "$conflicting_release"
+closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sha"
+rm "$conflicting_release"
+
+advance_default absent-host-idle
+no_host_idle_sha=$fixture_tested_sha
+fixture_tested_sha=$no_host_tested_sha
+host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'NATIVE E2E NO-HOST CLEANUP PROOF RECORDED'
+contains 'NATIVE E2E NO-HOST CLOSURE VERIFIED'
+contains 'host_state=ABSENT'
+contains 'host_session=none'
+contains 'clean=yes'
+contains 'detached=yes'
+if grep -Eq 'HOST (FIXTURE )?CLEANUP VERIFIED|HOST SESSION CLEANED|Human E2E PASSED' "$output"; then
+  fail 'no-host closure claimed a host cleanup or product E2E pass'
+fi
+native_cleanup=$(native_path cleanup "$fixture_generation")
+native_release=$(native_path release "$fixture_generation")
+grep -Fqx 'proof=fixture-no-host-session' "$native_cleanup" ||
+  fail 'absent-host cleanup receipt used a different proof'
+[ -f "$native_release" ] && [ ! -e "$active" ] ||
+  fail 'absent-host closure did not publish release and remove active marker'
+[ ! -e "$absent_host_root" ] && [ ! -L "$absent_host_root" ] ||
+  fail 'absent-host closure left host resources'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$no_host_idle_sha" ] &&
+  [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+  [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
+    fail 'absent-host closure did not restore the clean detached idle checkout'
+no_host_cleanup_hash=$(shasum -a 256 "$native_cleanup" | awk 'NR == 1 {print $1}')
+no_host_release_hash=$(shasum -a 256 "$native_release" | awk 'NR == 1 {print $1}')
+host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'NATIVE E2E NO-HOST CLOSURE VERIFIED'
+contains 'host_state=ABSENT'
+contains 'mutation=no-op'
+[ "$(shasum -a 256 "$native_cleanup" | awk 'NR == 1 {print $1}')" = \
+  "$no_host_cleanup_hash" ] &&
+  [ "$(shasum -a 256 "$native_release" | awk 'NR == 1 {print $1}')" = \
+  "$no_host_release_hash" ] &&
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$no_host_idle_sha" ] ||
+    fail 'repeated absent-host closure changed receipts or idle checkout'
+
+# Interrupted no-host release stays blocked until the existing recover operation runs.
+fixture_generation=host-absent-release-recovery-0001
+fixture_tested_sha=$no_host_idle_sha
+ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+advance_default absent-host-recovery-idle
+no_host_recovery_idle_sha=$fixture_tested_sha
+fixture_tested_sha=$no_host_idle_sha
+if ( NUINUI_E2E_TEST_FAILPOINT=after-intent invoke_host host-closure \
+  "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
+  fail 'interrupted absent-host release unexpectedly completed'
+fi
+contains 'interruption after release intent'
+[ -f "$(native_path releasing "$fixture_generation")" ] && [ -e "$(active_path)" ] &&
+  [ -f "$(native_path cleanup "$fixture_generation")" ] ||
+    fail 'interrupted no-host release did not retain its evidence'
+closure_blocked "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+ok recover "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'NATIVE E2E RELEASE RECOVERED'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$no_host_recovery_idle_sha" ] &&
+  [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+  [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
+    fail 'native recovery did not restore the detached idle checkout'
+host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+contains 'NATIVE E2E NO-HOST CLOSURE VERIFIED'
+contains 'mutation=no-op'
+echo 'ABSENT HOST CLOSURE SELFTEST PASS (verified no-op and explicit release recovery)'
 
 # Exact admission and read-only host-check, including fixture and port checks.
 new_fixture one

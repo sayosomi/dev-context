@@ -126,15 +126,7 @@ required = {
     "extension/dist/webview.css", "bin/evaluation_stdio"
 }
 if not required.issubset(files): fail("prepared artifact snapshot is missing a required runtime artifact")
-allowed = lambda p: (
-    p == "bin/evaluation_stdio" or
-    p.startswith("extension/") and (
-        p in {"extension/package.json", "extension/language-configuration.json",
-              "extension/dist/extension.js", "extension/dist/webview.js", "extension/dist/webview.css"} or
-        p.startswith("extension/syntaxes/") or p.startswith("extension/media/") or
-        p.startswith("extension/package.nls") and p.endswith(".json")
-    )
-)
+allowed = lambda p: p == "bin/evaluation_stdio" or p.startswith("extension/")
 if any(not safe(path) or not allowed(path) or not isinstance(value, str) or
        len(value) != 64 or any(c not in "0123456789abcdef" for c in value)
        for path, value in files.items()):
