@@ -568,6 +568,36 @@ printf '<html>inside checkout</html>\n' > "$fixture_human/inside.html"
 host_blocked host-check "$fixture_issue" "$fixture_generation" human \
   "$fixture_tested_sha" "$fixture_human/inside.html" 43123
 rm "$fixture_human/inside.html"
+# The fixture parent may be aliased, but an alias into the Human checkout blocks.
+fixture_alias_parent=$fixture_root/fixture-parent-alias
+ln -s "$fixture_root" "$fixture_alias_parent"
+fixture_alias=$fixture_alias_parent/host-fixture.html
+checkout_alias_parent=$fixture_root/checkout-parent-alias
+ln -s "$fixture_human" "$checkout_alias_parent"
+printf 'inside checkout\n' > "$fixture_human/inside.html"
+before=$(fingerprint)
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$checkout_alias_parent/inside.html" 43123
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" relative-fixture.html 43123
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_root/not-here.html" 43123
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_root" 43123
+invalid_text_fixture="$fixture_root/$(printf 'control\001byte.html')"
+printf 'invalid text path\n' > "$invalid_text_fixture"
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$invalid_text_fixture" 43123
+rm "$invalid_text_fixture" "$fixture_human/inside.html"
+unreadable_fixture=$fixture_root/unreadable.html
+printf 'unreadable\n' > "$unreadable_fixture"
+chmod 000 "$unreadable_fixture"
+if [ ! -r "$unreadable_fixture" ]; then
+  host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+    "$fixture_tested_sha" "$unreadable_fixture" 43123
+fi
+chmod 644 "$unreadable_fixture"
+[ "$(fingerprint)" = "$before" ] || fail 'invalid fixture input mutated host state'
 for invalid_port in 0 0001 65536 999999999999999; do
   host_blocked host-check "$fixture_issue" "$fixture_generation" human \
     "$fixture_tested_sha" "$fixture_file" "$invalid_port"
@@ -579,9 +609,13 @@ before=$(fingerprint)
 host_ok host-check "$fixture_issue" "$fixture_generation" human \
   "$fixture_tested_sha" "$fixture_file" 43123
 contains 'state=ABSENT'
-[ "$(fingerprint)" = "$before" ] || fail 'host-check mutated metadata'
+host_ok host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_alias" 43123
+contains "fixture=$fixture_file"
+contains 'state=ABSENT'
+[ "$(fingerprint)" = "$before" ] || fail 'host-check or alias check mutated metadata'
 host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
-  "$fixture_tested_sha" "$fixture_file" 43123
+  "$fixture_tested_sha" "$fixture_alias" 43123
 contains 'fixture-no-process'
 contains 'no Human Manual E2E was run'
 host_ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
@@ -597,21 +631,50 @@ for record in "$intent" "$handoff" "$ready"; do
   grep -Fqx "generation=$fixture_generation" "$record" || fail 'generation binding missing'
   grep -Fqx 'adapter=fixture-no-process' "$record" || fail 'fixture-only adapter mode missing'
 done
-grep -Fqx "fixture_path=$fixture_file" "$handoff" || fail 'handoff fixture identity missing'
+for record in "$intent" "$handoff" "$ready"; do
+  grep -Fqx "fixture_path=$fixture_file" "$record" || fail 'persisted fixture must use canonical identity'
+done
 grep -Fqx 'port=43123' "$handoff" || fail 'handoff port missing'
 grep -Fqx 'locale=default' "$handoff" || fail 'default locale was not explicit'
 grep -Fqx 'record_state=READY' "$ready" || fail 'READY state missing'
 
 # Duplicate prepare is a verified read-only no-op; mismatched identity is isolated.
 before=$(fingerprint)
+host_ok host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_alias" 43123
+contains 'state=READY'
+host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_alias" 43123
+contains 'mutation=no-op'
 host_ok host-prepare "$fixture_issue" "$fixture_generation" human \
   "$fixture_tested_sha" "$fixture_file" 43123
 contains 'mutation=no-op'
-[ "$(fingerprint)" = "$before" ] || fail 'duplicate host-prepare mutated records'
+[ "$(fingerprint)" = "$before" ] || fail 'duplicate host-prepare or alias changed records'
+same_content_fixture=$fixture_root/same-content-other-path.html
+cp "$fixture_file" "$same_content_fixture"
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$same_content_fixture" 43123
+contains 'request differs from the exact recorded session'
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$same_content_fixture" 43123
 host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
   "$fixture_tested_sha" "$fixture_file" 43124
 host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
   "$fixture_tested_sha" "$fixture_file" 43123 ja
+# Rechecking READY must reject content tamper, including an alias request.
+cp "$fixture_file" "$fixture_root/fixture-original.saved"
+printf 'tampered\n' >> "$fixture_file"
+before=$(fingerprint)
+host_blocked host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_alias" 43123
+host_blocked host-prepare "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_file" 43123
+host_blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+[ "$(fingerprint)" = "$before" ] || fail 'changed fixture mutated protected host metadata'
+mv "$fixture_root/fixture-original.saved" "$fixture_file"
+host_ok host-check "$fixture_issue" "$fixture_generation" human \
+  "$fixture_tested_sha" "$fixture_alias" 43123
+contains 'state=READY'
 
 # Read-only checks and an exact duplicate remain read-only with a non-writable root.
 readonly_host_root=$(host_root_path "$fixture_generation")

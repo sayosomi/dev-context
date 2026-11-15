@@ -605,10 +605,25 @@ ln -s "$fixture_file" "$fixture_snapshot/extension/runtime-data/unsafe-link"
 snapshot_rejected
 rm "$fixture_snapshot/extension/runtime-data/unsafe-link"
 
+fixture_alias_parent=$fixture_root/fixture-parent-alias
+ln -s "$fixture_root" "$fixture_alias_parent"
+fixture_alias=$fixture_alias_parent/host-fixture.html
+# Keep internal VS Code validation strict, while the host entrypoint accepts aliases.
+fingerprint_before_denial
+if nuinui_e2e_host_vscode__validate_artifacts "$fixture_tested_sha" \
+  "$fixture_alias" "$fixture_port" default >/dev/null 2>&1; then
+  fail 'internal VS Code validator accepted a noncanonical path directly'
+fi
+assert_no_mutation
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_alias" "$fixture_port" default vscode-isolated
+contains "fixture=$fixture_file"
+assert_no_mutation
+
 fixture_trace_prepare=yes
 fixture_prepare_time=$(python3 -c 'import time; print(time.monotonic())')
 ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
-  "$fixture_file" "$fixture_port" default vscode-isolated
+  "$fixture_alias" "$fixture_port" default vscode-isolated
 fixture_trace_prepare=no
 python3 - "$fixture_prepare_time" <<'PYTHON'
 import sys,time
@@ -635,6 +650,34 @@ fingerprint_before_denial
 ok host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 contains 'HOST SESSION READY'
 contains 'mutation=no'
+assert_no_mutation
+for kind in intent handoff ready; do
+  grep -Fqx "fixture_path=$fixture_file" "$(host_record_path "$kind" "$fixture_generation")" ||
+    fail 'VS Code session recorded noncanonical fixture identity'
+done
+fingerprint_before_denial
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_file" "$fixture_port" default vscode-isolated
+contains 'state=READY'
+ok host-prepare "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_alias" "$fixture_port" default vscode-isolated
+contains 'mutation=no-op'
+same_content_fixture=$fixture_root/same-content-other-path.html
+cp "$fixture_file" "$same_content_fixture"
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$same_content_fixture" "$fixture_port" default vscode-isolated
+contains 'request differs from the exact recorded session'
+fixture_backup=$fixture_root/original-fixture.saved
+cp "$fixture_file" "$fixture_backup"
+printf 'tampered\n' >> "$fixture_file"
+blocked host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_alias" "$fixture_port" default vscode-isolated
+blocked host-status "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+assert_no_mutation
+mv "$fixture_backup" "$fixture_file"
+ok host-check "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" \
+  "$fixture_alias" "$fixture_port" default vscode-isolated
+contains 'state=READY'
 assert_no_mutation
 
 # VS Code profile contents may include sockets and links; cleanup must preserve link targets.

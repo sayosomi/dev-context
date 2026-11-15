@@ -11,9 +11,10 @@ nuinui_e2e_host__fixture_identity() {
   nuinui_e2e_host_fixture_input=$1
   nuinui_e2e_host_fixture_checkout=$2
   case "$nuinui_e2e_host_fixture_input" in /*) ;; *) return 1 ;; esac
+  nuinui_e2e_host_vscode__valid_text "$nuinui_e2e_host_fixture_input" || return 1
   nuinui_e2e__regular "$nuinui_e2e_host_fixture_input" || return 1
   nuinui_e2e_host_fixture_canonical=$(realpath "$nuinui_e2e_host_fixture_input" 2>/dev/null) || return 1
-  [ "$nuinui_e2e_host_fixture_canonical" = "$nuinui_e2e_host_fixture_input" ] || return 1
+  nuinui_e2e_host_vscode__valid_text "$nuinui_e2e_host_fixture_canonical" || return 1
   case "$nuinui_e2e_host_fixture_canonical" in
     "$nuinui_e2e_host_fixture_checkout"/*) return 1 ;;
   esac

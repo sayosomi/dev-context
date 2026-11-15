@@ -6,7 +6,7 @@ nuinui_e2e_usage() {
 Usage: nuinui-e2e {admit|status|start|cleanup-proof|release|recover|closure|host-check|host-prepare|host-status|host-cleanup|host-recover|host-closure} \
   --self-test --manifest <disposable-LANES.conf> --issue <canonical-identity> \
   --generation <caller-token> --tested-sha <40-lowercase-hex> [--lane <name>] \
-  [--fixture <absolute-canonical-external-file> --port <1-65535> \
+  [--fixture <absolute-existing-external-file> --port <1-65535> \
    [--locale default|ja] [--adapter fixture-no-process|vscode-isolated]]
 
 Accepted Issue identities are exactly:
@@ -17,7 +17,7 @@ Accepted Issue identities are exactly:
 Usage: nuinui-e2e {admit|status|start|release|recover|closure|host-check|host-prepare|host-status|host-cleanup|host-recover|host-closure} \
   --production --issue <canonical-identity> --generation <caller-token> \
   --tested-sha <40-lowercase-hex> [--lane human-e2e] \
-  [--fixture <absolute-canonical-external-file> --port <1-65535> [--locale default|ja]]
+  [--fixture <absolute-existing-external-file> --port <1-65535> [--locale default|ja]]
 
 Production mode uses only the canonical versioned LANES.conf and always uses
 the signed Microsoft VS Code adapter. Host readiness is not product PASS.

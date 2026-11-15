@@ -629,8 +629,8 @@ nuinui_e2e_host__input_parameters() {
   [ "$#" = 3 ] || return 2
   nuinui_e2e_host_fixture_rows=$(nuinui_e2e_host__fixture_identity \
     "$1" "$nuinui_e2e_host_checkout") || {
-      echo 'BLOCKED: fixture must be a canonical, regular external file outside the Human-test checkout' >&2
-      return 1
+      echo 'BLOCKED: fixture must be an existing, readable, absolute regular external file outside the Human-test checkout' >&2
+      return 2
     }
   nuinui_e2e_host_fixture=$(printf '%s\n' "$nuinui_e2e_host_fixture_rows" | sed -n '1p')
   nuinui_e2e_host_fixture_sha=$(printf '%s\n' "$nuinui_e2e_host_fixture_rows" | sed -n '2p')
@@ -640,12 +640,15 @@ nuinui_e2e_host__input_parameters() {
     echo 'BLOCKED: host fixture port must be an explicit integer from 1 through 65535' >&2
     return 1
   }
-  case "$nuinui_e2e_host_locale" in default|ja) ;; *) return 1 ;; esac
+  case "$nuinui_e2e_host_locale" in default|ja) ;; *)
+    echo 'BLOCKED: host fixture locale must be default or ja' >&2
+    return 2 ;;
+  esac
 }
 
 nuinui_e2e_host__assert_input_match() {
   [ "$#" = 3 ] || return 2
-  nuinui_e2e_host__input_parameters "$1" "$2" "$3" || return 1
+  nuinui_e2e_host__input_parameters "$1" "$2" "$3" || return 2
   [ "$nuinui_e2e_host_state" = ABSENT ] || {
     nuinui_e2e_host__read_record "$nuinui_e2e_host_intent" intent || return 1
     [ "$nuinui_e2e_host_r_adapter" = "$nuinui_e2e_host_requested_adapter" ] &&
@@ -678,10 +681,15 @@ nuinui_e2e_host__check() {
     echo 'BLOCKED: host-session metadata or resources are conflicting or malformed'
     return 1
   }
-  nuinui_e2e_host__assert_input_match "$4" "$5" "$6" || {
-    echo 'BLOCKED: host fixture request differs from the exact recorded session'
+  if nuinui_e2e_host__assert_input_match "$4" "$5" "$6"; then
+    :
+  else
+    nuinui_e2e_host_match_status=$?
+    if [ "$nuinui_e2e_host_match_status" -ne 2 ]; then
+      echo 'BLOCKED: host fixture request differs from the exact recorded session'
+    fi
     return 1
-  }
+  fi
   case "$nuinui_e2e_host_state" in
     ABSENT|READY) ;;
     *) echo "BLOCKED: host session is $nuinui_e2e_host_state"; return 1 ;;
@@ -689,7 +697,7 @@ nuinui_e2e_host__check() {
   if [ "$nuinui_e2e_host_requested_adapter" = vscode-isolated ] &&
     [ "$nuinui_e2e_host_state" = ABSENT ]; then
     nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
-      "$4" "$5" "$6" || return 1
+      "$nuinui_e2e_host_fixture" "$5" "$6" || return 1
     nuinui_e2e_host_vscode__port_free "$5" || return 1
   fi
 }
