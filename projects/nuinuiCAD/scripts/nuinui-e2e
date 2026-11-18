@@ -5429,57 +5429,26 @@ nuinui_e2e_host__completed_history_safe() {
     *" $nuinui_e2e_history_hash "*) return 0 ;;
   esac
 
-  # A compact terminal identity check distinguishes a closed generation from
-  # a corrupt or conflicting release receipt. Historical lane paths and
-  # manifest identity are intentionally not compared with today's manifest.
+  # For unrelated generations, the regular release and cleanup marker paths
+  # are the durable terminal boundary. Their contents belong to immutable
+  # history and are never reopened during new-startup admission.
   nuinui_e2e_history_release=$nuinui_e2e_history_git_dir/nuinui-github-e2e-release-v1.$nuinui_e2e_history_hash
+  nuinui_e2e_history_cleanup=$nuinui_e2e_history_git_dir/nuinui-github-e2e-cleanup-v1.$nuinui_e2e_history_hash
   nuinui_e2e__regular "$nuinui_e2e_history_release" || {
     echo "BLOCKED: completed generation $nuinui_e2e_history_hash has no regular release receipt"
     return 1
   }
-  nuinui_e2e_history_schema=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" schema_version) || return 1
-  nuinui_e2e_history_issue=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" issue) || return 1
-  nuinui_e2e_history_url=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" issue_url) || return 1
-  nuinui_e2e_history_token=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" local_id) || return 1
-  nuinui_e2e_history_repository=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" repository) || return 1
-  nuinui_e2e_history_release_generation=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" generation) || return 1
-  nuinui_e2e_history_tested=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" tested_sha) || return 1
-  nuinui_e2e_history_idle=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" idle_sha) || return 1
-  nuinui_e2e_history_state=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" record_state) || return 1
-  nuinui_e2e_history_manifest_sha=$(nuinui_ownership_field \
-    "$nuinui_e2e_history_release" manifest_sha256) || return 1
-  nuinui_e2e_identity_number "$nuinui_e2e_history_issue" >/dev/null || return 1
-  [ "$nuinui_e2e_history_schema" = 1 ] &&
-    [ "$nuinui_e2e_history_url" = "$(nuinui_e2e_identity_url \
-      "$nuinui_e2e_history_issue")" ] &&
-    [ "$nuinui_e2e_history_token" = "$(nuinui_e2e_identity_token \
-      "$nuinui_e2e_history_issue")" ] &&
-    [ "$nuinui_e2e_history_repository" = sayosomi/nuinuiCAD ] &&
-    nuinui_e2e_valid_generation "$nuinui_e2e_history_release_generation" &&
-    [ "$(nuinui_e2e__generation_hash \
-      "$nuinui_e2e_history_release_generation")" = "$nuinui_e2e_history_hash" ] &&
-    [ "$nuinui_e2e_history_state" = complete ] &&
-    nuinui_e2e_valid_sha "$nuinui_e2e_history_tested" &&
-    nuinui_e2e_valid_sha "$nuinui_e2e_history_idle" &&
-    nuinui_e2e_valid_digest "$nuinui_e2e_history_manifest_sha" || {
-      echo "BLOCKED: completed generation $nuinui_e2e_history_hash has a conflicting release receipt"
-      return 1
-    }
+  nuinui_e2e__regular "$nuinui_e2e_history_cleanup" || {
+    echo "BLOCKED: completed generation $nuinui_e2e_history_hash has no regular native cleanup receipt"
+    return 1
+  }
   nuinui_e2e_history_host_cleanup=$nuinui_e2e_history_git_dir/nuinui-github-e2e-host-cleanup-v1.$nuinui_e2e_history_hash
   if nuinui_e2e__exists "$nuinui_e2e_history_host_cleanup"; then
-    # Closed generations are immutable history. Require terminal receipt
-    # files, but never reparse their former manifest or lane context here.
+    # A host-cleanup marker is only historical after native cleanup and
+    # release have both reached their terminal marker paths. Do not read the
+    # old host receipt contents here.
     nuinui_e2e__regular "$nuinui_e2e_history_host_cleanup" &&
-      nuinui_e2e__regular "$nuinui_e2e_history_git_dir/nuinui-github-e2e-cleanup-v1.$nuinui_e2e_history_hash" || {
+      nuinui_e2e__regular "$nuinui_e2e_history_cleanup" || {
         echo "BLOCKED: completed generation $nuinui_e2e_history_hash has invalid terminal receipts"
         return 1
       }

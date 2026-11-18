@@ -859,15 +859,21 @@ recovered_native_release=$(native_path release "$recovered_resources")
 cp "$recovered_native_completion" "$fixture_root/completion.saved" ||
   fail 'could not save disposable completion receipt'
 printf 'corrupt evidence\n' > "$recovered_native_completion"
+recovered_native_completion_hash=$(shasum -a 256 "$recovered_native_completion" |
+  awk 'NR == 1 {print $1}')
+recovered_host_history_before=$(host_generation_fingerprint "$recovered_resources")
 advance_default after-corrupt-completion-proof
-before=$(fingerprint)
-if invoke start "$fixture_issue" host-fixture-block-corrupt-proof-0001 \
-  human "$fixture_tested_sha"; then
-  fail 'generation started with corrupted completion receipt'
-fi
-contains 'PREFLIGHT BLOCKED'
-[ "$(fingerprint)" = "$before" ] ||
-  fail 'blocked start changed metadata while completion receipt was corrupt'
+corrupt_history_followup=host-fixture-after-malformed-history-0001
+ok start "$fixture_issue" "$corrupt_history_followup" human "$fixture_tested_sha"
+contains 'NATIVE E2E FIXTURE STARTED'
+[ "$(shasum -a 256 "$recovered_native_completion" | awk 'NR == 1 {print $1}')" = \
+  "$recovered_native_completion_hash" ] ||
+  fail 'startup changed malformed completed history'
+[ "$(host_generation_fingerprint "$recovered_resources")" = \
+  "$recovered_host_history_before" ] || fail 'startup changed old host evidence'
+ok cleanup-proof "$fixture_issue" "$corrupt_history_followup" human "$fixture_tested_sha"
+ok release "$fixture_issue" "$corrupt_history_followup" human "$fixture_tested_sha"
+ok closure "$fixture_issue" "$corrupt_history_followup" human "$fixture_tested_sha"
 cp "$fixture_root/completion.saved" "$recovered_native_completion" ||
   fail 'could not restore disposable completion receipt'
 rm "$recovered_native_release"
@@ -906,6 +912,24 @@ contains 'NATIVE E2E FIXTURE STARTED'
 handoff_next=host-fixture-after-handoff-next-0001
 complete_recovered_generation "$after_pending_next" "$handoff_next" \
   after-host-handoff after-handoff-recovery
+
+# Completed history stays read-only, but a surviving historical host root
+# still blocks a new generation.
+new_fixture one
+history_generation=completed-history-with-surviving-root-0001
+history_next_generation=start-after-surviving-root-0001
+ok start "$fixture_issue" "$history_generation" human "$fixture_tested_sha"
+ok cleanup-proof "$fixture_issue" "$history_generation" human "$fixture_tested_sha"
+ok release "$fixture_issue" "$history_generation" human "$fixture_tested_sha"
+ok closure "$fixture_issue" "$history_generation" human "$fixture_tested_sha"
+history_root=$(host_root_path "$history_generation")
+mkdir "$history_root" || fail 'create surviving historical host root'
+printf 'preserve historical resource\n' > "$history_root/foreign.txt"
+history_before=$(fingerprint)
+blocked start "$fixture_issue" "$history_next_generation" human "$fixture_tested_sha"
+[ -f "$history_root/foreign.txt" ] || fail 'startup removed a surviving historical host resource'
+[ "$(fingerprint)" = "$history_before" ] ||
+  fail 'blocked startup changed completed history or its surviving host resource'
 
 # A foreign root at the deterministic path is never adopted or removed.
 new_fixture one
