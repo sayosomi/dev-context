@@ -345,39 +345,28 @@ E2E judgment or inferred PASS is permitted.
 
 ### Production lifecycle
 
-The live helper requires explicit `--production` and selects only the canonical
+The live helper requires explicit --production and selects only the canonical
 standard-clone executable and versioned manifest. It accepts canonical
-`sayosomi/nuinuiCAD#N`, issue URL, or `GH-sayosomi-nuinuiCAD-N` identities.
-Production rejects caller-supplied manifests / adapters and every
-`NUINUI_E2E_TEST_*` override. The explicit `--self-test --manifest` mode remains
+sayosomi/nuinuiCAD#N, issue URL, or GH-sayosomi-nuinuiCAD-N identities.
+Production rejects caller-supplied manifests/adapters and every
+NUINUI_E2E_TEST_* override. The explicit --self-test --manifest mode remains
 fixture-only and cannot supply production checkout authority.
 
-For one canonical Issue, generation, and exact tested SHA, the lifecycle is:
+For normal host startup, exact snapshot selection and the Human handoff, use
+the [canonical one-command Human E2E startup procedure](./VS-CODE-E2E.md#one-command-human-e2e-startup).
+This page continues to own Human-test checkout state, native lifecycle and
+recovery.
 
-1. `admit` proves the Human-test lane is FREE, clean, detached, registered, and
-   at its independently verified idle revision. It also proves complete
-   topology and an idle implementation lane.
-2. `start` fetches authoritative `main`, requires the caller's tested SHA to
-   match it exactly, detaches the Human-test checkout to that SHA, and writes
-   the generation-bound marker. A duplicate start is read-only only when every
-   identity still matches.
-3. `host-check` validates an external fixture, explicit port, exact immutable
-   dogfood snapshot, artifact hashes / paths, signed Microsoft VS Code app,
-   and process / listener availability. `host-prepare` launches the isolated
-   host and records the generation-owned profile, snapshot, process, and
-   loopback CDP listener. Host readiness is not product PASS.
-4. Only the Human performs and judges Manual E2E in the actual VS Code GUI.
-5. `host-closure` proves and removes only the owned host resources, binds the
-   host cleanup receipt to the native generation, releases the checkout, and
-   independently proves final clean detached closure. `recover` and
-   `host-recover` handle only their exact recorded interruption cases; unclear
-   ownership or process identity remains blocked.
+Host readiness is setup evidence, never product PASS. Only the Human performs
+and judges Manual E2E in the actual VS Code GUI. host-closure proves and
+removes only the owned host resources, binds cleanup to the native generation,
+releases the checkout and independently proves final clean detached closure.
+For status or interruption, use the printed exact generation with host-status,
+host-recover or recover as applicable. Implementation checkout cleanliness
+does not prevent exact-generation status, recovery or closure after startup.
 
-Every production operation reruns complete preflight. Missing / dirty / named
-checkouts, incomplete registered topology, stale or wrong tested SHA, foreign
-markers / sessions / processes / listeners, malformed receipts, and artifact
-mismatches fail closed before the relevant mutation. The helper does not
-choose an oracle, operate the GUI, or judge product behavior.
+The helper does not choose an oracle, operate the GUI, or judge product
+behavior.
 
 ### Native generation, occupancy and recovery
 

@@ -169,11 +169,22 @@ Remove host-independent deterministic checks. Return ambiguous product oracles f
 
 ## Native GitHub Issue start and resume
 
-Starting or resuming required E2E means reaching an actionable Human handoff, not creating an E2E-specific chat or only changing state. First verify current Issue plan, tested SHA, reverse map, stabilization eligibility and exact checkout ownership.
+Starting or resuming required E2E means reaching an actionable Human handoff,
+not creating an E2E-specific chat or only changing state. First verify the
+current Issue plan, exact tested SHA, reverse map, stabilization eligibility
+and checkout ownership.
 
-For native Issues [CHECKOUTS.md](./CHECKOUTS.md) and [LOCAL-TOOLS.md](./LOCAL-TOOLS.md) own `nuinui-e2e --production` admission/start/closure; [VS-CODE-E2E.md](./VS-CODE-E2E.md) owns VS Code host setup. Only the Human operates and judges GUI units. Record plan, start, observations, results and exact closure under [ISSUES.md](./ISSUES.md#native-github-manual-e2e-checkpoints); host readiness never means product PASS.
+For native Issues, CHECKOUTS and LOCAL-TOOLS own native checkout state and
+recovery. VS-CODE-E2E owns host startup; use its one-command ready operation
+for the normal launch. The helper reports the exact generation, tested SHA
+and snapshot identity. Only the Human operates and judges GUI units. Record
+the plan, observations, results and exact closure under ISSUES. Host readiness
+never means product PASS.
 
-Do not use `nuinui e2e-start-command`, `nuinui-e2e-prepare`, SAY/Linear state or a legacy implementation-release gate for new native Issues. Exact compatible already-admitted SAY recovery remains reachable through CHECKOUTS / LOCAL-TOOLS legacy references.
+Do not use legacy e2e-start, nuinui-e2e-prepare, SAY/Linear state or an
+implementation-release gate for new native Issues. Exact compatible
+already-admitted SAY recovery remains reachable through CHECKOUTS and
+LOCAL-TOOLS legacy references.
 
 ## Result handling by Sol High
 

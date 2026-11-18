@@ -9,6 +9,10 @@ Usage: nuinui-e2e {admit|status|start|cleanup-proof|release|recover|closure|host
   [--fixture <absolute-existing-external-file> --port <1-65535> \
    [--locale default|ja] [--adapter fixture-no-process|vscode-isolated]]
 
+Usage: nuinui-e2e ready --self-test --manifest <disposable-LANES.conf> \
+  --issue <canonical-identity> --tested-sha <40-lowercase-hex> \
+  [--fixture <absolute-existing-external-file>] [--locale default|ja]
+
 Accepted Issue identities are exactly:
   sayosomi/nuinuiCAD#N
   https://github.com/sayosomi/nuinuiCAD/issues/N
@@ -19,8 +23,14 @@ Usage: nuinui-e2e {admit|status|start|release|recover|closure|host-check|host-pr
   --tested-sha <40-lowercase-hex> [--lane human-e2e] \
   [--fixture <absolute-existing-external-file> --port <1-65535> [--locale default|ja]]
 
+Usage: nuinui-e2e ready --production --issue <canonical-identity> \
+  --tested-sha <40-lowercase-hex> [--fixture <absolute-existing-external-file>] \
+  [--locale default|ja]
+
 Production mode uses only the canonical versioned LANES.conf and always uses
-the signed Microsoft VS Code adapter. Host readiness is not product PASS.
+the signed Microsoft VS Code adapter. ready allocates a generation and loopback
+port, uses a safe default fixture when omitted, and launches the isolated host.
+Host readiness is not product PASS.
 USAGE
 }
 
@@ -32,6 +42,68 @@ nuinui_e2e_cli_resolve_program() {
   esac
   [ -n "$nuinui_e2e_cli_program" ] || return 1
   nuinui_e2e_cli_program_path=$(realpath "$nuinui_e2e_cli_program" 2>/dev/null) || return 1
+}
+
+nuinui_e2e_ready() {
+  [ "$#" = 6 ] || return 2
+  nuinui_e2e_ready_manifest=$1
+  nuinui_e2e_ready_lane=$2
+  nuinui_e2e_ready_issue=$3
+  nuinui_e2e_ready_tested=$4
+  nuinui_e2e_ready_fixture=$5
+  nuinui_e2e_ready_locale=$6
+  nuinui_e2e_ready_mode=yes
+  nuinui_e2e_ready_topology_checked=no
+  nuinui_e2e_host_adapter_arg=vscode-isolated
+  nuinui_e2e_expected_tested=$nuinui_e2e_ready_tested
+  nuinui_e2e_ready_issue_number=$(nuinui_e2e_identity_number \
+    "$nuinui_e2e_ready_issue") || return 1
+
+  while :; do
+    nuinui_e2e_ready_random=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n') || return 1
+    [ "${#nuinui_e2e_ready_random}" = 16 ] || return 1
+    nuinui_e2e_expected_generation=issue-$nuinui_e2e_ready_issue_number-$(date -u '+%Y%m%dT%H%M%SZ')-$nuinui_e2e_ready_random
+    nuinui_e2e__selected_context "$nuinui_e2e_ready_manifest" \
+      "$nuinui_e2e_ready_lane" "$nuinui_e2e_ready_issue" || return 1
+    if ! nuinui_e2e__generation_seen "$nuinui_e2e_expected_generation"; then
+      break
+    fi
+  done
+
+  nuinui_e2e_admit "$nuinui_e2e_ready_manifest" "$nuinui_e2e_ready_lane" \
+    "$nuinui_e2e_ready_issue" || return 1
+  nuinui_e2e_host__operation_context host-prepare \
+    "$nuinui_e2e_ready_manifest" "$nuinui_e2e_ready_lane" \
+    "$nuinui_e2e_ready_issue" || return 1
+  nuinui_e2e_host__prepare_production_parent || {
+    echo 'BLOCKED: Human E2E host parent is unsafe or unavailable'
+    return 1
+  }
+  if [ -z "$nuinui_e2e_ready_fixture" ]; then
+    nuinui_e2e_ready_fixture=$(nuinui_e2e_host__default_fixture) || return 1
+  fi
+  nuinui_e2e_ready_port=$(nuinui_e2e_host_vscode__allocate_port) || {
+    echo 'BLOCKED: an ephemeral loopback port could not be allocated'
+    return 1
+  }
+  nuinui_e2e_host__input_parameters "$nuinui_e2e_ready_fixture" \
+    "$nuinui_e2e_ready_port" "$nuinui_e2e_ready_locale" || return 1
+  nuinui_e2e_host_vscode__validate_artifacts "$nuinui_e2e_expected_tested" \
+    "$nuinui_e2e_host_fixture" "$nuinui_e2e_ready_port" \
+    "$nuinui_e2e_ready_locale" || return 1
+  nuinui_e2e_host_vscode__port_free "$nuinui_e2e_ready_port" || return 1
+
+  nuinui_e2e_start "$nuinui_e2e_ready_manifest" "$nuinui_e2e_ready_lane" \
+    "$nuinui_e2e_ready_issue" "$nuinui_e2e_ready_tested" || return 1
+  nuinui_e2e_host_prepare "$nuinui_e2e_ready_manifest" \
+    "$nuinui_e2e_ready_lane" "$nuinui_e2e_ready_issue" \
+    "$nuinui_e2e_host_fixture" "$nuinui_e2e_ready_port" \
+    "$nuinui_e2e_ready_locale" || return 1
+  printf 'HUMAN E2E READY\nissue=%s\nlane=%s\ntested_sha=%s\ngeneration=%s\nfixture=%s\nport=%s\nlocale=%s\nadapter=vscode-isolated\nproduct_pass=no\n' \
+    "$nuinui_e2e_expected_issue" "$nuinui_e2e_expected_lane" \
+    "$nuinui_e2e_expected_tested" "$nuinui_e2e_expected_generation" \
+    "$nuinui_e2e_host_fixture" "$nuinui_e2e_ready_port" \
+    "$nuinui_e2e_ready_locale"
 }
 
 nuinui_e2e_cli_main() {
@@ -159,8 +231,17 @@ nuinui_e2e_cli_main() {
     return 1
   }
   [ "$nuinui_e2e_cli_seen_issue" = yes ] || { echo 'ERROR: --issue is required' >&2; return 2; }
-  [ "$nuinui_e2e_cli_seen_generation" = yes ] || { echo 'ERROR: --generation is required' >&2; return 2; }
   [ "$nuinui_e2e_cli_seen_tested" = yes ] || { echo 'ERROR: --tested-sha is required' >&2; return 2; }
+  if [ "$nuinui_e2e_command" = ready ]; then
+    [ "$nuinui_e2e_cli_seen_generation" = no ] &&
+      [ "$nuinui_e2e_cli_seen_port" = no ] &&
+      [ "$nuinui_e2e_cli_seen_adapter" = no ] || {
+        echo 'ERROR: ready allocates its own generation and port and does not accept adapters' >&2
+        return 2
+      }
+  else
+    [ "$nuinui_e2e_cli_seen_generation" = yes ] || { echo 'ERROR: --generation is required' >&2; return 2; }
+  fi
 
   if [ "$nuinui_e2e_cli_production" = yes ]; then
     [ "$nuinui_e2e_cli_seen_manifest" = no ] || {
@@ -179,6 +260,15 @@ nuinui_e2e_cli_main() {
       host-check|host-prepare)
         [ "$nuinui_e2e_cli_seen_fixture" = yes ] || { echo 'ERROR: --fixture is required for this host command' >&2; return 2; }
         [ "$nuinui_e2e_cli_seen_port" = yes ] || { echo 'ERROR: --port is required for this host command' >&2; return 2; }
+        case "$nuinui_e2e_cli_locale" in default|ja) ;; *) echo 'ERROR: --locale must be default or ja' >&2; return 2 ;; esac
+        ;;
+      ready)
+        [ "$nuinui_e2e_cli_seen_port" = no ] || { echo 'ERROR: ready allocates its own port' >&2; return 2; }
+        [ "$nuinui_e2e_cli_seen_lane" = no ] ||
+          [ "$nuinui_e2e_cli_lane" = human-e2e ] || {
+            echo 'ERROR: production ready uses the canonical human-e2e lane' >&2
+            return 2
+          }
         case "$nuinui_e2e_cli_locale" in default|ja) ;; *) echo 'ERROR: --locale must be default or ja' >&2; return 2 ;; esac
         ;;
       *)
@@ -216,6 +306,14 @@ nuinui_e2e_cli_main() {
       case "$nuinui_e2e_cli_locale" in default|ja) ;; *) echo 'ERROR: --locale must be default or ja' >&2; return 2 ;; esac
       case "$nuinui_e2e_cli_adapter" in fixture-no-process|vscode-isolated) ;; *) echo 'ERROR: --adapter must be fixture-no-process or vscode-isolated' >&2; return 2 ;; esac
       ;;
+    ready)
+      [ "$nuinui_e2e_cli_seen_port" = no ] &&
+        [ "$nuinui_e2e_cli_seen_adapter" = no ] || {
+          echo 'ERROR: ready allocates its own port and requires vscode-isolated' >&2
+          return 2
+        }
+      case "$nuinui_e2e_cli_locale" in default|ja) ;; *) echo 'ERROR: --locale must be default or ja' >&2; return 2 ;; esac
+      ;;
     *)
       [ "$nuinui_e2e_cli_seen_fixture" = no ] &&
         [ "$nuinui_e2e_cli_seen_port" = no ] &&
@@ -237,6 +335,14 @@ nuinui_e2e_cli_main() {
   nuinui_e2e_expected_tested=$nuinui_e2e_cli_tested
   nuinui_e2e_host_adapter_arg=$nuinui_e2e_cli_adapter
   case "$nuinui_e2e_command" in
+    ready)
+      nuinui_e2e_host_adapter_arg=vscode-isolated
+      nuinui_e2e_ready_mode=yes
+      nuinui_e2e_ready_topology_checked=no
+      nuinui_e2e_ready "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" \
+        "$nuinui_e2e_cli_issue" "$nuinui_e2e_cli_tested" \
+        "$nuinui_e2e_cli_fixture" "$nuinui_e2e_cli_locale"
+      ;;
     admit)
       [ "$nuinui_e2e_cli_seen_tested" = yes ] || return 2
       nuinui_e2e_admit "$nuinui_e2e_cli_manifest" "$nuinui_e2e_cli_lane" "$nuinui_e2e_cli_issue"

@@ -10,6 +10,16 @@ raise SystemExit(1 if any(ord(character) < 32 or ord(character) == 127 for chara
 PY
 }
 
+nuinui_e2e_host_vscode__allocate_port() {
+  [ "$#" = 0 ] || return 2
+  python3 - <<'PY'
+import socket
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+    listener.bind(("127.0.0.1", 0))
+    print(listener.getsockname()[1])
+PY
+}
+
 nuinui_e2e_host_vscode__fake_launcher_content() {
   printf '#!/usr/bin/env node\n'
   cat <<'JS'
@@ -177,6 +187,183 @@ print("rust_binary_sha256=" + files["bin/evaluation_stdio"])
 PY
 }
 
+nuinui_e2e_host_vscode__build_exact_snapshot() {
+  [ "$#" = 2 ] || return 2
+  nuinui_e2e_vscode_build_sha=$1
+  nuinui_e2e_vscode_build_root=$2
+  if [ "${nuinui_e2e_self_test:-no}" = yes ]; then
+    if [ "${nuinui_e2e_ready_mode:-no}" = yes ] &&
+      nuinui_e2e_host__production_root_mode; then
+      # Production-root self-tests exercise the same exact-checkout boundary
+      # before allowing their disposable build adapter to stand in for npm.
+      nuinui_e2e_vscode_build_lanes=$(lane_manifest_lanes_by_role \
+        "$nuinui_e2e_manifest_path" implementation) || return 1
+      case "$nuinui_e2e_vscode_build_lanes" in ''|*' '*)
+        echo 'BLOCKED: existing dogfood owner requires a clean main checkout at the exact tested SHA'
+        return 1
+        ;;
+      esac
+      nuinui_e2e_vscode_build_repo=$(lane_manifest_lane_path \
+        "$nuinui_e2e_manifest_path" "$nuinui_e2e_vscode_build_lanes") || return 1
+      git -C "$nuinui_e2e_vscode_build_repo" fetch origin --prune >/dev/null 2>&1 || {
+        echo 'BLOCKED: existing dogfood owner requires a clean main checkout at the exact tested SHA'
+        return 1
+      }
+      nuinui_e2e_vscode_build_branch=$(git -C "$nuinui_e2e_vscode_build_repo" \
+        symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+      nuinui_e2e_vscode_build_status=$(git -C "$nuinui_e2e_vscode_build_repo" \
+        status --porcelain --untracked-files=all 2>/dev/null) || return 1
+      nuinui_e2e_vscode_build_head=$(git -C "$nuinui_e2e_vscode_build_repo" \
+        rev-parse HEAD 2>/dev/null) || return 1
+      nuinui_e2e_vscode_build_main=$(git -C "$nuinui_e2e_vscode_build_repo" \
+        rev-parse --verify origin/main 2>/dev/null) || return 1
+      [ "$nuinui_e2e_vscode_build_branch" = main ] &&
+        [ -z "$nuinui_e2e_vscode_build_status" ] &&
+        [ "$nuinui_e2e_vscode_build_head" = "$nuinui_e2e_vscode_build_sha" ] &&
+        [ "$nuinui_e2e_vscode_build_main" = "$nuinui_e2e_vscode_build_sha" ] || {
+          echo 'BLOCKED: existing dogfood owner requires a clean main checkout at the exact tested SHA'
+          return 1
+        }
+    fi
+    nuinui_e2e_vscode_build_adapter=${NUINUI_E2E_TEST_DOGFOOD_BUILD:-}
+    [ -n "$nuinui_e2e_vscode_build_adapter" ] &&
+      nuinui_e2e__regular "$nuinui_e2e_vscode_build_adapter" &&
+      [ -x "$nuinui_e2e_vscode_build_adapter" ] &&
+      [ "$(realpath "$nuinui_e2e_vscode_build_adapter" 2>/dev/null)" = \
+        "$nuinui_e2e_vscode_build_adapter" ] || {
+        echo 'BLOCKED: disposable dogfood build owner adapter is missing or unsafe'
+        return 1
+      }
+    nuinui_e2e__under "$nuinui_e2e_fixture_root" \
+      "$nuinui_e2e_vscode_build_adapter" || {
+        echo 'BLOCKED: disposable dogfood build owner adapter is outside its fixture'
+        return 1
+      }
+    "$nuinui_e2e_vscode_build_adapter" "$nuinui_e2e_vscode_build_sha" \
+      "$nuinui_e2e_vscode_build_root" || {
+        echo 'BLOCKED: disposable dogfood build owner did not prepare the exact requested SHA'
+        return 1
+      }
+    return 0
+  fi
+  [ "${nuinui_e2e_production:-no}" = yes ] || {
+    echo 'BLOCKED: exact dogfood snapshot is absent outside production mode'
+    return 1
+  }
+
+  # The existing product dogfood owner can only build clean current main.
+  # Keep that restriction conditional on an absent exact immutable snapshot.
+  nuinui_e2e__full_preflight "$nuinui_e2e_manifest_path" >/dev/null || {
+    echo 'BLOCKED: dogfood build requires the existing implementation lane to be free'
+    return 1
+  }
+  nuinui_e2e_vscode_build_lanes=$(lane_manifest_lanes_by_role \
+    "$nuinui_e2e_manifest_path" implementation) || return 1
+  [ "$nuinui_e2e_vscode_build_lanes" = main ] || {
+    echo 'BLOCKED: dogfood build requires the declared main implementation lane'
+    return 1
+  }
+  nuinui_e2e_vscode_build_repo=$(lane_manifest_lane_path \
+    "$nuinui_e2e_manifest_path" main) || return 1
+  git -C "$nuinui_e2e_vscode_build_repo" fetch origin --prune >/dev/null 2>&1 || {
+    echo 'BLOCKED: product dogfood build prerequisite fetch failed'
+    return 1
+  }
+  nuinui_e2e_vscode_build_branch=$(git -C "$nuinui_e2e_vscode_build_repo" \
+    symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  nuinui_e2e_vscode_build_status=$(git -C "$nuinui_e2e_vscode_build_repo" \
+    status --porcelain --untracked-files=all 2>/dev/null) || return 1
+  nuinui_e2e_vscode_build_head=$(git -C "$nuinui_e2e_vscode_build_repo" \
+    rev-parse HEAD 2>/dev/null) || return 1
+  nuinui_e2e_vscode_build_main=$(git -C "$nuinui_e2e_vscode_build_repo" \
+    rev-parse --verify origin/main 2>/dev/null) || return 1
+  [ "$nuinui_e2e_vscode_build_branch" = main ] &&
+    [ -z "$nuinui_e2e_vscode_build_status" ] &&
+    [ "$nuinui_e2e_vscode_build_head" = "$nuinui_e2e_vscode_build_sha" ] &&
+    [ "$nuinui_e2e_vscode_build_main" = "$nuinui_e2e_vscode_build_sha" ] || {
+      echo 'BLOCKED: existing dogfood owner requires a clean main checkout at the exact tested SHA'
+      return 1
+    }
+  [ -f "$nuinui_e2e_vscode_build_repo/package.json" ] &&
+    [ ! -L "$nuinui_e2e_vscode_build_repo/package.json" ] &&
+    command -v npm >/dev/null 2>&1 || {
+      echo 'BLOCKED: existing product dogfood build owner is unavailable'
+      return 1
+    }
+  echo "BUILDING EXACT DOGFOOD SNAPSHOT tested_sha=$nuinui_e2e_vscode_build_sha"
+  (CDPATH= cd -- "$nuinui_e2e_vscode_build_repo" && npm run dogfood:build) || {
+    echo 'BLOCKED: existing product dogfood build owner did not complete'
+    return 1
+  }
+}
+
+nuinui_e2e_host_vscode__ensure_snapshot() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_vscode_dogfood_root=$1
+  nuinui_e2e_vscode_tested=$2
+  nuinui_e2e_vscode_expected_identity=$3
+  nuinui_e2e_vscode_snapshot=$nuinui_e2e_vscode_dogfood_root/snapshots/$nuinui_e2e_vscode_expected_identity
+  if nuinui_e2e__exists "$nuinui_e2e_vscode_snapshot"; then
+    [ -d "$nuinui_e2e_vscode_dogfood_root" ] &&
+      [ ! -L "$nuinui_e2e_vscode_dogfood_root" ] &&
+      [ "$(realpath "$nuinui_e2e_vscode_dogfood_root" 2>/dev/null)" = \
+        "$nuinui_e2e_vscode_dogfood_root" ] || {
+        echo 'BLOCKED: prepared dogfood root is missing, symlinked, or non-canonical'
+        return 1
+      }
+  else
+    if [ -e "$nuinui_e2e_vscode_dogfood_root" ] ||
+      [ -L "$nuinui_e2e_vscode_dogfood_root" ]; then
+      [ -d "$nuinui_e2e_vscode_dogfood_root" ] &&
+        [ ! -L "$nuinui_e2e_vscode_dogfood_root" ] &&
+        [ "$(realpath "$nuinui_e2e_vscode_dogfood_root" 2>/dev/null)" = \
+          "$nuinui_e2e_vscode_dogfood_root" ] || {
+          echo 'BLOCKED: prepared dogfood root is unsafe'
+          return 1
+        }
+    fi
+    [ "${nuinui_e2e_ready_mode:-no}" = yes ] || {
+      echo 'BLOCKED: exact immutable dogfood snapshot is absent'
+      return 1
+    }
+    nuinui_e2e_host_vscode__build_exact_snapshot \
+      "$nuinui_e2e_vscode_tested" "$nuinui_e2e_vscode_dogfood_root" || return 1
+    [ -d "$nuinui_e2e_vscode_dogfood_root" ] &&
+      [ ! -L "$nuinui_e2e_vscode_dogfood_root" ] &&
+      [ "$(realpath "$nuinui_e2e_vscode_dogfood_root" 2>/dev/null)" = \
+        "$nuinui_e2e_vscode_dogfood_root" ] || {
+        echo 'BLOCKED: dogfood owner did not produce the canonical dogfood root'
+        return 1
+      }
+  fi
+  [ "$(realpath "$nuinui_e2e_vscode_snapshot" 2>/dev/null)" = \
+    "$nuinui_e2e_vscode_snapshot" ] || {
+    echo 'BLOCKED: exact dogfood snapshot path is missing or non-canonical'
+    return 1
+  }
+  nuinui_e2e_vscode_snapshot_rows=$(nuinui_e2e_host_vscode__snapshot_info \
+    "$nuinui_e2e_vscode_snapshot" "$nuinui_e2e_vscode_tested" \
+    "$nuinui_e2e_vscode_expected_identity") || return 1
+  nuinui_e2e_vscode_snapshot_sha=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^snapshot_sha256=//p')
+  nuinui_e2e_vscode_snapshot_stat=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^snapshot_identity_stat=//p')
+  nuinui_e2e_vscode_extension=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^extension_path=//p')
+  nuinui_e2e_vscode_extension_sha=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^extension_sha256=//p')
+  nuinui_e2e_vscode_rust=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^rust_binary_path=//p')
+  nuinui_e2e_vscode_rust_sha=$(printf '%s\n' \
+    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^rust_binary_sha256=//p')
+  [ -n "$nuinui_e2e_vscode_extension" ] &&
+    [ -n "$nuinui_e2e_vscode_rust" ] &&
+    [ -n "$nuinui_e2e_vscode_rust_sha" ] &&
+    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_snapshot_sha" &&
+    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_extension_sha" &&
+    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_rust_sha"
+}
+
 nuinui_e2e_host_vscode__app_info() {
   [ "$#" = 1 ] || return 2
   nuinui_e2e_vscode_app_root=$1
@@ -273,79 +460,41 @@ nuinui_e2e_host_vscode__validate_artifacts() {
 
   if [ -n "${NUINUI_E2E_TEST_DOGFOOD_ROOT:-}" ]; then
     [ "$nuinui_e2e_self_test" = yes ] || return 1
-    [ -d "$NUINUI_E2E_TEST_DOGFOOD_ROOT" ] &&
-      [ ! -L "$NUINUI_E2E_TEST_DOGFOOD_ROOT" ] || return 1
-    nuinui_e2e_vscode_dogfood_root=$(realpath \
-      "$NUINUI_E2E_TEST_DOGFOOD_ROOT" 2>/dev/null) || return 1
-    [ "$nuinui_e2e_vscode_dogfood_root" = "$NUINUI_E2E_TEST_DOGFOOD_ROOT" ] || return 1
+    nuinui_e2e_vscode_dogfood_root=$NUINUI_E2E_TEST_DOGFOOD_ROOT
+    case "$nuinui_e2e_vscode_dogfood_root" in /*) ;; *) return 1 ;; esac
+    if nuinui_e2e__exists "$nuinui_e2e_vscode_dogfood_root"; then
+      [ -d "$nuinui_e2e_vscode_dogfood_root" ] &&
+        [ ! -L "$nuinui_e2e_vscode_dogfood_root" ] &&
+        [ "$(realpath "$nuinui_e2e_vscode_dogfood_root" 2>/dev/null)" = \
+          "$nuinui_e2e_vscode_dogfood_root" ] || return 1
+    fi
     case "$nuinui_e2e_vscode_dogfood_root" in
       "$nuinui_e2e_fixture_root"/*) ;;
       *) echo 'BLOCKED: test dogfood root is outside the verified disposable fixture'; return 1 ;;
     esac
   else
     nuinui_e2e_vscode_dogfood_root=${HOME:?}/.nuinuicad/dogfood
-    [ -d "$nuinui_e2e_vscode_dogfood_root" ] &&
-      [ ! -L "$nuinui_e2e_vscode_dogfood_root" ] || return 1
-    [ "$(realpath "$nuinui_e2e_vscode_dogfood_root" 2>/dev/null)" = \
-      "$nuinui_e2e_vscode_dogfood_root" ] || {
-        echo 'BLOCKED: prepared dogfood root is missing, symlinked, or non-canonical'
-        return 1
-      }
+    if nuinui_e2e__exists "$nuinui_e2e_vscode_dogfood_root"; then
+      [ -d "$nuinui_e2e_vscode_dogfood_root" ] &&
+        [ ! -L "$nuinui_e2e_vscode_dogfood_root" ] &&
+        [ "$(realpath "$nuinui_e2e_vscode_dogfood_root" 2>/dev/null)" = \
+          "$nuinui_e2e_vscode_dogfood_root" ] || {
+          echo 'BLOCKED: prepared dogfood root is unsafe or non-canonical'
+          return 1
+        }
+    fi
   fi
-  nuinui_e2e_vscode_current=$nuinui_e2e_vscode_dogfood_root/current.json
-  nuinui_e2e__regular "$nuinui_e2e_vscode_current" || {
-    echo 'BLOCKED: prepared artifact selection is missing or unsafe'
-    return 1
-  }
   case "$(uname -m)" in
     x86_64) nuinui_e2e_vscode_architecture=x64 ;;
     aarch64|arm64) nuinui_e2e_vscode_architecture=arm64 ;;
     *) nuinui_e2e_vscode_architecture=unknown ;;
   esac
   nuinui_e2e_vscode_expected_identity=$nuinui_e2e_vscode_tested-darwin-$nuinui_e2e_vscode_architecture
-  nuinui_e2e_vscode_selected=$(python3 - "$nuinui_e2e_vscode_current" \
-    "$nuinui_e2e_vscode_expected_identity" <<'PY'
-import json, os, stat, sys
-path, expected = sys.argv[1:]
-try:
-    if stat.S_ISLNK(os.lstat(path).st_mode): raise ValueError("symbolic link")
-    with open(path, encoding="utf-8") as stream: data = json.load(stream)
-except (OSError, ValueError) as error:
-    raise SystemExit("BLOCKED: prepared artifact selection is invalid: " + str(error))
-if not isinstance(data, dict) or set(data) != {"schemaVersion", "identity"} or data["schemaVersion"] != 1 or data["identity"] != expected:
-    raise SystemExit("BLOCKED: prepared dogfood selection does not name the exact tested SHA and Mac")
-print(data["identity"])
-PY
-  ) || return 1
-  [ "$nuinui_e2e_vscode_selected" = "$nuinui_e2e_vscode_expected_identity" ] || return 1
-  nuinui_e2e_vscode_snapshot=$nuinui_e2e_vscode_dogfood_root/snapshots/$nuinui_e2e_vscode_selected
-  [ "$(realpath "$nuinui_e2e_vscode_snapshot" 2>/dev/null)" = \
-    "$nuinui_e2e_vscode_snapshot" ] || {
-      echo 'BLOCKED: selected prepared artifact snapshot is missing or non-canonical'
-      return 1
-    }
+  nuinui_e2e_vscode_selected=$nuinui_e2e_vscode_expected_identity
   echo 'HOST PREPARATION: verifying immutable build' >&2
-  nuinui_e2e_vscode_snapshot_rows=$(nuinui_e2e_host_vscode__snapshot_info \
-    "$nuinui_e2e_vscode_snapshot" "$nuinui_e2e_vscode_tested" \
-    "$nuinui_e2e_vscode_selected") || return 1
-  nuinui_e2e_vscode_snapshot_sha=$(printf '%s\n' \
-    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^snapshot_sha256=//p')
-  nuinui_e2e_vscode_snapshot_stat=$(printf '%s\n' \
-    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^snapshot_identity_stat=//p')
-  nuinui_e2e_vscode_extension=$(printf '%s\n' \
-    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^extension_path=//p')
-  nuinui_e2e_vscode_extension_sha=$(printf '%s\n' \
-    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^extension_sha256=//p')
-  nuinui_e2e_vscode_rust=$(printf '%s\n' \
-    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^rust_binary_path=//p')
-  nuinui_e2e_vscode_rust_sha=$(printf '%s\n' \
-    "$nuinui_e2e_vscode_snapshot_rows" | sed -n 's/^rust_binary_sha256=//p')
-  [ -n "$nuinui_e2e_vscode_extension" ] &&
-    [ -n "$nuinui_e2e_vscode_rust" ] &&
-    [ -n "$nuinui_e2e_vscode_rust_sha" ] || return 1
-  nuinui_e2e_valid_digest "$nuinui_e2e_vscode_snapshot_sha" &&
-    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_extension_sha" &&
-    nuinui_e2e_valid_digest "$nuinui_e2e_vscode_rust_sha" || return 1
+  nuinui_e2e_host_vscode__ensure_snapshot \
+    "$nuinui_e2e_vscode_dogfood_root" "$nuinui_e2e_vscode_tested" \
+    "$nuinui_e2e_vscode_selected" || return 1
 
   if [ -n "${NUINUI_E2E_TEST_VSCODE_APP_ROOT:-}" ]; then
     nuinui_e2e_vscode_app_root=$NUINUI_E2E_TEST_VSCODE_APP_ROOT
@@ -1133,6 +1282,8 @@ nuinui_e2e_host_vscode__launch_and_ready() {
   nuinui_e2e_vscode_launch_content=$(nuinui_e2e_host_vscode__launch_intent_content) || return 1
   nuinui_e2e__atomic_create "$nuinui_e2e_vscode_launch_intent" \
     "$nuinui_e2e_vscode_launch_content" || return 1
+  printf 'LAUNCHING ISOLATED VS CODE tested_sha=%s snapshot_identity=%s\n' \
+    "$nuinui_e2e_host_tested" "$nuinui_e2e_vscode_artifact_identity_name"
   NUINUICAD_RUST_EVALUATION_BINARY="$nuinui_e2e_vscode_rust" \
   NUINUICAD_MCP_OBSERVATION=1 \
     "$nuinui_e2e_vscode_app_path" "$@" >/dev/null 2>&1 &

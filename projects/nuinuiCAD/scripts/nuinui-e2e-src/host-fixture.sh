@@ -118,6 +118,42 @@ nuinui_e2e_host__prepare_production_parent() {
   nuinui_e2e_host__validate_production_parent
 }
 
+nuinui_e2e_host__default_fixture() {
+  [ "$#" = 0 ] || return 2
+  if nuinui_e2e_host__production_root_mode; then
+    nuinui_e2e_host_default_parent=$(nuinui_e2e_host__production_parent_for_home) || return 1
+    nuinui_e2e_host_default_fixture=$nuinui_e2e_host_default_parent/.nuinui-e2e-default-fixture.nui
+  else
+    nuinui_e2e_host_default_fixture=$nuinui_e2e_fixture_root/.nuinui-e2e-default-fixture.nui
+  fi
+  nuinui_e2e_host_default_content='nui 1
+# Default Human E2E fixture
+'
+  if nuinui_e2e__exists "$nuinui_e2e_host_default_fixture"; then
+    nuinui_e2e__regular "$nuinui_e2e_host_default_fixture" &&
+      [ "$(realpath "$nuinui_e2e_host_default_fixture" 2>/dev/null)" = \
+        "$nuinui_e2e_host_default_fixture" ] &&
+      printf '%s' "$nuinui_e2e_host_default_content" | \
+        cmp -s - "$nuinui_e2e_host_default_fixture" || {
+        echo 'BLOCKED: reserved default Human E2E fixture is unsafe or has been changed'
+        return 1
+      }
+  else
+    if nuinui_e2e_host__production_root_mode; then
+      nuinui_e2e_host__prepare_production_parent || {
+        echo 'BLOCKED: default Human E2E fixture parent is unsafe'
+        return 1
+      }
+    fi
+    nuinui_e2e__atomic_create "$nuinui_e2e_host_default_fixture" \
+      "$nuinui_e2e_host_default_content" || {
+      echo 'BLOCKED: default Human E2E fixture could not be created safely'
+      return 1
+    }
+  fi
+  printf '%s\n' "$nuinui_e2e_host_default_fixture"
+}
+
 nuinui_e2e_host__root_for() {
   [ "$#" -ge 1 ] && [ "$#" -le 2 ] || return 2
   nuinui_e2e_host_generation_hash=$(nuinui_e2e__generation_hash "$1") || return 1

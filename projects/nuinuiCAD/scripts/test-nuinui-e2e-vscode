@@ -19,6 +19,7 @@ fixture_port=
 fixture_cdp_kind=electron
 fixture_app_mode=direct
 fixture_app_sha=
+fixture_build_adapter=
 output=
 foreign_pid=
 foreign_vscode_pid=
@@ -82,6 +83,9 @@ fail() {
 }
 
 contains() { grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"; }
+assert_file_contains() {
+  grep -Fqx -- "$1" "$2" || fail "expected file to contain exact line: $1"
+}
 
 new_fixture() {
   mode=$1
@@ -369,6 +373,47 @@ invoke() {
   fi
 }
 
+invoke_ready() {
+  ready_issue=$1
+  ready_tested=$2
+  shift 2
+  ready_fixture=
+  ready_locale=default
+  if [ "$#" -gt 0 ]; then ready_fixture=$1; shift; fi
+  if [ "$#" -gt 0 ]; then ready_locale=$1; fi
+  set -- "$helper" ready --self-test --manifest "$fixture_manifest" \
+    --issue "$ready_issue" --tested-sha "$ready_tested"
+  [ -z "$ready_fixture" ] || set -- "$@" --fixture "$ready_fixture"
+  [ "$ready_locale" = default ] || set -- "$@" --locale "$ready_locale"
+  if [ "$host_test_root_mode" = production ]; then
+    if [ -n "$fixture_build_adapter" ]; then
+      env HOME="$host_test_home" NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT=yes \
+        NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
+        NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+        NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
+        NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
+        NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+        NUINUI_E2E_TEST_DOGFOOD_BUILD="$fixture_build_adapter" \
+        "$@" > "$output" 2>&1
+    else
+      env HOME="$host_test_home" NUINUI_E2E_TEST_PRODUCTION_HOST_ROOT=yes \
+        NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
+        NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+        NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
+        NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
+        NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+        "$@" > "$output" 2>&1
+    fi
+  else
+    env NUINUI_E2E_TEST_DOGFOOD_ROOT="$fixture_dogfood" \
+      NUINUI_E2E_TEST_VSCODE_APP_ROOT="$fixture_app" \
+      NUINUI_E2E_TEST_VSCODE_APP_MODE="$fixture_app_mode" \
+      NUINUI_E2E_TEST_VSCODE_APP_SHA256="$fixture_app_sha" \
+      NUINUI_E2E_TEST_CDP_KIND="$fixture_cdp_kind" \
+      "$@" > "$output" 2>&1
+  fi
+}
+
 invoke_host() {
   command_name=$1 issue=$2 generation=$3 lane=$4 tested=$5
   fixture=${6-}
@@ -427,6 +472,11 @@ native_record_path() {
   printf '%s/nuinui-github-e2e-%s-v1.%s\n' \
     "$(git -C "$fixture_human" rev-parse --absolute-git-dir)" "$1" \
     "$(printf '%s\n' "$2" | shasum -a 256 | awk 'NR == 1 {print $1}')"
+}
+
+active_path() {
+  printf '%s/nuinui-github-e2e-active-v1\n' \
+    "$(git -C "$fixture_human" rev-parse --absolute-git-dir)"
 }
 
 fingerprint() {
@@ -515,6 +565,221 @@ grep -Fqx 'proof=fixture-no-host-session' "$artifact_failure_cleanup" ||
   [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
     fail 'artifact-failure closure did not leave a clean detached checkout'
 
+echo 'VSCODE HOST SELFTEST: one-command ready reuses the exact older snapshot'
+new_fixture one
+host_test_root_mode=production
+host_test_home=$fixture_root/private-home
+mkdir -m 0700 "$host_test_home" || fail 'private ready test HOME'
+fixture_old_tested=$fixture_tested_sha
+setup_vscode_artifacts
+fixture_old_snapshot=$fixture_snapshot
+advance_default ready-latest-main
+fixture_latest_tested=$fixture_tested_sha
+setup_vscode_artifacts
+git -C "$fixture_human" switch --detach "$fixture_latest_tested" >/dev/null ||
+  fail 'move Human-test checkout to latest idle revision for ready test'
+git -C "$fixture_impl" switch -c dirty-implementation >/dev/null ||
+  fail 'make implementation fixture non-main for ready test'
+printf 'uncommitted implementation work\n' >> "$fixture_impl/fixture.txt"
+fixture_current_json=$fixture_dogfood/current.json
+printf '{malformed current selection\n' > "$fixture_current_json"
+fixture_current_sha=$(shasum -a 256 "$fixture_current_json" | awk 'NR == 1 {print $1}')
+fixture_build_adapter=$fixture_root/forbidden-dogfood-build
+fixture_build_marker=$fixture_root/dogfood-build-called
+cat > "$fixture_build_adapter" <<EOF
+#!/bin/sh
+printf '%s\\n' called > '$fixture_build_marker'
+exit 71
+EOF
+chmod 755 "$fixture_build_adapter"
+if ! invoke_ready "$fixture_issue" "$fixture_old_tested"; then
+  cat "$output" >&2
+  fail 'one-command ready should reuse the exact older immutable snapshot'
+fi
+contains 'HUMAN E2E READY'
+contains "tested_sha=$fixture_old_tested"
+contains "LAUNCHING ISOLATED VS CODE tested_sha=$fixture_old_tested snapshot_identity=$fixture_old_tested-darwin-$arch_name"
+[ ! -e "$fixture_build_marker" ] || fail 'matching immutable snapshot unexpectedly invoked a dogfood build'
+[ "$(shasum -a 256 "$fixture_current_json" | awk 'NR == 1 {print $1}')" = "$fixture_current_sha" ] ||
+  fail 'ready modified dogfood current.json while selecting an exact snapshot'
+[ "$(git -C "$fixture_impl" symbolic-ref --short HEAD)" = dirty-implementation ] &&
+  [ -n "$(git -C "$fixture_impl" status --porcelain)" ] ||
+    fail 'ready altered the dirty non-main implementation fixture'
+fixture_generation=$(sed -n 's/^generation=//p' "$output" | tail -1)
+[ -n "$fixture_generation" ] || fail 'ready did not print its generated identity'
+fixture_ready_root=$(host_root_path "$fixture_generation")
+grep -Fqx "tested_sha=$fixture_old_tested" \
+  "$fixture_ready_root/.nuinui-vscode-host-owner-v1" ||
+  fail 'ready did not bind the active host owner to the requested older tested SHA'
+grep -Fqx "vscode_artifact_identity_name=$fixture_old_tested-darwin-$arch_name" \
+  "$fixture_ready_root/.nuinui-vscode-host-owner-v1" ||
+  fail 'ready did not bind the host owner to the exact immutable snapshot identity'
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_old_tested"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+[ "$(git -C "$fixture_impl" symbolic-ref --short HEAD)" = dirty-implementation ] &&
+  [ -n "$(git -C "$fixture_impl" status --porcelain)" ] ||
+    fail 'exact-generation closure changed the dirty implementation fixture'
+
+echo 'VSCODE HOST SELFTEST: missing stale snapshot cannot call the dogfood owner'
+new_fixture one
+host_test_root_mode=production
+host_test_home=$fixture_root/private-home
+mkdir -m 0700 "$host_test_home" || fail 'private stale snapshot test HOME'
+fixture_old_tested=$fixture_tested_sha
+setup_vscode_artifacts
+fixture_old_snapshot=$fixture_snapshot
+advance_default stale-snapshot-test
+fixture_latest_tested=$fixture_tested_sha
+setup_vscode_artifacts
+git -C "$fixture_human" switch --detach "$fixture_latest_tested" >/dev/null ||
+  fail 'move Human-test checkout to current idle SHA for stale snapshot test'
+fixture_snapshot_archive=$fixture_root/stale-snapshot-archive
+mv "$fixture_old_snapshot" "$fixture_snapshot_archive" ||
+  fail 'hide the exact stale snapshot for fallback refusal test'
+fixture_build_adapter=$fixture_root/stale-dogfood-build
+fixture_build_marker=$fixture_root/stale-dogfood-build-called
+cat > "$fixture_build_adapter" <<EOF
+#!/bin/sh
+printf '%s\\n' called > '$fixture_build_marker'
+exit 71
+EOF
+chmod 755 "$fixture_build_adapter"
+if invoke_ready "$fixture_issue" "$fixture_old_tested"; then
+  fail 'missing old snapshot unexpectedly used the dogfood owner'
+fi
+contains 'existing dogfood owner requires a clean main checkout at the exact tested SHA'
+[ ! -e "$fixture_build_marker" ] || fail 'stale snapshot refusal called the dogfood build owner'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_latest_tested" ] &&
+  [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+  [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
+    fail 'stale snapshot refusal changed the Human-test checkout'
+[ ! -e "$(active_path)" ] || fail 'stale snapshot refusal started a native generation'
+
+echo 'VSCODE HOST SELFTEST: exact current snapshot can use the dogfood build owner'
+new_fixture one
+host_test_root_mode=production
+host_test_home=$fixture_root/private-home
+mkdir -m 0700 "$host_test_home" || fail 'private snapshot build test HOME'
+fixture_old_tested=$fixture_tested_sha
+setup_vscode_artifacts
+fixture_snapshot_archive=$fixture_root/exact-snapshot-archive
+mv "$fixture_snapshot" "$fixture_snapshot_archive" ||
+  fail 'hide exact current snapshot for guarded build test'
+fixture_build_adapter=$fixture_root/exact-dogfood-build
+fixture_build_marker=$fixture_root/exact-dogfood-build-called
+fixture_identity=$fixture_old_tested-darwin-$arch_name
+cat > "$fixture_build_adapter" <<EOF
+#!/bin/sh
+[ "\$#" = 2 ] && [ "\$1" = '$fixture_old_tested' ] &&
+  [ "\$2" = '$fixture_dogfood' ] || exit 70
+mkdir -p "\$2/snapshots" || exit 71
+cp -R '$fixture_snapshot_archive' "\$2/snapshots/$fixture_identity" || exit 72
+printf '%s\\n' "\$1" > '$fixture_build_marker'
+EOF
+chmod 755 "$fixture_build_adapter"
+if ! invoke_ready "$fixture_issue" "$fixture_old_tested"; then
+  cat "$output" >&2
+  fail 'current exact SHA should use the existing dogfood build owner when its snapshot is absent'
+fi
+contains 'HUMAN E2E READY'
+[ "$(cat "$fixture_build_marker")" = "$fixture_old_tested" ] ||
+  fail 'guarded dogfood owner was not given the exact tested SHA'
+fixture_generation=$(sed -n 's/^generation=//p' "$output" | tail -1)
+ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_old_tested"
+contains 'HOST AND NATIVE CLOSURE VERIFIED'
+
+assert_ready_start_recovery() {
+  ready_recovery_failpoint=$1
+  new_fixture one
+  host_test_root_mode=production
+  host_test_home=$fixture_root/private-home
+  fixture_build_adapter=
+  mkdir -m 0700 "$host_test_home" || fail 'private ready-recovery HOME'
+  ready_recovery_idle=$(git -C "$fixture_human" rev-parse HEAD)
+  advance_default ready-older-tested-sha
+  ready_recovery_tested=$fixture_tested_sha
+  setup_vscode_artifacts
+  ready_recovery_snapshot=$fixture_snapshot
+  ready_recovery_snapshot_hash=$(shasum -a 256 \
+    "$ready_recovery_snapshot/snapshot.json" | awk 'NR == 1 {print $1}')
+  advance_default ready-current-main
+  git -C "$fixture_human" fetch origin --prune >/dev/null ||
+    fail 'refresh the disposable Human-test tracking ref'
+  ready_recovery_main=$(git -C "$fixture_human" rev-parse origin/main)
+  [ "$ready_recovery_idle" != "$ready_recovery_main" ] &&
+    [ "$ready_recovery_tested" != "$ready_recovery_main" ] &&
+    [ "$ready_recovery_idle" != "$ready_recovery_tested" ] ||
+    fail 'recovery fixture did not separate idle, tested and latest-main revisions'
+
+  if (NUINUI_E2E_TEST_FAILPOINT=$ready_recovery_failpoint \
+    invoke_ready "$fixture_issue" "$ready_recovery_tested"); then
+    fail "ready failpoint did not interrupt: $ready_recovery_failpoint"
+  fi
+  contains 'BLOCKED: injected interruption'
+  ready_recovery_git_dir=$(git -C "$fixture_human" \
+    rev-parse --absolute-git-dir)
+  ready_recovery_starting=$(find "$ready_recovery_git_dir" -maxdepth 1 \
+    -type f -name 'nuinui-github-e2e-starting-v1.*' -print)
+  [ -n "$ready_recovery_starting" ] ||
+    fail "ready interruption lost its exact startup intent: $ready_recovery_failpoint"
+  fixture_generation=$(awk -F= '$1 == "generation" {print substr($0, index($0, "=") + 1)}' \
+    "$ready_recovery_starting")
+  [ -n "$fixture_generation" ] || fail 'startup intent omitted its generation'
+  assert_file_contains "tested_sha=$ready_recovery_tested" "$ready_recovery_starting"
+  assert_file_contains "idle_sha=$ready_recovery_idle" "$ready_recovery_starting"
+  [ "$(git -C "$fixture_human" rev-parse origin/main)" = \
+    "$ready_recovery_main" ] || fail 'recovery changed the authoritative latest-main ref'
+  [ "$(shasum -a 256 "$ready_recovery_snapshot/snapshot.json" | \
+    awk 'NR == 1 {print $1}')" = "$ready_recovery_snapshot_hash" ] ||
+    fail 'interrupted ready changed the exact older snapshot metadata'
+  case "$ready_recovery_failpoint" in
+    after-start-active-marker)
+      [ -f "$(active_path)" ] || fail 'active-marker interruption lost its active proof'
+      ;;
+    *)
+      [ ! -e "$(active_path)" ] || fail 'active marker was published before tested checkout verification'
+      ;;
+  esac
+  [ ! -e "$(host_root_path "$fixture_generation")" ] ||
+    fail 'interrupted native start launched a host session'
+
+  ready_recovery_before=$(fingerprint)
+  ready_recovery_head=$(git -C "$fixture_human" rev-parse HEAD)
+  blocked recover "$fixture_issue" ready-recovery-wrong-generation-0001 \
+    human "$ready_recovery_tested"
+  [ "$(fingerprint)" = "$ready_recovery_before" ] &&
+    [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$ready_recovery_head" ] ||
+    fail 'mismatched generation recovery changed checkout or ownership evidence'
+
+  ok recover "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  contains 'NATIVE E2E START RECOVERED'
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$ready_recovery_tested" ] &&
+    [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+    [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
+    fail 'exact ready recovery did not leave the clean detached tested checkout'
+  [ ! -e "$ready_recovery_starting" ] || fail 'successful recovery retained startup intent'
+  assert_file_contains "idle_sha=$ready_recovery_idle" "$(active_path)"
+  ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  ok release "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$ready_recovery_idle" ] ||
+    fail 'exact closure did not restore the recorded original detached idle SHA'
+  ok closure "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  contains 'NATIVE E2E FINAL CLOSURE VERIFIED'
+  assert_file_contains "idle_sha=$ready_recovery_idle" \
+    "$(native_record_path release "$fixture_generation")"
+  assert_file_contains "origin_sha=$ready_recovery_main" \
+    "$(native_record_path release "$fixture_generation")"
+}
+
+echo 'VSCODE HOST SELFTEST: old-SHA ready intent, checkout and active-marker recovery'
+assert_ready_start_recovery after-start-intent
+assert_ready_start_recovery after-start-checkout
+assert_ready_start_recovery after-start-active-marker
+
+new_fixture one
+host_test_root_mode=production
+host_test_home=$fixture_root/private-home
+mkdir -m 0700 "$host_test_home" || fail 'private test HOME'
 fixture_generation=vscode-isolated-cleanup-0001
 prepare_generation "$fixture_generation"
 setup_vscode_artifacts

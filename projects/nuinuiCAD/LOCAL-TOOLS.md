@@ -56,29 +56,31 @@ nuinui-context last-result
 
 `context-check` performs the existing Markdown-link, documented-command, repository/worktree, and installed-executable consistency checks; it is not a new general preflight for each operation. Read-only commands do not overwrite the latest tracked mutation result.
 
-## Active: native GitHub Human E2E (`nuinui-e2e --production`)
+## Active: native GitHub Human E2E (nuinui-e2e --production)
 
-`projects/nuinuiCAD/scripts/nuinui-e2e` is the active native helper after the [#286 activation checkpoint](https://github.com/sayosomi/dev-context/issues/286). It operates only on the existing registered `human-e2e` checkout under the canonical production manifest and signed Microsoft VS Code isolated-host adapter. **New GitHub-native work never uses legacy `nuinui e2e-start` or `nuinui-e2e-prepare`.**
+projects/nuinuiCAD/scripts/nuinui-e2e is the active native helper after the
+[#286 activation checkpoint](https://github.com/sayosomi/dev-context/issues/286).
+It uses the existing registered human-e2e checkout and signed Microsoft VS
+Code isolated-host adapter. New GitHub-native work never uses legacy
+nuinui e2e-start or nuinui-e2e-prepare.
 
-Common public form (each invocation supplies one explicit operation and its own exact identity):
+For the canonical normal-startup command, snapshot/build boundary and Human
+handoff, see [One-command Human E2E startup](./VS-CODE-E2E.md#one-command-human-e2e-startup).
+This page keeps the native helper command inventory and legacy boundary.
 
-~~~text
-nuinui-e2e <operation> --production --issue <canonical-GitHub-Issue> --generation <token> --tested-sha <40-lowercase-sha> [--lane human-e2e]
-~~~
-
-Operations:
-
-| Phase | Commands |
+| Purpose | Commands |
 | --- | --- |
-| Admission/state | `admit`, `status` |
-| Tested checkout | `start` |
-| VS Code host | `host-check`, `host-prepare`, `host-status` |
-| Normal completion | `host-closure` (checked host cleanup → checkout release → final closure) |
-| Targeted diagnosis/recovery | `host-cleanup`, `host-recover`, `release`, `recover`, `closure` |
+| Normal startup | ready |
+| Read-only state | status, host-status |
+| Exact-generation recovery/closure | host-cleanup, host-recover, host-closure, release, recover, closure |
 
-`host-check` and `host-prepare` additionally require `--fixture <absolute-external-file> --port <1-65535>`; optional locale is `--locale default|ja`. Use the existing helper's usage and [VS-CODE-E2E.md](./VS-CODE-E2E.md) for the host contract, not a manually reconstructed multi-stage shell script. `admit` is read-only; `start` fixes the exact SHA and generation. A ready host is not product PASS: the **Human alone** operates and judges the actual VS Code GUI.
+See the canonical VS-CODE-E2E procedure for normal startup. The individual
+commands above remain available for diagnosis and established workflows.
 
-Production rejects caller-supplied fixture manifests/adapters, `NUINUI_E2E_TEST_*` overrides, unregistered or unexpected worktrees, dirty/wrong checkout state, and mismatched installed artifacts. The native marker governs the active generation; sessions, process ownership, immutable tested artifacts, and cleanup/release receipts must match it. The Human-test checkout cannot be replaced, registered again, or used for product source fixes. Use `host-closure` for normal completion; an interruption or mismatch requires exact-generation diagnosis and applicable `host-recover`/`recover`, never speculative cleanup or a new generation. The complete safety and recovery contract belongs to [CHECKOUTS.md](./CHECKOUTS.md#native-human-manual-e2e).
+Production rejects caller-supplied manifests/adapters, NUINUI_E2E_TEST_*
+overrides and unregistered or unexpected worktrees. Exact-generation
+ownership and cleanup receipts remain mandatory. The Human-test checkout
+cannot be replaced, registered again, or used for product source fixes.
 
 ## Command results and fail-closed recovery
 
