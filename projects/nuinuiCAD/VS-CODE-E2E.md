@@ -62,6 +62,87 @@ authorization. The individual admit, start, host-check and host-prepare
 commands remain available for diagnosis and established recovery workflows;
 ready is the normal startup entry point.
 
+## Human-owned snapshot preparation after merge (only when needed)
+
+For a newly merged tested `origin/main` SHA **without an existing exact immutable
+snapshot**, the Human can prepare it once with the block below, independently
+of ChatGPT. This is a local Human terminal operation, **not** a Coding Agent
+task and not an extra Human E2E gate: when the exact snapshot already exists,
+`nuinui-e2e ready --production` validates and reuses it without this step.
+
+Run this only after the implementation/PR task has concluded and no Coding Agent
+is using the implementation checkout. The block checks the clean registered
+implementation checkout, freshly fetches `origin/main`, verifies that the
+current branch HEAD **and** local `main` can fast-forward to it, and then
+prepares the snapshot through the existing product `dogfood:build` owner.
+It leaves an unmerged, diverged, dirty or ambiguous checkout **BLOCKED**;
+it never resets, stashes, cleans, force-switches or deletes any branch or
+worktree. It does not touch the Human-test checkout or any E2E generation.
+
+~~~zsh
+(
+  repo=/Users/yosomi/Code/nuinuiCAD
+  cd "$repo" || { echo "ERROR: implementation checkout not found: $repo"; exit 1; }
+  [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$repo" ] || {
+    echo 'BLOCKED: unexpected implementation checkout'; exit 1;
+  }
+  tree_state=$(git status --porcelain=v1 --untracked-files=all) || {
+    echo 'ERROR: cannot inspect implementation checkout'; exit 1;
+  }
+  [ -z "$tree_state" ] || {
+    echo 'BLOCKED: implementation checkout has local changes; none were modified'; exit 1;
+  }
+  git fetch origin --prune || { echo 'ERROR: origin fetch failed'; exit 1; }
+  tested_sha=$(git rev-parse --verify refs/remotes/origin/main 2>/dev/null) || {
+    echo 'BLOCKED: origin/main is unavailable'; exit 1;
+  }
+  old_head=$(git rev-parse --verify HEAD 2>/dev/null) || {
+    echo 'BLOCKED: implementation HEAD is unavailable'; exit 1;
+  }
+  branch=$(git symbolic-ref --quiet --short HEAD) || {
+    echo 'BLOCKED: implementation checkout is detached'; exit 1;
+  }
+  git merge-base --is-ancestor "$old_head" "$tested_sha" &&
+    git merge-base --is-ancestor refs/heads/main "$tested_sha" || {
+      echo 'BLOCKED: current branch or local main is not merged into origin/main'; exit 1;
+    }
+  if [ "$branch" != main ]; then
+    git switch main || { echo 'BLOCKED: cannot switch safely to main'; exit 1; }
+  fi
+  git merge --ff-only origin/main || {
+    echo 'BLOCKED: local main cannot fast-forward to origin/main'; exit 1;
+  }
+  [ "$(git rev-parse HEAD)" = "$tested_sha" ] || {
+    echo 'BLOCKED: main HEAD differs from fetched tested SHA'; exit 1;
+  }
+  printf 'Preparing dogfood snapshot for tested_sha=%s\n' "$tested_sha"
+  npm run dogfood:build || {
+    echo 'BLOCKED: dogfood snapshot build failed; do not launch a prior snapshot'; exit 1;
+  }
+  tree_state=$(git status --porcelain=v1 --untracked-files=all) || {
+    echo 'ERROR: cannot verify post-build checkout'; exit 1;
+  }
+  [ -z "$tree_state" ] &&
+    [ "$(git rev-parse HEAD)" = "$tested_sha" ] &&
+    [ "$(git rev-parse refs/remotes/origin/main)" = "$tested_sha" ] || {
+      echo 'BLOCKED: post-build source identity or cleanliness changed'; exit 1;
+    }
+  printf 'SNAPSHOT PREP PASS tested_sha=%s\n' "$tested_sha"
+)
+~~~
+
+The product builder prints `Dogfood snapshot selected: <SHA>-darwin-arm64`
+(or the current platform/architecture) after validating the full immutable
+artifact. Use that **same full SHA** as `--tested-sha` for
+`nuinui-e2e ready --production`. The E2E helper independently verifies
+the snapshot's exact SHA and content before launching VS Code. **Do not use**
+`npm run dogfood:launch` for Human E2E; it launches the
+`current.json` selection and can open an older SHA. This preparation block
+only supports the freshly fetched current `origin/main` SHA; it never
+checks out an older commit to manufacture a missing historical snapshot.
+If blocked, preserve the checkout and report the specific condition rather
+than bypassing with a launcher or unsafe branch operation.
+
 ## Isolated VS Code and fixture baseline
 
 The production host must not silently inherit the Human's normal VS Code profile, settings, keybindings or installed extensions. The helper owns:
