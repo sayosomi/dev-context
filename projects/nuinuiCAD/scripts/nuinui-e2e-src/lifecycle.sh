@@ -682,12 +682,23 @@ nuinui_e2e__lane_preflight_state() {
     esac
     case "$nuinui_e2e_native_kind" in
       cleanup|release)
-        nuinui_e2e_host__valid_history_path "$nuinui_e2e_native_path" \
-          "$nuinui_e2e_check_lane" || {
-            echo '  state=BLOCKED reason=incomplete-native-history'
-            return 1
-          }
-        [ "$nuinui_e2e_history_path_hash" = "$nuinui_e2e_current_generation_hash" ] || continue
+        nuinui_e2e_history_path_hash=${nuinui_e2e_native_name##*.}
+        nuinui_e2e_valid_digest "$nuinui_e2e_history_path_hash" || {
+          echo '  state=BLOCKED reason=malformed-native-history-path'
+          return 1
+        }
+        if [ "$nuinui_e2e_history_path_hash" != "$nuinui_e2e_current_generation_hash" ]; then
+          nuinui_e2e_host__completed_history_safe "$nuinui_e2e_history_path_hash" \
+            "$nuinui_e2e_check_git_dir" || {
+              echo '  state=BLOCKED reason=incomplete-native-history'
+              return 1
+            }
+          continue
+        fi
+        nuinui_e2e__regular "$nuinui_e2e_native_path" || {
+          echo '  state=BLOCKED reason=malformed-native-history'
+          return 1
+        }
         ;;
     esac
     nuinui_e2e__read_record "$nuinui_e2e_native_path" \
@@ -868,7 +879,7 @@ lane_execution_human_test_preflight() {
   nuinui_e2e__lane_preflight_state "$1" "$2" "$3"
 }
 
-nuinui_e2e__preflight() {
+nuinui_e2e__full_preflight() {
   [ "$#" = 1 ] || return 2
   nuinui_e2e_preflight_tmp=$(mktemp "${TMPDIR:-/tmp}/nuinui-e2e-preflight.XXXXXX") || return 1
   if ! lane_execution_preflight "$1" >"$nuinui_e2e_preflight_tmp" 2>&1; then
@@ -897,6 +908,44 @@ nuinui_e2e__preflight() {
   fi
   cat "$nuinui_e2e_preflight_tmp"
   rm -f "$nuinui_e2e_preflight_tmp"
+}
+
+nuinui_e2e__preflight() {
+  [ "$#" = 1 ] || return 2
+  if [ "${nuinui_e2e_ready_mode:-no}" = yes ]; then
+    if [ "${nuinui_e2e_ready_topology_checked:-no}" != yes ]; then
+      lane_execution__inventory_check "$1" "$nuinui_e2e_expected_repo" >/dev/null || {
+        echo 'BLOCKED: declared product worktree topology changed or is ambiguous' >&2
+        return 1
+      }
+      nuinui_e2e_ready_topology_checked=yes
+    fi
+    lane_execution_human_test_preflight "$nuinui_e2e_expected_lane" \
+      "$nuinui_e2e_expected_repo" "$1" || {
+        echo 'BLOCKED: Human-test lane ownership or resources are not ready' >&2
+        return 1
+      }
+    return 0
+  fi
+  case "$nuinui_e2e_operation" in
+    status|release|recover|closure|host-status|host-cleanup|host-recover|host-closure)
+      # These commands inspect or settle an existing native generation. The
+      # immutable tested build makes implementation-checkout cleanliness
+      # irrelevant after startup; preserve complete topology and Human-lane
+      # ownership checks before any generation-scoped action.
+      lane_execution__inventory_check "$1" "$nuinui_e2e_expected_repo" >/dev/null || {
+        echo 'BLOCKED: declared product worktree topology changed or is ambiguous' >&2
+        return 1
+      }
+      lane_execution_human_test_preflight "$nuinui_e2e_expected_lane" \
+        "$nuinui_e2e_expected_repo" "$1" || {
+        echo 'BLOCKED: Human-test lane ownership or resources are not ready' >&2
+        return 1
+      }
+      return 0
+      ;;
+  esac
+  nuinui_e2e__full_preflight "$1"
 }
 
 nuinui_e2e__checked_out() {
@@ -932,10 +981,12 @@ nuinui_e2e__refresh_tested_ref() {
       echo 'BLOCKED: authoritative default revision is unavailable'
       return 1
     }
-  [ "$nuinui_e2e_refresh_live" = "$nuinui_e2e_refresh_tested" ] || {
-    echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
-    return 1
-  }
+  if [ "${nuinui_e2e_ready_mode:-no}" != yes ]; then
+    [ "$nuinui_e2e_refresh_live" = "$nuinui_e2e_refresh_tested" ] || {
+      echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
+      return 1
+    }
+  fi
   nuinui_e2e_refresh_commit=$(git -C "$nuinui_e2e_refresh_repo" \
     rev-parse --verify "$nuinui_e2e_refresh_tested^{commit}" 2>/dev/null) || {
       echo 'BLOCKED: tested SHA is not an existing commit in the Human-test checkout'
@@ -989,12 +1040,17 @@ nuinui_e2e__finish_start() {
   fi
 
   nuinui_e2e__read_expected_starting "$nuinui_e2e_finish_starting" || return 1
-  [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] &&
+  [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ] || {
+    echo 'BLOCKED: startup idle revision changed before the tested checkout transition'
+    return 1
+  }
+  if [ "${nuinui_e2e_ready_mode:-no}" != yes ]; then
     git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
       "$nuinui_e2e_finish_idle_sha" "$nuinui_e2e_expected_tested" || {
         echo 'BLOCKED: startup idle revision cannot safely transition to tested SHA'
         return 1
       }
+  fi
   nuinui_e2e_finish_head=$(git -C "$nuinui_e2e_expected_repo" \
     rev-parse HEAD 2>/dev/null) || return 1
   [ -z "$(git -C "$nuinui_e2e_expected_repo" \
@@ -1018,9 +1074,11 @@ nuinui_e2e__finish_start() {
     return 1
   fi
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-    "$nuinui_e2e_expected_tested" &&
-    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_expected_tested" ] || {
+    "$nuinui_e2e_expected_tested" && {
+      [ "${nuinui_e2e_ready_mode:-no}" = yes ] ||
+        [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+          "$nuinui_e2e_expected_tested" ];
+    } || {
         echo 'BLOCKED: tested checkout verification failed; startup intent retained'
         return 1
       }
@@ -1077,13 +1135,25 @@ nuinui_e2e_admit() {
       "$nuinui_e2e_expected_generation"
     return 0
   fi
-  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_expected_tested" ] || {
+  nuinui_e2e_admit_idle=$(nuinui_e2e__live_idle_sha \
+    "$nuinui_e2e_expected_repo") || {
+      echo 'BLOCKED: authoritative default revision is unavailable'
+      return 1
+    }
+  if [ "${nuinui_e2e_ready_mode:-no}" != yes ]; then
+    [ "$nuinui_e2e_admit_idle" = "$nuinui_e2e_expected_tested" ] || {
       echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
       return 1
     }
+  fi
   nuinui_e2e_idle_sha=$(git -C "$nuinui_e2e_expected_repo" \
     rev-parse HEAD 2>/dev/null) || return 1
+  if [ "${nuinui_e2e_ready_mode:-no}" = yes ]; then
+    [ "$nuinui_e2e_idle_sha" = "$nuinui_e2e_admit_idle" ] || {
+      echo 'BLOCKED: Human-test lane is not at its authoritative idle revision'
+      return 1
+    }
+  fi
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_idle_sha" || {
       echo 'BLOCKED: Human-test lane is not FREE at its clean detached idle revision'
@@ -1203,11 +1273,19 @@ nuinui_e2e_start() {
       }
   nuinui_e2e__refresh_tested_ref "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_expected_tested" || return 1
-  git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
-    "$nuinui_e2e_idle_sha" "$nuinui_e2e_expected_tested" || {
-      echo 'BLOCKED: Human-test idle checkout cannot safely transition to tested SHA'
-      return 1
-    }
+  if [ "${nuinui_e2e_ready_mode:-no}" != yes ]; then
+    git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
+      "$nuinui_e2e_idle_sha" "$nuinui_e2e_expected_tested" || {
+        echo 'BLOCKED: Human-test idle checkout cannot safely transition to tested SHA'
+        return 1
+      }
+  else
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_idle_sha" ] || {
+        echo 'BLOCKED: Human-test checkout no longer matches its authoritative idle revision'
+        return 1
+      }
+  fi
   [ "$(git -C "$nuinui_e2e_expected_repo" rev-parse HEAD 2>/dev/null)" = \
     "$nuinui_e2e_idle_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \

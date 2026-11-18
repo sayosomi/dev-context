@@ -435,56 +435,87 @@ EOF
 
 # A completed release is the durable end of an old generation. Its earlier
 # preparation details are no longer live ownership or startup prerequisites.
-nuinui_e2e_host__verify_released_history() (
-  [ "$#" = 2 ] || exit 2
-  nuinui_e2e_history_hash=${1##*.}
-  nuinui_e2e_history_lane=$2
-  nuinui_e2e_history_repo=$(lane_manifest_lane_path "$nuinui_e2e_manifest_path" "$2") || exit 1
-  nuinui_e2e_valid_digest "$nuinui_e2e_history_hash" || exit 1
-  nuinui_e2e_history_release=${1%/*}/nuinui-github-e2e-release-v1.$nuinui_e2e_history_hash
-  nuinui_e2e__read_record "$nuinui_e2e_history_release" release historical &&
-    nuinui_e2e__record_matches_lane "$nuinui_e2e_history_lane" \
-      "$nuinui_e2e_history_repo" "$nuinui_e2e_manifest_path" || exit 1
-  [ "$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation")" = \
-    "$nuinui_e2e_history_hash" ] &&
-    [ "$nuinui_e2e_r_generation" != "$nuinui_e2e_expected_generation" ] || exit 1
-  nuinui_e2e_expected_generation=$nuinui_e2e_r_generation
-  for nuinui_e2e_history_kind in starting releasing; do
-    nuinui_e2e_history_pending=$(nuinui_e2e__path_for \
-      "$nuinui_e2e_history_repo" "$nuinui_e2e_history_kind") || exit 1
-    nuinui_e2e__exists "$nuinui_e2e_history_pending" && exit 1
-  done
-  for nuinui_e2e_history_root in \
-    "$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation")" \
-    "$(nuinui_e2e_host__root_for "$nuinui_e2e_expected_generation" full)" \
-    "$(nuinui_e2e_host__legacy_root_for "$nuinui_e2e_expected_generation")"; do
-    [ -n "$nuinui_e2e_history_root" ] || exit 1
-    nuinui_e2e__exists "$nuinui_e2e_history_root" && exit 1
-  done
-  exit 0
-)
-
-nuinui_e2e_host__valid_history_path() {
+nuinui_e2e_host__completed_history_safe() {
   [ "$#" = 2 ] || return 2
-  nuinui_e2e__regular "$1" || return 1
-  nuinui_e2e_history_path_name=${1##*/}
-  nuinui_e2e_history_path_hash=${1##*.}
-  case "${nuinui_e2e_history_path_name%.*}" in
-    nuinui-github-e2e-cleanup-v1|nuinui-github-e2e-release-v1|\
-    nuinui-github-e2e-host-intent-v1|nuinui-github-e2e-host-handoff-v1|\
-    nuinui-github-e2e-host-ready-v1|nuinui-github-e2e-host-cleanup-pending-v1|\
-    nuinui-github-e2e-host-cleanup-v1) ;;
-    *) return 1 ;;
-  esac
-  nuinui_e2e_valid_digest "$nuinui_e2e_history_path_hash" || return 1
-  [ "$nuinui_e2e_history_path_hash" != "$nuinui_e2e_current_generation_hash" ] || return 0
+  nuinui_e2e_history_hash=$1
+  nuinui_e2e_history_git_dir=$2
+  nuinui_e2e_valid_digest "$nuinui_e2e_history_hash" || return 1
   case "$nuinui_e2e_history_checked" in
-    *" $nuinui_e2e_history_path_hash "*) ;;
-    *)
-      nuinui_e2e_host__verify_released_history "$1" "$2" || return 1
-      nuinui_e2e_history_checked="$nuinui_e2e_history_checked$nuinui_e2e_history_path_hash "
-      ;;
+    *" $nuinui_e2e_history_hash "*) return 0 ;;
   esac
+
+  # A release receipt marks an unrelated generation as historical evidence.
+  # Do not parse or cross-validate its completed records during a new run.
+  nuinui_e2e_history_release=$nuinui_e2e_history_git_dir/nuinui-github-e2e-release-v1.$nuinui_e2e_history_hash
+  nuinui_e2e__regular "$nuinui_e2e_history_release" || {
+    echo "BLOCKED: completed generation $nuinui_e2e_history_hash has no regular release receipt"
+    return 1
+  }
+  nuinui_e2e_history_host_cleanup=$nuinui_e2e_history_git_dir/nuinui-github-e2e-host-cleanup-v1.$nuinui_e2e_history_hash
+  if nuinui_e2e__exists "$nuinui_e2e_history_host_cleanup"; then
+    # Host cleanup is terminal evidence, so its native release proof must
+    # still be a valid receipt for this exact historical generation. Old
+    # preparation details remain opaque startup history.
+    nuinui_e2e__regular "$nuinui_e2e_history_host_cleanup" &&
+      nuinui_e2e__regular "$nuinui_e2e_history_git_dir/nuinui-github-e2e-cleanup-v1.$nuinui_e2e_history_hash" &&
+      nuinui_e2e__read_record "$nuinui_e2e_history_release" release historical || {
+        echo "BLOCKED: completed generation $nuinui_e2e_history_hash has invalid terminal receipts"
+        return 1
+      }
+    nuinui_e2e_history_lane_repo=$(lane_manifest_lane_path \
+      "$nuinui_e2e_manifest_path" "$nuinui_e2e_r_lane") || return 1
+    nuinui_e2e_history_lane_repo=$(lane_execution__canonical_path \
+      "$nuinui_e2e_history_lane_repo") || return 1
+    nuinui_e2e_history_lane_git_dir=$(lane_execution__git_dir \
+      "$nuinui_e2e_history_lane_repo") || return 1
+    [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
+      "$nuinui_e2e_r_lane")" = human-test ] &&
+      [ "$nuinui_e2e_r_checkout" = "$nuinui_e2e_history_lane_repo" ] &&
+      [ "$nuinui_e2e_r_git_dir" = "$nuinui_e2e_history_lane_git_dir" ] &&
+      [ "$nuinui_e2e_r_manifest" = "$nuinui_e2e_manifest_path" ] &&
+      [ "$nuinui_e2e_r_manifest_sha" = "$nuinui_e2e_manifest_sha" ] &&
+      [ "$nuinui_e2e_r_default" = "$nuinui_e2e_default_branch" ] &&
+      [ "$nuinui_e2e_r_idle" = detached ] &&
+      [ "$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation")" = \
+        "$nuinui_e2e_history_hash" ] || {
+          echo "BLOCKED: completed generation $nuinui_e2e_history_hash has mismatched terminal proof"
+          return 1
+        }
+  fi
+  for nuinui_e2e_history_name in \
+    nuinui-github-e2e-starting-v1.$nuinui_e2e_history_hash \
+    nuinui-github-e2e-releasing-v1.$nuinui_e2e_history_hash; do
+    if nuinui_e2e__exists "$nuinui_e2e_history_git_dir/$nuinui_e2e_history_name"; then
+      echo "BLOCKED: completed generation still has pending metadata: $nuinui_e2e_history_name"
+      return 1
+    fi
+  done
+  nuinui_e2e_history_host_pending=$nuinui_e2e_history_git_dir/nuinui-github-e2e-host-cleanup-pending-v1.$nuinui_e2e_history_hash
+  if nuinui_e2e__exists "$nuinui_e2e_history_host_pending"; then
+    # Recovery intentionally retains its pending marker as history. It is
+    # settled only when both the host cleanup and native cleanup receipts
+    # exist; without those terminal records, pending cleanup remains live.
+    nuinui_e2e__regular "$nuinui_e2e_history_host_pending" &&
+      nuinui_e2e__regular "$nuinui_e2e_history_git_dir/nuinui-github-e2e-host-cleanup-v1.$nuinui_e2e_history_hash" &&
+      nuinui_e2e__regular "$nuinui_e2e_history_git_dir/nuinui-github-e2e-cleanup-v1.$nuinui_e2e_history_hash" || {
+        echo "BLOCKED: completed generation has unresolved host cleanup: $nuinui_e2e_history_host_pending"
+        return 1
+      }
+  fi
+
+  nuinui_e2e_history_root_parent=${nuinui_e2e_host_parent:-$nuinui_e2e_fixture_root}
+  [ -n "$nuinui_e2e_history_root_parent" ] || return 1
+  nuinui_e2e_history_hash_prefix=$(printf '%s\n' "$nuinui_e2e_history_hash" | cut -c1-12)
+  for nuinui_e2e_history_root in \
+    "$nuinui_e2e_history_root_parent/.nuinui-e2e-host-$nuinui_e2e_history_hash_prefix" \
+    "$nuinui_e2e_history_root_parent/.nuinui-e2e-host-$nuinui_e2e_history_hash" \
+    "/.nuinui-e2e-host-$nuinui_e2e_history_hash"; do
+    if nuinui_e2e__exists "$nuinui_e2e_history_root"; then
+      echo "BLOCKED: completed generation still has a host root: $nuinui_e2e_history_root"
+      return 1
+    fi
+  done
+  nuinui_e2e_history_checked="$nuinui_e2e_history_checked$nuinui_e2e_history_hash "
 }
 
 nuinui_e2e_host__preflight_scan() {
@@ -503,9 +534,14 @@ nuinui_e2e_host__preflight_scan() {
     [ -n "$nuinui_e2e_host_scan_path" ] || continue
     nuinui_e2e_host_scan_name=${nuinui_e2e_host_scan_path##*/}
     nuinui_e2e_host_scan_kind=$(nuinui_e2e_host__kind_from_name "$nuinui_e2e_host_scan_name") || return 1
-    nuinui_e2e_host__valid_history_path "$nuinui_e2e_host_scan_path" \
-      "$nuinui_e2e_host_scan_lane" || return 1
-    [ "$nuinui_e2e_history_path_hash" = "$nuinui_e2e_current_generation_hash" ] || continue
+    nuinui_e2e_history_path_hash=${nuinui_e2e_host_scan_name##*.}
+    nuinui_e2e_valid_digest "$nuinui_e2e_history_path_hash" || return 1
+    if [ "$nuinui_e2e_history_path_hash" != "$nuinui_e2e_current_generation_hash" ]; then
+      nuinui_e2e_host__completed_history_safe "$nuinui_e2e_history_path_hash" \
+        "$nuinui_e2e_host_scan_git_dir" || return 1
+      continue
+    fi
+    nuinui_e2e__regular "$nuinui_e2e_host_scan_path" || return 1
     nuinui_e2e_host__read_record "$nuinui_e2e_host_scan_path" \
       "$nuinui_e2e_host_scan_kind" || return 1
     [ "$nuinui_e2e_host_r_lane" = "$nuinui_e2e_host_scan_lane" ] &&

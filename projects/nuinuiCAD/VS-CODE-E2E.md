@@ -13,32 +13,52 @@ This document owns the **native VS Code production-host-specific baseline**: iso
 
 The **Human alone** operates the real GUI and makes PASS/FAIL judgments. Helper admission, immutable-build validation, fixture check and host readiness are setup evidence, not product PASS.
 
-## Native Human production-host flow
+## One-command Human E2E startup
 
-For a new GitHub-native Issue, use the existing registered `role=human-test` checkout and `nuinui-e2e --production` helper. No new checkout, alternate E2E chat role or manually built launcher is needed.
+After confirming the current Issue plan, exact tested SHA, reverse map,
+stabilization eligibility and checkout ownership, start the registered
+human-e2e lane with one command:
 
-1. ChatGPT fixes the Issue's accepted test plan, exact authoritative merged tested SHA, affected production-path mapping, needed external fixture, generation, locale/port inputs and stabilization/re-entry eligibility. Respect competing checkout/audit ownership.
-2. The native helper admits and starts the **exact** generation on the already registered Human-test checkout. It requires verified clean detached and manifest-compliant state, current authoritative SHA and ownership.
-3. The helper's host checks verify the existing **immutable dogfood snapshot** for the exact tested SHA (extension bundle, Rust `evaluation_stdio` binary, manifest/hash/path and Mac platform/architecture), plus the **signed Microsoft VS Code app** and selected port/process availability. The snapshot is produced by the existing dogfood build owner; the E2E helper does not rebuild source in the checkout.
-4. `host-prepare` launches an isolated VS Code Extension Development Host with fresh profile, isolated extensions, external task fixture and exact generation-owned session/process/loopback CDP metadata.
-5. After host readiness, the Human establishes each declared initial state, runs the product actions in VS Code, observes and judges them, and returns concise result/evidence. A ready host never supplies a product PASS.
-6. Record relevant observations and necessary transient failure evidence **before** teardown. Normal `host-closure` performs checked owned-host cleanup, checkout release and independent final clean/idle proof for the same generation.
+~~~
+nuinui-e2e ready --production --issue <canonical-GitHub-Issue> --tested-sha <40-lowercase-sha> [--fixture <absolute-external-file>] [--locale default|ja]
+~~~
 
-### Low-round-trip Human setup handoff
+ready allocates a unique generation and free loopback port, uses the reserved
+default .nui fixture when --fixture is omitted, validates the signed Microsoft
+VS Code app and exact immutable dogfood snapshot, starts the clean Human-test
+checkout at the requested SHA, and launches the isolated Extension
+Development Host. It prints the tested SHA and snapshot identity at launch,
+then reports the generation, fixture, port and locale.
 
-For a native Human E2E launch, ChatGPT first confirms the current Issue/approved test plan and exact remote tested SHA, then fixes the generation, external fixture, port and locale. Present the complete canonical `admit`, `start`, `host-check` and `host-prepare` command invocations **together in execution order**, with consistent exact inputs. Explain implementation-checkout and immutable dogfood-snapshot prerequisites up front; GitHub evidence alone does **not** prove local readiness. If a build is required, use only the existing clean-main `dogfood:build` owner under its normal safety requirements, not a build inside the Human-test checkout. Do not combine the phases into a new shell script, helper or alternate launcher.
+An existing snapshot is selected by its exact tested SHA and Mac
+architecture. Its validity comes from the snapshot metadata and full content
+hashes; current.json does not select the build. This permits a previously
+tested SHA to be used when its exact immutable snapshot exists, even if the
+implementation checkout is dirty or on another branch. If the exact snapshot
+is absent, the helper may call the existing dogfood:build owner only when the
+implementation checkout is clean main at that exact SHA and matches
+origin/main. Otherwise startup is BLOCKED before native generation or host
+session creation; there is no alternate build route.
 
-The Human executes each command separately **only after checking the previous result for success and matching identity**. Unambiguous intermediate successes need no ChatGPT round trip; after `HOST SESSION READY`, report the generation-bound result before beginning the declared GUI units. On `BLOCKED`, nonzero exit, mismatch, ambiguous state or Human stop/pause, stop immediately and report the actual phase/output. Retain exact-generation recovery and ownership rules; do not infer success, automatically retry/release, skip per-command fresh preflight or treat host readiness as product PASS.
+On HUMAN E2E READY, the Human establishes each declared initial state, runs
+the product actions in VS Code, observes and judges them, and returns concise
+result/evidence. Host readiness is setup evidence, never product PASS. Record
+relevant observations and transient failure evidence before teardown. Normal
+host-closure performs checked owned-host cleanup, checkout release and final
+clean/idle proof for the same generation.
 
-### Public native CLI shape
+If the command reports BLOCKED, exits nonzero, or returns an identity
+mismatch, stop and report the actual output. Do not retry with a new generation
+or infer success. Use the exact printed generation with host-status,
+host-recover or host-closure only under their ownership checks. The Human-test
+lane remains clean and detached when idle; startup still verifies its current
+idle revision and exact ownership.
 
-```text
-nuinui-e2e <operation> --production --issue <canonical-GitHub-Issue> --generation <token> --tested-sha <40-lowercase-sha> [--lane human-e2e]
-```
-
-Use the named `admit`, `start`, `host-check`, `host-prepare`, `host-status` and `host-closure` commands for their actual phases, not a reconstructed command sequence. `host-check` and `host-prepare` additionally require `--fixture <absolute-external-file> --port <1-65535>`; optional locale is `--locale default|ja`. Keep exact values tied to the Issue, generation, tested SHA and current helper. See LOCAL-TOOLS for the authoritative current interface and CHECKOUTS for start/closure admission.
-
-Production rejects caller-provided manifests/adapters, `NUINUI_E2E_TEST_*` overrides and wrong/missing checkout/session/process identity. `--self-test` is fixture-only, not production authorization. There is no native hand-written shell, SAY helper or launcher fallback.
+Production rejects caller-provided manifests/adapters and
+NUINUI_E2E_TEST_* overrides. --self-test is fixture-only, not production
+authorization. The individual admit, start, host-check and host-prepare
+commands remain available for diagnosis and established recovery workflows;
+ready is the normal startup entry point.
 
 ## Isolated VS Code and fixture baseline
 

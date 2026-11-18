@@ -56,29 +56,51 @@ nuinui-context last-result
 
 `context-check` performs the existing Markdown-link, documented-command, repository/worktree, and installed-executable consistency checks; it is not a new general preflight for each operation. Read-only commands do not overwrite the latest tracked mutation result.
 
-## Active: native GitHub Human E2E (`nuinui-e2e --production`)
+## Active: native GitHub Human E2E (nuinui-e2e --production)
 
-`projects/nuinuiCAD/scripts/nuinui-e2e` is the active native helper after the [#286 activation checkpoint](https://github.com/sayosomi/dev-context/issues/286). It operates only on the existing registered `human-e2e` checkout under the canonical production manifest and signed Microsoft VS Code isolated-host adapter. **New GitHub-native work never uses legacy `nuinui e2e-start` or `nuinui-e2e-prepare`.**
+projects/nuinuiCAD/scripts/nuinui-e2e is the active native helper after the
+[#286 activation checkpoint](https://github.com/sayosomi/nuinuiCAD/issues/286).
+It uses the existing registered human-e2e checkout and signed Microsoft VS
+Code isolated-host adapter. New GitHub-native work never uses legacy
+nuinui e2e-start or nuinui-e2e-prepare.
 
-Common public form (each invocation supplies one explicit operation and its own exact identity):
+After the Issue plan, tested SHA, production-path mapping and ownership are
+confirmed, normal startup is one command:
 
-~~~text
-nuinui-e2e <operation> --production --issue <canonical-GitHub-Issue> --generation <token> --tested-sha <40-lowercase-sha> [--lane human-e2e]
+~~~
+nuinui-e2e ready --production --issue <canonical-GitHub-Issue> --tested-sha <40-lowercase-sha> [--fixture <absolute-external-file>] [--locale default|ja]
 ~~~
 
-Operations:
+ready chooses a unique generation, a free loopback port and the reserved
+default .nui fixture when no fixture is supplied. It admits and starts the
+Human-test checkout, validates the signed app and exact immutable dogfood
+snapshot, and launches the isolated host. See VS-CODE-E2E for the snapshot
+reuse/build boundary and Human GUI handoff. A matching snapshot is selected
+by its exact SHA and platform identity even when implementation checkout is
+dirty or on another branch. An absent snapshot can use the existing
+dogfood:build owner only from clean main at the exact requested SHA.
 
-| Phase | Commands |
+The helper prints the actual tested SHA and snapshot identity at launch.
+HUMAN E2E READY proves host setup only; the Human operates and judges the GUI.
+A BLOCKED result or mismatch requires stopping and using the printed exact
+generation for applicable diagnosis/recovery. Do not infer PASS or retry with
+a new generation.
+
+| Purpose | Commands |
 | --- | --- |
-| Admission/state | `admit`, `status` |
-| Tested checkout | `start` |
-| VS Code host | `host-check`, `host-prepare`, `host-status` |
-| Normal completion | `host-closure` (checked host cleanup → checkout release → final closure) |
-| Targeted diagnosis/recovery | `host-cleanup`, `host-recover`, `release`, `recover`, `closure` |
+| Normal startup | ready |
+| Read-only state | status, host-status |
+| Exact-generation recovery/closure | host-cleanup, host-recover, host-closure, release, recover, closure |
 
-`host-check` and `host-prepare` additionally require `--fixture <absolute-external-file> --port <1-65535>`; optional locale is `--locale default|ja`. Use the existing helper's usage and [VS-CODE-E2E.md](./VS-CODE-E2E.md) for the host contract, not a manually reconstructed multi-stage shell script. `admit` is read-only; `start` fixes the exact SHA and generation. A ready host is not product PASS: the **Human alone** operates and judges the actual VS Code GUI.
+Individual admit, start, host-check and host-prepare commands remain available
+for diagnosis and established workflows. Host-check and host-prepare require
+an external fixture and explicit port when invoked separately; ready allocates
+both and should be used for normal startup.
 
-Production rejects caller-supplied fixture manifests/adapters, `NUINUI_E2E_TEST_*` overrides, unregistered or unexpected worktrees, dirty/wrong checkout state, and mismatched installed artifacts. The native marker governs the active generation; sessions, process ownership, immutable tested artifacts, and cleanup/release receipts must match it. The Human-test checkout cannot be replaced, registered again, or used for product source fixes. Use `host-closure` for normal completion; an interruption or mismatch requires exact-generation diagnosis and applicable `host-recover`/`recover`, never speculative cleanup or a new generation. The complete safety and recovery contract belongs to [CHECKOUTS.md](./CHECKOUTS.md#native-human-manual-e2e).
+Production rejects caller-supplied manifests/adapters, NUINUI_E2E_TEST_*
+overrides and unregistered or unexpected worktrees. Exact-generation
+ownership and cleanup receipts remain mandatory. The Human-test checkout
+cannot be replaced, registered again, or used for product source fixes.
 
 ## Command results and fail-closed recovery
 
