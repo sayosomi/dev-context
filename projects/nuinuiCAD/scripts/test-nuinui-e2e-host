@@ -490,7 +490,7 @@ closure_blocked "$fixture_issue" "$fixture_generation" human "$no_host_tested_sh
 rm "$conflicting_release"
 
 advance_default absent-host-idle
-no_host_idle_sha=$fixture_tested_sha
+no_host_idle_sha=$no_host_tested_sha
 fixture_tested_sha=$no_host_tested_sha
 host_ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 contains 'NATIVE E2E NO-HOST CLEANUP PROOF RECORDED'
@@ -529,11 +529,11 @@ contains 'mutation=no-op'
 
 # Interrupted no-host release stays blocked until the existing recover operation runs.
 fixture_generation=host-absent-release-recovery-0001
-fixture_tested_sha=$no_host_idle_sha
-ok start "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+no_host_recovery_tested_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+ok start "$fixture_issue" "$fixture_generation" human "$no_host_recovery_tested_sha"
 advance_default absent-host-recovery-idle
-no_host_recovery_idle_sha=$fixture_tested_sha
-fixture_tested_sha=$no_host_idle_sha
+no_host_recovery_idle_sha=$no_host_idle_sha
+fixture_tested_sha=$no_host_recovery_tested_sha
 if ( NUINUI_E2E_TEST_FAILPOINT=after-intent invoke_host host-closure \
   "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha" ); then
   fail 'interrupted absent-host release unexpectedly completed'

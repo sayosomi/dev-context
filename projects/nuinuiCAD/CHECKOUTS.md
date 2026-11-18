@@ -352,22 +352,10 @@ Production rejects caller-supplied manifests/adapters and every
 NUINUI_E2E_TEST_* override. The explicit --self-test --manifest mode remains
 fixture-only and cannot supply production checkout authority.
 
-After the Issue plan, exact tested SHA, implementation-path mapping and
-ownership are confirmed, normal Human startup uses one command:
-
-~~~
-nuinui-e2e ready --production --issue <canonical-GitHub-Issue> --tested-sha <40-lowercase-sha> [--fixture <absolute-external-file>] [--locale default|ja]
-~~~
-
-ready verifies complete registered-worktree topology and the clean detached
-Human-test lane at its current idle revision. It selects a verified immutable
-dogfood snapshot by exact tested SHA and platform identity, then starts that
-SHA in the Human-test lane and launches isolated signed VS Code. The
-implementation checkout may be dirty or on another branch when the exact
-snapshot already exists. If it is missing, the existing dogfood build owner
-may run only from clean main at the exact requested SHA, matching origin/main;
-otherwise ready blocks before native generation or host-session creation.
-The helper prints the tested SHA and snapshot identity at launch.
+For normal host startup, exact snapshot selection and the Human handoff, use
+the [canonical one-command Human E2E startup procedure](./VS-CODE-E2E.md#one-command-human-e2e-startup).
+This page continues to own Human-test checkout state, native lifecycle and
+recovery.
 
 Host readiness is setup evidence, never product PASS. Only the Human performs
 and judges Manual E2E in the actual VS Code GUI. host-closure proves and
@@ -377,11 +365,7 @@ For status or interruption, use the printed exact generation with host-status,
 host-recover or recover as applicable. Implementation checkout cleanliness
 does not prevent exact-generation status, recovery or closure after startup.
 
-The separate admit, start, host-check and host-prepare commands remain
-available for diagnosis and established workflows. Host-check and
-host-prepare require an external fixture and explicit port when called
-separately; ready supplies a reserved default fixture and allocates its own
-port. The helper does not choose an oracle, operate the GUI, or judge product
+The helper does not choose an oracle, operate the GUI, or judge product
 behavior.
 
 ### Native generation, occupancy and recovery

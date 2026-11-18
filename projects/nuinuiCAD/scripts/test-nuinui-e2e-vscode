@@ -83,6 +83,9 @@ fail() {
 }
 
 contains() { grep -Fq -- "$1" "$output" || fail "expected output to contain: $1"; }
+assert_file_contains() {
+  grep -Fqx -- "$1" "$2" || fail "expected file to contain exact line: $1"
+}
 
 new_fixture() {
   mode=$1
@@ -684,6 +687,94 @@ contains 'HUMAN E2E READY'
 fixture_generation=$(sed -n 's/^generation=//p' "$output" | tail -1)
 ok host-closure "$fixture_issue" "$fixture_generation" human "$fixture_old_tested"
 contains 'HOST AND NATIVE CLOSURE VERIFIED'
+
+assert_ready_start_recovery() {
+  ready_recovery_failpoint=$1
+  new_fixture one
+  host_test_root_mode=production
+  host_test_home=$fixture_root/private-home
+  fixture_build_adapter=
+  mkdir -m 0700 "$host_test_home" || fail 'private ready-recovery HOME'
+  ready_recovery_idle=$(git -C "$fixture_human" rev-parse HEAD)
+  advance_default ready-older-tested-sha
+  ready_recovery_tested=$fixture_tested_sha
+  setup_vscode_artifacts
+  ready_recovery_snapshot=$fixture_snapshot
+  ready_recovery_snapshot_hash=$(shasum -a 256 \
+    "$ready_recovery_snapshot/snapshot.json" | awk 'NR == 1 {print $1}')
+  advance_default ready-current-main
+  git -C "$fixture_human" fetch origin --prune >/dev/null ||
+    fail 'refresh the disposable Human-test tracking ref'
+  ready_recovery_main=$(git -C "$fixture_human" rev-parse origin/main)
+  [ "$ready_recovery_idle" != "$ready_recovery_main" ] &&
+    [ "$ready_recovery_tested" != "$ready_recovery_main" ] &&
+    [ "$ready_recovery_idle" != "$ready_recovery_tested" ] ||
+    fail 'recovery fixture did not separate idle, tested and latest-main revisions'
+
+  if (NUINUI_E2E_TEST_FAILPOINT=$ready_recovery_failpoint \
+    invoke_ready "$fixture_issue" "$ready_recovery_tested"); then
+    fail "ready failpoint did not interrupt: $ready_recovery_failpoint"
+  fi
+  contains 'BLOCKED: injected interruption'
+  ready_recovery_git_dir=$(git -C "$fixture_human" \
+    rev-parse --absolute-git-dir)
+  ready_recovery_starting=$(find "$ready_recovery_git_dir" -maxdepth 1 \
+    -type f -name 'nuinui-github-e2e-starting-v1.*' -print)
+  [ -n "$ready_recovery_starting" ] ||
+    fail "ready interruption lost its exact startup intent: $ready_recovery_failpoint"
+  fixture_generation=$(awk -F= '$1 == "generation" {print substr($0, index($0, "=") + 1)}' \
+    "$ready_recovery_starting")
+  [ -n "$fixture_generation" ] || fail 'startup intent omitted its generation'
+  assert_file_contains "tested_sha=$ready_recovery_tested" "$ready_recovery_starting"
+  assert_file_contains "idle_sha=$ready_recovery_idle" "$ready_recovery_starting"
+  [ "$(git -C "$fixture_human" rev-parse origin/main)" = \
+    "$ready_recovery_main" ] || fail 'recovery changed the authoritative latest-main ref'
+  [ "$(shasum -a 256 "$ready_recovery_snapshot/snapshot.json" | \
+    awk 'NR == 1 {print $1}')" = "$ready_recovery_snapshot_hash" ] ||
+    fail 'interrupted ready changed the exact older snapshot metadata'
+  case "$ready_recovery_failpoint" in
+    after-start-active-marker)
+      [ -f "$(active_path)" ] || fail 'active-marker interruption lost its active proof'
+      ;;
+    *)
+      [ ! -e "$(active_path)" ] || fail 'active marker was published before tested checkout verification'
+      ;;
+  esac
+  [ ! -e "$(host_root_path "$fixture_generation")" ] ||
+    fail 'interrupted native start launched a host session'
+
+  ready_recovery_before=$(fingerprint)
+  ready_recovery_head=$(git -C "$fixture_human" rev-parse HEAD)
+  blocked recover "$fixture_issue" ready-recovery-wrong-generation-0001 \
+    human "$ready_recovery_tested"
+  [ "$(fingerprint)" = "$ready_recovery_before" ] &&
+    [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$ready_recovery_head" ] ||
+    fail 'mismatched generation recovery changed checkout or ownership evidence'
+
+  ok recover "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  contains 'NATIVE E2E START RECOVERED'
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$ready_recovery_tested" ] &&
+    [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] &&
+    [ -z "$(git -C "$fixture_human" status --porcelain)" ] ||
+    fail 'exact ready recovery did not leave the clean detached tested checkout'
+  [ ! -e "$ready_recovery_starting" ] || fail 'successful recovery retained startup intent'
+  assert_file_contains "idle_sha=$ready_recovery_idle" "$(active_path)"
+  ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  ok release "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$ready_recovery_idle" ] ||
+    fail 'exact closure did not restore the recorded original detached idle SHA'
+  ok closure "$fixture_issue" "$fixture_generation" human "$ready_recovery_tested"
+  contains 'NATIVE E2E FINAL CLOSURE VERIFIED'
+  assert_file_contains "idle_sha=$ready_recovery_idle" \
+    "$(native_record_path release "$fixture_generation")"
+  assert_file_contains "origin_sha=$ready_recovery_main" \
+    "$(native_record_path release "$fixture_generation")"
+}
+
+echo 'VSCODE HOST SELFTEST: old-SHA ready intent, checkout and active-marker recovery'
+assert_ready_start_recovery after-start-intent
+assert_ready_start_recovery after-start-checkout
+assert_ready_start_recovery after-start-active-marker
 
 new_fixture one
 host_test_root_mode=production

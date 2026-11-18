@@ -51,8 +51,10 @@ If the command reports BLOCKED, exits nonzero, or returns an identity
 mismatch, stop and report the actual output. Do not retry with a new generation
 or infer success. Use the exact printed generation with host-status,
 host-recover or host-closure only under their ownership checks. The Human-test
-lane remains clean and detached when idle; startup still verifies its current
-idle revision and exact ownership.
+lane must be clean, detached and unowned when idle. ready records that exact
+idle commit even when it is behind origin/main; release restores the recorded
+commit and verifies the separately recorded origin revision. The tested SHA,
+immutable snapshot identity and Human-test idle SHA remain distinct.
 
 Production rejects caller-provided manifests/adapters and
 NUINUI_E2E_TEST_* overrides. --self-test is fixture-only, not production

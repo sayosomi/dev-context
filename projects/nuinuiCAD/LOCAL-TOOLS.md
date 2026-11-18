@@ -59,32 +59,14 @@ nuinui-context last-result
 ## Active: native GitHub Human E2E (nuinui-e2e --production)
 
 projects/nuinuiCAD/scripts/nuinui-e2e is the active native helper after the
-[#286 activation checkpoint](https://github.com/sayosomi/nuinuiCAD/issues/286).
+[#286 activation checkpoint](https://github.com/sayosomi/dev-context/issues/286).
 It uses the existing registered human-e2e checkout and signed Microsoft VS
 Code isolated-host adapter. New GitHub-native work never uses legacy
 nuinui e2e-start or nuinui-e2e-prepare.
 
-After the Issue plan, tested SHA, production-path mapping and ownership are
-confirmed, normal startup is one command:
-
-~~~
-nuinui-e2e ready --production --issue <canonical-GitHub-Issue> --tested-sha <40-lowercase-sha> [--fixture <absolute-external-file>] [--locale default|ja]
-~~~
-
-ready chooses a unique generation, a free loopback port and the reserved
-default .nui fixture when no fixture is supplied. It admits and starts the
-Human-test checkout, validates the signed app and exact immutable dogfood
-snapshot, and launches the isolated host. See VS-CODE-E2E for the snapshot
-reuse/build boundary and Human GUI handoff. A matching snapshot is selected
-by its exact SHA and platform identity even when implementation checkout is
-dirty or on another branch. An absent snapshot can use the existing
-dogfood:build owner only from clean main at the exact requested SHA.
-
-The helper prints the actual tested SHA and snapshot identity at launch.
-HUMAN E2E READY proves host setup only; the Human operates and judges the GUI.
-A BLOCKED result or mismatch requires stopping and using the printed exact
-generation for applicable diagnosis/recovery. Do not infer PASS or retry with
-a new generation.
+For the canonical normal-startup command, snapshot/build boundary and Human
+handoff, see [One-command Human E2E startup](./VS-CODE-E2E.md#one-command-human-e2e-startup).
+This page keeps the native helper command inventory and legacy boundary.
 
 | Purpose | Commands |
 | --- | --- |
@@ -92,10 +74,8 @@ a new generation.
 | Read-only state | status, host-status |
 | Exact-generation recovery/closure | host-cleanup, host-recover, host-closure, release, recover, closure |
 
-Individual admit, start, host-check and host-prepare commands remain available
-for diagnosis and established workflows. Host-check and host-prepare require
-an external fixture and explicit port when invoked separately; ready allocates
-both and should be used for normal startup.
+See the canonical VS-CODE-E2E procedure for normal startup. The individual
+commands above remain available for diagnosis and established workflows.
 
 Production rejects caller-supplied manifests/adapters, NUINUI_E2E_TEST_*
 overrides and unregistered or unexpected worktrees. Exact-generation

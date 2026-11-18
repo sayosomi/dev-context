@@ -73,7 +73,12 @@ nuinui_e2e__read_record() {
   case "$nuinui_e2e_record_fixture_policy" in required|historical) ;; *) return 2 ;; esac
   nuinui_e2e_record_base_keys=schema_version,issue,issue_url,local_id,lane,repository,checkout,git_dir,manifest,manifest_sha256,default_branch,idle_policy,tested_sha,generation
   case "$nuinui_e2e_record_kind" in
-    active) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys ;;
+    active)
+      nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys
+      if nuinui_ownership_field "$nuinui_e2e_record_path" idle_sha >/dev/null 2>&1; then
+        nuinui_e2e_record_keys=$nuinui_e2e_record_keys,idle_sha
+      fi
+      ;;
     cleanup)
       nuinui_e2e_record_proof=$(nuinui_ownership_field "$nuinui_e2e_record_path" proof) || return 1
       case "$nuinui_e2e_record_proof" in
@@ -83,7 +88,15 @@ nuinui_e2e__read_record() {
         *) return 1 ;;
       esac
       ;;
-    starting|release|releasing) nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state ;;
+    starting)
+      nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state
+      ;;
+    release|releasing)
+      nuinui_e2e_record_keys=$nuinui_e2e_record_base_keys,idle_sha,record_state
+      if nuinui_ownership_field "$nuinui_e2e_record_path" origin_sha >/dev/null 2>&1; then
+        nuinui_e2e_record_keys=$nuinui_e2e_record_keys,origin_sha
+      fi
+      ;;
     *) return 2 ;;
   esac
   nuinui_e2e__regular "$nuinui_e2e_record_path" || return 1
@@ -98,11 +111,18 @@ nuinui_e2e__read_record() {
     nuinui_e2e_r_checkout nuinui_e2e_r_git_dir nuinui_e2e_r_manifest \
     nuinui_e2e_r_manifest_sha nuinui_e2e_r_default nuinui_e2e_r_idle \
     nuinui_e2e_r_tested nuinui_e2e_r_generation \
-    nuinui_e2e_r_extra_one nuinui_e2e_r_extra_two <<EOF
+    nuinui_e2e_r_extra_one nuinui_e2e_r_extra_two \
+    nuinui_e2e_r_extra_three <<EOF
 $nuinui_e2e_record_rows
 EOF
+  nuinui_e2e_r_idle_sha=
+  nuinui_e2e_r_origin_sha=
   if [ "$nuinui_e2e_record_kind" = active ]; then
-    [ -z "$nuinui_e2e_r_extra_one$nuinui_e2e_r_extra_two" ] || return 1
+    [ -z "$nuinui_e2e_r_extra_two$nuinui_e2e_r_extra_three" ] || return 1
+    nuinui_e2e_r_idle_sha=$nuinui_e2e_r_extra_one
+    if [ -n "$nuinui_e2e_r_idle_sha" ]; then
+      nuinui_e2e_valid_sha "$nuinui_e2e_r_idle_sha" || return 1
+    fi
   fi
   [ "$nuinui_e2e_r_schema" = 1 ] || return 1
   nuinui_e2e_r_number=$(nuinui_e2e_identity_number "$nuinui_e2e_r_issue") || return 1
@@ -149,6 +169,15 @@ EOF
     nuinui_e2e_r_idle_sha=$nuinui_e2e_r_extra_one
     nuinui_e2e_r_state=$nuinui_e2e_r_extra_two
     nuinui_e2e_valid_sha "$nuinui_e2e_r_idle_sha" || return 1
+    if [ "$nuinui_e2e_record_kind" = release ] ||
+      [ "$nuinui_e2e_record_kind" = releasing ]; then
+      nuinui_e2e_r_origin_sha=$nuinui_e2e_r_extra_three
+      if [ -n "$nuinui_e2e_r_origin_sha" ]; then
+        nuinui_e2e_valid_sha "$nuinui_e2e_r_origin_sha" || return 1
+      fi
+    else
+      [ -z "$nuinui_e2e_r_extra_three" ] || return 1
+    fi
     if [ "$nuinui_e2e_record_kind" = starting ]; then
       [ "$nuinui_e2e_r_state" = pending ] || return 1
     elif [ "$nuinui_e2e_record_kind" = release ]; then
@@ -782,6 +811,7 @@ EOF
     [ "$nuinui_e2e_check_lane" = "$nuinui_e2e_expected_lane" ] || return 1
     nuinui_e2e_active_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" active) || return 1
     nuinui_e2e__read_expected_active "$nuinui_e2e_active_path" || return 1
+    nuinui_e2e_lane_active_idle=$nuinui_e2e_r_idle_sha
     if [ "$nuinui_e2e_lane_starting" = yes ]; then
       case "$nuinui_e2e_operation" in
         status|start|recover) ;;
@@ -790,21 +820,31 @@ EOF
       nuinui_e2e_starting_path=$(nuinui_e2e__path_for \
         "$nuinui_e2e_check_repo" starting) || return 1
       nuinui_e2e__read_expected_starting "$nuinui_e2e_starting_path" || return 1
-      [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] &&
-        git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
-          "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested" || {
+      nuinui_e2e_lane_start_idle=$nuinui_e2e_r_idle_sha
+      [ -z "$nuinui_e2e_lane_active_idle" ] ||
+        [ "$nuinui_e2e_lane_active_idle" = "$nuinui_e2e_lane_start_idle" ] || {
+          echo '  state=BLOCKED reason=start-active-idle-intent-mismatch'
+          return 1
+        }
+      if [ "$nuinui_e2e_head" != "$nuinui_e2e_expected_tested" ] ||
+        { [ "$nuinui_e2e_operation" != recover ] &&
+          ! git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
+            "$nuinui_e2e_lane_start_idle" "$nuinui_e2e_expected_tested"; }; then
             echo '  state=BLOCKED reason=start-intent-does-not-match-tested-checkout'
             return 1
-          }
+      fi
     fi
     if [ "$nuinui_e2e_lane_releasing" = yes ]; then
       nuinui_e2e_releasing_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" releasing) || return 1
       nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing_path" || return 1
       nuinui_e2e_lane_intent_idle=$nuinui_e2e_r_idle_sha
+      nuinui_e2e_lane_intent_origin=${nuinui_e2e_r_origin_sha:-$nuinui_e2e_r_idle_sha}
       nuinui_e2e_release_path=$(nuinui_e2e__path_for "$nuinui_e2e_check_repo" release) || return 1
       if nuinui_e2e__exists "$nuinui_e2e_release_path"; then
         nuinui_e2e__read_expected_release "$nuinui_e2e_release_path" &&
-          [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_lane_intent_idle" ] || return 1
+          [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_lane_intent_idle" ] &&
+          [ "${nuinui_e2e_r_origin_sha:-$nuinui_e2e_r_idle_sha}" = \
+            "$nuinui_e2e_lane_intent_origin" ] || return 1
       fi
       [ "$nuinui_e2e_head" = "$nuinui_e2e_expected_tested" ] ||
         [ "$nuinui_e2e_head" = "$nuinui_e2e_r_idle_sha" ] || return 1
@@ -855,8 +895,9 @@ EOF
       nuinui_e2e__exists "$nuinui_e2e_cleanup_path" ||
       [ "$nuinui_e2e_head" != "$nuinui_e2e_r_idle_sha" -a \
         "$nuinui_e2e_head" != "$nuinui_e2e_expected_tested" ] ||
-      ! git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
-        "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested"; then
+      { [ "$nuinui_e2e_operation" != recover ] &&
+        ! git -C "$nuinui_e2e_check_repo" merge-base --is-ancestor \
+          "$nuinui_e2e_r_idle_sha" "$nuinui_e2e_expected_tested"; }; then
       echo '  state=BLOCKED reason=start-intent-does-not-match-recoverable-checkout'
       return 1
     fi
@@ -981,7 +1022,8 @@ nuinui_e2e__refresh_tested_ref() {
       echo 'BLOCKED: authoritative default revision is unavailable'
       return 1
     }
-  if [ "${nuinui_e2e_ready_mode:-no}" != yes ]; then
+  if [ "${nuinui_e2e_ready_mode:-no}" != yes ] &&
+    [ "${nuinui_e2e_start_recovery_mode:-no}" != yes ]; then
     [ "$nuinui_e2e_refresh_live" = "$nuinui_e2e_refresh_tested" ] || {
       echo 'BLOCKED: tested SHA is not the authoritative default-branch commit'
       return 1
@@ -1005,6 +1047,30 @@ nuinui_e2e__starting_content() {
   printf 'idle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_starting_idle_sha"
 }
 
+nuinui_e2e__active_content() {
+  [ "$#" = 1 ] || return 2
+  nuinui_e2e_active_idle_sha=$1
+  nuinui_e2e__record_base
+  if [ -n "$nuinui_e2e_active_idle_sha" ]; then
+    nuinui_e2e_valid_sha "$nuinui_e2e_active_idle_sha" || return 1
+    printf 'idle_sha=%s\n' "$nuinui_e2e_active_idle_sha"
+  fi
+}
+
+nuinui_e2e__release_content() {
+  [ "$#" = 3 ] || return 2
+  nuinui_e2e_release_record_idle=$1
+  nuinui_e2e_release_record_state=$2
+  nuinui_e2e_release_record_origin=$3
+  nuinui_e2e_valid_sha "$nuinui_e2e_release_record_idle" &&
+    nuinui_e2e_valid_sha "$nuinui_e2e_release_record_origin" || return 1
+  case "$nuinui_e2e_release_record_state" in pending|complete) ;; *) return 2 ;; esac
+  nuinui_e2e__record_base
+  printf 'idle_sha=%s\nrecord_state=%s\norigin_sha=%s\n' \
+    "$nuinui_e2e_release_record_idle" "$nuinui_e2e_release_record_state" \
+    "$nuinui_e2e_release_record_origin"
+}
+
 nuinui_e2e__finish_start() {
   [ "$#" = 3 ] || return 2
   nuinui_e2e_finish_starting=$1
@@ -1017,7 +1083,8 @@ nuinui_e2e__finish_start() {
   nuinui_e2e_finish_idle_sha=$nuinui_e2e_r_idle_sha
   nuinui_e2e_finish_start_content=$(nuinui_e2e__starting_content \
     "$nuinui_e2e_finish_idle_sha") || return 1
-  nuinui_e2e_finish_active_content=$(nuinui_e2e__record_base) || return 1
+  nuinui_e2e_finish_active_content=$(nuinui_e2e__active_content \
+    "$nuinui_e2e_finish_idle_sha") || return 1
   # Normal start already fetched and validated the tested revision before
   # publishing its intent. Recovery is a new command and must refresh afresh.
   if [ "$nuinui_e2e_finish_interrupted" = no ]; then
@@ -1026,6 +1093,8 @@ nuinui_e2e__finish_start() {
   fi
   if nuinui_e2e__exists "$nuinui_e2e_finish_active"; then
     nuinui_e2e__read_expected_active "$nuinui_e2e_finish_active" &&
+      { [ -z "$nuinui_e2e_r_idle_sha" ] ||
+        [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_finish_idle_sha" ]; } &&
       nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
         "$nuinui_e2e_expected_tested" || {
           echo 'BLOCKED: active marker does not verify the interrupted startup checkout'
@@ -1044,7 +1113,8 @@ nuinui_e2e__finish_start() {
     echo 'BLOCKED: startup idle revision changed before the tested checkout transition'
     return 1
   }
-  if [ "${nuinui_e2e_ready_mode:-no}" != yes ]; then
+  if [ "${nuinui_e2e_ready_mode:-no}" != yes ] &&
+    [ "${nuinui_e2e_start_recovery_mode:-no}" != yes ]; then
     git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
       "$nuinui_e2e_finish_idle_sha" "$nuinui_e2e_expected_tested" || {
         echo 'BLOCKED: startup idle revision cannot safely transition to tested SHA'
@@ -1075,7 +1145,8 @@ nuinui_e2e__finish_start() {
   fi
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_expected_tested" && {
-      [ "${nuinui_e2e_ready_mode:-no}" = yes ] ||
+      { [ "${nuinui_e2e_ready_mode:-no}" = yes ] ||
+        [ "${nuinui_e2e_start_recovery_mode:-no}" = yes ]; } ||
         [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
           "$nuinui_e2e_expected_tested" ];
     } || {
@@ -1148,12 +1219,6 @@ nuinui_e2e_admit() {
   fi
   nuinui_e2e_idle_sha=$(git -C "$nuinui_e2e_expected_repo" \
     rev-parse HEAD 2>/dev/null) || return 1
-  if [ "${nuinui_e2e_ready_mode:-no}" = yes ]; then
-    [ "$nuinui_e2e_idle_sha" = "$nuinui_e2e_admit_idle" ] || {
-      echo 'BLOCKED: Human-test lane is not at its authoritative idle revision'
-      return 1
-    }
-  fi
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_idle_sha" || {
       echo 'BLOCKED: Human-test lane is not FREE at its clean detached idle revision'
@@ -1277,12 +1342,6 @@ nuinui_e2e_start() {
     git -C "$nuinui_e2e_expected_repo" merge-base --is-ancestor \
       "$nuinui_e2e_idle_sha" "$nuinui_e2e_expected_tested" || {
         echo 'BLOCKED: Human-test idle checkout cannot safely transition to tested SHA'
-        return 1
-      }
-  else
-    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_idle_sha" ] || {
-        echo 'BLOCKED: Human-test checkout no longer matches its authoritative idle revision'
         return 1
       }
   fi
@@ -1436,11 +1495,16 @@ nuinui_e2e__release() {
   if ! nuinui_e2e__exists "$nuinui_e2e_active"; then
     nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
     nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" &&
-      nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
-      [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-        "$nuinui_e2e_r_idle_sha" ] &&
+      nuinui_e2e__read_expected_release "$nuinui_e2e_release" || {
+        echo 'BLOCKED: repeated release has no exact verified receipt or idle checkout'
+        return 1
+      }
+    nuinui_e2e_release_idle_sha=$nuinui_e2e_r_idle_sha
+    nuinui_e2e_release_origin_sha=${nuinui_e2e_r_origin_sha:-$nuinui_e2e_release_idle_sha}
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_release_origin_sha" ] &&
       nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-        "$nuinui_e2e_r_idle_sha" || {
+        "$nuinui_e2e_release_idle_sha" || {
           echo 'BLOCKED: repeated release has no exact verified receipt or idle checkout'
           return 1
         }
@@ -1452,6 +1516,7 @@ nuinui_e2e__release() {
     echo 'BLOCKED: release requires the exact active generation'
     return 1
   }
+  nuinui_e2e_original_idle_sha=$nuinui_e2e_r_idle_sha
   nuinui_e2e_cleanup=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" cleanup) || return 1
   nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || {
     echo 'BLOCKED: generation-matched fixture cleanup evidence is required'
@@ -1462,22 +1527,25 @@ nuinui_e2e__release() {
       echo 'BLOCKED: release requires the clean detached tested checkout'
       return 1
     }
-  nuinui_e2e_marker_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_idle_sha=$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo") || {
+  nuinui_e2e_release_origin_sha=$(nuinui_e2e__live_idle_sha \
+    "$nuinui_e2e_expected_repo") || {
     echo 'BLOCKED: authoritative detached idle revision is unavailable'
     return 1
   }
+  nuinui_e2e_idle_sha=${nuinui_e2e_original_idle_sha:-$nuinui_e2e_release_origin_sha}
   git -C "$nuinui_e2e_expected_repo" cat-file -e \
     "$nuinui_e2e_idle_sha^{commit}" 2>/dev/null || {
-      echo 'BLOCKED: authoritative idle revision is absent from the fixture object store'
+      echo 'BLOCKED: recorded detached idle revision is absent from the checkout object store'
       return 1
     }
+  nuinui_e2e_marker_content=$(nuinui_e2e__active_content \
+    "$nuinui_e2e_original_idle_sha") || return 1
   nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
   nuinui_e2e_release=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" release) || return 1
-  nuinui_e2e_releasing_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_releasing_content=$nuinui_e2e_releasing_content$(printf '\nidle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_idle_sha")
-  nuinui_e2e_release_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_release_content=$nuinui_e2e_release_content$(printf '\nidle_sha=%s\nrecord_state=complete\n' "$nuinui_e2e_idle_sha")
+  nuinui_e2e_releasing_content=$(nuinui_e2e__release_content \
+    "$nuinui_e2e_idle_sha" pending "$nuinui_e2e_release_origin_sha") || return 1
+  nuinui_e2e_release_content=$(nuinui_e2e__release_content \
+    "$nuinui_e2e_idle_sha" complete "$nuinui_e2e_release_origin_sha") || return 1
   if nuinui_e2e__exists "$nuinui_e2e_release"; then
     nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
     [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_idle_sha" ] || return 1
@@ -1495,7 +1563,7 @@ nuinui_e2e__release() {
   [ "$(nuinui_e2e__sha256 "$nuinui_e2e_manifest_path")" = \
     "$nuinui_e2e_manifest_sha" ] &&
     [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_idle_sha" ] &&
+      "$nuinui_e2e_release_origin_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_expected_tested" || {
         echo 'BLOCKED: release freshness changed at its mutation boundary'
@@ -1510,16 +1578,32 @@ nuinui_e2e__release() {
     echo 'BLOCKED: injected interruption after release intent; recovery evidence retained'
     return 1
   }
-  nuinui_e2e__read_expected_active "$nuinui_e2e_active" &&
-    nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" &&
-    nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing" &&
-    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_idle_sha" ] &&
-    nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
-      "$nuinui_e2e_expected_tested" || {
-        echo 'BLOCKED: release mutation boundary no longer matches its exact intent'
-        return 1
-      }
+  if ! nuinui_e2e__read_expected_active "$nuinui_e2e_active"; then
+    echo 'BLOCKED: active generation changed at the release mutation boundary'
+    return 1
+  fi
+  if [ -n "$nuinui_e2e_r_idle_sha" ] &&
+    [ "$nuinui_e2e_r_idle_sha" != "$nuinui_e2e_idle_sha" ]; then
+    echo 'BLOCKED: recorded idle SHA changed at the release mutation boundary'
+    return 1
+  fi
+  if ! nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup"; then
+    echo 'BLOCKED: cleanup evidence changed at the release mutation boundary'
+    return 1
+  fi
+  if ! nuinui_e2e__read_expected_releasing "$nuinui_e2e_releasing"; then
+    echo 'BLOCKED: release intent changed at the release mutation boundary'
+    return 1
+  fi
+  if [ "$nuinui_e2e_r_idle_sha" != "$nuinui_e2e_idle_sha" ] ||
+    [ "$nuinui_e2e_r_origin_sha" != "$nuinui_e2e_release_origin_sha" ] ||
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" != \
+      "$nuinui_e2e_release_origin_sha" ] ||
+    ! nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
+      "$nuinui_e2e_expected_tested"; then
+    echo 'BLOCKED: release freshness or checkout changed at its mutation boundary'
+    return 1
+  fi
   if [ "$nuinui_e2e_expected_tested" != "$nuinui_e2e_idle_sha" ]; then
     git -C "$nuinui_e2e_expected_repo" switch --detach \
       "$nuinui_e2e_idle_sha" >/dev/null 2>&1 || {
@@ -1529,7 +1613,7 @@ nuinui_e2e__release() {
   fi
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_idle_sha" &&
     [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_idle_sha" ] || {
+      "$nuinui_e2e_release_origin_sha" ] || {
         echo 'BLOCKED: detached idle checkout verification failed; intent retained'
         return 1
       }
@@ -1543,7 +1627,8 @@ nuinui_e2e__release() {
       return 1
     }
   nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
-    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_idle_sha" ] || {
+    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_idle_sha" ] &&
+    [ "$nuinui_e2e_r_origin_sha" = "$nuinui_e2e_release_origin_sha" ] || {
       echo 'BLOCKED: release receipt verification failed; active marker retained'
       return 1
     }
@@ -1592,7 +1677,9 @@ nuinui_e2e_recover() {
   nuinui_e2e_releasing=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" releasing) || return 1
   nuinui_e2e_starting=$(nuinui_e2e__path_for "$nuinui_e2e_expected_repo" starting) || return 1
   if nuinui_e2e__exists "$nuinui_e2e_starting"; then
+    nuinui_e2e_start_recovery_mode=yes
     nuinui_e2e__finish_start "$nuinui_e2e_starting" "$nuinui_e2e_active" no || return 1
+    nuinui_e2e_start_recovery_mode=no
     echo 'NATIVE E2E START RECOVERED'
     echo "issue=$nuinui_e2e_expected_issue"
     echo "tested_sha=$nuinui_e2e_expected_tested"
@@ -1605,9 +1692,11 @@ nuinui_e2e_recover() {
     if ! nuinui_e2e__exists "$nuinui_e2e_active" &&
       nuinui_e2e__exists "$nuinui_e2e_release" &&
       nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
+      nuinui_e2e_recovery_idle_sha=$nuinui_e2e_r_idle_sha &&
+      nuinui_e2e_recovery_origin_sha=${nuinui_e2e_r_origin_sha:-$nuinui_e2e_recovery_idle_sha} &&
       [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-        "$nuinui_e2e_r_idle_sha" ] &&
-      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_r_idle_sha"; then
+        "$nuinui_e2e_recovery_origin_sha" ] &&
+      nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_recovery_idle_sha"; then
       echo 'NATIVE E2E RECOVERY ALREADY COMPLETE'
       echo 'mutation=no-op'
       return 0
@@ -1620,12 +1709,15 @@ nuinui_e2e_recover() {
     return 1
   }
   nuinui_e2e_recovery_idle_sha=$nuinui_e2e_r_idle_sha
+  nuinui_e2e_recovery_origin_sha=${nuinui_e2e_r_origin_sha:-$nuinui_e2e_recovery_idle_sha}
   nuinui_e2e__read_expected_cleanup "$nuinui_e2e_cleanup" || {
     echo 'BLOCKED: exact generation-matched cleanup evidence is missing'
     return 1
   }
-  [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_recovery_idle_sha" ] || {
+  git -C "$nuinui_e2e_expected_repo" cat-file -e \
+    "$nuinui_e2e_recovery_idle_sha^{commit}" 2>/dev/null &&
+    [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
+      "$nuinui_e2e_recovery_origin_sha" ] || {
       echo 'BLOCKED: authoritative idle SHA changed after release interruption'
       return 1
     }
@@ -1638,18 +1730,21 @@ nuinui_e2e_recover() {
         return 1
       }
   if nuinui_e2e__exists "$nuinui_e2e_active"; then
-    nuinui_e2e__read_expected_active "$nuinui_e2e_active" || return 1
-    nuinui_e2e_marker_content=$(nuinui_e2e__record_base)
+    nuinui_e2e__read_expected_active "$nuinui_e2e_active" &&
+      { [ -z "$nuinui_e2e_r_idle_sha" ] ||
+        [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_recovery_idle_sha" ]; } || return 1
+    nuinui_e2e_marker_content=$(nuinui_e2e__active_content \
+      "$nuinui_e2e_r_idle_sha") || return 1
   else
     [ "$nuinui_e2e_expected_head" = "$nuinui_e2e_recovery_idle_sha" ] || {
       echo 'BLOCKED: active marker is absent before the idle checkout was verified'
       return 1
     }
   fi
-  nuinui_e2e_releasing_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_releasing_content=$nuinui_e2e_releasing_content$(printf '\nidle_sha=%s\nrecord_state=pending\n' "$nuinui_e2e_recovery_idle_sha")
-  nuinui_e2e_release_content=$(nuinui_e2e__record_base)
-  nuinui_e2e_release_content=$nuinui_e2e_release_content$(printf '\nidle_sha=%s\nrecord_state=complete\n' "$nuinui_e2e_recovery_idle_sha")
+  nuinui_e2e_releasing_content=$(nuinui_e2e__release_content \
+    "$nuinui_e2e_recovery_idle_sha" pending "$nuinui_e2e_recovery_origin_sha") || return 1
+  nuinui_e2e_release_content=$(nuinui_e2e__release_content \
+    "$nuinui_e2e_recovery_idle_sha" complete "$nuinui_e2e_recovery_origin_sha") || return 1
   if [ "$nuinui_e2e_expected_head" = "$nuinui_e2e_expected_tested" ]; then
     git -C "$nuinui_e2e_expected_repo" switch --detach \
       "$nuinui_e2e_recovery_idle_sha" >/dev/null 2>&1 || {
@@ -1660,13 +1755,15 @@ nuinui_e2e_recover() {
   nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
     "$nuinui_e2e_recovery_idle_sha" &&
     [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_recovery_idle_sha" ] || {
+      "$nuinui_e2e_recovery_origin_sha" ] || {
         echo 'BLOCKED: exact recovery could not verify authoritative detached idle checkout'
         return 1
       }
   if nuinui_e2e__exists "$nuinui_e2e_release"; then
     nuinui_e2e__read_expected_release "$nuinui_e2e_release" &&
-      [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_recovery_idle_sha" ] || {
+      [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_recovery_idle_sha" ] &&
+      [ "${nuinui_e2e_r_origin_sha:-$nuinui_e2e_r_idle_sha}" = \
+        "$nuinui_e2e_recovery_origin_sha" ] || {
         echo 'BLOCKED: existing release receipt conflicts with recovery intent'
         return 1
       }
@@ -1677,6 +1774,8 @@ nuinui_e2e_recover() {
         return 1
       }
     nuinui_e2e__read_expected_release "$nuinui_e2e_release" || return 1
+    [ "$nuinui_e2e_r_idle_sha" = "$nuinui_e2e_recovery_idle_sha" ] &&
+      [ "$nuinui_e2e_r_origin_sha" = "$nuinui_e2e_recovery_origin_sha" ] || return 1
   fi
   if nuinui_e2e__exists "$nuinui_e2e_active"; then
     nuinui_e2e__remove_exact "$nuinui_e2e_active" "$nuinui_e2e_marker_content" || {
@@ -1729,8 +1828,9 @@ nuinui_e2e__closure() {
     return 1
   }
   nuinui_e2e_closure_idle_sha=$nuinui_e2e_r_idle_sha
+  nuinui_e2e_closure_origin_sha=${nuinui_e2e_r_origin_sha:-$nuinui_e2e_closure_idle_sha}
   [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-    "$nuinui_e2e_closure_idle_sha" ] &&
+    "$nuinui_e2e_closure_origin_sha" ] &&
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" \
       "$nuinui_e2e_closure_idle_sha" || {
         echo 'BLOCKED: final detached checkout or authoritative idle revision is not verified'

@@ -425,7 +425,7 @@ EOF
     nuinui_e2e_host__cleanup_proof_matches \
       "$(nuinui_e2e__sha256 "$nuinui_e2e_host_cleanup_receipt")" || return 1
     [ "$(nuinui_e2e__live_idle_sha "$nuinui_e2e_expected_repo")" = \
-      "$nuinui_e2e_r_idle_sha" ] || return 1
+      "${nuinui_e2e_r_origin_sha:-$nuinui_e2e_r_idle_sha}" ] || return 1
     nuinui_e2e__checked_out "$nuinui_e2e_expected_repo" "$nuinui_e2e_r_idle_sha" || return 1
     nuinui_e2e_host_state=RELEASED
   else
@@ -444,43 +444,60 @@ nuinui_e2e_host__completed_history_safe() {
     *" $nuinui_e2e_history_hash "*) return 0 ;;
   esac
 
-  # A release receipt marks an unrelated generation as historical evidence.
-  # Do not parse or cross-validate its completed records during a new run.
+  # A compact terminal identity check distinguishes a closed generation from
+  # a corrupt or conflicting release receipt. Historical lane paths and
+  # manifest identity are intentionally not compared with today's manifest.
   nuinui_e2e_history_release=$nuinui_e2e_history_git_dir/nuinui-github-e2e-release-v1.$nuinui_e2e_history_hash
   nuinui_e2e__regular "$nuinui_e2e_history_release" || {
     echo "BLOCKED: completed generation $nuinui_e2e_history_hash has no regular release receipt"
     return 1
   }
+  nuinui_e2e_history_schema=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" schema_version) || return 1
+  nuinui_e2e_history_issue=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" issue) || return 1
+  nuinui_e2e_history_url=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" issue_url) || return 1
+  nuinui_e2e_history_token=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" local_id) || return 1
+  nuinui_e2e_history_repository=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" repository) || return 1
+  nuinui_e2e_history_release_generation=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" generation) || return 1
+  nuinui_e2e_history_tested=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" tested_sha) || return 1
+  nuinui_e2e_history_idle=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" idle_sha) || return 1
+  nuinui_e2e_history_state=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" record_state) || return 1
+  nuinui_e2e_history_manifest_sha=$(nuinui_ownership_field \
+    "$nuinui_e2e_history_release" manifest_sha256) || return 1
+  nuinui_e2e_identity_number "$nuinui_e2e_history_issue" >/dev/null || return 1
+  [ "$nuinui_e2e_history_schema" = 1 ] &&
+    [ "$nuinui_e2e_history_url" = "$(nuinui_e2e_identity_url \
+      "$nuinui_e2e_history_issue")" ] &&
+    [ "$nuinui_e2e_history_token" = "$(nuinui_e2e_identity_token \
+      "$nuinui_e2e_history_issue")" ] &&
+    [ "$nuinui_e2e_history_repository" = sayosomi/nuinuiCAD ] &&
+    nuinui_e2e_valid_generation "$nuinui_e2e_history_release_generation" &&
+    [ "$(nuinui_e2e__generation_hash \
+      "$nuinui_e2e_history_release_generation")" = "$nuinui_e2e_history_hash" ] &&
+    [ "$nuinui_e2e_history_state" = complete ] &&
+    nuinui_e2e_valid_sha "$nuinui_e2e_history_tested" &&
+    nuinui_e2e_valid_sha "$nuinui_e2e_history_idle" &&
+    nuinui_e2e_valid_digest "$nuinui_e2e_history_manifest_sha" || {
+      echo "BLOCKED: completed generation $nuinui_e2e_history_hash has a conflicting release receipt"
+      return 1
+    }
   nuinui_e2e_history_host_cleanup=$nuinui_e2e_history_git_dir/nuinui-github-e2e-host-cleanup-v1.$nuinui_e2e_history_hash
   if nuinui_e2e__exists "$nuinui_e2e_history_host_cleanup"; then
-    # Host cleanup is terminal evidence, so its native release proof must
-    # still be a valid receipt for this exact historical generation. Old
-    # preparation details remain opaque startup history.
+    # Closed generations are immutable history. Require terminal receipt
+    # files, but never reparse their former manifest or lane context here.
     nuinui_e2e__regular "$nuinui_e2e_history_host_cleanup" &&
-      nuinui_e2e__regular "$nuinui_e2e_history_git_dir/nuinui-github-e2e-cleanup-v1.$nuinui_e2e_history_hash" &&
-      nuinui_e2e__read_record "$nuinui_e2e_history_release" release historical || {
+      nuinui_e2e__regular "$nuinui_e2e_history_git_dir/nuinui-github-e2e-cleanup-v1.$nuinui_e2e_history_hash" || {
         echo "BLOCKED: completed generation $nuinui_e2e_history_hash has invalid terminal receipts"
         return 1
       }
-    nuinui_e2e_history_lane_repo=$(lane_manifest_lane_path \
-      "$nuinui_e2e_manifest_path" "$nuinui_e2e_r_lane") || return 1
-    nuinui_e2e_history_lane_repo=$(lane_execution__canonical_path \
-      "$nuinui_e2e_history_lane_repo") || return 1
-    nuinui_e2e_history_lane_git_dir=$(lane_execution__git_dir \
-      "$nuinui_e2e_history_lane_repo") || return 1
-    [ "$(lane_manifest_lane_role "$nuinui_e2e_manifest_path" \
-      "$nuinui_e2e_r_lane")" = human-test ] &&
-      [ "$nuinui_e2e_r_checkout" = "$nuinui_e2e_history_lane_repo" ] &&
-      [ "$nuinui_e2e_r_git_dir" = "$nuinui_e2e_history_lane_git_dir" ] &&
-      [ "$nuinui_e2e_r_manifest" = "$nuinui_e2e_manifest_path" ] &&
-      [ "$nuinui_e2e_r_manifest_sha" = "$nuinui_e2e_manifest_sha" ] &&
-      [ "$nuinui_e2e_r_default" = "$nuinui_e2e_default_branch" ] &&
-      [ "$nuinui_e2e_r_idle" = detached ] &&
-      [ "$(nuinui_e2e__generation_hash "$nuinui_e2e_r_generation")" = \
-        "$nuinui_e2e_history_hash" ] || {
-          echo "BLOCKED: completed generation $nuinui_e2e_history_hash has mismatched terminal proof"
-          return 1
-        }
   fi
   for nuinui_e2e_history_name in \
     nuinui-github-e2e-starting-v1.$nuinui_e2e_history_hash \

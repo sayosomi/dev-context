@@ -339,6 +339,14 @@ metadata_path() {
     "$metadata_kind" "$(generation_hash "$metadata_generation")"
 }
 
+release_field() {
+  release_field_key=$1
+  release_field_generation=$2
+  awk -F= -v key="$release_field_key" \
+    '$1 == key {print substr($0, index($0, "=") + 1)}' \
+    "$(metadata_path release "$release_field_generation")"
+}
+
 state_fingerprint() {
   state_git_dir=$(git -C "$fixture_human" rev-parse --absolute-git-dir)
   find "$state_git_dir" -maxdepth 1 -name 'nuinui-github-e2e-*' -type f -print |
@@ -363,7 +371,9 @@ if [ "${NUINUI_E2E_TEST_CASE:-all}" = startup ]; then
   while [ "$startup_history_index" -lt 24 ]; do
     startup_history_generation=completed-history-$startup_history_index
     startup_history_hash=$(generation_hash "$startup_history_generation")
-    printf 'completed receipt retained as opaque history\n' \
+    printf 'schema_version=1\nissue=%s\nissue_url=https://github.com/sayosomi/nuinuiCAD/issues/268\nlocal_id=GH-sayosomi-nuinuiCAD-268\nrepository=sayosomi/nuinuiCAD\ngeneration=%s\ntested_sha=%s\nidle_sha=%s\nrecord_state=complete\nmanifest_sha256=%s\n' \
+      "$fixture_issue" "$startup_history_generation" "$fixture_tested_sha" \
+      "$startup_idle_sha" "$(shasum -a 256 "$fixture_manifest" | awk 'NR == 1 {print $1}')" \
       > "$startup_git_dir/nuinui-github-e2e-release-v1.$startup_history_hash"
     printf 'old host detail is not startup authority\n' \
       > "$startup_git_dir/nuinui-github-e2e-host-ready-v1.$startup_history_hash"
@@ -527,11 +537,12 @@ expect_block release "$fixture_issue" "$fixture_generation" human "$fixture_test
 expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 assert_contains 'fixture-no-host-session'
 advance_default after-start
-fixture_idle_sha=$(git -C "$fixture_impl" rev-parse HEAD)
+fixture_latest_main_sha=$(git -C "$fixture_impl" rev-parse HEAD)
 expect_ok release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 assert_contains 'receipt=verified-before-active-marker-removal'
 [ ! -e "$(active_path)" ] || fail 'release left active marker after success'
-[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_idle_sha" ] || fail 'release did not reach latest detached main'
+[ "$(git -C "$fixture_human" rev-parse HEAD)" = "$fixture_idle_sha" ] || fail 'release did not restore the recorded detached idle SHA'
+[ "$(release_field origin_sha "$fixture_generation")" = "$fixture_latest_main_sha" ] || fail 'release did not preserve the authoritative origin freshness proof'
 [ -z "$(git -C "$fixture_human" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" ] || fail 'release left named branch'
 expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 assert_contains 'registered_topology=verified'
@@ -599,11 +610,39 @@ assert_start_recovery() {
     [ ! -e "$(metadata_path starting "$fixture_generation")" ] ||
     fail "startup recovery did not leave only the active marker: $startup_failpoint"
   assert_file_contains "tested_sha=$fixture_tested_sha" "$(active_path)"
+  assert_file_contains "idle_sha=$startup_idle_sha" "$(active_path)"
+  expect_ok cleanup-proof "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  expect_ok release "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
+  [ "$(git -C "$fixture_human" rev-parse HEAD)" = "$startup_idle_sha" ] ||
+    fail "startup recovery did not restore the recorded idle SHA: $startup_failpoint"
+  expect_ok closure "$fixture_issue" "$fixture_generation" human "$fixture_tested_sha"
 }
 
 assert_start_recovery after-start-intent idle
 assert_start_recovery after-start-checkout tested
 assert_start_recovery after-start-active-marker active
+
+# Closed native evidence remains opaque after an unrelated manifest revision.
+new_fixture one
+history_a_generation=completed-before-manifest-revision-0001
+history_b_generation=start-after-manifest-revision-0001
+expect_ok admit "$fixture_issue" "$history_a_generation" human "$fixture_tested_sha"
+expect_ok start "$fixture_issue" "$history_a_generation" human "$fixture_tested_sha"
+expect_ok cleanup-proof "$fixture_issue" "$history_a_generation" human "$fixture_tested_sha"
+expect_ok release "$fixture_issue" "$history_a_generation" human "$fixture_tested_sha"
+expect_ok closure "$fixture_issue" "$history_a_generation" human "$fixture_tested_sha"
+history_manifest_sha=$(awk -F= '$1 == "manifest_sha256" {print $2}' \
+  "$(metadata_path release "$history_a_generation")")
+printf '# harmless current manifest revision\n' >> "$fixture_manifest"
+history_new_manifest_sha=$(shasum -a 256 "$fixture_manifest" | awk 'NR == 1 {print $1}')
+[ "$history_manifest_sha" != "$history_new_manifest_sha" ] ||
+  fail 'history fixture did not change the current manifest identity'
+expect_ok admit "$fixture_issue" "$history_b_generation" human "$fixture_tested_sha"
+expect_ok start "$fixture_issue" "$history_b_generation" human "$fixture_tested_sha"
+assert_file_contains "generation=$history_b_generation" "$(active_path)"
+expect_ok cleanup-proof "$fixture_issue" "$history_b_generation" human "$fixture_tested_sha"
+expect_ok release "$fixture_issue" "$history_b_generation" human "$fixture_tested_sha"
+expect_ok closure "$fixture_issue" "$history_b_generation" human "$fixture_tested_sha"
 
 # Canonical identity failures, including SAY aliases, block fixture admission.
 new_fixture one
