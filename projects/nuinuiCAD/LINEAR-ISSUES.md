@@ -277,9 +277,9 @@ latest remote mainとactual implementationを基準にfact driftを確認する�
 
 別chat active Issueをfreshnessだけで勝手にlane/status変更しない。
 
-## Legacy Linear labels (historical / compatible SAY only)
+## Legacy Linear labels (historical only)
 
-以下はC1以前のLinear Issue用のラベル付与規則の記録であり、**GitHub-native Workには適用しない**。現行の分類は[`ISSUES.md`](./ISSUES.md#github-native-issue-type-labels)の`type:`6分類を使う。既存SAYの互換executionでも、必要な旧checkpointの解釈に限って参照し、旧ラベルの新規運用や一括付け替えは行わない。
+以下はC1以前のLinearラベル運用の歴史的記録であり、**現行のWork運用ルールではない**。GitHub-native Issueの分類は[`ISSUES.md`](./ISSUES.md#github-native-issue-type-labels)に従う。旧ラベルの新規付与・一括書き換えは行わない。
 
 旧Linearの正式Work Issueにはtype labelに加え、次を付与していた。
 
@@ -292,7 +292,7 @@ latest remote mainとactual implementationを基準にfact driftを確認する�
 
 ### `only_chatgpt`
 
-旧Linear運用中に廃止されたラベル。GitHub-native Issueには付与しない。既存SAYレコードに残る場合はprovenanceを優先し、機械的に除去しない。現在のexecution ownerは現行のcheckout / Coding Agent policyで決まり、この旧ラベルでは決まらない。
+廃止済みの旧ラベル。現行のexecution ownerはこのラベルでは決めず、ラベルの新規付与・除去を要求しない。過去の記録は変更しない。
 
 ## Parallel footprint / reservation
 
