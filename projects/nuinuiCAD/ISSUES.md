@@ -113,6 +113,23 @@ Detailed physical admission and recovery remain owned by
 
 Issue作成・変更前にlatest product repository、関連するrepository owner / specification、target Issueとmaterial comments、関連Issue / PRをfreshに読む。作成・変更が明示的に承認されたscopeに限る。Linearの枠不足を理由にBug報告を止めず、Linearへduplicate Workを作らない。
 
+### GitHub-native Issue type labels
+
+Open Work Issueには、内容を表す `type:` ラベルを**原則ちょうど1つ**付ける。新規Issueの起票時に分類し、変更が必要になったら実際のscopeを確認して更新する。PRとclosed済みの旧Linear由来Issueに対して一括付与・再分類は要求しない。
+
+| ラベル | 分類基準 |
+| --- | --- |
+| `type:bug` | 既存機能が仕様・期待どおりに動かない不具合。 |
+| `type:feature` | DSL、Canvas、編集・出力などの新しい機能・能力。 |
+| `type:improvement` | 既存機能のUX、操作性、応答性、性能などの改善。 |
+| `type:maintenance` | テスト、CI、ビルド、開発環境、内部コードの保守・整備。 |
+| `type:docs` | ドキュメント、リファレンス、公式サンプル、利用手順。 |
+| `type:research` | 原因調査、探索、設計検討、独立した調査Inboxなど、調査自体が主目的のWork。 |
+
+分類は**主な成果物・目的**で判断する。未確定事項がある新機能を機械的に`type:research`へ移さず、準備状態は必要に応じて独立した`contract:` stateで表す。typeは優先度・進捗・担当者・Manual E2Eの要否を表さない。
+
+旧Linear分類`bug` / `Feature` / `Improvement`や、旧状態`Ready` / `Pending` / `Passed` / `Not Required`などを、新しいGitHub-native Issueの分類・状態管理として付与しない。既存ミラーIssueに残る旧ラベルは履歴・provenanceであり、現在の`type:`と併存していても一律に削除・置換しない。旧Linearでの付与規則は[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に歴史的記録として残す。
+
 ### Tier-specific native D1 implementation scope
 
 Native D1 implementation Issueは、boundedな**semantic mission / observable acceptance**、独立したsemantic oracle、関連するproducing owner / interface、required verification、non-goals、safety/stop limitsを具体的に記載する。

@@ -226,17 +226,11 @@ checkpointはphysical release成立条件そのものではない。actual local
 
 implementation merge済みでrequired Manual E2Eだけが残るWork。
 
-典型:
-
-```text
-In Review + manual_e2e_only + Manual E2E: Ready to Run
-In Review + manual_e2e_only + Manual E2E: Running
-In Review + manual_e2e_only + Manual E2E: Deferred
-```
+旧Linearではrequired Manual E2Eだけが残るleaf Issueを`manual_e2e_only`で表していたが、現在のラベル付与・除去義務ではない。
 
 normal final-merge pathでは、completed implementation generationのsuccessful releaseとLane release checkpoint record / read-backの後に`In Review`へ同期する。最初のrelease attemptがfail / interruptedした場合だけ、physical laneをunavailable capacityとして保持したままauthoritative merged + E2E-only evidenceに従って`In Review`へ同期してよい。
 
-`manual_e2e_only`はimplementation / review / merge / management workがなくrequired Manual E2Eだけが残るleaf Issueにだけ付ける。PR open / CI / blocking review中をIn Reviewとは呼ばない。
+PR open / CI / blocking review中をIn Reviewとは呼ばない。
 
 Manual E2Eはe2e laneだけを使い、tested commit / stable refとmarker / Issue Commentを同期する。implementation laneのcleanup stateだけではWork statusを変更しないが、post-merge E2E-only release anomalyが解消するまでnormal E2E startupは行わない。
 
@@ -244,13 +238,12 @@ Manual E2Eはe2e laneだけを使い、tested commit / stable refとmarker / Iss
 
 confirmed Manual E2E implementation failure:
 
-1. `manual_e2e_only`を外す;
-2. `Manual E2E: Failed` evidence維持;
-3. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
-4. new implementation laneが未割当の間はstatusを`Todo`に保ち、fix contract / re-audit / dependency organization / rerun-plan synchronization中も`Todo`とする;
-5. laterにcurrently `FREE`なdeclared implementation laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
-6. fix merge後にrequired E2Eだけが残れば、completed fix generationへ同じrelease-before-status barrierを適用してから`manual_e2e_only` + `In Review`へ戻す;
-7. new exact tested commitでaffected E2E rerun。
+1. Manual E2E失敗の記録・evidenceを維持;
+2. [`MANUAL-E2E.md`](./MANUAL-E2E.md)に従いfocused contract re-audit、dependency、fix slice、affected rerun plan同期;
+3. new implementation laneが未割当の間はstatusを`Todo`に保ち、fix contract / re-audit / dependency organization / rerun-plan synchronization中も`Todo`とする;
+4. laterにcurrently `FREE`なdeclared implementation laneを選択し、新しいdurable generationを作るcanonical `begin` / `start`がsuccessした後だけ`In Progress`へ変更;
+5. fix merge後にrequired E2Eだけが残れば、completed fix generationへ同じrelease-before-status barrierを適用してから`In Review`へ戻す;
+6. new exact tested commitでaffected E2E rerun。
 
 これはconfirmed Manual E2E implementation failureからnew generation startまでのnarrow #129 exceptionであり、unrelated Pending / Blocked Issueの既存Backlog readiness precedenceを変更しない。
 
@@ -277,20 +270,22 @@ latest remote mainとactual implementationを基準にfact driftを確認する�
 
 別chat active Issueをfreshnessだけで勝手にlane/status変更しない。
 
-## Labels
+## Legacy Linear labels (historical only)
 
-正式Work Issueにはtype labelに加え:
+以下はC1以前のLinearラベル運用の歴史的記録であり、**現行のWork運用ルールではない**。GitHub-native Issueの分類は[`ISSUES.md`](./ISSUES.md#github-native-issue-type-labels)に従う。旧ラベルの新規付与・一括書き換えは行わない。
+
+旧Linearの正式Work Issueにはtype labelに加え、次を付与していた。
 
 - `Contract`: `Pending | Blocked | Ready | N/A`から1つ;
 - `Manual E2E`: `Plan Pending | Ready to Run | Running | Deferred | Failed | Passed | Not Required`から1つ。
 
 ### `manual_e2e_only`
 
-required Manual E2Eだけが残るleaf Issue用。In Reviewと組み合わせる。
+旧Linearでrequired Manual E2Eだけが残るleaf Issue用。In Reviewと組み合わせていた。
 
 ### `only_chatgpt`
 
-廃止済み。新規付与しない。unfinished Issueに残る場合はcurrent contract/statusを壊さずlabelだけ除去する。execution ownerはdeclared implementation lane + Luna policyで決まる。
+廃止済みの旧ラベル。現行のexecution ownerはこのラベルでは決めず、ラベルの新規付与・除去を要求しない。過去の記録は変更しない。
 
 ## Parallel footprint / reservation
 
@@ -302,9 +297,9 @@ Issue Authoring chatはexecution parallel stateへ数えない。semantic interf
 
 Issueをleafへ完全分解し元Issueにremaining acceptanceがなければresearch/decomposition完了でDone可、delivery scopeを完全移管した場合はchild identifiersを記録してCanceled可。aggregate E2E / final integration等を親がactualにownerする場合だけparentを残す。tracking parentをimplementation laneへ割り当てない。
 
-## Required metadata on create
+## Historical Linear Issue creation metadata
 
-正式Issue作成時は最低限:
+C1以前の正式Linear Issue作成時には、最低限次を記録していた（GitHub-native Issue作成要件ではない）:
 
 1. state;
 2. Contract label;
@@ -312,7 +307,7 @@ Issueをleafへ完全分解し元Issueにremaining acceptanceがなければrese
 4. type label;
 5. known dependency relation。
 
-新規Issueはexecution laneを予約しない。actual implementation開始時だけlane assignmentを行う。
+旧Linear運用でもIssueの作成自体はexecution laneを予約せず、actual implementation開始時だけlane assignmentを行っていた。
 
 ## Ready Queue synchronization
 
@@ -327,14 +322,9 @@ Issueをleafへ完全分解し元Issueにremaining acceptanceがなければrese
 
 Ready implementation待ちはTodo。lane不足やRELEASE-PENDINGだけを理由にBacklogへ落とさない。
 
-## Idea Inbox
+## Historical Idea Inbox
 
-軽い思いつきは常設`SAY-55 — Idea Inbox — future work / 思いつきメモ`へ追記する。
-
-- 未着手案は独立Issue化しない;
-- formal research/spec/implementation/Bug/Verificationへ進む時点で重複検索してIssue化;
-- 切り出し元は`-> SAY-xx`等で履歴を残す;
-- Inbox自体は`Contract: N/A + Manual E2E: Not Required`。
+旧Linearでは`SAY-55 — Idea Inbox — future work / 思いつきメモ`を思いつきの集約先として使用していた。過去の記録・参照・旧ラベルは変更しない。新しいWorkの記録・起票・分類は[`ISSUES.md`](./ISSUES.md)に従い、SAY-55には追記しない。
 
 ## Post-write verification
 

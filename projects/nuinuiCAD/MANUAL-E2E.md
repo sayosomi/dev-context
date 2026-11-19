@@ -23,7 +23,7 @@ Decision order:
 
 1. acceptance intentionally requires Human visual / UX / design / experiential judgment → Manual E2E Required;
 2. acceptance depends on production-host / session behavior that automated tests cannot sufficiently prove, such as host wiring, lifecycle, focus, selection, window/session state, or another host-only boundary → Manual E2E Required;
-3. otherwise, if automated verification sufficiently proves acceptance → `Manual E2E: Not Required`.
+3. otherwise, if automated verification sufficiently proves acceptance → Manual E2Eは`Not Required`と判定する。
 
 A Task is not Manual-E2E-required merely because it is UI-related, visual, user-facing, or implemented in a production host.
 
@@ -72,7 +72,7 @@ When the tested ref changes, revalidate affected owner/path mappings. Unaffected
 
 ## Plan-time classification
 
-Before `Manual E2E: Ready to Run`, each unit states:
+実行準備が整ったManual E2Eとして扱う前に、各unitは次を明示する:
 
 - initial state / fixture;
 - action;

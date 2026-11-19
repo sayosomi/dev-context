@@ -2,7 +2,9 @@
 
 ## Purpose
 
-LinearのnuinuiCAD Work / specificationをGitHub Issuesへone-way public mirrorするときの**reconciliation contract**を定義する。
+LinearのnuinuiCAD Work / specificationをGitHub Issuesへone-way public mirrorしていた当時の**reconciliation contract**を記録する。
+
+**Historical only (post-C1):** この文書のresolve / create / label作成・付与 / status・comment同期の命令形は、現在実行する手順ではなく停止済みmirrorの過去仕様を表す。GitHub Issuesは現在のWork / contract authorityであり、通常のIssue分類は[`ISSUES.md`](./ISSUES.md#github-native-issue-type-labels)に従う。旧Linear labelをGitHubへ自動作成・同期しない。停止状態と保存境界は[`GITHUB-ISSUES-SYNC.md`](./GITHUB-ISSUES-SYNC.md)を参照する。
 
 - authority / public boundary / loading: [`GITHUB-ISSUES-SYNC.md`](./GITHUB-ISSUES-SYNC.md)
 - Worker / webhook / Queue / sweep / repair operation: [`GITHUB-ISSUES-MIRROR-OPS.md`](./GITHUB-ISSUES-MIRROR-OPS.md)
@@ -36,7 +38,7 @@ GitHub create成功後にLinear attachment createだけ失敗しても、次回�
 
 ## Mirrored Issue fields
 
-自動mirrorするもの:
+旧pipelineが自動mirrorしていたもの:
 
 - title
 - description
@@ -52,7 +54,7 @@ GitHub create成功後にLinear attachment createだけ失敗しても、次回�
 
 GitHub bodyにはoriginal Linear issue URL、`linear-issue-id` marker、`linear-mirror-updated-at` markerを付加する。
 
-Linearに存在するlabelがGitHub側に無い場合はneutral default colorで作成してから適用してよい。
+旧pipelineでは、Linearに存在するlabelがGitHub側に無い場合、neutral default colorで作成してから適用できた。**現在はこの処理を実行しない。**
 
 ## Comments
 
@@ -87,7 +89,7 @@ Document create時はGitHub側のread-after-write delayを考慮し、hidden `li
 
 ## GitHub-side edits
 
-GitHub Issuesはpublic mirrorでありauthorityではない。
+当時のGitHub Issuesはpublic mirrorでありauthorityではなかった。C1後のcurrent Work / contract authorityはGitHub Issues（[`ISSUES.md`](./ISSUES.md)）である。
 
 - GitHub側の独自field / status編集をLinearへ取り込まない。
 - 次回Linear webhookまたは12-hour safety sweepで、managed fieldはLinear current stateへ戻ってよい。
