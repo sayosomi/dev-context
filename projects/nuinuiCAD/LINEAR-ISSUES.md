@@ -277,20 +277,22 @@ latest remote mainとactual implementationを基準にfact driftを確認する�
 
 別chat active Issueをfreshnessだけで勝手にlane/status変更しない。
 
-## Labels
+## Legacy Linear labels (historical / compatible SAY only)
 
-正式Work Issueにはtype labelに加え:
+以下はC1以前のLinear Issue用のラベル付与規則の記録であり、**GitHub-native Workには適用しない**。現行の分類は[`ISSUES.md`](./ISSUES.md#github-native-issue-type-labels)の`type:`6分類を使う。既存SAYの互換executionでも、必要な旧checkpointの解釈に限って参照し、旧ラベルの新規運用や一括付け替えは行わない。
+
+旧Linearの正式Work Issueにはtype labelに加え、次を付与していた。
 
 - `Contract`: `Pending | Blocked | Ready | N/A`から1つ;
 - `Manual E2E`: `Plan Pending | Ready to Run | Running | Deferred | Failed | Passed | Not Required`から1つ。
 
 ### `manual_e2e_only`
 
-required Manual E2Eだけが残るleaf Issue用。In Reviewと組み合わせる。
+旧Linearでrequired Manual E2Eだけが残るleaf Issue用。In Reviewと組み合わせていた。
 
 ### `only_chatgpt`
 
-廃止済み。新規付与しない。unfinished Issueに残る場合はcurrent contract/statusを壊さずlabelだけ除去する。execution ownerはdeclared implementation lane + Luna policyで決まる。
+旧Linear運用中に廃止されたラベル。GitHub-native Issueには付与しない。既存SAYレコードに残る場合はprovenanceを優先し、機械的に除去しない。現在のexecution ownerは現行のcheckout / Coding Agent policyで決まり、この旧ラベルでは決まらない。
 
 ## Parallel footprint / reservation
 
@@ -302,9 +304,9 @@ Issue Authoring chatはexecution parallel stateへ数えない。semantic interf
 
 Issueをleafへ完全分解し元Issueにremaining acceptanceがなければresearch/decomposition完了でDone可、delivery scopeを完全移管した場合はchild identifiersを記録してCanceled可。aggregate E2E / final integration等を親がactualにownerする場合だけparentを残す。tracking parentをimplementation laneへ割り当てない。
 
-## Required metadata on create
+## Historical Linear Issue creation metadata
 
-正式Issue作成時は最低限:
+C1以前の正式Linear Issue作成時には、最低限次を記録していた（GitHub-native Issue作成要件ではない）:
 
 1. state;
 2. Contract label;
@@ -312,7 +314,7 @@ Issueをleafへ完全分解し元Issueにremaining acceptanceがなければrese
 4. type label;
 5. known dependency relation。
 
-新規Issueはexecution laneを予約しない。actual implementation開始時だけlane assignmentを行う。
+旧Linear運用でもIssueの作成自体はexecution laneを予約せず、actual implementation開始時だけlane assignmentを行っていた。
 
 ## Ready Queue synchronization
 
