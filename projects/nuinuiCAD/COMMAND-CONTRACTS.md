@@ -50,7 +50,7 @@ canonical ownerの再利用、availability projection、fail-closed behavior、e
 context-menu presenceはproduct / UX contractの一部として扱う。
 
 - current authoritative product rule、または同じsurfaceで確立済みの一貫したpatternから値が一意に決まるなら、ChatGPTが`Context menu: ...`または`None`をcontractへ直接記録してよい。
-- context menuへ出す / 出さないの両方が合理的なUX choiceとして残るなら、 [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従い`Contract: Pending`としてユーザー判断を取る。
+- context menuへ出す / 出さないの両方が合理的なUX choiceとして残るなら、 [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従い`contract:pending`としてユーザー判断を取る。
 - 「Paletteに出るからcontext menuにも出す」「実装できるから出す」は決定理由にしない。
 
 ### Source target semantics
@@ -71,4 +71,4 @@ menu / Ribbon / shortcut / button用にcommand business logicを複製しない�
 
 command contract策定時はlatest remote repositoryのcurrent manifest、registered command ID、menu contribution、current surface implementationを確認する。
 
-Ready contractのcurrent implementation前提が別Taskのmergeで変わった場合は、Done-before Ready contract freshness checkでactual repository stateへ追従させる。既決定のsurface semanticsを変えず一意にrefreshできるなら`Contract: Ready`を維持する。product / UX decisionの変更が必要なら単なるfreshness更新として処理せず、 [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従い`Pending`へ戻す。
+ReadyなIssueの実装前提が別Taskのmergeで変わった場合は、[`ISSUES.md`](./ISSUES.md) と [`CONTRACT-DECISIONS.md`](./CONTRACT-DECISIONS.md) に従ってlatest repositoryを再確認する。既決定のsurface semanticsを変えず一意にrefreshできるなら`contract:ready`を維持し、product / UX decisionが必要なら`contract:pending`へ戻す。
