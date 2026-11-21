@@ -186,6 +186,80 @@ implementation-release gate for new native Issues. Exact compatible
 already-admitted SAY recovery remains reachable through CHECKOUTS and
 LOCAL-TOOLS legacy references.
 
+## Multi-Issue native E2E campaign attribution
+
+This extension applies only when one canonical native GitHub campaign Issue
+coordinates required Manual E2E units for multiple source Issues. It preserves
+each source Issue's acceptance and does not waive or combine its verdict. The
+ordinary single-Issue native E2E route and compatible already-admitted SAY
+work retain their existing behavior.
+
+### One physical campaign generation
+
+The campaign Issue is the sole canonical Issue identity for the campaign's
+native `ready --production` admission. It owns the one actual generation,
+immutable tested SHA and snapshot, marker, host session, and physical
+start/progress/stop/cleanup/closure lifecycle. A campaign does not create a
+second checkout or lane, or make a source Issue the owner of a synthetic
+generation. Physical lifecycle mechanics remain with
+[CHECKOUTS.md](./CHECKOUTS.md), [VS-CODE-E2E.md](./VS-CODE-E2E.md), and
+[LOCAL-TOOLS.md](./LOCAL-TOOLS.md).
+
+### Prelaunch mapping
+
+Before launch, re-read each source Issue's current acceptance and material
+comments, verify its required Manual E2E acceptance units, and establish that
+the one tested SHA includes the relevant merged changes. Declare the complete
+mapping from each campaign unit ID to every source Issue and acceptance unit
+it is intended to prove. For each mapping, record the current fixture and
+initial state, actual production-path reverse map, `Judgment: Objective | Human`,
+and the applicable stable E2E Stabilization Key and history. Keep distinct
+acceptance units independently judgeable even when one campaign unit or
+evidence item supports more than one mapping.
+
+Remove deterministic MCP / script-only checks that do not require the
+production host from the GUI plan. If an acceptance unit has no current,
+supported oracle or fixture, or its mapping or stabilization eligibility is
+ambiguous, fail closed and do not launch that campaign.
+
+### Independent unit results
+
+The Human alone operates the production GUI and supplies the verdict for each
+unit; `Judgment: Objective` does not change the executor. A campaign-level
+success or another unit's PASS never establishes a source Issue's PASS. Keep
+each mapped result independently attributable under
+[ISSUES.md](./ISSUES.md).
+
+A shared screenshot may support multiple observations only when it actually
+shows each of them. A screenshot cannot stand in for a live interaction: the
+Human must observe and report dynamic actions such as drag, focus, or
+transition behavior in the actual host.
+
+Apply the existing [stop and independent-unit continuation rules](#common-runtime-control-after-a-unit-result)
+across the campaign: an explicit Human stop/pause has priority, while a
+product FAIL candidate does not stop independent runnable units. Preserve
+failure-state evidence and complete the existing actual-host triage before
+confirming product FAIL. Apply [same-key stabilization and re-entry](#repeated-failure-stabilization-gate)
+across source Issues; campaign attribution does not reset or transfer a
+source unit's history, and an unresolved gate blocks that key's rerun.
+
+### Changed tested SHA and fail-closed results
+
+For a changed tested SHA, re-audit affected unit mappings and run affected
+units from their declared initial states under a new, properly admitted
+campaign generation. An unaffected historical PASS may be retained only
+with its original SHA and snapshot plus explicit evidence that its contract,
+owner, production path, and lifecycle premise still apply. Never relabel that
+result as observed on the new SHA. Preserve same-key stabilization and
+re-entry requirements for every rerun.
+
+Missing provenance, stale oracles or tested artifacts, ambiguous mappings,
+invalid fixtures, unproved ownership or closure, and unresolved stabilization
+gates block the affected launch or acceptance. Never infer PASS from aggregate
+campaign success. Campaign completion and source-Issue closure also require
+the exact-generation host cleanup and independent checkout closure described
+by the existing lifecycle owners and [ISSUES.md](./ISSUES.md).
+
 ## Result handling by Sol High
 
 A unit-level observed mismatch is a `FAIL` candidate for classification, not yet a confirmed product failure. Do not set Manual E2E to product `FAIL` or begin implementation-failure decomposition from an observation alone.
