@@ -1,184 +1,108 @@
 # nuinuiCAD Chat workflow
 
-## Purpose
+## Purpose and authority
 
-ChatGPT Project内のchat sessionを、Work / repository / execution stateそのものから分離して運用する。
+ChatGPT ProjectのchatはWork / repository / execution stateと独立した作業UIであり、source of truthではない。
+同じIssueを複数chatで扱ってよく、chatが重い・不正確・不要になればWorkの途中でもrotationできる。
+過去chatやそのsummaryをcurrent stateのauthorityにしない。
 
-chatは作業UIでありsource of truthではない。chatが長大化、遅延、文脈劣化、判断品質低下などで使いづらくなった場合、同じWorkの途中でも安全に新しいchatへrotationできることを前提とする。
+Current stateは責務ごとの外部authorityから再構築する。
 
-current stateのauthorityは次の通り。
+- **Work / contract / decisions:** current GitHub Issue bodyとmaterial comments。[ISSUES.md](./ISSUES.md)がWork lifecycle、[CONTRACT-DECISIONS.md](./CONTRACT-DECISIONS.md)がIssue boundary、[IMPLEMENTATION-SLICING.md](./IMPLEMENTATION-SLICING.md)がsliceをownerする。
+- **Implementation / review:** latest remote `sayosomi/nuinuiCAD` repository、branch、commit、PR、checks、authoritative merge read-back。
+- **Policy:** latest `sayosomi/dev-context` の[README.md](./README.md)と適用されるowner documents。
+- **Execution / occupancy:** actual declared checkout state、current Issue/checkpoints、該当するlegacy ownership。GitHub commentsはoperational checkpointでありmachine lockではない。物理capacity / admission / recoveryは[LANES.conf](./LANES.conf)、[CHECKOUTS.md](./CHECKOUTS.md)と各role ownerが定める。
 
-- actual code / implemented behavior: latest `sayosomi/nuinuiCAD` repository
-- current Work scope / contract: GitHub Issue body; material decisions and evidence: GitHub Issue comments
-- execution / review / merge facts: GitHub branch, commit, PR, checks, and authoritative read-back
-- local execution occupancy: actual declared-lane checkout state + current GitHub Issue; evaluator-audit start/stop/final-proof comments are operational checkpoints that must reconcile with checkout proof, not a machine lock. Applicable legacy SAY checkpoints remain limited to existing `nuinui` execution.
-- durable project policy: latest `sayosomi/dev-context` owner documents
+## Chat roles and Work identity
 
-過去chat、chat summary、project conversation historyはcurrent stateのauthorityにしない。
-
-## Applicable legacy SAY terminal-loss recovery
-
-For a pre-existing SAY task already using the `nuinui` lifecycle, lost Human terminal output is an external-state recovery case, not permission to retry a mutation. The first official recovery surface is the read-only `nuinui last-result` command; its durable result and verified canonical output are evidence. Resume only from current repository / GitHub state and the minimum legacy checkpoint required by that lifecycle. A later mutation is never automatically retried because terminal output disappeared. This recovery path does not apply to a new GitHub-native Issue.
-
-## Chat roles
-
-Chat roleは会話整理のための分類であり、Issue status、execution ownership、lane occupancyそのものではない。
+Chat roleは会話の分類であり、Issue status、claim、physical admission、lane occupancyではない。
 
 | Role | Purpose | Owner |
 | --- | --- | --- |
-| Coordinator | Project全体のstatus整理、Work選択、routing | [`CHAT-COORDINATOR.md`](./CHAT-COORDINATOR.md) |
-| Issue Authoring | Issue作成・調査・仕様・contract・dependency整理 | [`CHAT-AUTHORING.md`](./CHAT-AUTHORING.md) |
-| Implementation | Ready Issueのimplementation / fix / verification / integration / review / merge | [`CHAT-IMPLEMENTATION.md`](./CHAT-IMPLEMENTATION.md) |
+| Coordinator | Current Workの選択・優先順位・routing | [CHAT-COORDINATOR.md](./CHAT-COORDINATOR.md) |
+| Issue Authoring | 調査、Issue / contract / dependency整理 | [CHAT-AUTHORING.md](./CHAT-AUTHORING.md) |
+| Implementation | 実装・修正・検証・review / merge | [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md) |
 
-chatを新しく作っただけではIssue statusやexecution laneを変更しない。各role固有のstartup / handoffはそのowner documentに従う。
+`1 Issue = 1 chat`は要求しない。
+同じIssueを複数chatで続けても、新chatを作っただけではWorkや実行状態は変化しない。
+Human Manual E2Eは専用chat roleを設けず、[MANUAL-E2E.md](./MANUAL-E2E.md)へrouteする。
 
-## Chat role and Work identity are separate
+CoordinatorとIssue Authoringの非実行活動はchat数によるexecution capacity制限を受けない。
+一方、実行には独立したphysical admissionが必要である。
+**新しいGitHub-native D1は登録済み単一implementation checkoutによるsequential Git-only実行**である。
+旧SAY laneの`FREE` / `preflight`、chat増設、別agentは追加のnative実装や並列実行の許可にならない。
+D2-C evaluator auditはread-only、Manual E2EはHuman-onlyであり、既存の相互排他を維持する。
+新lane・worktree・parallel scheduling routeを追加しない。
 
-`1 Issue = 1 chat`を要求しない。
+## Rotation
 
-同じIssueは必要に応じて複数chatへrotationしてよい。
-
-```text
-GitHub #123 authoring #1
--> GitHub #123 authoring #2
--> GitHub #123 implementation #1
--> GitHub #123 implementation #2
--> GitHub #123 Human Manual E2E (same chat may continue)
-```
-
-このchat分割自体はIssue decompositionではない。Issue boundaryは`CONTRACT-DECISIONS.md`、implementation sliceは`IMPLEMENTATION-SLICING.md`がauthority。
-
-chatとlaneも固定対応させない。恒久的なchat-to-lane対応を作らず、Issueのcurrent execution時点でmanifest上FREEなdeclared laneを割り当てる。
-
-## Rotation is always allowed
-
-Humanがchatを重い、遅い、混乱している、判断品質が落ちた、または単に切り替えたいと感じた場合、同じWorkの途中でも新chatへrotationしてよい。rotation自体を正当化する必要はない。
+Humanは理由を示さず、Work途中でもnormal / emergency rotationを選べる。
+rotationそれ自体にcheckpoint、Task pause、release、追加のadmissionは不要。
 
 ### Normal rotation
 
-旧chatがまだ信頼できる場合、Humanは例えば次のように指示できる。
+旧chatが信頼できるなら、ChatGPTは**外部stateから復元できない重要情報だけ**を必要に応じて外部化する。
+例は未記録のHuman E2E observation / result、product / UX decision、唯一のscreenshot / evidence参照、既存SAY generationの未保存checkpointである。
+GitHub / dev-contextから再取得できる情報を長いhandoff summaryとして複製しない。
 
 ```text
 このチャット重い。checkpointして切り替える
 ```
 
-ChatGPTはrotation前に、**chatにしか存在せず外部stateから復元できない重要情報だけ**を必要に応じて外部化する。
-
-典型:
-
-- Human Manual E2E observation / result
-- 未記録のproduct / UX decision
-- compatible pre-existing SAY executionで、remote / legacy Linear checkpointへまだ保存されていないcurrent checkpoint
-- 唯一のscreenshot / evidenceへの必要な参照情報
-- next chatがrepository / GitHub Issue / local stateだけでは復元できない一時情報
-
-GitHub / dev-contextから再取得できる情報を長大なhandoff summaryとして複製しない。
-
 ### Emergency rotation
 
-旧chatの判断をすでに信用できない、またはcheckpoint作業自体を任せたくない場合は、そのchatをそのまま捨ててよい。
-
-新chatでは例えば次だけでよい。
+旧chatを信頼できないときはcheckpointなしで破棄してよい。
+保存されていないchat-only observation / decisionは失われ得るため、必要ならHumanに再確認する。
 
 ```text
 GitHub Issue #123を外部状態から復元して続ける。前チャットは信用しない
 ```
 
-その場合、外部保存されていないchat-only stateは失われ得る。必要なHuman observation / decisionが外部化されていなければ、再確認が必要になることは許容する。
+## Fresh recovery in a new chat
 
-## Recovery order in a new chat
+過去chatのsummaryで現在の状態を決めず、必要な範囲で次をfreshに確認する。
 
-Issue / Workを新chatで開始・再開するとき、過去chatの要約からcurrent stateを組み立てない。
+1. [README.md](./README.md)と該当するcurrent dev-context policy / role owner。
+2. Current GitHub Issue body、material comments、related Issues / decisions / checkpoints。
+3. Latest authoritative product repository、branch、PR / checks / merge evidence。
+4. **実行・再開が関係する場合だけ**、[CHECKOUTS.md](./CHECKOUTS.md)と実際のphysical checkout / occupancy、必要な既存SAY checkpoint。
 
-必要なscopeに応じて次から再構築する。
+未完了のD2-C audit start / stop / independent final checkout proof、active / ambiguous implementation・Human E2E・legacy claim / ownership、dirty / unknown checkoutをchat切替や失われたterminal outputで無視しない。
+証拠不足・不一致は当該実行の開始 / 継続をfail closedし、canonical ownerで診断する。
+新しいチャットでHumanのsingle `nuinui-checkout-check`やAgentの変更直前のbounded recheckを重複実行させず、必要な新規admissionは[EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)と[CHECKOUTS.md](./CHECKOUTS.md)へ委譲する。
 
-1. latest Project Context `README.md`
-2. loading ruleが要求するlatest dev-context owner documents
-3. current GitHub Issue body / material comments / relevant Issues
-4. latest GitHub remote repository / branch / PR / CI state
-5. local executionが関係する場合だけactual declared-lane state
-6. compatible pre-existing SAY executionの場合に限り必要なminimum legacy Linear checkpoint
+再開の指示は`GitHub Issue #123を続ける`程度でよい。
 
-current implementation factはlatest repositoryをauthoritativeとする。
+## Rotation is not a Task pause
 
-通常の開始文は短くてよい。
+Chat rotationだけではIssue / Linear status、execution ownership / claim、implementation / Human E2E checkout占有・release、Base / SHA、branch、active slice、tested commit、E2E generation / stateを変更しない。
+実際にWorkをpause / releaseする場合は、適用される既存ownerの独立した手順に従う。
+既存SAYのpause / releaseのみ[LINEAR-ISSUES.md](./LINEAR-ISSUES.md)と[CHECKOUTS.md](./CHECKOUTS.md)の互換契約を使う。
 
-```text
-GitHub Issue #123を続ける
-```
+## Role handoff and legacy compatibility
 
-またはfresh reconstructionを明示するなら:
+通常のroutingはHumanの相談 → Issue AuthoringによるGitHub contract整理 → CoordinatorのWork選択 → [CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md)のnative D1 route、必要ならHuman-only [Manual E2E](./MANUAL-E2E.md)である。
+各destination roleの既存startup gateを省略しない。
+role変更のために新chatは不要であり、routingだけでは実行をadmitしない。
 
-```text
-GitHub Issue #123を最新の外部状態から再開
-```
+**既にadmitされた未完了SAY generationだけ**は別の互換経路に留める。
+元のSAY Issue / generation identity、claim、lane、Base、checkpoint、minimum Linear status / release checkpointsを維持し、native Issueへ移行したり新しいSAY Workを開始したりしない。
+既存SAYのimplementation完了後は、正確なreleaseと`IMPLEMENTATION RELEASED` / Lane release checkpointの確認を**legacy E2E startより前**に行う。
+Human-test checkoutがBUSYでも完了したimplementation claimを保持せず、必要なlegacy `In Review` checkpointで待つ。
+曖昧なownerや未完了releaseはfail closedする。
 
-## Rotation is not Task pause
+既存SAYの詳細なhandoff / release / recoveryは[EXECUTION-HANDOFF.md](./EXECUTION-HANDOFF.md)、[CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md)、[CHECKOUTS.md](./CHECKOUTS.md)、[LOCAL-TOOLS.md](./LOCAL-TOOLS.md)、[LINEAR-ISSUES.md](./LINEAR-ISSUES.md)がownerする。
+旧multi-lane / release→E2Eの全文が必要な場合だけ[変更前のimmutable CHAT-WORKFLOW.md](https://github.com/sayosomi/dev-context/blob/0671ef4150cc75d882e25d0a4867dde6100af14f/projects/nuinuiCAD/CHAT-WORKFLOW.md)を歴史資料として参照する。
+これは新規native admissionを許可しない。
 
-**chat session rotation alone is not a Task pause.**
+旧SAYのmutationでterminal outputが失われた場合、最初にread-only `nuinui last-result` と実checkout・GitHub・最低限のLinear checkpointを照合する。
+記録や結果が欠落・不一致・不完全ならmutationをblind retryせず、対応するlegacy ownerのexact recoveryへrouteする。
+この復旧手順をGitHub-native D1へ流用しない。
 
-同じWorkを継続するためにchatだけを交換する場合、rotationだけを理由に次を行わない。
+## Loading and maintenance
 
-- Linear status変更（既存SAY executionが要求するcheckpointを除く）
-- implementation / E2E lane release
-- Base checkpoint更新
-- branch変更
-- active slice変更
-- tested commit変更
+Chat role選択、rotation、handoff、external-state recoveryでは`README.md → CHAT-WORKFLOW.md → applicable role owner`の経路を使い、さらにtask / phaseに必要なownerだけを読む。
+Coordinatorは[CHAT-COORDINATOR.md](./CHAT-COORDINATOR.md)、Authoringは[CHAT-AUTHORING.md](./CHAT-AUTHORING.md)、Implementationは[CHAT-IMPLEMENTATION.md](./CHAT-IMPLEMENTATION.md)、Human E2Eは[MANUAL-E2E.md](./MANUAL-E2E.md)と必要なhost / checkout ownersへrouteする。
 
-Work自体をpauseしてlaneを解放する場合だけ、compatible pre-existing SAY executionについて`LINEAR-ISSUES.md` / `CHECKOUTS.md`のpause / release ruleを使う。
-
-## Parallelism model
-
-chatの数とexecution parallelismを混同しない。
-
-```text
-Coordinator chat     -> execution capacityを消費しない
-Issue Authoring chat -> unlimited; execution capacityを消費しない
-Implementation       -> declared role=implementation lanes
-Manual E2E           -> declared role=human-test lanes
-```
-
-Issue Authoringを多数並行することは許可するが、Ready Workが増えたことを理由にimplementation laneを追加しない。
-
-## Handoff between chat roles
-
-典型flow:
-
-```text
-Human report / idea
--> Issue Authoring chat
--> GitHub Issue body / comments and contract readiness
--> Coordinator selects Work
-   -> new GitHub-native Issue: after the general D1 activation checkpoint, use the Git-only implementation route
-   -> compatible pre-existing SAY task: existing `nuinui` implementation lifecycle
-      -> implementation merge + authoritative read-back
-      -> prove remaining acceptance is required Manual E2E only
-      -> synchronize the minimum required legacy checkpoint
-      -> exact declared implementation lane release
-      -> successful IMPLEMENTATION RELEASED
-      -> Lane release checkpoint record and read-back
-      -> implementation lane proven FREE
-      -> if a Human-test lane is FREE, compatible legacy E2E handoff under CHECKOUTS / LOCAL-TOOLS
-      -> if all suitable Human-test lanes are BUSY, wait without retaining the implementation lane
-      -> PASS
-      -> legacy status completion checkpoint
-```
-
-Compatible already-admitted SAY implementationからHuman Manual E2Eへのhandoffでは、E2E startをlegacy implementation release barrierより前に置かない。Native GitHub Issueにはこのlegacy release gateを課さない。Human-test laneのavailabilityはcompleted implementation laneのreleaseを遅らせず、selected Human-test laneがBUSYならimplementation laneを保持せずIn Reviewで待つ。
-
-roleを切り替える際も、destination roleのstartup gateを省略しない。同じchatを継続するか新chatへ切り替えるかはWork identityとは別判断。
-
-## Loading rule
-
-1. Chat role判断、rotation、handoff、external-state recoveryではこのdocumentを読む。
-2. Current Work / contract recoveryでは`ISSUES.md`とfresh GitHub Issue / repository stateを使う。
-3. Coordinator workでは`CHAT-COORDINATOR.md`。
-4. Issue Authoringでは`CHAT-AUTHORING.md`。
-5. Implementationでは`CHAT-IMPLEMENTATION.md`。
-6. Human Manual E2Eでは専用chat roleを設けず、READMEの`MANUAL-E2E.md`と必要なnative/host ownersへrouteする。
-7. 各role ownerを読んだ後、READMEのtopic-specific loading ruleに従う。
-
-## Maintenance rule
-
-このdocumentはchat共通lifecycle / role routing / rotation / recoveryだけをownerする。role固有の動作は各`CHAT-*.md`へ置き、Issue lifecycle、contract semantics、implementation executor、checkout、Manual E2Eの詳細はそれぞれのowner documentへ置く。
+この文書はchat共通lifecycleのみをownerする。
+Issue契約、role固有の実装、physical admission / occupancy、audit、Manual E2E、legacyコマンドの詳細を複製しない。
