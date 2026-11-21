@@ -224,4 +224,51 @@ evidence, not an atomic lane lock or a substitute for checkout proof.
   An unmatched start, missing closure proof, ambiguous owner, or unresolved
   interruption blocks reuse and rerun.
 
+### Multi-Issue campaign evidence and source acceptance
+
+For a native campaign spanning multiple source Issues, the campaign Issue
+alone owns the physical generation, its tested SHA/snapshot, and its start,
+host, progress/stop, cleanup, and closure checkpoints. Record these checkpoints
+only in the campaign Issue comments, using the existing native lifecycle owners:
+[`CHECKOUTS.md`](./CHECKOUTS.md),
+[`VS-CODE-E2E.md`](./VS-CODE-E2E.md), and
+[`LOCAL-TOOLS.md`](./LOCAL-TOOLS.md). The campaign Issue is the sole native
+generation identity; do not create synthetic child generations or imply that
+a source Issue owns any part of that physical lifecycle.
+
+Each source Issue must retain a separately attributable case-level result in
+its own comments, or a direct link to stable evidence containing the result.
+For every mapped source acceptance unit, record the campaign Issue URL,
+campaign generation ID, exact tested SHA and snapshot identity, campaign and
+source acceptance unit ID(s), fixture and initial state, action, expected and
+observed results,
+`Judgment: Objective | Human`, Human verdict (`PASS`, `FAIL`, `BLOCKED`, or
+`unexecuted`), relevant evidence pointers, and the E2E Stabilization Key and
+history when applicable. Shared evidence may be referenced from multiple
+source Issues only when it proves each listed observation; live interactions
+still require the Human's actual-host observation and report. Keep the
+campaign-to-source acceptance mapping explicit and preserve an independent
+verdict for every source unit.
+
+Campaign success never implies source-Issue PASS, and a result for one source
+unit never supplies another source unit's verdict. Apply the Human stop
+priority, independent-unit continuation, actual-host triage before confirmed
+FAIL, and same-key stabilization rules in
+[`MANUAL-E2E.md`](./MANUAL-E2E.md). A changed tested SHA requires affected
+mapping re-audit and a new properly admitted campaign generation; any retained
+unaffected PASS stays attributed to its original SHA/snapshot and includes
+explicit continued-applicability evidence. Never overwrite historical
+per-unit results with an aggregate or new-SHA PASS.
+
+Do not claim campaign completion or close any source Issue until the campaign
+has exact-generation host cleanup and independent detached checkout closure
+proof under the existing lifecycle owners. Then assess and close each source
+Issue independently, only after all of its own acceptance, review, CI, merge,
+and required Manual E2E conditions are verified. Missing provenance, stale
+acceptance/oracles, ambiguous mapping, or an unresolved stabilization gate
+blocks the affected result or closure.
+
+This attribution rule does not change ordinary single-Issue native E2E or
+compatible already-admitted SAY evidence and lifecycle rules.
+
 These checkpoints do not create lane metadata or synthetic receipts. The manifest-declared Human-test checkout is already registered. Prior to the explicit #286 general tool activation checkpoint, only the approved bounded pilot may run. After that checkpoint, normal native Manual E2E is permitted with the same exact-SHA, checkout topology, ownership, Human-executor and cleanup gates in [`CHECKOUTS.md`](./CHECKOUTS.md). The #1373 product repair rerun remains governed by that product Issue; it does not condition the E2E tool's activation.
