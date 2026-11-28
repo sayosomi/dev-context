@@ -19,7 +19,7 @@ Current Issue body / comments / freshness / completionは[`ISSUES.md`](./ISSUES.
 - Manual E2Eの必要性、oracle、fixture、Human executor;
 - current executable sliceとexecution route。ordinary GitHub-native startupは一般D1 activation checkpoint後にGit-only routeを使う。それ以前のstartupは保留する。
 
-古いcontractを正当化するためではなく、current authorityから新たに判断する。旧decisionが整合する箇所は維持し、stale / contradictory / over-specified / under-specifiedな箇所を明示する。current authorityが複数の合理的な選択を残す場合は`contract:pending`にし、durable product decisionをChatGPTが代わりに決めない。必須prerequisiteが欠ける場合は`contract:blocked`にする。
+古いcontractを正当化するためではなく、current authorityから新たに判断する。旧decisionが整合する箇所は維持し、stale / contradictory / over-specified / under-specifiedな箇所を明示する。current authorityが複数の合理的な選択を残す場合は`contract:pending`にし、durable product decisionをChatGPTが代わりに決めない。executable contractに必要なprerequisiteが欠ける場合は`contract:blocked`にする。E2Eのみが残る場合の状態は[`ISSUES.md`](./ISSUES.md#github-native-issue-state-labels)に従う。
 
 ## Freshness and concurrent-write guard
 
@@ -34,11 +34,11 @@ Independentな追記はreconcileする。scope、acceptance、またはdurable d
 個別re-auditが完了したら、同じcheckpointで次を行う。
 
 1. Issue bodyをcurrent valid contractへ更新し、必要なevidence / rationaleをcommentへ残す。
-2. [`ISSUES.md`](./ISSUES.md#github-native-issue-state-labels) の必須state label ruleに従い、current evidenceに対応する状態labelを1つだけ維持する。古い状態labelを外し、`type:`等の無関係なlabelを保持する。E2Eのみ保留なら同ownerのDeferred条件を確認する。
+2. [`ISSUES.md`](./ISSUES.md#github-native-issue-state-labels) の必須state label ruleに従い、状態labelをcurrent evidenceと同期する。
 3. Manual E2E、dependency、Issue boundaryを再評価する。
 4. current executable sliceがある場合はimplementation slicing / execution routeを確認する。GitHub-native Workのstartupは一般D1 activation checkpoint前なら保留し、checkpoint後はGit-only policyに従う。
 5. Close前にはlatest repository `main`、Issue body / comments、required review / verification、全acceptance、Required Human Manual E2Eを独立に確認する。mergeだけで未完了Issueをcloseしない。
-6. write後のIssue read-backでbody、state、状態labelの整合とexactly-oneを確認する（対象外・Closedは同ownerに従う）。
+6. write後のIssue read-backと状態labelの検証を同ownerの規則に従って完了する。
 
 re-audit自体は完了したがproduct decision待ちなら`contract:pending`を残す。再調査の結果、Workが不要・duplicate・scope移管済みと判明した場合はGitHub Issue lifecycleに従い整理し、Readyに戻すことを目的にしない。
 
