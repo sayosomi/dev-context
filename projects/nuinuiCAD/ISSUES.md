@@ -126,7 +126,7 @@ Open Work Issueには、内容を表す `type:` ラベルを**原則ちょうど
 | `type:docs` | ドキュメント、リファレンス、公式サンプル、利用手順。 |
 | `type:research` | 原因調査、探索、設計検討、独立した調査Inboxなど、調査自体が主目的のWork。 |
 
-分類は**主な成果物・目的**で判断する。未確定事項がある新機能を機械的に`type:research`へ移さず、準備状態は必要に応じて独立した`contract:` stateで表す。typeは優先度・進捗・担当者・Manual E2Eの要否を表さない。
+分類は**主な成果物・目的**で判断する。未確定事項がある新機能を機械的に`type:research`へ移さず、Workの状態は`type:` labelとは独立して、[GitHub-native Issue state labels](#github-native-issue-state-labels)の必須規則に従って管理する。typeは優先度・進捗・担当者・Manual E2Eの要否を表さない。
 
 旧Linear分類`bug` / `Feature` / `Improvement`や、旧状態`Ready` / `Pending` / `Passed` / `Not Required`などを、新しいGitHub-native Issueの分類・状態管理として付与しない。既存ミラーIssueに残る旧ラベルは履歴・provenanceであり、現在の`type:`と併存していても一律に削除・置換しない。旧Linearでの付与規則は[`LINEAR-ISSUES.md`](./LINEAR-ISSUES.md)に歴史的記録として残す。
 
@@ -151,7 +151,7 @@ Open Work Issueには次の状態labelを**必ずちょうど1つ**付け、curr
 - `contract:pending`: investigation、contract、acceptance、またはHumanが決めるべき選択が未完了。
 - `contract:ready`: current authority、scope、dependencies、verification routeを確認済みで、implementation前のfresh re-auditが可能。
 - `contract:blocked`: 必須prerequisiteまたはexternal capabilityがなく、executable contractを確定できない。単なる実装待ちはblockedではない。
-- `e2e:deferred`: 必要な実装・独立review・CI・mergeが完了し、残るacceptanceがRequired Human Manual E2Eのみで、その実施を保留している状態。追加実装や未確定contractが残る場合は付けない。E2E保留はPASSでもclose許可でもない。
+- `e2e:deferred`: 必要な実装・独立review・CI・mergeが完了し、残るacceptanceがRequired Human Manual E2Eのみの状態。実施待ち、実施中、再開、途中停止、環境・実行上のBLOCKED、および必要なE2E closure checkpoint待ちを含む。追加実装や未確定contractが残る場合は付けない。このlabelはE2Eの実行中か否か、PASS/FAIL/BLOCKEDの判定、close許可を表さない。
 
 | 状態label | GitHub color |
 | --- | --- |
@@ -160,9 +160,9 @@ Open Work Issueには次の状態labelを**必ずちょうど1つ**付け、curr
 | `contract:blocked` | `FBCFE8` |
 | `e2e:deferred` | `CBD5E1` |
 
-状態labelは淡色に統一し、既存の`type:` labelの色は変更しない。
+状態labelは上記の色に統一し、既存の`type:` labelの色は変更しない。
 
-起票・contract確定・個別re-audit・implementation / review / CIのcheckpoint・merge後のE2E保留・E2Eからのimplementation復帰・completionで、担当者はcurrent stateを判定する。起票時は未確定ならPending、確定済みならReadyとし、必須prerequisiteがない場合はBlocked。実装・review・CI中は契約が有効な限りReadyを維持する。merge後にE2Eだけを保留する場合はcontract labelを外し、Deferredへ変更する。E2EがFAILして修正が必要になれば、現行のcontractに応じた状態へ戻す。E2Eの分類・実行・判定・closureは引き続き[`MANUAL-E2E.md`](./MANUAL-E2E.md)等の現行ownerに従う。
+起票・contract確定・個別re-audit・implementation / review / CIのcheckpoint・merge後のE2E待ち・開始・再開・中断・結果・E2Eからのimplementation復帰・completionで、担当者はcurrent stateを判定する。起票時は未確定ならPending、確定済みならReadyとし、必須prerequisiteがない場合はBlocked。実装・review・CI中は契約が有効な限りReadyを維持する。merge後にRequired Human Manual E2Eだけが残る場合はcontract labelを外し、Deferredへ変更する。E2Eの開始・再開・中断・実行上のBLOCKEDでは、他のacceptanceが残らない限りDeferredを維持する。複数Issueのcampaignでもsource Issueごとのacceptance・evidenceで判定し、campaign全体の進捗から一律に変更しない。confirmed product FAIL等で修正や契約再検討が必要になれば、現行のcontractに応じてReady / Pending / Blockedへ戻す。E2Eの分類・実行・判定・closureは引き続き[`MANUAL-E2E.md`](./MANUAL-E2E.md)等の現行ownerに従う。
 
 各checkpointの完了前に、freshなIssue body / comments / labelsと関連evidenceを確認し、必要ならbodyと状態labelを同じcheckpointで更新する。古い状態labelは外し、無関係なlabelと履歴を保持する。write後はGitHubから再取得し、意図したstateと状態labelのexactly-one（対象外を除く）を確認する。更新不能・不一致なら未完了として報告し、根拠不十分なReady / Deferredを付けない。完了またはHuman判断による対応不要終了は既存のclose条件と理由に従う。Closed Issueの履歴labelの一括整理は要求しない。
 
