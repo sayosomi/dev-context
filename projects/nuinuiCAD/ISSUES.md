@@ -144,11 +144,27 @@ Native D1 implementation Issueは、boundedな**semantic mission / observable ac
 
 GitHub Issueの `open` は未完了Work、`closed` はfull acceptanceを独立に確認した完了Workを表す。PR、branch、checkの存在だけでIssueを完了と判断しない。
 
-Readinessが必要な場合の語彙は `contract:pending` / `contract:ready` / `contract:blocked` とする。これらはC1で実際のGitHub labelを作成したり、既存Issueを一括relabelする要求ではない。readinessをlabelで管理する場合、open Work Issueは通常このうち1つだけを持ち、Issue bodyと一致させる。
+### GitHub-native Issue state labels
+
+Open Work Issueには次の状態labelを**必ずちょうど1つ**付け、current Issue body / evidenceと一致させる。常設Inbox（具体的な実装・調査Workではない受付用Issue）は対象外。`type:` labelは独立して維持する。`active`を作業状態labelとして使わない。
 
 - `contract:pending`: investigation、contract、acceptance、またはHumanが決めるべき選択が未完了。
 - `contract:ready`: current authority、scope、dependencies、verification routeを確認済みで、implementation前のfresh re-auditが可能。
 - `contract:blocked`: 必須prerequisiteまたはexternal capabilityがなく、executable contractを確定できない。単なる実装待ちはblockedではない。
+- `e2e:deferred`: 必要な実装・独立review・CI・mergeが完了し、残るacceptanceがRequired Human Manual E2Eのみで、その実施を保留している状態。追加実装や未確定contractが残る場合は付けない。E2E保留はPASSでもclose許可でもない。
+
+| 状態label | GitHub color |
+| --- | --- |
+| `contract:pending` | `FED7AA` |
+| `contract:ready` | `99F6E4` |
+| `contract:blocked` | `FBCFE8` |
+| `e2e:deferred` | `CBD5E1` |
+
+状態labelは淡色に統一し、既存の`type:` labelの色は変更しない。
+
+起票・contract確定・個別re-audit・implementation / review / CIのcheckpoint・merge後のE2E保留・E2Eからのimplementation復帰・completionで、担当者はcurrent stateを判定する。起票時は未確定ならPending、確定済みならReadyとし、必須prerequisiteがない場合はBlocked。実装・review・CI中は契約が有効な限りReadyを維持する。merge後にE2Eだけを保留する場合はcontract labelを外し、Deferredへ変更する。E2EがFAILして修正が必要になれば、現行のcontractに応じた状態へ戻す。E2Eの分類・実行・判定・closureは引き続き[`MANUAL-E2E.md`](./MANUAL-E2E.md)等の現行ownerに従う。
+
+各checkpointの完了前に、freshなIssue body / comments / labelsと関連evidenceを確認し、必要ならbodyと状態labelを同じcheckpointで更新する。古い状態labelは外し、無関係なlabelと履歴を保持する。write後はGitHubから再取得し、意図したstateと状態labelのexactly-one（対象外を除く）を確認する。更新不能・不一致なら未完了として報告し、根拠不十分なReady / Deferredを付けない。完了またはHuman判断による対応不要終了は既存のclose条件と理由に従う。Closed Issueの履歴labelの一括整理は要求しない。
 
 Issue bodyはcurrent meaningだけを持ち、obsoleteなcontract historyは積み重ねない。Close前にlatest remote repository / main、Issue bodyとcomments、required independent exact-head review、protected CI / verification、必要なHuman Manual E2Eをfreshに再確認する。Required Manual E2Eが残るIssueをcloseしない。PR linking / merge / closing keywordの詳細は [`LINEAR-GITHUB.md`](./LINEAR-GITHUB.md) がownerする。
 
